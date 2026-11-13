@@ -11,6 +11,10 @@ import { setCheckins } from '../proactive.js';
 import { createRoom, postToRoom } from './rooms.js';
 import type { ActivityKind } from '../types.js';
 import { Cron } from 'croner';
+import {
+  gmailListMessages, gmailGetMessage, gmailSend, gmailGetThread,
+  calendarListEvents, calendarGetEvent, calendarCreateEvent, calendarUpdateEvent, calendarListCalendars,
+} from '../google-tools.js';
 
 export interface ToolCtx {
   userId: string;
@@ -35,6 +39,8 @@ interface ToolDef {
   parameters: Record<string, unknown>;
   activity: ActivityKind;
   label: string;
+  /** Default approval requirement. 'needs_approval' goes through the approval card before running. */
+  policy?: 'needs_approval';
   impl: Impl;
 }
 
@@ -351,6 +357,121 @@ export const TOOLS: ToolDef[] = [
       return { output: `Asked the user to connect ${info.name}. Stop here; you'll be told when it's connected.`, endTurn: true };
     },
   },
+
+  // ---------- Gmail (direct Google OAuth2 — no Composio required) ----------
+  {
+    name: 'gmail_list_messages',
+    description: "List Gmail messages matching a query. Use Gmail search syntax: 'in:inbox', 'is:unread', 'from:someone@example.com', 'subject:report', 'after:2024/1/1', etc. Returns metadata only (subject, from, snippet).",
+    parameters: obj({
+      query: { type: 'string', description: "Gmail search query, e.g. 'is:unread in:inbox' or 'from:boss@company.com'" },
+      max_results: { type: 'number', description: 'Max messages to return (default 20, max 50)' },
+    }),
+    activity: 'connecting_service',
+    label: 'Reading Gmail',
+    impl: gmailListMessages,
+  },
+  {
+    name: 'gmail_get_message',
+    description: 'Read the full body of a Gmail message by its ID (from gmail_list_messages).',
+    parameters: obj({ message_id: { type: 'string', description: 'Gmail message ID' } }, ['message_id']),
+    activity: 'connecting_service',
+    label: 'Reading email',
+    impl: gmailGetMessage,
+  },
+  {
+    name: 'gmail_get_thread',
+    description: 'Read all messages in a Gmail thread by thread ID.',
+    parameters: obj({ thread_id: { type: 'string', description: 'Gmail thread ID' } }, ['thread_id']),
+    activity: 'connecting_service',
+    label: 'Reading email thread',
+    impl: gmailGetThread,
+  },
+  {
+    name: 'gmail_send',
+    description: 'Send an email from the connected Gmail account. Requires user approval.',
+    parameters: obj({
+      to: { type: 'string', description: 'Recipient email address(es), comma-separated' },
+      subject: { type: 'string' },
+      body: { type: 'string', description: 'Plain-text email body' },
+      in_reply_to: { type: 'string', description: 'Message-ID header of the message you are replying to (optional)' },
+      thread_id: { type: 'string', description: 'Gmail thread ID to keep the email in an existing thread (optional)' },
+    }, ['to', 'subject', 'body']),
+    activity: 'connecting_service',
+    label: 'Sending email',
+    policy: 'needs_approval',
+    impl: gmailSend,
+  },
+
+  // ---------- Google Calendar (direct Google OAuth2 — no Composio required) ----------
+  {
+    name: 'calendar_list_events',
+    description: 'List upcoming Google Calendar events. By default lists events from now onwards.',
+    parameters: obj({
+      calendar_id: { type: 'string', description: "Calendar ID (default 'primary')" },
+      time_min: { type: 'string', description: 'Start of the time window, ISO 8601 or YYYY-MM-DD (default: now)' },
+      time_max: { type: 'string', description: 'End of the time window, ISO 8601 or YYYY-MM-DD' },
+      max_results: { type: 'number', description: 'Max events to return (default 20, max 100)' },
+      query: { type: 'string', description: 'Full-text search on event summaries and descriptions' },
+    }),
+    activity: 'connecting_service',
+    label: 'Checking calendar',
+    impl: calendarListEvents,
+  },
+  {
+    name: 'calendar_list_calendars',
+    description: 'List all Google Calendars the user has access to, with their IDs.',
+    parameters: obj({}),
+    activity: 'connecting_service',
+    label: 'Listing calendars',
+    impl: calendarListCalendars,
+  },
+  {
+    name: 'calendar_get_event',
+    description: 'Get the full details of a specific Google Calendar event.',
+    parameters: obj({
+      event_id: { type: 'string', description: 'Calendar event ID' },
+      calendar_id: { type: 'string', description: "Calendar ID (default 'primary')" },
+    }, ['event_id']),
+    activity: 'connecting_service',
+    label: 'Getting calendar event',
+    impl: calendarGetEvent,
+  },
+  {
+    name: 'calendar_create_event',
+    description: 'Create a Google Calendar event. Requires user approval.',
+    parameters: obj({
+      summary: { type: 'string', description: 'Event title' },
+      start: { type: 'string', description: 'Start time: ISO 8601 datetime or YYYY-MM-DD for all-day' },
+      end: { type: 'string', description: 'End time: ISO 8601 datetime or YYYY-MM-DD (defaults to 1 hour after start)' },
+      description: { type: 'string' },
+      location: { type: 'string' },
+      attendees: { type: 'array', items: { type: 'string' }, description: 'Attendee email addresses' },
+      timezone: { type: 'string', description: 'IANA timezone, e.g. America/New_York (default UTC)' },
+      calendar_id: { type: 'string', description: "Calendar ID (default 'primary')" },
+    }, ['summary', 'start']),
+    activity: 'connecting_service',
+    label: 'Creating calendar event',
+    policy: 'needs_approval',
+    impl: calendarCreateEvent,
+  },
+  {
+    name: 'calendar_update_event',
+    description: 'Update an existing Google Calendar event. Requires user approval.',
+    parameters: obj({
+      event_id: { type: 'string', description: 'Calendar event ID' },
+      calendar_id: { type: 'string', description: "Calendar ID (default 'primary')" },
+      summary: { type: 'string' },
+      start: { type: 'string', description: 'New start time: ISO 8601 or YYYY-MM-DD' },
+      end: { type: 'string', description: 'New end time: ISO 8601 or YYYY-MM-DD' },
+      description: { type: 'string' },
+      location: { type: 'string' },
+      timezone: { type: 'string' },
+    }, ['event_id']),
+    activity: 'connecting_service',
+    label: 'Updating calendar event',
+    policy: 'needs_approval',
+    impl: calendarUpdateEvent,
+  },
 ];
 
 export const toolMap = new Map(TOOLS.map((t) => [t.name, t]));
@@ -360,7 +481,14 @@ export const toolMap = new Map(TOOLS.map((t) => [t.name, t]));
 export type Decision = 'allow' | 'ask' | 'block';
 
 export function policyFor(userId: string, toolName: string, args: any): { decision: Decision; key: string; toolkit?: string; title: string } {
-  if (toolMap.has(toolName)) return { decision: 'allow', key: toolName, title: toolName };
+  const ownTool = toolMap.get(toolName);
+  if (ownTool) {
+    if (ownTool.policy !== 'needs_approval') return { decision: 'allow', key: toolName, title: toolName };
+    // Owned tool that requires approval — check the policy table (supports always_allow / blocked overrides).
+    const p = db.prepare('SELECT mode FROM policies WHERE user_id=? AND tool=?').get(userId, toolName) as any;
+    const mode = p?.mode ?? 'needs_approval';
+    return { decision: mode === 'blocked' ? 'block' : mode === 'always_allow' ? 'allow' : 'ask', key: toolName, title: ownTool.label };
+  }
   const slugs = innerToolSlugs(toolName, args);
   if (!slugs.length) {
     // Composio's sandbox can run app actions from code, which would slip past the per-action

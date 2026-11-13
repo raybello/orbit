@@ -13,6 +13,7 @@ import { assignEngine, provisionEngine, removeEngine, syncPersona } from './engi
 import { deleteMemory, listMemories, memoryBot } from './engine-memory.js';
 import { orgo } from './orgo.js';
 import { catalog, connectedToolkits, deleteConnection, disconnect, googleProfile, startConnect, startGoogleLogin, toolkitInfo } from './composio.js';
+import { generateAuthUrl, exchangeCode, hasGoogleAccess, googleEmail, revokeGoogle } from './google-oauth.js';
 import { runRoutine, scheduleRoutine, unscheduleRoutine } from './routines.js';
 import { deleteEventTrigger } from './triggers.js';
 import { dispatchRoomMessage } from './agent/rooms.js';
@@ -460,6 +461,54 @@ api.delete('/apps/:slug', async (c) => {
 api.get('/policies', (c) => c.json({ policies: db.prepare('SELECT tool, mode FROM policies WHERE user_id=?').all(c.get('user').id) }));
 api.delete('/policies/:tool', (c) => {
   db.prepare('DELETE FROM policies WHERE user_id=? AND tool=?').run(c.get('user').id, c.req.param('tool'));
+  return c.json({ ok: true });
+});
+
+// ---------- Google OAuth2 (direct, no Composio) ----------
+
+api.get('/google/status', (c) => {
+  const userId = c.get('user').id;
+  if (!env.googleClientId) return c.json({ configured: false, connected: false });
+  return c.json({ configured: true, connected: hasGoogleAccess(userId), email: googleEmail(userId) });
+});
+
+api.get('/google/connect', async (c) => {
+  if (!env.googleClientId || !env.googleClientSecret) return c.json({ error: 'Google OAuth is not configured on this server. Add GOOGLE_CLIENT_ID and GOOGLE_CLIENT_SECRET to .env.' }, 503);
+  const userId = c.get('user').id;
+  const cb = `${env.serverUrl}/api/google/callback`;
+  try {
+    const url = generateAuthUrl(userId, cb);
+    return c.json({ redirectUrl: url });
+  } catch (e: any) {
+    return c.json({ error: String(e?.message ?? e) }, 500);
+  }
+});
+
+api.get('/google/callback', async (c) => {
+  const state = c.req.query('state') ?? '';
+  const code = c.req.query('code') ?? '';
+  const error = c.req.query('error');
+  const cb = `${env.serverUrl}/api/google/callback`;
+  const ok = !error && !!code && !!state;
+  if (ok) {
+    try {
+      await exchangeCode(state, code, cb);
+    } catch (e) {
+      console.error('[google-oauth] callback error', (e as Error).message);
+      return c.html(`<!doctype html><meta charset="utf-8"><title>Google</title><body style="font-family:system-ui;padding:40px;text-align:center">Could not connect Google account. Please try again.<script>try{window.opener&&window.opener.postMessage({type:'grokbot-connected',provider:'google',ok:false},'*')}catch(e){}setTimeout(()=>window.close(),2000)</script></body>`);
+    }
+    hub.emit(
+      (db.prepare('SELECT user_id FROM google_oauth_states WHERE state=?').get(state) as any)?.user_id ?? '',
+      { type: 'connections' },
+    );
+  }
+  const msg = ok ? 'Google account connected. You can close this window.' : 'Connection failed or was cancelled.';
+  return c.html(`<!doctype html><meta charset="utf-8"><title>Google</title><body style="font-family:system-ui;padding:40px;text-align:center">${msg}<script>try{window.opener&&window.opener.postMessage({type:'grokbot-connected',provider:'google',ok:${ok}},'*')}catch(e){}setTimeout(()=>window.close(),800)</script></body>`);
+});
+
+api.delete('/google', async (c) => {
+  await revokeGoogle(c.get('user').id);
+  hub.emit(c.get('user').id, { type: 'connections' });
   return c.json({ ok: true });
 });
 

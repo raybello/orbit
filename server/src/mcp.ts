@@ -60,6 +60,19 @@ async function callTool(botId: string | null, rawName: string, args: any): Promi
   try {
     const own = toolMap.get(name);
     if (own) {
+      // Tools that require approval (e.g. gmail_send, calendar_create_event) go through the same
+      // approval gate as Composio write tools, so the user stays in control.
+      if (own.policy === 'needs_approval') {
+        const pol = policyFor(userId, name, args);
+        if (pol.decision === 'block') {
+          noteToolOutcome(botId, rowSeq, { status: 'denied', summary: 'Not allowed' });
+          return text(DECLINED);
+        }
+        if (pol.decision === 'ask') {
+          const answer = await requestApproval({ userId, botId }, pol, args, rowSeq);
+          if (answer !== 'allow') return text(answer === 'deny' ? DECLINED : SKIPPED);
+        }
+      }
       const r = await own.impl(args, ctx);
       if (r.endTurn) markSilent(botId);
       noteToolOutcome(botId, rowSeq, { status: 'done', summary: r.summary });
