@@ -1,6 +1,7 @@
 import { useState } from 'react';
 import type { MessageFile } from '@shared/types';
 import { Icon } from './Icon';
+import { ImageViewer } from './ImageViewer';
 
 function fileUrl(botId: string, file: MessageFile): string {
   return `/api/bots/${botId}/files/raw?path=${encodeURIComponent(file.path)}`;
@@ -43,17 +44,7 @@ function ImagePreview({ file, botId }: { file: MessageFile; botId: string }) {
           <Icon name="expand" size={11} opacity={0.5} />
         </div>
       </button>
-      {lightbox && (
-        <div className="file-lightbox" onClick={() => setLightbox(false)} role="dialog" aria-modal aria-label={file.filename}>
-          <button type="button" className="file-lightbox__close" onClick={() => setLightbox(false)} aria-label="Close">
-            <Icon name="close" size={16} />
-          </button>
-          <img src={url} alt={file.filename} className="file-lightbox__img" onClick={(e) => e.stopPropagation()} />
-          <a href={url} download={file.filename} className="file-lightbox__download" onClick={(e) => e.stopPropagation()}>
-            Download
-          </a>
-        </div>
-      )}
+      {lightbox && <ImageViewer url={url} name={file.filename} onClose={() => setLightbox(false)} />}
     </>
   );
 }

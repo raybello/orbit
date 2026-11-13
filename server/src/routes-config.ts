@@ -5,10 +5,13 @@ import { newId } from './lib/ids.js';
 import { hub } from './lib/hub.js';
 import { requireUser, type AuthVars } from './lib/auth.js';
 import fs from 'node:fs';
+import path from 'node:path';
+import { mediaTypeFor } from './lib/mime.js';
 import { Readable } from 'node:stream';
 import { env } from './env.js';
 import { emitBot, getBotRow, listRoutines, listTasks } from './store.js';
-import { computerState, readyScreen, resetBotScreen } from './computer.js';
+import { computerState, readyScreen } from './computer.js';
+import { computerKindFor, providerFor } from './computer-provider-registry.js';
 import { box } from './box.js';
 import { orgo } from './orgo.js';
 import { openTerminal } from './desk.js';
@@ -146,6 +149,9 @@ configApi.post('/bots/:id/engine/login', async (c) => {
   const home = engineHome(b.id);
   if (!home) return c.json({ error: 'This bot has no agent.' }, 409);
   // The agent's files are on the machine this server runs on; a terminal on another machine cannot reach them.
+  if (computerKindFor(b.id) === 'docker') {
+    return c.json({ error: 'Sign-in opens a terminal on the computer where the agent lives, and this Bot has a computer of its own. Use the model settings instead.' }, 409);
+  }
   if (!box.local) return c.json({ error: 'Sign-in opens a terminal on the computer. It works once the app runs on that computer.' }, 409);
   const { provider } = await c.req.json<{ provider?: string }>().catch(() => ({} as { provider?: string }));
   if (provider !== undefined && !/^[a-z0-9][a-z0-9._-]{0,40}$/.test(provider)) return c.json({ error: 'bad provider' }, 400);
@@ -201,18 +207,6 @@ configApi.post('/bots/:id/handback', (c) => {
 const LIB_ROOT = `${env.botDataDir}/files`;
 
 /** Media types served from a bot's private Library. Unknown files stay downloads. */
-const MIME_BY_EXTENSION: Record<string, string> = {
-  avif: 'image/avif', gif: 'image/gif', jpg: 'image/jpeg', jpeg: 'image/jpeg', png: 'image/png', svg: 'image/svg+xml', webp: 'image/webp',
-  mp3: 'audio/mpeg', m4a: 'audio/mp4', ogg: 'audio/ogg', wav: 'audio/wav',
-  mp4: 'video/mp4', webm: 'video/webm', pdf: 'application/pdf',
-  csv: 'text/csv; charset=utf-8', json: 'application/json; charset=utf-8', md: 'text/markdown; charset=utf-8', txt: 'text/plain; charset=utf-8',
-};
-
-function mediaTypeFor(name: string) {
-  const ext = name.split('.').pop()?.toLowerCase() ?? '';
-  return MIME_BY_EXTENSION[ext] ?? 'application/octet-stream';
-}
-
 function safeRel(p: string | undefined): string | null {
   const rel = (p ?? '').replace(/^\/+|\/+$/g, '');
   if (!rel) return '';
@@ -245,6 +239,24 @@ configApi.get('/bots/:id/files', async (c) => {
   try {
     if (!box.local && computerState(user.id).status !== 'running') return c.json({ status: 'asleep', path: rel, files: [] });
     const dir = `${LIB_ROOT}/${b.id}${rel ? `/${rel}` : ''}`;
+    if (box.local) {
+      // On this machine the Library is ordinary files: read it directly, so the listing works
+      // whatever `ls` is installed (BSD ls has no --time-style).
+      fs.mkdirSync(`${LIB_ROOT}/${b.id}`, { recursive: true });
+      const files = fs.readdirSync(dir, { withFileTypes: true }).map((e) => {
+        let size = 0; let modifiedAt = 0;
+        try {
+          const st = fs.statSync(path.join(dir, e.name));
+          size = st.size; modifiedAt = st.mtimeMs;
+        } catch { /* a broken link counts as an empty file */ }
+        return { name: e.name, size, modifiedAt, isDir: e.isDirectory() };
+      });
+      return c.json({
+        status: 'ok',
+        path: rel,
+        files: files.sort((a, b) => Number(b.isDir) - Number(a.isDir) || b.modifiedAt - a.modifiedAt),
+      });
+    }
     const r = await box.bash(`mkdir -p ${shq(`${LIB_ROOT}/${b.id}`)} && ls -la --time-style=+%s ${shq(dir)} 2>&1`, 30);
     if (r.exit_code !== 0) return c.json({ status: 'error', path: rel, files: [], error: (r.output ?? '').slice(0, 300) });
     return c.json({ status: 'ok', path: rel, files: parseLs(r.output ?? '') });
@@ -318,7 +330,7 @@ configApi.post('/bots/:id/screen/reset', async (c) => {
   const b = ownBot(user.id, c.req.param('id'));
   if (!b) return c.json({ error: 'not found' }, 404);
   try {
-    await resetBotScreen(user.id, b.id);
+    await providerFor(b.id).resetScreen(user.id, b.id);
     hub.emit(user.id, { type: 'computer', state: computerState(user.id) });
     return c.json({ ok: true });
   } catch (e: any) {

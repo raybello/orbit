@@ -66,6 +66,32 @@ export const env = {
   /** Comma-separated emails allowed to sign in; empty = anyone who can reach the app. */
   allowedEmails: (process.env.ALLOWED_EMAILS ?? '').split(',').map((s) => s.trim().toLowerCase()).filter(Boolean),
 
+  // ---- per-bot Docker computers ----
+  /**
+   * Where a bot's computer runs: 'orgo' (the one shared computer), 'docker' (a container per bot)
+   * or 'auto' (docker for managed bots, orgo for the primary bot). The primary bot always stays on
+   * the Orgo/local path: it is somebody's live desktop.
+   */
+  computerKind: (process.env.COMPUTER_KIND ?? 'auto').trim().toLowerCase() as 'orgo' | 'docker' | 'auto',
+  /** Image for bot containers. Unqualified names are built locally from server/docker/computer. */
+  computerImage: process.env.COMPUTER_IMAGE ?? 'orbit/computer:local',
+  /** Minutes without a viewer (or bot work) before a bot's container is suspended. */
+  computerIdleTimeoutMin: Number(process.env.COMPUTER_IDLE_TIMEOUT_MIN ?? 30),
+  computerCpuLimit: Number(process.env.COMPUTER_CPU_LIMIT ?? 2),
+  /** Docker memory limit per container ("2g", "1536m"). */
+  computerMemoryLimit: process.env.COMPUTER_MEMORY_LIMIT ?? '2g',
+  /** Docker network for bot containers. Ports are published on 127.0.0.1 only. */
+  computerNetwork: process.env.COMPUTER_NETWORK ?? 'bridge',
+  dockerSocket: process.env.DOCKER_SOCKET ?? '',
+  /** Display index ceilings for bot screens (each index owns one VNC and one CDP port). */
+  computerMaxDisplays: Number(process.env.COMPUTER_MAX_DISPLAYS ?? 50),
+  /** Model a managed Bot starts on when the user has not chosen one (DeepSeek's flash model). */
+  defaultBotModel: process.env.DEFAULT_BOT_MODEL ?? 'deepseek-flash',
+  defaultBotProvider: process.env.DEFAULT_BOT_PROVIDER ?? 'deepseek',
+  /** Host directory holding each bot's home folder and workspace checkpoints. */
+  computerHomeDir: process.env.COMPUTER_HOME_DIR ?? new URL('../../data/computers', import.meta.url).pathname,
+
+
   // ---- Google OAuth2 (direct, no third-party service required) ----
   /** OAuth2 client ID from your Google Cloud Console project. */
   googleClientId: process.env.GOOGLE_CLIENT_ID ?? '',

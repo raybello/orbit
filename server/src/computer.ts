@@ -4,7 +4,9 @@ import { hub } from './lib/hub.js';
 import { orgo, OrgoError, type OrgoScreen } from './orgo.js';
 import { cdpPortFor, dressScreen, resetScreen, undressScreen, type DeskBot } from './desk.js';
 import { box } from './box.js';
+import type { ComputerProvider, ComputerRef, ScreenShot, VncStream } from './computer-provider.js';
 import type { ComputerState } from './types.js';
+import { websocketVncStream } from './lib/vnc-stream.js';
 
 /**
  * One Orgo computer for the whole team (ORGO_COMPUTER_ID), one screen per bot. The primary bot's
@@ -45,7 +47,17 @@ export function computerState(userId: string): ComputerState {
     screenId: s.screen_id as string,
     ...(s.width && s.height ? { width: s.width as number, height: s.height as number } : {}),
   }));
-  return { status: r.status, orgoId: env.orgoComputerId || r.orgo_id, error: r.error, screens, maxScreens: Math.min(env.maxBots, MAX_SCREENS) };
+  // Bots with a computer of their own (Docker) have screens too, and those start on demand rather
+  // than waiting for one shared machine to wake.
+  const own = db.prepare(
+    `SELECT cs.bot_id, cs.screen_id FROM computer_screens cs JOIN bots b ON b.id=cs.bot_id WHERE b.user_id=?`,
+  ).all(userId) as { bot_id: string; screen_id: string }[];
+  for (const s of own) if (!screens.some((x) => x.botId === s.bot_id)) screens.push({ botId: s.bot_id, screenId: s.screen_id });
+  // With no shared computer, every Bot's desktop is its own container and starts on demand; that is
+  // a healthy state, not a missing Orgo computer.
+  const status = !env.orgoComputerId && env.computerKind !== 'orgo' ? 'running' : r.status;
+  const maxScreens = env.orgoComputerId ? Math.min(env.maxBots, MAX_SCREENS) : env.maxBots;
+  return { status, orgoId: env.orgoComputerId || r.orgo_id, error: r.error, screens, maxScreens };
 }
 
 function mapStatus(s: string): ComputerState['status'] {
@@ -191,7 +203,7 @@ export async function readyScreen(userId: string, botId: string, opts: { redress
   if (!d) {
     const bot = deskBot(botId);
     d = bot
-      ? dressScreen(bot, s.screenId, { manageChrome: managesChrome(botId) }).catch((e) => {
+      ? dressScreen(bot, s.screenId, box, { manageChrome: managesChrome(botId) }).catch((e) => {
           console.warn(`[computer] could not dress ${s.screenId} for ${botId}: ${e?.message ?? e}`);
           dressing.delete(botId);
         })
@@ -229,7 +241,7 @@ export async function screenForWork(userId: string, botId: string): Promise<void
 export async function resetBotScreen(userId: string, botId: string): Promise<void> {
   const s = await screenFor(userId, botId);
   const bot = deskBot(botId);
-  if (bot) await resetScreen(bot, s.screenId, { manageChrome: managesChrome(botId) });
+  if (bot) await resetScreen(bot, s.screenId, box, { manageChrome: managesChrome(botId) });
 }
 
 /** The bot is gone: stop what we ran on its screen and free the screen for the next bot. */
@@ -257,6 +269,11 @@ export async function suspendComputer(_userId: string, _reason = 'manual'): Prom
 /** Refresh status and screen sizes from Orgo (cheap; used when the UI opens). */
 export async function refreshComputer(userId: string): Promise<ComputerState> {
   if (!env.orgoComputerId) {
+    // Nothing shared to ask about: any screens a Bot has are its own container's, started on demand.
+    if (env.computerKind !== 'orgo') {
+      setStatus(userId, 'running');
+      return computerState(userId);
+    }
     setStatus(userId, 'error', 'ORGO_COMPUTER_ID is not set.');
     return computerState(userId);
   }
@@ -275,3 +292,99 @@ export async function refreshComputer(userId: string): Promise<ComputerState> {
   }
   return computerState(userId);
 }
+
+// ---------------------------------------------------------------- the provider
+
+/** The user who owns a bot (the Orgo functions are per-user; the provider interface is per-bot). */
+function userIdFor(botId: string): string {
+  const row = db.prepare('SELECT user_id, engine FROM bots WHERE id=?').get(botId) as any;
+  if (!row) throw new Error(`No bot ${botId}`);
+  return row.user_id as string;
+}
+
+/**
+ * The shared Orgo computer, behind the same interface a Docker container implements. Everything
+ * delegates to the functions above: the primary bot and every bot on the shared computer keep the
+ * behaviour they had before the provider split.
+ */
+export class OrgoComputerProvider implements ComputerProvider {
+  readonly kind = 'orgo' as const;
+
+  async ensureComputer(botId: string): Promise<ComputerRef> {
+    return { computerId: await ensureComputer(userIdFor(botId)), kind: 'orgo' };
+  }
+
+  screenIdFor(botId: string): string | null {
+    const row = db.prepare('SELECT screen_id FROM screens WHERE bot_id=?').get(botId) as any;
+    return (row?.screen_id as string) ?? null;
+  }
+
+  async screenFor(userId: string, botId: string): Promise<{ computerId: string; screenId: string }> {
+    const s = await screenFor(userId, botId);
+    return { computerId: s.computerId, screenId: s.screenId };
+  }
+
+  async readyScreen(userId: string, botId: string, opts: { redress?: boolean } = {}): Promise<void> {
+    await readyScreen(userId, botId, opts);
+  }
+
+  async resetScreen(userId: string, botId: string): Promise<void> {
+    await resetBotScreen(userId, botId);
+  }
+
+  async bash(botId: string, command: string, timeoutSec = 60, screenId?: string | null) {
+    return box.bash(command, timeoutSec, screenId);
+  }
+
+  async writeFile(botId: string, file: string, content: string | Buffer, mode = '0644'): Promise<void> {
+    await box.writeFile(file, content, mode);
+  }
+
+  async readFile(botId: string, file: string): Promise<Buffer | null> {
+    return box.readFile(file);
+  }
+
+  async cdpUrl(botId: string, screenId: string): Promise<string> {
+    return cdpUrlFor(botId, screenId);
+  }
+
+  async vncConnect(userId: string, botId: string, screenId: string): Promise<VncStream> {
+    const { computerId } = await this.screenFor(userId, botId);
+    const { password } = await orgo.vncPassword(computerId);
+    const url = `wss://www.orgo.ai/desktops/${computerId}/ws/websockify?token=${encodeURIComponent(password)}${screenId !== 'default' ? `&screen=${encodeURIComponent(screenId)}` : ''}`;
+    return websocketVncStream(url);
+  }
+
+  async vncPassword(botId: string): Promise<string> {
+    const { password } = await orgo.vncPassword(computerId());
+    return password;
+  }
+
+  /** On Orgo the relay's own mode is the lease: a control viewer may type, a watch viewer may not. */
+  async inputAllowed(_botId: string, _screenId: string, mode: 'watch' | 'control'): Promise<boolean> {
+    return mode === 'control';
+  }
+
+  async takeControl(): Promise<void> {}
+  async giveControl(): Promise<void> {}
+
+  async screenshot(botId: string, screenId: string): Promise<ScreenShot | null> {
+    try {
+      const s = await orgo.screenshot(computerId(), screenId);
+      const b64 = s.image.replace(/^data:[^,]+,/, '');
+      return { data: Buffer.from(b64, 'base64'), mime: s.mime_type ?? 'image/jpeg' };
+    } catch {
+      return null;
+    }
+  }
+
+  /** The shared computer is somebody's working machine: it is never suspended from here. */
+  async suspend(): Promise<void> {}
+
+  async destroy(botId: string): Promise<void> {
+    await releaseScreen(botId);
+    await forgetBotFiles(botId).catch(() => undefined);
+  }
+}
+
+export const orgoProvider = new OrgoComputerProvider();

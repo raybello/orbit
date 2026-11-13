@@ -3,14 +3,35 @@ import fs from 'node:fs/promises';
 import path from 'node:path';
 import { env } from './env.js';
 import { orgo } from './orgo.js';
+import { dockerBox } from './docker/docker-box.js';
 
 /**
- * The box: the one Orgo computer every bot works on. When this server runs on that computer
- * (HQ_LOCAL=1) commands and files go straight to the local shell and disk; otherwise they go
- * through Orgo's API to ORGO_COMPUTER_ID.
+ * The box: where a bot's desktop commands run. The primary bot works on the one Orgo computer
+ * (or on this machine when HQ_LOCAL=1); a managed bot works inside its own Docker container.
+ * Everything here speaks the same small interface, so the desk scripts (desk.ts) do not care
+ * which one they are talking to.
  */
 
 export interface BashResult { output: string; exit_code: number }
+
+export interface Box {
+  /** True when this box is the machine the server itself runs on. */
+  local: boolean;
+  /** Run a bash command on the box. `screenId` picks which screen's DISPLAY it sees. */
+  bash(command: string, timeoutSec?: number, screenId?: string | null): Promise<BashResult>;
+  /** Write a file, creating its directory. `mode` is an octal string such as '0755'. */
+  writeFile(file: string, content: string | Buffer, mode?: string): Promise<void>;
+  /** Read a file, or null if it is not there. Meant for small files. */
+  readFile(file: string): Promise<Buffer | null>;
+  /** A path safe to put inside single quotes in a shell command. */
+  quote(s: string): string;
+}
+
+/** Which computer a box talks to. */
+export type BoxTarget =
+  | { kind: 'local' }
+  | { kind: 'orgo'; computerId: string }
+  | { kind: 'docker'; containerId: string };
 
 /** Orgo screen id -> X display. The default screen is :99, "screen-100" is :100. */
 export const displayFor = (screenId?: string | null) => (!screenId || screenId === 'default' ? ':99' : `:${screenId.replace('screen-', '')}`);
@@ -36,48 +57,88 @@ function localBash(command: string, timeoutSec: number, screenId?: string | null
 }
 
 /** A path safe to put inside single quotes in a shell command. */
-const q = (s: string) => `'${s.replace(/'/g, `'\\''`)}'`;
+export const quotePath = (s: string) => `'${s.replace(/'/g, "'\\''")}'`;
 
-export const box = {
-  local: env.localBox,
+const q = quotePath;
 
-  /** Run a bash command on the box. `screenId` picks which screen's DISPLAY it sees. */
-  async bash(command: string, timeoutSec = 60, screenId?: string | null): Promise<BashResult> {
-    if (env.localBox) return localBash(command, timeoutSec, screenId);
-    if (!env.orgoComputerId) throw new Error('ORGO_COMPUTER_ID is not set');
-    const cmd = `export DISPLAY=${displayFor(screenId)}; ${command}`;
-    const r = await orgo.bash(env.orgoComputerId, screenId ?? undefined, cmd, timeoutSec);
-    return { output: r.output ?? '', exit_code: r.exit_code ?? (r.success ? 0 : 1) };
-  },
-
-  async writeFile(file: string, content: string | Buffer, mode = '0644'): Promise<void> {
-    const buf = typeof content === 'string' ? Buffer.from(content, 'utf8') : content;
-    if (env.localBox) {
+/** A box on this machine (HQ_LOCAL=1). */
+function localBox(): Box {
+  return {
+    local: true,
+    bash: (command, timeoutSec = 60, screenId) => localBash(command, timeoutSec, screenId),
+    async writeFile(file, content, mode = '0644') {
+      const buf = typeof content === 'string' ? Buffer.from(content, 'utf8') : content;
       await fs.mkdir(path.dirname(file), { recursive: true });
       await fs.writeFile(file, buf);
       await fs.chmod(file, parseInt(mode, 8));
-      return;
-    }
-    // Orgo drops very long commands, so the file goes over in base64 pieces.
-    const b64 = buf.toString('base64');
-    const tmp = `${file}.b64`;
-    const first = await box.bash(`mkdir -p ${q(path.dirname(file))} && : > ${q(tmp)} && echo ok`, 30);
-    if (!first.output.includes('ok')) throw new Error(`could not write ${file}: ${first.output.slice(0, 200)}`);
-    for (let i = 0; i < b64.length; i += 60000) await box.bash(`printf '%s' '${b64.slice(i, i + 60000)}' >> ${q(tmp)}`, 30);
-    const done = await box.bash(`base64 -d ${q(tmp)} > ${q(file)} && rm -f ${q(tmp)} && chmod ${mode} ${q(file)} && echo ok`, 30);
-    if (!done.output.includes('ok')) throw new Error(`could not write ${file}: ${done.output.slice(0, 200)}`);
-  },
-
-  /** Read a file from the box, or null if it isn't there. Meant for small files (under ~4 MB). */
-  async readFile(file: string): Promise<Buffer | null> {
-    if (env.localBox) {
+    },
+    async readFile(file) {
       try { return await fs.readFile(file); } catch { return null; }
-    }
-    const r = await box.bash(`[ -f ${q(file)} ] && base64 -w0 ${q(file)} || echo __missing__`, 60);
-    const out = r.output.trim();
-    if (!out || out.endsWith('__missing__')) return null;
-    return Buffer.from(out, 'base64');
-  },
+    },
+    quote: q,
+  };
+}
 
-  quote: q,
-};
+/** A box on one Orgo computer, through Orgo's API. */
+export function orgoBox(computerId: string): Box {
+  const b: Box = {
+    local: false,
+    async bash(command, timeoutSec = 60, screenId) {
+      const cmd = `export DISPLAY=${displayFor(screenId)}; ${command}`;
+      const r = await orgo.bash(computerId, screenId ?? undefined, cmd, timeoutSec);
+      return { output: r.output ?? '', exit_code: r.exit_code ?? (r.success ? 0 : 1) };
+    },
+    async writeFile(file, content, mode = '0644') {
+      // Orgo drops very long commands, so the file goes over in base64 pieces.
+      const buf = typeof content === 'string' ? Buffer.from(content, 'utf8') : content;
+      const b64 = buf.toString('base64');
+      const tmp = `${file}.b64`;
+      const first = await b.bash(`mkdir -p ${q(path.dirname(file))} && : > ${q(tmp)} && echo ok`, 30);
+      if (!first.output.includes('ok')) throw new Error(`could not write ${file}: ${first.output.slice(0, 200)}`);
+      for (let i = 0; i < b64.length; i += 60000) await b.bash(`printf '%s' '${b64.slice(i, i + 60000)}' >> ${q(tmp)}`, 30);
+      const done = await b.bash(`base64 -d ${q(tmp)} > ${q(file)} && rm -f ${q(tmp)} && chmod ${mode} ${q(file)} && echo ok`, 30);
+      if (!done.output.includes('ok')) throw new Error(`could not write ${file}: ${done.output.slice(0, 200)}`);
+    },
+    async readFile(file) {
+      const r = await b.bash(`[ -f ${q(file)} ] && base64 -w0 ${q(file)} || echo __missing__`, 60);
+      const out = r.output.trim();
+      if (!out || out.endsWith('__missing__')) return null;
+      return Buffer.from(out, 'base64');
+    },
+    quote: q,
+  };
+  return b;
+}
+
+/** Build a box bound to a specific computer. */
+export function boxFor(target: BoxTarget): Box {
+  if (target.kind === 'docker') return dockerBox(target.containerId);
+  if (target.kind === 'orgo') return orgoBox(target.computerId);
+  return localBox();
+}
+
+/**
+ * The box this server works on by default: the local shell when the server runs on the computer,
+ * else the shared Orgo computer. Managed bots never use this one — they get a box of their own.
+ */
+export const box: Box = env.localBox
+  ? localBox()
+  : {
+      local: false,
+      async bash(command, timeoutSec = 60, screenId) {
+        // Orgo path; resolved lazily so a missing ORGO_COMPUTER_ID only fails when used.
+        if (!env.orgoComputerId) throw new Error('ORGO_COMPUTER_ID is not set');
+        return orgoBox(env.orgoComputerId).bash(command, timeoutSec, screenId);
+      },
+      async writeFile(file, content, mode = '0644') {
+        if (!env.orgoComputerId) throw new Error('ORGO_COMPUTER_ID is not set');
+        return orgoBox(env.orgoComputerId).writeFile(file, content, mode);
+      },
+      async readFile(file) {
+        if (!env.orgoComputerId) throw new Error('ORGO_COMPUTER_ID is not set');
+        return orgoBox(env.orgoComputerId).readFile(file);
+      },
+      quote: q,
+    };
+
+// The global box above satisfies the Box interface for desk.ts; managed bots get a box of their own.

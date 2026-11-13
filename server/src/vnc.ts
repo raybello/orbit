@@ -3,16 +3,18 @@ import { WebSocket, WebSocketServer } from 'ws';
 import { db } from './db.js';
 import { userFromCookieHeader } from './lib/auth.js';
 import { vncAuthResponse } from './lib/des.js';
-import { orgo } from './orgo.js';
-import { readyScreen, screenFor } from './computer.js';
-import { viewerClosed, viewerOpened } from './idle.js';
+import { providerFor } from './computer-provider-registry.js';
+import { viewerClosed, viewerOpened, botViewerClosed, botViewerOpened } from './idle.js';
+import type { VncStream } from './computer-provider.js';
 
 /**
- * VNC relay: browser <-> our server <-> Orgo websockify.
- * The server performs the RFB handshake upstream with the computer's VNC password
- * (which is root-equivalent and never reaches the browser), then offers the browser
- * an unauthenticated RFB session. In "watch" mode, client input messages
- * (KeyEvent, PointerEvent, ClientCutText) are dropped server-side.
+ * VNC relay: browser <-> our server <-> the bot's computer.
+ * The upstream is a WebSocket to Orgo's websockify for the shared computer, or a plain TCP socket
+ * to a container's x11vnc for a managed bot; both arrive here as VncStreams. The server performs
+ * the RFB handshake upstream with the computer's VNC password (which is root-equivalent and never
+ * reaches the browser), then offers the browser an unauthenticated RFB session. In "watch" mode,
+ * client input messages (KeyEvent, PointerEvent, ClientCutText) are dropped server-side; a control
+ * viewer may type.
  */
 
 class ByteQueue {
@@ -137,39 +139,113 @@ export function attachVncRelay(server: Server) {
   });
 }
 
+/**
+ * Splits a client->server RFB stream into key events (to be applied on the computer itself) and the
+ * rest (which still goes to the VNC server). Needed because a VNC server's synthetic keystrokes do
+ * not reach X inside a bot's container; xdotool does.
+ */
+class KeySplitter {
+  private pending = Buffer.alloc(0);
+  feed(chunk: Buffer): { forward: Buffer; keys: { keysym: number; down: boolean }[] } {
+    this.pending = Buffer.concat([this.pending, chunk]);
+    const out: Buffer[] = [];
+    const keys: { keysym: number; down: boolean }[] = [];
+    for (;;) {
+      const b = this.pending;
+      if (!b.length) break;
+      const len = msgLength(b);
+      if (len === -1) {
+        out.push(b);
+        this.pending = Buffer.alloc(0);
+        break;
+      }
+      if (len === 0 || b.length < len) break;
+      if (b[0] === 4) keys.push({ down: b[1] === 1, keysym: b.readUInt32BE(4) });
+      else out.push(Buffer.from(b.subarray(0, len)));
+      this.pending = b.subarray(len);
+    }
+    return { forward: Buffer.concat(out), keys };
+  }
+}
+
+/** How many control viewers each bot has; the last one out hands control back. */
+const controllers = new Map<string, number>();
+
 async function relay(client: WebSocket, userId: string, botId: string, mode: 'watch' | 'control') {
   const fromClient = new ByteQueue();
   const fromUp = new ByteQueue();
-  let upstream: WebSocket | null = null;
+  let upstream: VncStream | null = null;
   let piping = false;
+  let inputAllowed = mode === 'control';
+  let holdsControl = false;
+  let currentScreenId = '';
   const filter = new WatchFilter();
+  const splitter = new KeySplitter();
+  const provider = providerFor(botId);
+  const translateKeys = Boolean(provider.translateKeys && provider.pressKey);
   const closeAll = (code = 1000, reason = '') => {
     try { client.close(code, reason.slice(0, 120)); } catch { /* */ }
     try { upstream?.close(); } catch { /* */ }
   };
+  const forward = (data: Buffer) => {
+    if (process.env.VNC_DEBUG === '1') console.log(`[vnc] in type=${data[0]} len=${data.length} allowed=${inputAllowed} keys=${translateKeys}`);
+    if (!inputAllowed) {
+      const fwd = filter.feed(data);
+      if (fwd.length) upstream?.send(fwd);
+      return;
+    }
+    if (!translateKeys) {
+      upstream?.send(data);
+      return;
+    }
+    // Keys are applied on the computer itself; everything else still goes to the VNC server.
+    const { forward: rest, keys } = splitter.feed(data);
+    if (rest.length) upstream?.send(rest);
+    for (const k of keys) void provider.pressKey?.(botId, currentScreenId, k.keysym, k.down);
+  };
 
   client.on('message', (data: Buffer) => {
     if (!piping) return fromClient.push(Buffer.from(data));
-    const fwd = mode === 'watch' ? filter.feed(Buffer.from(data)) : Buffer.from(data);
-    if (fwd.length && upstream?.readyState === WebSocket.OPEN) upstream.send(fwd);
+    forward(Buffer.from(data));
   });
-  client.on('close', () => { viewerClosed(userId); fromClient.close(new Error('client closed')); try { upstream?.close(); } catch { /* */ } });
+  client.on('close', () => {
+    viewerClosed(userId);
+    botViewerClosed(botId);
+    fromClient.close(new Error('client closed'));
+    try { upstream?.close(); } catch { /* */ }
+    if (holdsControl) {
+      const left = Math.max(0, (controllers.get(botId) ?? 1) - 1);
+      if (left === 0) {
+        controllers.delete(botId);
+        void provider.giveControl(botId, getScreenId(botId)).catch(() => undefined);
+      } else controllers.set(botId, left);
+    }
+  });
   viewerOpened(userId); // keeps the computer awake while someone is watching (see idle.ts)
+  botViewerOpened(botId);
 
   try {
-    const { computerId, screenId } = await screenFor(userId, botId);
+    const { screenId } = await provider.screenFor(userId, botId);
+    currentScreenId = screenId;
     // A screen nobody has used yet is bare; set it up while the person is already watching.
-    readyScreen(userId, botId).catch(() => {});
-    const { password } = await orgo.vncPassword(computerId);
-    const upUrl = `wss://www.orgo.ai/desktops/${computerId}/ws/websockify?token=${encodeURIComponent(password)}${screenId !== 'default' ? `&screen=${encodeURIComponent(screenId)}` : ''}`;
-    upstream = new WebSocket(upUrl, ['binary']);
-    upstream.on('message', (data: Buffer) => {
-      if (!piping) return fromUp.push(Buffer.from(data));
+    provider.readyScreen(userId, botId).catch(() => {});
+    const password = await provider.vncPassword(botId, screenId);
+    upstream = await provider.vncConnect(userId, botId, screenId, mode);
+    inputAllowed = await provider.inputAllowed(botId, screenId, mode);
+    if (process.env.VNC_DEBUG === '1') console.log(`[vnc] mode=${mode} allowed=${inputAllowed} provider=${provider.kind}`);
+    if (mode === 'control') {
+      holdsControl = true;
+      controllers.set(botId, (controllers.get(botId) ?? 0) + 1);
+      await provider.takeControl(botId, screenId).catch(() => undefined);
+    }
+    upstream.onData((data) => {
+      if (!piping) return fromUp.push(data);
       if (client.readyState === WebSocket.OPEN) client.send(data);
     });
-    upstream.on('close', (code, reason) => { fromUp.close(new Error(`upstream closed ${code}`)); closeAll(1000, `upstream ${code} ${reason}`); });
-    upstream.on('error', (e) => { fromUp.close(e as Error); closeAll(1011, String(e)); });
-    await new Promise<void>((res, rej) => { upstream!.once('open', () => res()); upstream!.once('error', rej); });
+    upstream.onClose((reason) => {
+      fromUp.close(new Error(reason));
+      closeAll(1000, reason);
+    });
 
     const serverInit = await upstreamHandshake(fromUp, (b) => upstream!.send(b), password);
     await browserHandshake(fromClient, (b) => client.send(b), serverInit);
@@ -178,12 +254,17 @@ async function relay(client: WebSocket, userId: string, botId: string, mode: 'wa
     const leftoverUp = fromUp.takeAll();
     if (leftoverUp.length) client.send(leftoverUp);
     const leftoverClient = fromClient.takeAll();
-    if (leftoverClient.length) {
-      const fwd = mode === 'watch' ? filter.feed(leftoverClient) : leftoverClient;
-      if (fwd.length) upstream.send(fwd);
-    }
+    if (leftoverClient.length) forward(leftoverClient);
   } catch (e: any) {
-    console.warn('[vnc] relay failed', e?.message ?? e);
-    closeAll(1011, String(e?.message ?? e));
+    const message = String(e?.message ?? e);
+    // A person closing the tab mid-handshake is not a failure worth a warning.
+    if (!/client closed/i.test(message)) console.warn('[vnc] relay failed', message);
+    closeAll(1011, message);
   }
+}
+
+/** The bot's screen id, for the control handback when the relay itself does not hold one. */
+function getScreenId(botId: string): string {
+  const row = db.prepare('SELECT screen_id FROM computer_screens WHERE bot_id=? ORDER BY display_index LIMIT 1').get(botId) as any;
+  return (row?.screen_id as string) ?? 'default';
 }

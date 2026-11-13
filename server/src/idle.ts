@@ -32,6 +32,25 @@ export function viewerClosed(userId: string) {
 
 export const viewerCount = (userId: string) => viewers.get(userId) ?? 0;
 
+/** Per-bot viewers, for suspending a bot's own container when nobody is looking at it. */
+const botViewers = new Map<string, number>();
+const botSeen = new Map<string, number>();
+
+export function botViewerOpened(botId: string) {
+  botViewers.set(botId, (botViewers.get(botId) ?? 0) + 1);
+  botSeen.set(botId, Date.now());
+}
+
+export function botViewerClosed(botId: string) {
+  const n = Math.max(0, (botViewers.get(botId) ?? 1) - 1);
+  if (n) botViewers.set(botId, n); else botViewers.delete(botId);
+  botSeen.set(botId, Date.now());
+}
+
+export const botViewerCount = (botId: string) => botViewers.get(botId) ?? 0;
+/** When this bot's screen was last looked at (0 if never). */
+export const botLastSeen = (botId: string) => botSeen.get(botId) ?? 0;
+
 // ---------- decision logic (pure, unit-testable) ----------
 
 export interface IdleDeps {

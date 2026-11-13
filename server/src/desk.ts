@@ -1,7 +1,7 @@
 import { createHash } from 'node:crypto';
 import fs from 'node:fs';
 import { gzipSync } from 'node:zlib';
-import { box, displayFor } from './box.js';
+import { box as defaultBox, displayFor, type Box } from './box.js';
 
 /**
  * The desk: what makes one screen of the shared computer look like one bot's own tidy computer.
@@ -71,21 +71,21 @@ function parseReply(output: string): Reply {
 }
 
 /** One call to hq-screen.py. A missing or failing script answers NOBASE so the caller can install it. */
-async function script(args: string[], screenId?: string, timeoutSec = 60): Promise<Reply> {
-  const cmd = `[ -f ${SCRIPT} ] && python3 ${SCRIPT} ${args.map(box.quote).join(' ')} 2>&1 || echo HQ_NOBASE`;
-  const r = await box.bash(cmd, timeoutSec, screenId);
+async function script(b: Box, args: string[], screenId?: string, timeoutSec = 60): Promise<Reply> {
+  const cmd = `[ -f ${SCRIPT} ] && python3 ${SCRIPT} ${args.map(b.quote).join(' ')} 2>&1 || echo HQ_NOBASE`;
+  const r = await b.bash(cmd, timeoutSec, screenId);
   return parseReply(r.output);
 }
 
 interface JobResult { ok?: boolean; error?: string; warnings?: string[]; [k: string]: unknown }
 
 /** Follow a detached job on the computer to its end. Its warnings are logged; a failure throws. */
-async function finish(first: Reply, what: string, maxSec: number): Promise<JobResult> {
+async function finish(b: Box, first: Reply, what: string, maxSec: number): Promise<JobResult> {
   let reply = first;
   const end = Date.now() + maxSec * 1000;
   while (reply.kind === 'RUNNING') {
     if (Date.now() > end) throw new Error(`${what} is taking too long (still running after ${maxSec}s)`);
-    reply = await script(['wait', reply.rest.trim(), '25']);
+    reply = await script(b, ['wait', reply.rest.trim(), '25'], undefined, 60);
   }
   if (reply.kind === 'OK') return { ok: true };
   if (reply.kind !== 'DONE') throw new Error(`${what} failed: ${reply.raw.trim().slice(-300) || 'no answer from the computer'}`);
@@ -98,15 +98,16 @@ async function finish(first: Reply, what: string, maxSec: number): Promise<JobRe
 
 // ---------------------------------------------------------------- one-time machine setup
 
-let basePromise: Promise<void> | null = null;
+/** One setup per computer (each Docker bot has its own), so a second box does not skip its install. */
+const basePromises = new WeakMap<Box, Promise<void>>();
 
-async function setupBase(): Promise<void> {
-  const b = bundle();
-  const check = await script(['base-check', b.hash]);
+async function setupBase(b: Box): Promise<void> {
+  const bundleFiles = bundle();
+  const check = await script(b, ['base-check', bundleFiles.hash]);
   if (check.kind === 'BASE_OK') return;
   // The scripts are missing or changed: send them over in one piece and unpack.
-  const packed = gzipSync(Buffer.from(JSON.stringify({ files: b.files }), 'utf8'));
-  await box.writeFile(`${ROOT}/bundle.json.gz`, packed);
+  const packed = gzipSync(Buffer.from(JSON.stringify({ files: bundleFiles.files }), 'utf8'));
+  await b.writeFile(`${ROOT}/bundle.json.gz`, packed);
   const unpack = [
     'import gzip, json, os',
     `root = ${JSON.stringify(ROOT)}`,
@@ -125,20 +126,25 @@ async function setupBase(): Promise<void> {
     "os.unlink(root + '/bundle.json.gz')",
     "print('HQ_UNPACKED')",
   ].join('\n');
-  const r = await box.bash(`python3 -c ${box.quote(unpack)} 2>&1`, 60);
+  const r = await b.bash(`python3 -c ${b.quote(unpack)} 2>&1`, 60);
   if (!r.output.includes('HQ_UNPACKED')) {
     throw new Error(`could not install the desktop scripts on the computer (python3 is needed): ${r.output.trim().slice(-300)}`);
   }
   // Package installs can take a while on a fresh computer.
-  await finish(await script(['base', b.hash]), 'computer setup', 900);
+  await finish(b, await script(b, ['base', bundleFiles.hash]), 'computer setup', 900);
 }
 
-/** One-time machine setup (packages, scripts, home server, Chrome policy/extension). Idempotent, memoised per process, cheap when already done. */
-export function ensureDeskBase(): Promise<void> {
-  if (!basePromise) {
-    basePromise = setupBase().catch((e) => { basePromise = null; throw e; });
+/** One-time machine setup (packages, scripts, home server, Chrome policy/extension). Idempotent, memoised per computer, cheap when already done. */
+export function ensureDeskBase(b: Box): Promise<void> {
+  let p = basePromises.get(b);
+  if (!p) {
+    p = setupBase(b).catch((e) => {
+      basePromises.delete(b);
+      throw e;
+    });
+    basePromises.set(b, p);
   }
-  return basePromise;
+  return p;
 }
 
 // ---------------------------------------------------------------- colours
@@ -326,41 +332,41 @@ function inTurn<T>(screenId: string, work: () => Promise<T>): Promise<T> {
   return next;
 }
 
-async function dress(bot: DeskBot, screenId: string, manageChrome: boolean, flags: string, what: string): Promise<void> {
+async function dress(bot: DeskBot, screenId: string, manageChrome: boolean, flags: string, what: string, b: Box): Promise<void> {
   if (!/^[\w.-]+$/.test(bot.id)) throw new Error(`bot id ${JSON.stringify(bot.id)} cannot be used as a folder name`);
   const n = displayNumber(screenId);
   if (!Number.isInteger(n)) throw new Error(`unknown screen ${screenId}`);
   const { stamp, payload } = lookFor(bot, manageChrome);
   const args = ['go', String(n), bundle().hash, stamp, flags || '-', payload];
-  let reply = await script(args, screenId);
+  let reply = await script(b, args, screenId);
   if (reply.kind === 'NOBASE' || reply.kind === 'NONE') {
-    basePromise = null;                 // whatever we knew about the computer is out of date
-    await ensureDeskBase();
-    reply = await script(args, screenId);
+    basePromises.delete(b);             // whatever we knew about the computer is out of date
+    await ensureDeskBase(b);
+    reply = await script(b, args, screenId);
     if (reply.kind === 'NOBASE') throw new Error(`${what} failed: the desktop scripts on the computer do not run (${reply.raw.trim().slice(-200)})`);
   }
-  await finish(reply, what, 240);
+  await finish(b, reply, what, 240);
 }
 
-/** Make `screenId` look like `bot`'s computer. Idempotent and quick when nothing changed (keep a stamp on the box of what was applied so a repeat call is ~1 bash call). Options:
+/** Make `screenId` look like `bot`'s computer, on the computer `b` reaches. Idempotent and quick when nothing changed (keep a stamp on the box of what was applied so a repeat call is ~1 bash call). Options:
  *  - manageChrome (default true): start this bot's Chrome (own profile, own DevTools port, maximized, on its home screen) if it isn't running.
  *    false = this screen already has someone else's Chrome that must NEVER be started, killed or restarted by us (the primary bot's live browser); still do wallpaper, dock, hidden panel, light theme.
  *  - restartChrome (default false): restart our Chrome so it picks up a new look. Ignored when manageChrome is false. */
-export function dressScreen(bot: DeskBot, screenId: string, opts?: { manageChrome?: boolean; restartChrome?: boolean }): Promise<void> {
+export function dressScreen(bot: DeskBot, screenId: string, b: Box = defaultBox, opts?: { manageChrome?: boolean; restartChrome?: boolean }): Promise<void> {
   const manage = opts?.manageChrome !== false;
-  return inTurn(screenId, () => dress(bot, screenId, manage, manage && opts?.restartChrome ? 'r' : '', `dressing screen ${screenId}`));
+  return inTurn(screenId, () => dress(bot, screenId, manage, manage && opts?.restartChrome ? 'r' : '', `dressing screen ${screenId}`, b));
 }
 
 /** Back to a clean start: close every app window on the screen except the desktop pieces, then (if manageChrome) bring Chrome back on the home screen. Logins in the profile stay. */
-export function resetScreen(bot: DeskBot, screenId: string, opts?: { manageChrome?: boolean }): Promise<void> {
-  return inTurn(screenId, () => dress(bot, screenId, opts?.manageChrome !== false, 'x', `resetting screen ${screenId}`));
+export function resetScreen(bot: DeskBot, screenId: string, b: Box = defaultBox, opts?: { manageChrome?: boolean }): Promise<void> {
+  return inTurn(screenId, () => dress(bot, screenId, opts?.manageChrome !== false, 'x', `resetting screen ${screenId}`, b));
 }
 
 /** The bot is gone: stop its Chrome, dock and anything else we started for that screen (do not delete the Orgo screen itself, and leave the profile dir). */
-export function undressScreen(botId: string, screenId: string): Promise<void> {
+export function undressScreen(botId: string, screenId: string, b: Box = defaultBox): Promise<void> {
   return inTurn(screenId, async () => {
     if (botId && !/^[\w.-]+$/.test(botId)) throw new Error(`bot id ${JSON.stringify(botId)} cannot be used as a folder name`);
-    const reply = await script(['undress', String(displayNumber(screenId)), botId], screenId, 90);
+    const reply = await script(b, ['undress', String(displayNumber(screenId)), botId], screenId, 90);
     // No scripts on the computer means nothing of ours runs there either.
     if (reply.kind === 'NOBASE' && !reply.raw.includes('Traceback')) return;
     if (reply.kind !== 'DONE') throw new Error(`undressing screen ${screenId} failed: ${reply.raw.trim().slice(-300)}`);
@@ -368,10 +374,10 @@ export function undressScreen(botId: string, screenId: string): Promise<void> {
 }
 
 /** Open a visible terminal window on that screen running `command` (window stays open after it exits, titled `title`). Used for sign-in flows the user completes by taking control of the screen. */
-export async function openTerminal(screenId: string, command: string, title?: string): Promise<void> {
-  await ensureDeskBase();
+export async function openTerminal(screenId: string, command: string, title?: string, b: Box = defaultBox): Promise<void> {
+  await ensureDeskBase(b);
   const b64 = (s: string) => Buffer.from(s, 'utf8').toString('base64');
-  const reply = await script(['terminal', String(displayNumber(screenId)), b64(command), title ? b64(title) : '-'], screenId);
+  const reply = await script(b, ['terminal', String(displayNumber(screenId)), b64(command), title ? b64(title) : '-'], screenId);
   if (reply.kind !== 'DONE') throw new Error(`could not open a terminal on screen ${screenId}: ${reply.raw.trim().slice(-300)}`);
-  await finish(reply, `opening a terminal on screen ${screenId}`, 30);
+  await finish(b, reply, `opening a terminal on screen ${screenId}`, 30);
 }

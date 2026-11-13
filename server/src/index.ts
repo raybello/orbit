@@ -20,6 +20,8 @@ import { configApi } from './routes-config.js';
 import { startIdleWatcher } from './idle.js';
 import { mcpApi } from './mcp.js';
 import { initEngines } from './engine.js';
+import { recoverComputers, suspendComputers } from './computer-provider-registry.js';
+import { startDockerIdleSuspender } from './docker-provider.js';
 
 if (!desSelfTest()) throw new Error('DES self-test failed');
 initSubagents();
@@ -53,3 +55,23 @@ initProactive(enqueue);
 } else console.log('[grokbot] scheduler disabled (GROKBOT_NO_SCHEDULER=1)');
 startIdleWatcher();
 initEngines();
+// Containers left "running" by a crash are paused, not trusted: each bot's home folder on the host
+// is what survives, and the next open starts its container again.
+void recoverComputers().catch((e) => console.warn(`[docker] startup recovery failed: ${e?.message ?? e}`));
+startDockerIdleSuspender();
+
+// On the way out, save each running bot's home folder and stop its container.
+let stopping = false;
+async function shutdown(signal: string) {
+  if (stopping) return;
+  stopping = true;
+  console.log(`[grokbot] ${signal}: suspending bot computers`);
+  try {
+    await suspendComputers();
+  } catch (e: any) {
+    console.warn(`[docker] shutdown suspend failed: ${e?.message ?? e}`);
+  }
+  process.exit(0);
+}
+process.on('SIGTERM', () => void shutdown('SIGTERM'));
+process.on('SIGINT', () => void shutdown('SIGINT'));

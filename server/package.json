@@ -10,6 +10,7 @@
   },
   "devDependencies": {
     "@types/better-sqlite3": "^7.6.12",
+    "@types/dockerode": "^4.0.2",
     "@types/node": "^22.10.2",
     "@types/ws": "^8.5.13",
     "tsx": "^4.19.2",
@@ -21,6 +22,7 @@
     "@hono/node-server": "^2.1.6",
     "better-sqlite3": "^13.0.3",
     "croner": "^11.0.0",
+    "dockerode": "^5.0.1",
     "hono": "^4.13.17",
     "openai": "^7.53.0",
     "ws": "^8.22.2",

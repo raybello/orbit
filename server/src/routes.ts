@@ -9,6 +9,7 @@ import { createSession, destroySession, isOwnerKey, requireUser, userFromCookieH
 import { allLive, appendRow, clearConversation, emitBot, getBot, getBotRow, getRow, listBots, listRoutines, listRows, listTasks, toRoutine, updateRow } from './store.js';
 import { enqueue, interrupt, resolveApproval } from './agent/loop.js';
 import { computerState, ensureComputer, forgetBotFiles, readyScreen, refreshComputer, releaseScreen, suspendComputer } from './computer.js';
+import { computerKindFor, providerFor, registerBotComputer, releaseBotComputer } from './computer-provider-registry.js';
 import { assignEngine, provisionEngine, removeEngine, syncPersona } from './engine.js';
 import { deleteMemory, listMemories, memoryBot } from './engine-memory.js';
 import { orgo } from './orgo.js';
@@ -46,7 +47,14 @@ function createBot(userId: string, b: { name: string; label?: string; descriptio
     'INSERT INTO bots(id,user_id,name,label,description,instructions,avatar_shape,avatar_color,mode,is_primary,created_at,updated_at) VALUES (?,?,?,?,?,?,?,?,?,?,?,?)',
   ).run(id, userId, b.name.trim().slice(0, 60) || 'New Bot', b.label ?? '', b.description ?? '', b.instructions ?? '', shape, color, b.mode === 'teammate' ? 'teammate' : 'personal', b.isPrimary ? 1 : 0, now(), now());
   // The first bot is the agent that already runs on the computer; the others get an engine of their own.
-  if (assignEngine(id) === 'managed') provisionEngine(id);
+  // A managed Bot starts on the default model (DeepSeek flash unless configured otherwise).
+  if (assignEngine(id) === 'managed') {
+    db.prepare('UPDATE bots SET model=?, provider=? WHERE id=? AND model IS NULL').run(env.defaultBotModel, env.defaultBotProvider, id);
+    provisionEngine(id);
+  }
+  // Where this bot's desktop lives is fixed now (a container for managed bots, the shared computer
+  // for the first one); see computer-provider-registry.ts.
+  registerBotComputer(id);
   hub.emit(userId, { type: 'roster' });
   return getBot(id)!;
 }
@@ -203,8 +211,12 @@ api.patch('/bots/:id', async (c) => {
     if (['name', 'label', 'description'].some((k) => p[k] !== undefined)) syncPersona(b.id);
     // Its desktop carries its name and colour: dress the screen again, if it has one.
     const looks = ['name', 'label', 'avatarShape', 'avatarColor'].some((k) => p[k] !== undefined);
-    if (looks && db.prepare('SELECT 1 FROM screens WHERE bot_id=?').get(b.id)) {
-      readyScreen(b.user_id, b.id, { redress: true }).catch((e) => console.warn('[computer] redress failed', e?.message ?? e));
+    if (looks) {
+      const provider = providerFor(b.id);
+      const hasComputer = computerKindFor(b.id) === 'docker'
+        ? Boolean(db.prepare('SELECT 1 FROM computer_screens WHERE bot_id=?').get(b.id))
+        : Boolean(db.prepare('SELECT 1 FROM screens WHERE bot_id=?').get(b.id));
+      if (hasComputer) provider.readyScreen(b.user_id, b.id, { redress: true }).catch((e) => console.warn('[computer] redress failed', e?.message ?? e));
     }
   }
   emitBot(b.id);
@@ -221,8 +233,12 @@ api.delete('/bots/:id', async (c) => {
   }
   if (b.kind !== 'room') {
     await removeEngine(b.id).catch((e) => console.warn('[engine] remove failed', e?.message ?? e));
-    await releaseScreen(b.id).catch((e) => console.warn('[computer] release failed', e?.message ?? e));
-    await forgetBotFiles(b.id).catch((e) => console.warn('[computer] cleanup failed', e?.message ?? e));
+    if (computerKindFor(b.id) === 'docker') {
+      await releaseBotComputer(b.id).catch((e) => console.warn('[computer] container cleanup failed', e?.message ?? e));
+    } else {
+      await releaseScreen(b.id).catch((e) => console.warn('[computer] release failed', e?.message ?? e));
+      await forgetBotFiles(b.id).catch((e) => console.warn('[computer] cleanup failed', e?.message ?? e));
+    }
   }
   db.prepare('DELETE FROM screens WHERE bot_id=?').run(b.id);
   db.prepare('DELETE FROM bots WHERE id=?').run(b.id);
@@ -391,14 +407,38 @@ api.get('/bots/:id/screenshot', async (c) => {
   const user = c.get('user');
   const b = ownBot(user.id, c.req.param('id'));
   if (!b) return c.json({ error: 'not found' }, 404);
+  const provider = providerFor(b.id);
   const scr = db.prepare('SELECT screen_id FROM screens WHERE bot_id=?').get(b.id) as any;
+  if (computerKindFor(b.id) === 'docker') {
+    const shot = await provider.screenshot(b.id, '').catch(() => null);
+    if (!shot) return c.body(null, 204);
+    return c.body(new Uint8Array(shot.data), 200, { 'Content-Type': shot.mime, 'Cache-Control': 'no-store' });
+  }
   if (!env.orgoComputerId || computerState(user.id).status !== 'running' || !scr) return c.body(null, 204);
+  const shot = await provider.screenshot(b.id, scr.screen_id).catch(() => null);
+  if (!shot) return c.body(null, 204);
+  return c.body(new Uint8Array(shot.data), 200, { 'Content-Type': shot.mime, 'Cache-Control': 'no-store' });
+});
+
+/**
+ * Take or hand back interactive control of a bot's screen. The relay also uses this: a browser
+ * connected with mode=control holds the lease, and the last one out gives it back.
+ */
+api.post('/bots/:id/screen/control', async (c) => {
+  const user = c.get('user');
+  const b = ownBot(user.id, c.req.param('id'));
+  if (!b) return c.json({ error: 'not found' }, 404);
+  const body = await c.req.json().catch(() => ({} as any));
+  const action = body?.action;
+  if (action !== 'take' && action !== 'give') return c.json({ error: "action must be 'take' or 'give'" }, 400);
+  const provider = providerFor(b.id);
   try {
-    const s = await orgo.screenshot(env.orgoComputerId, scr.screen_id);
-    const b64 = s.image.replace(/^data:[^,]+,/, '');
-    return c.body(Buffer.from(b64, 'base64'), 200, { 'Content-Type': s.mime_type ?? 'image/jpeg', 'Cache-Control': 'no-store' });
-  } catch {
-    return c.body(null, 204);
+    const { screenId } = await provider.screenFor(user.id, b.id);
+    if (action === 'take') await provider.takeControl(b.id, screenId);
+    else await provider.giveControl(b.id, screenId);
+    return c.json({ ok: true, control: action === 'take' ? 'human' : 'bot' });
+  } catch (e: any) {
+    return c.json({ error: String(e?.message ?? e) }, 502);
   }
 });
 

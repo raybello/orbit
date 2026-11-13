@@ -1,12 +1,12 @@
 # Architecture
 
-A web app (`web/`) and a Node server (`server/`) sit in front of Hermes agents. Hermes owns each Bot's agent loop, history, memory and model. The server adds the things Hermes does not have: the chat interface, one screen per Bot on a shared Orgo computer, connected apps with approvals, routines, the Library, and voice.
+A web app (`web/`) and a Node server (`server/`) sit in front of Hermes agents. Hermes owns each Bot's agent loop, history, memory and model. The server adds the things Hermes does not have: the chat interface, a computer for each Bot (a Docker container of its own, or a screen on the shared Orgo computer), connected apps with approvals, routines, the Library, and voice.
 
 ```text
 browser ── HTTP + SSE ──► server ── POST /v1/responses ──► Hermes gateway (one per Bot)
    │                        ▲                                   │
    └── WebSocket (VNC) ─────┤◄──────── MCP: POST /mcp/<bot> ────┘
-                            └── Orgo computer: one X screen per Bot
+                            └── Bot computers: a container per Bot, or a screen on Orgo
 ```
 
 ## Components
@@ -18,8 +18,9 @@ browser ── HTTP + SSE ──► server ── POST /v1/responses ──► H
 | Engines | `server/src/engine.ts` | Which Hermes runs which Bot. The **primary** engine is the gateway that already runs on the computer; the app only calls its API. A **managed** engine is a Hermes home under `ENGINES_DIR/<botId>` with its own `hermes gateway run`, its own port (from 8650), credentials, model and browser helper (`BH_HOME`). Also: model and provider settings, and opening Hermes' subscription sign-in in a terminal on the Bot's screen |
 | App tools | `server/src/mcp.ts`, `agent/tools.ts` | An MCP endpoint per Bot (`POST /mcp/<botId>`, `POST /mcp/primary`; bearer token derived from `SESSION_SECRET`). Tools: `x_search`, `save_file`, routines, tasks, check-ins, `send_to_bot`, group chats, `ask_user`, `request_app_connection`, plus the user's Composio tools |
 | Memory | `server/src/engine-memory.ts` | Memory lives in each Bot's Hermes home (`memories/MEMORY.md`, `USER.md`). The app shows the entries and lets the user remove one |
-| Screens | `server/src/computer.ts`, `desk.ts`, `box.ts`, `server/box/*` | One Orgo Linux computer; the primary Bot uses the default screen, every other Bot leases an Orgo screen (four per computer). `desk.ts` installs the scripts in `server/box/` under `/opt/hq` and calls them to dress a screen: wallpaper, dock, light theme, a Chrome with its own profile and DevTools port (9200 + display number), and a home screen as the new tab page. `box.ts` runs commands locally (`HQ_LOCAL=1`) or through Orgo's API |
-| Viewer | `server/src/vnc.ts` | WebSocket relay between the browser (noVNC) and the screen's VNC server. The server does the VNC auth, so the computer's password never reaches the browser. In *watch* mode, keyboard, pointer and clipboard messages are dropped on the server |
+| Computers | `server/src/computer-provider.ts`, `computer-provider-registry.ts`, `computer.ts`, `docker-provider.ts`, `docker/*` | `ComputerProvider` is the only way the rest of the server reaches a Bot's computer. `OrgoComputerProvider` (`computer.ts`) keeps the shared Orgo computer: the primary Bot uses the default screen, every other Bot leases an Orgo screen. `DockerComputerProvider` gives a managed Bot its own container (Xvfb + x11vnc + Chrome, `/home/bot` bind-mounted from `COMPUTER_HOME_DIR/homes/<botId>`), and suspends it after an idle timeout. Which one a Bot uses is fixed in `bot_computers` when the Bot is created; see `docs/per-bot-computers.md` |
+| Screens | `server/src/desk.ts`, `box.ts`, `server/box/*` | `desk.ts` installs the scripts in `server/box/` under `/opt/hq` and calls them through a `Box` to dress a screen: wallpaper, dock, light theme, a Chrome with its own profile and DevTools port (9200 + display number), and a home screen as the new tab page. `box.ts` runs commands locally (`HQ_LOCAL=1`), through Orgo's API, or inside a container |
+| Viewer | `server/src/vnc.ts` | WebSocket relay between the browser (noVNC) and the screen's VNC server, over Orgo's websockify or a container's x11vnc port. The server does the VNC auth, so the computer's password never reaches the browser. In *watch* mode, keyboard, pointer and clipboard messages are dropped on the server; a control viewer may type |
 | Apps | `server/src/composio.ts`, `triggers.ts` | Catalog, per-user sessions, connect links, tool execution, and triggers for event routines. Sign-in uses a Composio-managed Google connection |
 | Scheduling | `server/src/routines.ts`, `proactive.ts` | Cron routines, event routines, and check-ins for the primary Bot. Each run is a turn |
 | Voice | `server/src/voice.ts`, `web/src/voice/*` | Mints short-lived xAI realtime client secrets; the browser connects to xAI directly. The voice agent hands real work to the Bot's turn queue and speaks the result. Also proxies TTS previews and dictation |
@@ -68,7 +69,7 @@ Not covered: what a Bot does through its browser or shell, and Hermes' own promp
 
 ## Data
 
-SQLite (`DB_PATH`, WAL): users and sessions, Bots, rows, approvals and policies, routines, tasks, skills, screen leases, Composio session ids. Each managed Bot's Hermes home is under `ENGINES_DIR`. On the computer: Chrome profiles in `/root/grokbot/profiles/<botId>`, Library files in `/root/grokbot/files/<botId>`. Deleting a Bot removes its gateway, home, profile, files and screen.
+SQLite (`DB_PATH`, WAL): users and sessions, Bots, rows, approvals and policies, routines, tasks, skills, screen leases, per-Bot computers and their screens, Composio session ids. Each managed Bot's Hermes home is under `ENGINES_DIR`. On the computer: Chrome profiles in `/root/grokbot/profiles/<botId>`, Library files in `/root/grokbot/files/<botId>`. Deleting a Bot removes its gateway, home, profile, files and screen.
 
 Secrets live in `.env` on the server and in each Hermes home.
 

@@ -5,6 +5,10 @@ import path from 'node:path';
 import YAML from 'yaml';
 import { displayFor } from './box.js';
 import { cdpUrlFor, screenFor } from './computer.js';
+import { claimScreen } from './computer-store.js';
+import { computerKindFor } from './computer-provider-registry.js';
+import { screenPorts } from './docker/screen.js';
+import { randomUUID } from 'node:crypto';
 import { db } from './db.js';
 import { env } from './env.js';
 import type { EngineInfo, EngineProvider } from './types.js';
@@ -79,8 +83,9 @@ function primaryKey(): string {
 
 // ---------- assignment ----------
 
-function freePort(): number {
+function freePort(avoid: number[] = []): number {
   const used = new Set((db.prepare('SELECT engine_port FROM bots WHERE engine_port IS NOT NULL').all() as any[]).map((r) => r.engine_port as number));
+  for (const p of avoid) used.add(p);
   let p = env.enginePortBase;
   while (used.has(p)) p++;
   return p;
@@ -106,6 +111,8 @@ const SHARED_ENV = [
   'ANTHROPIC_API_KEY', 'ANTHROPIC_BASE_URL', 'ANTHROPIC_TOKEN', 'CLAUDE_CODE_OAUTH_TOKEN',
   'OPENAI_API_KEY', 'OPENAI_BASE_URL', 'OPENROUTER_API_KEY', 'XAI_API_KEY', 'GEMINI_API_KEY', 'GOOGLE_API_KEY', 'NOUS_API_KEY',
   'FIRECRAWL_API_KEY', 'TAVILY_API_KEY', 'EXA_API_KEY', 'PARALLEL_API_KEY',
+  // DeepSeek is the default model for managed Bots; its key lives in the primary agent's .env.
+  'DEEPSEEK_API_KEY', 'DEEPSEEK_BASE_URL',
 ];
 
 /** Parts of the primary agent's config a managed agent starts from, so it reaches the same models. */
@@ -153,7 +160,16 @@ async function writeHome(botId: string): Promise<{ home: string; key: string; di
   // Its screen decides which display and which Chrome it drives. Only meaningful on the computer itself.
   let display: string | null = null;
   let cdp = '';
-  if (env.localBox) {
+  if (computerKindFor(botId) === 'docker') {
+    // A container's browser answers DevTools on a host port; the display it draws on is inside the
+    // container, so the agent drives the browser over CDP and gets no local DISPLAY.
+    try {
+      const s = claimScreen(botId, env.computerMaxDisplays, randomUUID);
+      cdp = `http://127.0.0.1:${screenPorts(s.display_index).cdpPort}`;
+    } catch (e: any) {
+      console.warn(`[engine] no display for ${b.name} yet: ${e?.message ?? e}`);
+    }
+  } else if (env.localBox) {
     try {
       const s = await screenFor(b.user_id, botId);
       display = displayFor(s.screenId);
@@ -279,7 +295,7 @@ function managedKey(botId: string): string {
   return k;
 }
 
-async function startGateway(botId: string): Promise<void> {
+async function startGateway(botId: string, attempt = 0): Promise<void> {
   const b = botRow(botId);
   if (!b || b.engine !== 'managed') throw new Error('not a managed engine');
   if (!b.engine_port) db.prepare('UPDATE bots SET engine_port=? WHERE id=?').run(freePort(), botId);
@@ -289,7 +305,13 @@ async function startGateway(botId: string): Promise<void> {
   if ((await healthy(url)) && managedKey(botId) && (await keyAccepted(url, managedKey(botId)))) return;
   if (await healthy(url)) {
     if (gatewayPid(homeFor(botId))) await stopGateway(botId);
-    else throw new Error(`Port ${botRow(botId).engine_port} is taken by something else.`);
+    else if (attempt < 3) {
+      // Something we do not manage holds this port (a gateway from a Bot that no longer exists).
+      // Take the next free one instead of leaving this Bot without an agent.
+      const taken = Number(botRow(botId).engine_port);
+      db.prepare('UPDATE bots SET engine_port=? WHERE id=?').run(freePort([taken]), botId);
+      return startGateway(botId, attempt + 1);
+    } else throw new Error(`Port ${botRow(botId).engine_port} is taken by something else.`);
   }
 
   const { home, key, display } = await writeHome(botId);

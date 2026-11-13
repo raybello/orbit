@@ -18,8 +18,10 @@ ROOT = '/opt/hq'
 SCREENS = ROOT + '/screens'
 JOBS = ROOT + '/jobs'
 EXT = ROOT + '/ext'
-LOGS = '/var/log/hq'
-PROFILES = '/root/grokbot/profiles'
+# Where Chrome profiles and logs live. A per-bot container keeps both inside its home folder so they
+# travel with it; the shared computer keeps the old root-owned paths.
+LOGS = os.environ.get('HQ_LOGS') or '/var/log/hq'
+PROFILES = os.environ.get('HQ_PROFILES') or '/root/grokbot/profiles'
 HOME_PORT = 7391
 HOME_URL = 'http://127.0.0.1:%d' % HOME_PORT
 BROWSER_CLASS = 'HQBrowser'
@@ -881,6 +883,9 @@ def start_browser(n, bot_id, accent=None, restart=False, log=None):
             binary,
             '--no-sandbox', '--no-first-run', '--no-default-browser-check', '--hide-crash-restore-bubble',
             '--password-store=basic', '--disable-dev-shm-usage',
+            # DevTools listens on the container's own interface so a host port published to 127.0.0.1
+            # can reach it; on a bare machine this changes nothing.
+            '--remote-debugging-address=0.0.0.0',
             '--remote-debugging-port=%d' % cdp_port(n),
             '--user-data-dir=%s' % profile_dir(bot_id),
             '--class=%s' % BROWSER_CLASS,

@@ -11,6 +11,7 @@ import { setCheckins } from '../proactive.js';
 import { createRoom, postToRoom } from './rooms.js';
 import type { ActivityKind } from '../types.js';
 import { Cron } from 'croner';
+import { COMPUTER_TOOLS } from '../computer-tools.js';
 
 export interface ToolCtx {
   userId: string;
@@ -354,6 +355,9 @@ export const TOOLS: ToolDef[] = [
     },
   },
 
+  // Computer control on the Bot's own desktop (a container or the shared computer). See
+  // computer-tools.ts for why this is not Hermes' own computer_use toolset.
+  ...(COMPUTER_TOOLS as unknown as ToolDef[]),
 ];
 
 export const toolMap = new Map(TOOLS.map((t) => [t.name, t]));

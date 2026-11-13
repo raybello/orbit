@@ -1,13 +1,17 @@
 import { db, now } from '../db.js';
+import { env } from '../env.js';
 import { newId } from '../lib/ids.js';
 import { hub } from '../lib/hub.js';
 import { appendRow, emitBot, getBotRow, getLive, getRow, setLive, updateRow } from '../store.js';
 import type { ActivityKind, MessageBody, MessageFile, ToolCallBody } from '../types.js';
 import { toolkitInfo } from '../composio.js';
 import { screenForWork } from '../computer.js';
+import { computerKindFor } from '../computer-provider-registry.js';
+import { dockerProvider } from '../docker-provider.js';
 import { engineFor } from '../engine.js';
 import { instructionsFor } from './prompt.js';
 import { activityFor, appToolName, humanizeSlug, LIBRARY_ROOT, policyFor } from './tools.js';
+import { MIME_BY_EXTENSION } from '../lib/mime.js';
 
 /**
  * A turn: one message handed to the bot's Hermes engine and streamed back into the conversation.
@@ -337,13 +341,27 @@ async function runTurn(botId: string, trigger: Trigger) {
   let lastFlush = 0;
   let wroteText = false;
   // Parse [hq-file:path|filename|mediaType] markers out of text, returning cleaned text + files.
+  // A `MEDIA:/abs/path` line pointing inside this bot's Library becomes an attachment too, so a
+  // screenshot the model mentions shows up as a picture instead of a path.
   const extractFiles = (raw: string): { text: string; files: MessageFile[] } => {
     const files: MessageFile[] = [];
-    const cleaned = raw.replace(/\[hq-file:([^|\]]+)\|([^|\]]+)\|([^\]]+)\]/g, (_, path, filename, mediaType) => {
+    let cleaned = raw.replace(/\[hq-file:([^|\]]+)\|([^|\]]+)\|([^\]]+)\]/g, (_, path, filename, mediaType) => {
       files.push({ path: path.trim(), filename: filename.trim(), mediaType: mediaType.trim() });
       return '';
-    }).trim();
-    return { text: cleaned, files };
+    });
+    const root = `${LIBRARY_ROOT}/${botId}/`;
+    cleaned = cleaned.split('\n').filter((line) => {
+      const m = /^\s*MEDIA:(\S+)\s*$/.exec(line);
+      if (!m) return true;
+      const abs = m[1];
+      if (!abs.startsWith(root)) return true;
+      const rel = abs.slice(root.length);
+      const filename = rel.split('/').pop()!;
+      const mediaType = MIME_BY_EXTENSION[filename.split('.').pop()?.toLowerCase() ?? ''] ?? 'application/octet-stream';
+      files.push({ path: rel, filename, mediaType });
+      return false;
+    }).join('\n');
+    return { text: cleaned.trim(), files };
   };
 
   const flush = (streaming: boolean) => {
@@ -404,7 +422,11 @@ async function runTurn(botId: string, trigger: Trigger) {
 
   try {
     // The screen first: the engine's browser and computer tools point at it.
-    await screenForWork(userId, botId).catch((e) => console.warn(`[computer] screen not ready for ${botId}: ${e?.message ?? e}`));
+    if (computerKindFor(botId) === 'docker') {
+      await dockerProvider.readyScreen(userId, botId).catch((e) => console.warn(`[docker] screen not ready for ${botId}: ${e?.message ?? e}`));
+    } else {
+      await screenForWork(userId, botId).catch((e) => console.warn(`[computer] screen not ready for ${botId}: ${e?.message ?? e}`));
+    }
     const engine = await engineFor(botId);
     if (ctrl.signal.aborted) throw new Error('interrupted');
 
@@ -419,8 +441,8 @@ async function runTurn(botId: string, trigger: Trigger) {
       signal: ctrl.signal,
       headers: { 'content-type': 'application/json', accept: 'text/event-stream', ...(engine.key ? { authorization: `Bearer ${engine.key}` } : {}) },
       body: JSON.stringify({
-        model: bot.model || 'hermes-agent',
-        ...(bot.provider ? { provider: bot.provider } : {}),
+        model: bot.model || (engine.kind === 'managed' ? env.defaultBotModel : 'hermes-agent'),
+        ...(bot.provider || engine.kind === 'managed' ? { provider: bot.provider || env.defaultBotProvider } : {}),
         input,
         instructions: await instructionsFor(userId, botId),
         // One engine-side thread per conversation; "New chat" bumps the generation and starts another.

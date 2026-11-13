@@ -77,7 +77,7 @@ async function callTool(botId: string | null, rawName: string, args: any): Promi
       if (r.endTurn) markSilent(botId);
       noteToolOutcome(botId, rowSeq, { status: 'done', summary: r.summary });
       // Extract [hq-file:] markers from tool output and register them for auto-attachment.
-      if (name === 'show_file') {
+      if (/\[hq-file:/.test(r.output)) {
         const matches = [...r.output.matchAll(/\[hq-file:([^|\]]+)\|([^|\]]+)\|([^\]]+)\]/g)];
         const files = matches.map(([, path, filename, mediaType]) => ({ path: path.trim(), filename: filename.trim(), mediaType: mediaType.trim() }));
         if (files.length) addPendingFiles(botId, files);

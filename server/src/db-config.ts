@@ -36,6 +36,33 @@ CREATE TABLE IF NOT EXISTS compactions (
   chars_after INTEGER NOT NULL,
   created_at INTEGER NOT NULL
 );
+-- One computer per bot. The 'computers' table above is the legacy per-user shared computer; this one
+-- records where each bot's own desktop lives ('orgo' = the shared computer, 'docker' = a container).
+CREATE TABLE IF NOT EXISTS bot_computers (
+  bot_id       TEXT PRIMARY KEY,
+  kind         TEXT NOT NULL DEFAULT 'orgo',
+  state        TEXT NOT NULL DEFAULT 'stopped',
+  container_id TEXT,
+  home_path    TEXT,
+  error        TEXT,
+  updated_at   INTEGER NOT NULL
+);
+-- A bot's screen: which X display it owns on its computer and the ports and tokens behind it.
+CREATE TABLE IF NOT EXISTS computer_screens (
+  bot_id        TEXT NOT NULL,
+  screen_id     TEXT NOT NULL,
+  display_index INTEGER NOT NULL,
+  vnc_port      INTEGER,
+  cdp_port      INTEGER,
+  view_token    TEXT,
+  control_token TEXT,
+  idle_at       INTEGER,
+  ensured_at    INTEGER,
+  PRIMARY KEY (bot_id, screen_id)
+);
+CREATE INDEX IF NOT EXISTS computer_screens_display ON computer_screens(display_index);
+-- One screen per container: a bot's screen row is unique per bot, so it can be replaced in place.
+CREATE UNIQUE INDEX IF NOT EXISTS computer_screens_bot ON computer_screens(bot_id);
 `);
 
 export const configSchemaReady = true;
