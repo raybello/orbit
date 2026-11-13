@@ -24,7 +24,7 @@ fi
 export PATH="$NODE_DIR/bin:$PATH"
 
 # 2. The app. Data lives outside it, so an upgrade only replaces code.
-rm -rf "$APP/server/dist" "$APP/web/dist"
+rm -rf "$APP/apps/server/dist" "$APP/apps/web/dist"
 tar -xzf "$tgz" -C "$APP"
 # --ignore-scripts: the SQLite package ships ready-made binaries; without this npm tries to compile it.
 (cd "$APP" && npm ci --omit=dev -w server --ignore-scripts --no-audit --no-fund >/var/log/hq/npm.log 2>&1) || { tail -20 /var/log/hq/npm.log; exit 1; }
@@ -67,7 +67,7 @@ fi
 # 4. Keep it running. Only this one program is added or restarted; nothing else under supervisor is touched.
 cat > /etc/supervisor/conf.d/hq-app.conf <<EOF
 [program:hq-app]
-command=$NODE_DIR/bin/node --env-file=$APP/.env $APP/server/dist/index.js
+command=$NODE_DIR/bin/node --env-file=$APP/.env $APP/apps/server/dist/index.js
 directory=$APP
 autostart=true
 autorestart=true

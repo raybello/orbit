@@ -5,11 +5,12 @@
 set -euo pipefail
 cd "$(dirname "$0")/.."
 out="${1:-hq-app.tgz}"
-rm -rf server/dist web/dist
+rm -rf apps/server/dist apps/web/dist
 npm run build
 tar -czf "$out" \
-  package.json package-lock.json .env.example \
-  server/package.json server/dist server/box \
-  web/package.json web/dist web/src/avatar/shapes.gen.ts \
+  package.json pnpm-workspace.yaml pnpm-lock.yaml .env.example \
+  apps/server/package.json apps/server/dist apps/server/box \
+  apps/web/package.json apps/web/dist apps/web/src/avatar/shapes.gen.ts \
+  packages/contracts packages/logger packages/ui-tokens \
   scripts/install-on-computer.sh scripts/add-hq-to-hermes.py scripts/sign-in-link.sh
 echo "packed $(du -h "$out" | cut -f1) -> $out"

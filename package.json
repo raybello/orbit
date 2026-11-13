@@ -1,23 +1,40 @@
 {
-  "name": "orbit",
+  "name": "orbit-workspace",
   "private": true,
-  "description": "Orbit: a team of Hermes agents, each with its own screen on one Orgo computer, with Composio apps and xAI voice.",
+  "description": "Orbit: a team of Hermes agents, each with its own screen, with Composio apps and xAI voice.",
   "workspaces": [
-    "server",
-    "web"
+    "apps/*",
+    "packages/*"
   ],
-  "scripts": {
-    "dev": "npm run dev -w server & npm run dev -w web",
-    "build": "npm run build -w web && npm run build -w server",
-    "start": "npm run start -w server",
-    "typecheck": "npm run typecheck -w server && npm run typecheck -w web"
-  },
   "engines": {
     "node": ">=22"
   },
-  "allowScripts": {
-    "better-sqlite3@13.0.3": true,
-    "esbuild@0.23.1": true,
-    "fsevents@2.3.3": true
+  "packageManager": "pnpm@12.8.1",
+  "scripts": {
+    "dev": "pnpm run build:packages && turbo run dev --parallel",
+    "build": "turbo run build",
+    "build:packages": "pnpm --filter \"./packages/*\" run build",
+    "start": "turbo run start --parallel",
+    "typecheck": "turbo run typecheck",
+    "test": "turbo run test",
+    "desktop": "pnpm --filter @orbit/desktop run dev",
+    "desktop:pack": "pnpm --filter @orbit/desktop run pack",
+    "mobile": "pnpm --filter @orbit/mobile run start"
+  },
+  "devDependencies": {
+    "turbo": "^2.3.3",
+    "typescript": "^5.7.2"
+  },
+  "pnpm": {
+    "onlyBuiltDependencies": [
+      "better-sqlite3",
+      "esbuild",
+      "fsevents",
+      "electron",
+      "electron-winstaller",
+      "cpu-features",
+      "protobufjs",
+      "ssh2"
+    ]
   }
 }
