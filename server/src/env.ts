@@ -65,4 +65,10 @@ export const env = {
   maxBots: Number(process.env.MAX_BOTS ?? 4),
   /** Comma-separated emails allowed to sign in; empty = anyone who can reach the app. */
   allowedEmails: (process.env.ALLOWED_EMAILS ?? '').split(',').map((s) => s.trim().toLowerCase()).filter(Boolean),
+
+  // ---- Google OAuth2 (direct, no third-party service required) ----
+  /** OAuth2 client ID from your Google Cloud Console project. */
+  googleClientId: process.env.GOOGLE_CLIENT_ID ?? '',
+  /** OAuth2 client secret from your Google Cloud Console project. */
+  googleClientSecret: process.env.GOOGLE_CLIENT_SECRET ?? '',
 };

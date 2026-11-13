@@ -100,6 +100,7 @@
 .app-row__connected.is-confirm { background: var(--color-danger-bg); color: var(--color-danger-text); }
 .apps-empty { padding: 40px 0; text-align: center; font-size: 14px; color: var(--color-text-tertiary); }
 .menu__header { padding: 6px 10px 4px; font-size: 12px; line-height: 16px; color: var(--color-text-tertiary); }
+.app-row__connect--disabled { opacity: 0.45; cursor: default; }
 
 /* ---------- sign-in ---------- */
 .signin { position: relative; display: flex; align-items: center; justify-content: center; height: 100%; background: var(--color-bg-sidebar); }

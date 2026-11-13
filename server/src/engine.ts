@@ -431,10 +431,26 @@ export async function removeEngine(botId: string): Promise<void> {
 }
 
 /** On server start: give older bots an engine, then bring the managed gateways up. */
+/** Inject the hq MCP server entry into the primary Hermes config so it can reach the app's tools. */
+function syncPrimaryHqConfig(botId: string) {
+  const cfgFile = path.join(env.hermesHome, 'config.yaml');
+  if (!fs.existsSync(cfgFile)) return;
+  const cfg = readYaml(cfgFile);
+  const hqUrl = `${env.mcpBaseUrl}/mcp/${botId}`;
+  if (cfg.mcp_servers?.hq?.url === hqUrl) return; // already up-to-date
+  cfg.mcp_servers = {
+    ...(cfg.mcp_servers ?? {}),
+    hq: { url: hqUrl, headers: { Authorization: `Bearer ${mcpToken(botId)}` }, timeout: 1800, connect_timeout: 30 },
+  };
+  fs.writeFileSync(cfgFile, YAML.stringify(cfg), 'utf8');
+}
+
 export function initEngines() {
   fs.mkdirSync(env.enginesDir, { recursive: true });
   const bots = db.prepare("SELECT id, is_primary FROM bots WHERE engine IS NULL AND COALESCE(kind,'agent') <> 'room' AND COALESCE(hidden,0)=0 ORDER BY is_primary DESC, created_at ASC").all() as any[];
   for (const b of bots) assignEngine(b.id);
+  const primaryBot = db.prepare("SELECT id FROM bots WHERE engine='primary' LIMIT 1").get() as any;
+  if (primaryBot) syncPrimaryHqConfig(primaryBot.id);
   for (const b of db.prepare("SELECT id FROM bots WHERE engine='managed'").all() as any[]) provisionEngine(b.id);
 }
 

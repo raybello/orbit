@@ -35,6 +35,8 @@ interface ToolDef {
   parameters: Record<string, unknown>;
   activity: ActivityKind;
   label: string;
+  /** Default approval requirement. 'needs_approval' goes through the approval card before running. */
+  policy?: 'needs_approval';
   impl: Impl;
 }
 
@@ -351,6 +353,7 @@ export const TOOLS: ToolDef[] = [
       return { output: `Asked the user to connect ${info.name}. Stop here; you'll be told when it's connected.`, endTurn: true };
     },
   },
+
 ];
 
 export const toolMap = new Map(TOOLS.map((t) => [t.name, t]));
@@ -360,7 +363,14 @@ export const toolMap = new Map(TOOLS.map((t) => [t.name, t]));
 export type Decision = 'allow' | 'ask' | 'block';
 
 export function policyFor(userId: string, toolName: string, args: any): { decision: Decision; key: string; toolkit?: string; title: string } {
-  if (toolMap.has(toolName)) return { decision: 'allow', key: toolName, title: toolName };
+  const ownTool = toolMap.get(toolName);
+  if (ownTool) {
+    if (ownTool.policy !== 'needs_approval') return { decision: 'allow', key: toolName, title: toolName };
+    // Owned tool that requires approval — check the policy table (supports always_allow / blocked overrides).
+    const p = db.prepare('SELECT mode FROM policies WHERE user_id=? AND tool=?').get(userId, toolName) as any;
+    const mode = p?.mode ?? 'needs_approval';
+    return { decision: mode === 'blocked' ? 'block' : mode === 'always_allow' ? 'allow' : 'ask', key: toolName, title: ownTool.label };
+  }
   const slugs = innerToolSlugs(toolName, args);
   if (!slugs.length) {
     // Composio's sandbox can run app actions from code, which would slip past the per-action
