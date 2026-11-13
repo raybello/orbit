@@ -2,12 +2,13 @@ packages:
   - "apps/*"
   - "packages/*"
 
-onlyBuiltDependencies:
-  - better-sqlite3
-  - esbuild
-  - fsevents
-  - electron
-  - electron-winstaller
-  - cpu-features
-  - protobufjs
-  - ssh2
+# pnpm 12: native build scripts must be allowed explicitly, per package.
+allowBuilds:
+  better-sqlite3: true
+  esbuild: true
+  fsevents: true
+  electron: true
+  electron-winstaller: true
+  cpu-features: true
+  protobufjs: true
+  ssh2: true
