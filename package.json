@@ -19,7 +19,8 @@
     "test": "turbo run test",
     "desktop": "pnpm --filter @orbit/desktop run dev",
     "desktop:pack": "pnpm --filter @orbit/desktop run pack",
-    "mobile": "pnpm --filter @orbit/mobile run start"
+    "mobile": "pnpm --filter @orbit/mobile run start",
+    "smoke": "node scripts/smoke-server.mjs"
   },
   "devDependencies": {
     "turbo": "^2.3.3",

@@ -1,0 +1,42 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 12
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: pnpm
+
+      - run: pnpm install --frozen-lockfile
+
+      - name: Typecheck every package
+        run: pnpm run typecheck
+
+      - name: Build packages and apps
+        run: pnpm run build
+
+      - name: Desktop unit tests
+        run: pnpm --filter @orbit/desktop run test
+
+      - name: Server API smoke test
+        run: node scripts/smoke-server.mjs
