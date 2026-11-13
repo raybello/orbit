@@ -6,8 +6,12 @@ import type { Toolkit } from './types.js';
 
 export const composio = new Composio({ apiKey: env.composioKey, provider: new OpenAIResponsesProvider() });
 
+/** True when a Composio API key is configured and long enough to be valid. */
+export const composioEnabled = () => env.composioKey.length >= 10;
+
 const REST = 'https://backend.composio.dev/api/v3.1';
 async function rest<T = any>(path: string): Promise<T> {
+  if (!composioEnabled()) throw new Error('COMPOSIO_API_KEY is not configured');
   const res = await fetch(`${REST}${path}`, { headers: { 'x-api-key': env.composioKey } });
   if (!res.ok) throw new Error(`Composio ${path}: ${res.status} ${await res.text()}`);
   return res.json() as Promise<T>;
@@ -19,6 +23,7 @@ type CatalogItem = Omit<Toolkit, 'connected'>;
 let catalogCache: { at: number; items: CatalogItem[] } | null = null;
 
 export async function catalog(): Promise<CatalogItem[]> {
+  if (!composioEnabled()) return [];
   if (catalogCache && Date.now() - catalogCache.at < 3600_000) return catalogCache.items;
   const items: CatalogItem[] = [];
   let cursor: string | undefined;
@@ -49,12 +54,14 @@ export async function toolkitInfo(slug: string): Promise<CatalogItem | undefined
 // ---------- per-user connections ----------
 
 export async function connectedToolkits(userId: string): Promise<Set<string>> {
+  if (!composioEnabled()) return new Set();
   const r = await composio.connectedAccounts.list({ userIds: [userId], statuses: ['ACTIVE'] } as any);
   const items: any[] = (r as any).items ?? [];
   return new Set(items.map((i) => i.toolkit?.slug ?? i.toolkitSlug).filter(Boolean));
 }
 
 export async function connectionsDetail(userId: string) {
+  if (!composioEnabled()) return [];
   const r = await composio.connectedAccounts.list({ userIds: [userId] } as any);
   return ((r as any).items ?? []).map((i: any) => ({ id: i.id, toolkit: i.toolkit?.slug ?? i.toolkitSlug, status: i.status }));
 }
@@ -88,6 +95,7 @@ export async function sessionFor(userId: string): Promise<any> {
 
 /** Start a connect flow; returns the hosted Connect Link URL. */
 export async function startConnect(userId: string, toolkit: string, callbackUrl: string): Promise<{ redirectUrl: string; connectedAccountId?: string }> {
+  if (!composioEnabled()) throw new Error('Composio is not configured on this server (COMPOSIO_API_KEY missing).');
   const session = await sessionFor(userId);
   const req = await session.authorize(toolkit, { callbackUrl });
   return { redirectUrl: req.redirectUrl, connectedAccountId: req.id };
@@ -95,6 +103,7 @@ export async function startConnect(userId: string, toolkit: string, callbackUrl:
 
 /** OpenAI-Responses-format function tools for this user's Composio session (meta tools). */
 export async function composioTools(userId: string): Promise<any[]> {
+  if (!composioEnabled()) return [];
   try {
     const session = await sessionFor(userId);
     const tools = await session.tools();
@@ -127,6 +136,7 @@ export const isReadOnlySlug = (slug: string) => READ_RE.test(slug.toUpperCase())
 // ---------- sign-in via Composio-managed Google (Gmail) connection ----------
 
 export async function startGoogleLogin(provisionalUserId: string, callbackUrl: string) {
+  if (!composioEnabled()) throw new Error('Google sign-in via Composio is not available (COMPOSIO_API_KEY missing). Use the dev login instead.');
   const session = await composio.create(provisionalUserId, { manageConnections: false } as any);
   const req = await (session as any).authorize('gmail', { callbackUrl });
   return { redirectUrl: req.redirectUrl as string, connectedAccountId: req.id as string | undefined };

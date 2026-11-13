@@ -269,10 +269,6 @@ export function ConnectAppsModal() {
   return (
     <Modal onClose={close} className="apps-modal" label="Connect Apps">
       <button type="button" className="modal__close apps-modal__close" onClick={close} aria-label="Close"><Icon name="close" size={16} opacity={0.68} /></button>
-      {/* Google Services native tile — always shown at the top */}
-      <div className="apps-modal__native">
-        <GoogleServicesRow onChanged={refresh} />
-      </div>
       <div className="apps-modal__head">
         <div className="apps-modal__titlerow">
           <span className="apps-modal__title">Connect Apps</span>
@@ -315,7 +311,15 @@ export function ConnectAppsModal() {
           </div>
         </div>
       </div>
-      <div className={`apps-modal__body${loading ? ' is-loading' : ''}`}>{body}</div>
+      <div className={`apps-modal__body${loading ? ' is-loading' : ''}`}>
+        <section className="apps-section">
+          <div className="apps-section__head">
+            <span className="apps-section__title">Built-in</span>
+          </div>
+          {/* <GoogleServicesRow onChanged={refresh} /> */}
+        </section>
+        {body}
+      </div>
     </Modal>
   );
 }
