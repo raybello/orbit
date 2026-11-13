@@ -1,6 +1,6 @@
 # Architecture
 
-A web app (`web/`) and a Node server (`server/`) sit in front of Hermes agents. Hermes owns each Bot's agent loop, history, memory and model. The server adds the things Hermes does not have: the chat interface, a computer for each Bot (a Docker container of its own, or a screen on the shared Orgo computer), connected apps with approvals, routines, the Library, and voice.
+A web app (`apps/web/`) and a Node server (`apps/server/`) sit in front of Hermes agents, wrapped by an Electron desktop app (`apps/desktop/`) and an Expo mobile app (`apps/mobile/`). Hermes owns each Bot's agent loop, history, memory and model. The server adds the things Hermes does not have: the chat interface, a computer for each Bot (a Docker container of its own, or a screen on the shared Orgo computer), connected apps with approvals, routines, the Library, and voice.
 
 ```text
 browser ── HTTP + SSE ──► server ── POST /v1/responses ──► Hermes gateway (one per Bot)
@@ -81,3 +81,27 @@ Secrets live in `.env` on the server and in each Hermes home.
 | Orgo | The computer, its screens, VNC, and a public URL for the app |
 | Composio | Sign-in, connectors, triggers |
 | xAI | Research on X (`x_search`), realtime voice, TTS, dictation |
+
+## Monorepo and clients
+
+The repo is a pnpm workspace driven by Turbo: `apps/{server,web,desktop,mobile}` and
+`packages/{contracts,ui-tokens,logger}`. `pnpm dev` builds the packages and runs the
+server and web dev servers; `pnpm typecheck`, `pnpm build`, `pnpm --filter @orbit/desktop run test`
+and `pnpm smoke` (an end-to-end server API check) are the gates CI runs.
+
+| Piece | Where | What it does |
+|---|---|---|
+| Contract | `packages/contracts` | Every type shared by clients and server (`Bot`, `Row`, `ServerEvent`, `HealthResponse`, `DesktopConfigResponse`, `SignInResponse`, `PushPayload`). Type-only: no runtime dependency. |
+| Tokens | `packages/ui-tokens` | `tokens.css` (the web/desktop palette) plus the same values as typed constants for React Native and the native windows |
+| Desktop | `apps/desktop` | Electron shell. Loads the web build as its renderer; first-run window picks "this computer" (Docker Compose stack, or a supervised native stack on Apple-silicon macOS 26+) or an existing server; menu for switching server and stack; `electron-updater` against GitHub Releases |
+| Local stack | `apps/desktop/src/local-stack.ts` | Generates the stack `.env` secrets, picks a free loopback port, runs `docker compose pull/up`, polls `/api/health` with `x-orbit-stack-token` |
+| Native stack | `apps/desktop/src/native-stack.ts` | On eligible Macs: downloads a checksummed server bundle, runs migrations and the API as supervised `ELECTRON_RUN_AS_NODE` processes, keeps ports stable in `.native-ports` |
+| Mobile | `apps/mobile` | Expo Router client for any Orbit server: chat, approvals, bot roster, live screen (noVNC in a WebView), Expo push. Session token in `expo-secure-store`, bearer auth |
+| Infra | `infra/compose`, `apps/server/Dockerfile` | The image-based stack the desktop app bundles, and the source-build stack for development; images publish to GHCR from `main` and `v*` tags |
+
+Clients authenticate with the session cookie (web, desktop renderer) or
+`Authorization: Bearer <session token>` (mobile, native UI). `POST /api/auth/sign-in`
+mints that token from the server's owner key (or from an email alone when `DEV_LOGIN=1`).
+SSE carries a `seq` and accepts `?since=` so a client that was backgrounded can replay
+what it missed; when no SSE connection is open for a user, the server pushes to their
+registered Expo tokens instead.
