@@ -15,4 +15,5 @@ docs/INTERNAL-*.md
 docs/SPEC.md
 web/screenshots/
 tests/out/
-third_party/*
+third_party/
+third-party/
