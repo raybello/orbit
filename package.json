@@ -1,0 +1,23 @@
+{
+  "name": "grokbot",
+  "private": true,
+  "description": "Bot HQ: a team of Hermes agents, each with its own screen on one Orgo computer, with Composio apps and xAI voice.",
+  "workspaces": [
+    "server",
+    "web"
+  ],
+  "scripts": {
+    "dev": "npm run dev -w server & npm run dev -w web",
+    "build": "npm run build -w web && npm run build -w server",
+    "start": "npm run start -w server",
+    "typecheck": "npm run typecheck -w server && npm run typecheck -w web"
+  },
+  "engines": {
+    "node": ">=22"
+  },
+  "allowScripts": {
+    "better-sqlite3@13.0.3": true,
+    "esbuild@0.23.1": true,
+    "fsevents@2.3.3": true
+  }
+}
