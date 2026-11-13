@@ -4,7 +4,22 @@ import { db } from './db.js';
 import { env } from './env.js';
 import type { Toolkit } from './types.js';
 
-export const composio = new Composio({ apiKey: env.composioKey, provider: new OpenAIResponsesProvider() });
+/**
+ * Constructed on first use: an empty COMPOSIO_API_KEY must not stop the server booting —
+ * the desktop app starts its local stack before any keys are configured. The Proxy keeps
+ * every existing `composio.x.y(…)` call site working unchanged.
+ */
+function makeComposio() {
+  return new Composio({ apiKey: env.composioKey, provider: new OpenAIResponsesProvider() });
+}
+let composioClient: ReturnType<typeof makeComposio> | null = null;
+export const composio: ReturnType<typeof makeComposio> = new Proxy({} as ReturnType<typeof makeComposio>, {
+  get(_target, prop) {
+    composioClient ??= makeComposio();
+    const value = Reflect.get(composioClient, prop, composioClient);
+    return typeof value === 'function' ? value.bind(composioClient) : value;
+  },
+});
 
 /** True when a Composio API key is configured and long enough to be valid. */
 export const composioEnabled = () => env.composioKey.length >= 10;

@@ -19,6 +19,18 @@ function secret(name: string): string {
 
 const hermesHome = process.env.HERMES_HOME_PRIMARY ?? path.join(os.homedir(), '.hermes');
 
+/**
+ * Our own version, read from package.json at startup. dist/env.js sits one level under the package
+ * root, so the same relative path works for source and build.
+ */
+function packageVersion(): string {
+  try {
+    return String(JSON.parse(fs.readFileSync(new URL('../package.json', import.meta.url), 'utf8')).version ?? '0.0.0');
+  } catch {
+    return '0.0.0';
+  }
+}
+
 export const env = {
   port: Number(process.env.PORT ?? 8787),
   appUrl: process.env.APP_URL ?? 'http://localhost:5173',
@@ -63,6 +75,20 @@ export const env = {
   primaryCdpUrl: process.env.PRIMARY_CDP_URL ?? '',
   /** Bots that can each have a screen (Orgo allows four screens on one Linux computer). */
   maxBots: Number(process.env.MAX_BOTS ?? 4),
+
+  // ---- desktop app / local stack ----
+  /**
+   * Shared secret the desktop app's local stack controller writes into the stack's .env. A request
+   * carrying it in `x-orbit-stack-token` is taken to be that controller (see lib/stack.ts).
+   */
+  stackToken: process.env.STACK_TOKEN ?? '',
+  /** Docker image tag this server was built into; what the desktop compares against its desired stack. */
+  imageTag: process.env.ORBIT_IMAGE_TAG ?? 'dev',
+  /** Where the desktop app looks for a newer release. */
+  updateCheckUrl: process.env.ORBIT_UPDATE_URL ?? 'https://api.github.com/repos/raybello/orbit/releases/latest',
+  /** This server's own version, from package.json. */
+  version: packageVersion(),
+
   /** Comma-separated emails allowed to sign in; empty = anyone who can reach the app. */
   allowedEmails: (process.env.ALLOWED_EMAILS ?? '').split(',').map((s) => s.trim().toLowerCase()).filter(Boolean),
 

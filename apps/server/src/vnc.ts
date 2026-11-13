@@ -1,7 +1,7 @@
 import type { IncomingMessage, Server } from 'node:http';
 import { WebSocket, WebSocketServer } from 'ws';
 import { db } from './db.js';
-import { userFromCookieHeader } from './lib/auth.js';
+import { userFromCookieHeader, userFromToken } from './lib/auth.js';
 import { vncAuthResponse } from './lib/des.js';
 import { providerFor } from './computer-provider-registry.js';
 import { viewerClosed, viewerOpened, botViewerClosed, botViewerOpened } from './idle.js';
@@ -127,7 +127,10 @@ export function attachVncRelay(server: Server) {
     const url = new URL(req.url ?? '/', 'http://x');
     const m = url.pathname.match(/^\/api\/bots\/([^/]+)\/screen$/);
     if (!m) return; // not ours
-    const user = userFromCookieHeader(req.headers.cookie);
+    const user = userFromCookieHeader(req.headers.cookie)
+      // A React Native WebView cannot send cookies, so native clients pass the session token in the
+      // query string instead: /api/bots/:id/screen?token=<session token>.
+      ?? userFromToken(url.searchParams.get('token') ?? undefined);
     const bot = user ? (db.prepare('SELECT * FROM bots WHERE id=? AND user_id=?').get(m[1], user.id) as any) : null;
     if (!user || !bot) {
       socket.write('HTTP/1.1 401 Unauthorized\r\n\r\n');

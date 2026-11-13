@@ -151,6 +151,16 @@ CREATE TABLE IF NOT EXISTS google_oauth_states (
   code_verifier TEXT NOT NULL,
   created_at INTEGER NOT NULL
 );
+-- Expo push tokens for the mobile client. A token is unique: re-registering it moves it to the
+-- user who holds the phone now.
+CREATE TABLE IF NOT EXISTS push_tokens (
+  id TEXT PRIMARY KEY,
+  user_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  token TEXT NOT NULL UNIQUE,
+  platform TEXT NOT NULL CHECK (platform IN ('ios', 'android')),
+  created_at INTEGER NOT NULL
+);
+CREATE INDEX IF NOT EXISTS push_tokens_user ON push_tokens(user_id);
 `);
 
 // Idempotent column migrations for tables that predate a column.

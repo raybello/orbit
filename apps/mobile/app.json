@@ -1,0 +1,26 @@
+{
+  "expo": {
+    "name": "Orbit",
+    "slug": "orbit",
+    "version": "0.1.0",
+    "scheme": "orbit",
+    "userInterfaceStyle": "automatic",
+    "newArchEnabled": true,
+    "ios": {
+      "bundleIdentifier": "dev.orbit.app",
+      "supportsTablet": true,
+      "infoPlist": {
+        "UIBackgroundModes": ["remote-notification"]
+      }
+    },
+    "android": {
+      "package": "dev.orbit.app",
+      "permissions": ["android.permission.POST_NOTIFICATIONS"]
+    },
+    "plugins": [
+      "expo-router",
+      ["expo-notifications", { "color": "#1C1C1C" }],
+      "expo-secure-store"
+    ]
+  }
+}

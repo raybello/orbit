@@ -4,8 +4,10 @@ import { Hono } from 'hono';
 import fs from 'node:fs';
 import path from 'node:path';
 import type { Server } from 'node:http';
+import { ORBIT_HEADERS, type HealthResponse } from '@orbit/contracts';
 import { env } from './env.js';
 import { api } from './routes.js';
+import { stackTokenMatches } from './lib/stack.js';
 import { attachVncRelay } from './vnc.js';
 import { initRoutines } from './routines.js';
 import { initTriggers } from './triggers.js';
@@ -30,7 +32,21 @@ initRooms();
 expireStaleApprovals();
 
 const app = new Hono();
-app.get('/api/health', (c) => c.json({ ok: true, engine: 'hermes' }));
+/**
+ * Public liveness probe. `stackToken: 'verified'` is only ever claimed when the caller proved it
+ * holds this stack's STACK_TOKEN (lib/stack.ts); a wrong or absent header simply omits the field.
+ */
+app.get('/api/health', (c) => {
+  const stackToken = stackTokenMatches(c.req.header(ORBIT_HEADERS.stackToken));
+  const body: HealthResponse = {
+    ok: true,
+    version: env.version,
+    engine: 'hermes',
+    uptimeMs: Math.round(process.uptime() * 1000),
+    ...(stackToken ? { stackToken: 'verified' as const } : {}),
+  };
+  return c.json(body);
+});
 // The app's tools for the agent engines (MCP).
 app.route('/mcp', mcpApi);
 app.route('/api/checkins', checkinsApi);

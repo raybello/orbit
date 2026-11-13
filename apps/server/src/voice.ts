@@ -357,12 +357,23 @@ voiceApi.post('/tool', async (c) => {
   }
 });
 
-const xai = new OpenAI({ apiKey: env.xaiKey, baseURL: XAI, timeout: 45_000 });
+/**
+ * Built on first use: voice is optional, so an empty XAI_API_KEY must not stop the server
+ * from starting (a fresh desktop stack runs with no keys at all).
+ */
+let xaiClient: OpenAI | null = null;
+function xai(): OpenAI {
+  if (!xaiClient) {
+    if (!env.xaiKey) throw new Error('XAI_API_KEY is not configured');
+    xaiClient = new OpenAI({ apiKey: env.xaiKey, baseURL: XAI, timeout: 45_000 });
+  }
+  return xaiClient;
+}
 
 async function summarizeCall(botName: string, transcript: { role: string; text: string }[], tasks: string[]): Promise<string | null> {
   if (!transcript.length && !tasks.length) return null;
   const lines = transcript.map((t) => `${t.role === 'user' ? 'User' : botName}: ${t.text}`).join('\n').slice(-12_000);
-  const res: any = await xai.responses.create({
+  const res: any = await xai().responses.create({
     model: env.xaiModel,
     reasoning: { effort: 'low' },
     store: false,

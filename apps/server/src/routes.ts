@@ -1,11 +1,15 @@
 import crypto from 'node:crypto';
 import { Hono } from 'hono';
 import { streamSSE } from 'hono/streaming';
+import { ORBIT_HEADERS, type DesktopConfigResponse, type DesktopProbeResponse, type PushPlatform, type PushRegisterRequest, type SignInResponse } from '@orbit/contracts';
 import { db, now } from './db.js';
 import { env } from './env.js';
 import { newId } from './lib/ids.js';
 import { hub } from './lib/hub.js';
-import { createSession, destroySession, isOwnerKey, requireUser, userFromCookieHeader, type AuthVars } from './lib/auth.js';
+import { createSession, destroySession, isOwnerKey, issueSessionToken, requireUser, userFromAuthorizationHeader, userFromCookieHeader, userFromToken, type AuthVars } from './lib/auth.js';
+import { stackTokenMatches } from './lib/stack.js';
+import { hermesConnected } from './lib/hermes-probe.js';
+import { registerPushToken, removePushTokens } from './push.js';
 import { allLive, appendRow, clearConversation, emitBot, getBot, getBotRow, getRow, listBots, listRoutines, listRows, listTasks, toRoutine, updateRow } from './store.js';
 import { enqueue, interrupt, resolveApproval } from './agent/loop.js';
 import { computerState, ensureComputer, forgetBotFiles, readyScreen, refreshComputer, releaseScreen, suspendComputer } from './computer.js';
@@ -72,7 +76,7 @@ function findOrCreateUser(email: string, name?: string, preferId?: string) {
 // ---------- auth ----------
 
 api.get('/auth/me', (c) => {
-  const user = userFromCookieHeader(c.req.header('cookie'));
+  const user = userFromCookieHeader(c.req.header('cookie')) ?? userFromAuthorizationHeader(c.req.header('authorization'));
   return c.json({ user, devLogin: env.devLogin });
 });
 
@@ -118,6 +122,28 @@ api.post('/auth/dev', async (c) => {
   }
 });
 
+/**
+ * Sign-in for the native clients: same sessions table as the cookie flow, but the token comes back
+ * in the body (and no cookie is set), so it can live in expo-secure-store or the desktop keystore.
+ * Only the owner key, or a dev server, may mint one — there is no password store to check against.
+ */
+api.post('/auth/sign-in', async (c) => {
+  const body = await c.req.json<{ email?: string; name?: string; ownerKey?: string }>().catch(() => ({} as any));
+  const email = String(body?.email ?? '').trim();
+  const byOwnerKey = Boolean(body?.ownerKey) && isOwnerKey(String(body.ownerKey));
+  if (!byOwnerKey && !env.devLogin) return c.json({ error: 'owner key required' }, 403);
+  if (!email.includes('@')) return c.json({ error: 'email required' }, 400);
+  try {
+    const { id } = findOrCreateUser(email, body?.name);
+    const { token, expiresAt } = issueSessionToken(id);
+    const user = userFromToken(token);
+    if (!user) return c.json({ error: 'could not sign in' }, 500);
+    return c.json({ ok: true, token, user, expiresAt } satisfies SignInResponse);
+  } catch (e: any) {
+    return c.json({ error: e instanceof UserError ? e.message : 'could not sign in' }, 403);
+  }
+});
+
 /** One-time sign-in links made by the owner endpoint. Kept in memory: a restart drops them. */
 const signInLinks = new Map<string, { userId: string; expires: number }>();
 
@@ -154,7 +180,8 @@ api.post('/auth/logout', (c) => { destroySession(c); return c.json({ ok: true })
 
 // everything below requires a session
 api.use('/*', async (c, next) => {
-  if (c.req.path.startsWith('/api/auth/') || c.req.path.startsWith('/api/apps/callback') || c.req.path === '/api/health') return next();
+  // /api/desktop/probe is authenticated by the stack token itself (see its handler).
+  if (c.req.path.startsWith('/api/auth/') || c.req.path.startsWith('/api/apps/callback') || c.req.path === '/api/health' || c.req.path === '/api/desktop/probe') return next();
   return requireUser(c, next);
 });
 
@@ -162,12 +189,21 @@ api.use('/*', async (c, next) => {
 
 api.get('/events', (c) => {
   const user = c.get('user');
+  const sinceRaw = c.req.query('since');
+  const sinceSeq = sinceRaw !== undefined && sinceRaw !== '' ? Number(sinceRaw) : null;
   return streamSSE(c, async (stream) => {
     const queue: string[] = [];
     let wake: (() => void) | null = null;
     const unsub = hub.subscribe(user.id, (ev) => { queue.push(JSON.stringify(ev)); wake?.(); });
     stream.onAbort(() => { unsub(); wake?.(); });
-    await stream.writeSSE({ data: JSON.stringify({ type: 'hello', serverTime: now() }) });
+    // Subscribe before replaying, so nothing emitted during the replay is lost. A reconnecting
+    // client sends the seq of the last event it saw; when it does, `hello` carries that cursor back
+    // and each replayed frame below advances it, so the client stays in step with us.
+    const resuming = sinceSeq !== null && Number.isFinite(sinceSeq);
+    await stream.writeSSE({ data: JSON.stringify({ type: 'hello', serverTime: now(), seq: resuming ? sinceSeq : hub.seq(user.id) }) });
+    if (resuming) {
+      for (const ev of hub.since(user.id, sinceSeq).events) await stream.writeSSE({ data: JSON.stringify(ev) });
+    }
     while (!stream.aborted) {
       if (!queue.length) {
         await Promise.race([new Promise<void>((r) => (wake = r)), new Promise((r) => setTimeout(r, 20_000))]);
@@ -178,6 +214,53 @@ api.get('/events', (c) => {
     }
     unsub();
   });
+});
+
+// ---------- desktop app ----------
+
+/**
+ * Liveness for the desktop's local stack controller, authenticated by the stack token alone: it
+ * runs on the same machine and holds no user session. 403 means this server has no STACK_TOKEN at
+ * all, so nothing could ever verify.
+ */
+api.get('/desktop/probe', async (c) => {
+  if (!env.stackToken) return c.json({ error: 'stack token not configured' }, 403);
+  if (!stackTokenMatches(c.req.header(ORBIT_HEADERS.stackToken))) return c.json({ error: 'unauthenticated' }, 401);
+  const body: DesktopProbeResponse = {
+    ok: true,
+    imageTag: env.imageTag,
+    hermesConnected: await hermesConnected(),
+    version: env.version,
+  };
+  return c.json(body);
+});
+
+/** Server-side feature flags for the desktop app. The marker header keeps web requests out. */
+api.get('/desktop/config', (c) => {
+  if (c.req.header(ORBIT_HEADERS.desktop) !== '1') return c.json({ error: 'desktop client required' }, 403);
+  const body: DesktopConfigResponse = {
+    updateCheckUrl: env.updateCheckUrl,
+    features: { voice: true, pushNotifications: false },
+    maxBots: env.maxBots,
+    version: env.version,
+  };
+  return c.json(body);
+});
+
+// ---------- push notifications ----------
+
+api.post('/push/register', async (c) => {
+  const body = await c.req.json<PushRegisterRequest>().catch(() => ({} as any));
+  const platform = body?.platform;
+  if (!body?.token || typeof body.token !== 'string') return c.json({ error: 'token required' }, 400);
+  if (platform !== 'ios' && platform !== 'android') return c.json({ error: "platform must be 'ios' or 'android'" }, 400);
+  registerPushToken(c.get('user').id, body.token, platform as PushPlatform);
+  return c.json({ ok: true });
+});
+
+api.delete('/push/register', (c) => {
+  removePushTokens(c.get('user').id);
+  return c.json({ ok: true });
 });
 
 // ---------- bots ----------

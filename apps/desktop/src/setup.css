@@ -1,0 +1,310 @@
+/*
+ * The first-run window's styles.
+ *
+ * Values mirror packages/ui-tokens/tokens.css (the source of truth for the web renderer).
+ * This window is standalone on purpose — it loads from file:// before any server exists,
+ * so it cannot import the web app's stylesheet, only copy its tokens.
+ *
+ * Light tokens are the defaults; the dark block below repeats the ones this window uses.
+ * `prefers-color-scheme` is what the main process follows when it sets the window theme.
+ */
+
+:root {
+  --color-bg-chrome: #fcfcfc;
+  --color-bg-sidebar: #f5f5f5;
+  --color-bg-pane: #ffffff;
+  --color-bg-hover: #1c1c1c0f;
+  --color-bg-active: #1c1c1c14;
+  --color-text-primary: #1c1c1c;
+  --color-text-secondary: #1c1c1cad;
+  --color-text-tertiary: #1c1c1c8f;
+  --color-border-secondary: #1c1c1c1f;
+  --color-border-tertiary: #1c1c1c14;
+  --color-border-focus: #1e86fc;
+  --color-primary: #1c1c1c;
+  --color-on-primary: #ffffff;
+  --color-bg-primary-hover: #363636;
+  --color-danger: #fb2b3e;
+  --color-danger-bg: #fb2b3e14;
+  --color-success: #14c16f;
+  --color-success-bg: #14c16f14;
+  --color-warn: #f59312;
+  --color-warn-bg: #f5931214;
+  --text-xs: 12px;
+  --text-sm: 13px;
+  --text-base: 14px;
+  --text-lg: 17px;
+  --font-weight-regular: 425;
+  --font-weight-medium: 500;
+  --font-weight-semibold: 600;
+  --radius-sm: 8px;
+  --radius-md: 12px;
+  --radius-full: 9999px;
+  --font-stack: -apple-system, BlinkMacSystemFont, "SF Pro Text", "Segoe UI", Inter, system-ui, sans-serif;
+  --font-mono-stack: ui-monospace, "SF Mono", SFMono-Regular, Menlo, Consolas, "Liberation Mono", monospace;
+}
+
+@media (prefers-color-scheme: dark) {
+  :root {
+    --color-bg-chrome: #161616;
+    --color-bg-sidebar: #1c1c1c;
+    --color-bg-pane: #202020;
+    --color-bg-hover: #ffffff14;
+    --color-bg-active: #ffffff1f;
+    --color-text-primary: #f2f2f2;
+    --color-text-secondary: #f2f2f2ad;
+    --color-text-tertiary: #f2f2f28f;
+    --color-border-secondary: #ffffff1f;
+    --color-border-tertiary: #ffffff14;
+    --color-primary: #f2f2f2;
+    --color-on-primary: #1c1c1c;
+    --color-bg-primary-hover: #d6d6d6;
+  }
+}
+
+* {
+  box-sizing: border-box;
+}
+
+/* `hidden` is how the renderer switches screens; a class with `display` would win
+   against the attribute's UA rule, so make it explicit. */
+[hidden] {
+  display: none !important;
+}
+
+html,
+body {
+  height: 100%;
+  margin: 0;
+}
+
+body {
+  /* The window is 540×420; macOS's hidden title bar eats ~28px of that, so size to the
+     viewport rather than to constants or the footer falls off the bottom. */
+  width: 100%;
+  height: 100%;
+  overflow: hidden;
+  display: flex;
+  flex-direction: column;
+  background: var(--color-bg-pane);
+  color: var(--color-text-primary);
+  font-family: var(--font-stack);
+  font-size: var(--text-base);
+  font-weight: var(--font-weight-regular);
+  -webkit-font-smoothing: antialiased;
+  user-select: none;
+}
+
+/* Frameless on macOS: a 36px strip the user can drag the window by. */
+.titlebar {
+  height: 36px;
+  flex: 0 0 36px;
+  -webkit-app-region: drag;
+  background: var(--color-bg-chrome);
+  border-bottom: 1px solid var(--color-border-tertiary);
+}
+
+body[data-framed="true"] .titlebar {
+  display: none;
+}
+
+.screen {
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  padding: 20px 28px 18px;
+}
+
+h1 {
+  margin: 0 0 6px;
+  font-size: 22px;
+  line-height: 1.25;
+  font-weight: var(--font-weight-semibold);
+  letter-spacing: -0.01em;
+}
+
+.lede {
+  margin: 0 0 16px;
+  color: var(--color-text-secondary);
+  font-size: var(--text-sm);
+}
+
+form {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+}
+
+.choice {
+  display: flex;
+  gap: 10px;
+  align-items: flex-start;
+  padding: 10px 12px;
+  border: 1px solid var(--color-border-secondary);
+  border-radius: var(--radius-md);
+  cursor: pointer;
+}
+
+.choice:hover {
+  background: var(--color-bg-hover);
+}
+
+.choice[data-selected="true"] {
+  border-color: var(--color-border-focus);
+  background: var(--color-bg-active);
+}
+
+.choice input {
+  margin: 2px 0 0;
+  accent-color: var(--color-primary);
+}
+
+.choice-body {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.choice-title {
+  font-weight: var(--font-weight-medium);
+}
+
+.choice-note {
+  color: var(--color-text-tertiary);
+  font-size: var(--text-xs);
+  line-height: 1.4;
+  margin: 0;
+}
+
+.url-row {
+  display: flex;
+  gap: 8px;
+  padding: 2px 12px 0 34px;
+}
+
+.url-row input {
+  flex: 1;
+  min-width: 0;
+  height: 32px;
+  padding: 0 10px;
+  border: 1px solid var(--color-border-secondary);
+  border-radius: var(--radius-sm);
+  background: var(--color-bg-sidebar);
+  color: var(--color-text-primary);
+  font-family: var(--font-mono-stack);
+  font-size: var(--text-xs);
+  user-select: text;
+}
+
+.url-row input:focus {
+  outline: none;
+  border-color: var(--color-border-focus);
+}
+
+.status {
+  margin: 4px 0 0;
+  min-height: 18px;
+  font-size: var(--text-xs);
+  color: var(--color-text-secondary);
+}
+
+.status[data-kind="ok"] {
+  color: var(--color-success);
+}
+
+.status[data-kind="error"] {
+  color: var(--color-danger);
+}
+
+.status[data-kind="busy"] {
+  color: var(--color-warn);
+}
+
+footer {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding-top: 12px;
+  border-top: 1px solid var(--color-border-tertiary);
+}
+
+.hint {
+  color: var(--color-text-tertiary);
+  font-size: var(--text-xs);
+  line-height: 1.4;
+  min-width: 0;
+}
+
+button {
+  font-family: inherit;
+  font-size: var(--text-sm);
+  font-weight: var(--font-weight-medium);
+  border-radius: var(--radius-full);
+  border: 1px solid transparent;
+  padding: 7px 16px;
+  cursor: pointer;
+  transition: background 120ms ease, opacity 120ms ease;
+}
+
+button:disabled {
+  cursor: default;
+  opacity: 0.45;
+}
+
+button.primary {
+  background: var(--color-primary);
+  color: var(--color-on-primary);
+}
+
+button.primary:not(:disabled):hover {
+  background: var(--color-bg-primary-hover);
+}
+
+button.secondary {
+  background: transparent;
+  border-color: var(--color-border-secondary);
+  color: var(--color-text-primary);
+}
+
+button.secondary:not(:disabled):hover {
+  background: var(--color-bg-hover);
+}
+
+button.link {
+  background: none;
+  border: none;
+  padding: 0;
+  color: var(--color-text-secondary);
+  text-decoration: underline;
+  text-underline-offset: 2px;
+}
+
+.hermes-actions {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 8px;
+}
+
+.log {
+  flex: 1;
+  min-height: 0;
+  margin: 12px 0 0;
+  padding: 10px 12px;
+  overflow-y: auto;
+  border-radius: var(--radius-sm);
+  background: var(--color-bg-sidebar);
+  border: 1px solid var(--color-border-tertiary);
+  font-family: var(--font-mono-stack);
+  font-size: var(--text-xs);
+  line-height: 1.5;
+  color: var(--color-text-secondary);
+  white-space: pre-wrap;
+  word-break: break-word;
+  user-select: text;
+}

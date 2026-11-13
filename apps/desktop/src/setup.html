@@ -1,0 +1,83 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <!-- The setup window is file:// and never runs remote code: a strict CSP keeps it so. -->
+    <meta
+      http-equiv="Content-Security-Policy"
+      content="default-src 'none'; script-src 'self'; style-src 'self'; img-src 'self' data:; connect-src 'none'"
+    />
+    <meta name="color-scheme" content="light dark" />
+    <title>Welcome to Orbit</title>
+    <link rel="stylesheet" href="setup.css" />
+  </head>
+  <body>
+    <div class="titlebar" id="titlebar"></div>
+
+    <main id="screen-server" class="screen">
+      <h1>Welcome to Orbit</h1>
+      <p class="lede">Where should this app get its Orbit server?</p>
+
+      <form id="server-form">
+        <label class="choice" data-choice="new">
+          <input type="radio" name="mode" value="new" checked />
+          <span class="choice-body">
+            <span class="choice-title">This computer</span>
+            <span class="choice-note">Run everything locally. Requires Docker.</span>
+          </span>
+        </label>
+
+        <label class="choice" data-choice="existing">
+          <input type="radio" name="mode" value="existing" />
+          <span class="choice-body">
+            <span class="choice-title">Existing instance</span>
+            <span class="choice-note">Connect to an Orbit server you already run.</span>
+          </span>
+        </label>
+
+        <div class="url-row" id="url-row" hidden>
+          <input
+            id="server-url"
+            type="text"
+            inputmode="url"
+            autocomplete="off"
+            spellcheck="false"
+            placeholder="https://orbit.example.com"
+            aria-label="Orbit server URL"
+          />
+          <button type="button" id="check-server" class="secondary">Check</button>
+        </div>
+
+        <p class="status" id="status" role="status" aria-live="polite"></p>
+      </form>
+
+      <footer>
+        <span class="hint" id="hint"></span>
+        <button type="button" id="continue" class="primary" disabled>Continue →</button>
+      </footer>
+    </main>
+
+    <main id="screen-hermes" class="screen" hidden>
+      <h1>Hermes not found</h1>
+      <p class="lede">Orbit needs Hermes Agent to run your bots.</p>
+
+      <div class="hermes-actions">
+        <button type="button" id="install-hermes" class="primary">Install Hermes automatically</button>
+        <p class="choice-note">
+          Downloads the Hermes installer from github.com/NousResearch/hermes-agent
+        </p>
+        <button type="button" id="manual-hermes" class="link">I'll install it myself</button>
+        <p class="choice-note">Opens the Hermes install docs.</p>
+      </div>
+
+      <pre id="hermes-log" class="log" hidden></pre>
+
+      <footer>
+        <span class="hint" id="hermes-hint"></span>
+        <button type="button" id="hermes-continue" class="primary" hidden>Continue →</button>
+      </footer>
+    </main>
+
+    <script src="setup.js"></script>
+  </body>
+</html>

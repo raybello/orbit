@@ -194,3 +194,43 @@ docs/               architecture; the Orgo and xAI/Composio guides predate the H
 Project code is available under the [MIT license](LICENSE). The bot artwork and some icons come from Grok Bot's design and remain the property of their owners, as do third-party app logos; the MIT license does not cover them. See [third-party notices](THIRD_PARTY_NOTICES.md).
 
 Continued from [orbit-clone](https://github.com/nickvasilescu/orbit-clone). Built with [Hermes Agent](https://github.com/NousResearch/hermes-agent), [Orgo](https://orgo.ai), [Composio](https://composio.dev), and [xAI](https://x.ai). This is an independent project, unaffiliated with xAI, Cursor/Anysphere or Nous Research.
+
+## Docker
+
+`infra/compose` has two stacks. Both run the same two services: `api` (port 8787 — the API *and* the
+built web client) and `sandbox-supervisor` (no port at all; it only suspends idle bot containers, so
+containers from a stopped API do not sit there holding memory). State lives on the `orbit-data`
+volume: `DB_PATH=/data/orbit.db`, `ENGINES_DIR=/data/engines`, `COMPUTER_HOME_DIR=/data/computers`.
+
+Source-based stack — builds the image from this checkout:
+
+```bash
+cp .env.example .env       # once, at the repo root; SESSION_SECRET is required
+docker compose -f infra/compose/docker-compose.yml up --build
+open http://127.0.0.1:8787
+```
+
+Image-based stack — what the desktop app bundles (`ghcr.io/raybello/orbit/app:<tag>`, `edge` tracks
+`main`). The app writes `.env` beside the compose file; to run it by hand:
+
+```bash
+cd infra/compose
+cp .env.images.example .env    # fill in SESSION_SECRET (openssl rand -hex 32)
+docker compose -f docker-compose.images.yml --env-file .env up -d
+```
+
+The build context for the server image is the repository root, not `apps/server`: the image installs
+the pnpm workspace. `docker build -f apps/server/Dockerfile -t orbit/app:dev .` from the root builds
+the same thing. `ORBIT_IMAGE_TAG` selects a published build; `.github/workflows/publish-images.yml`
+pushes `app` and `computer` for `linux/amd64` and `linux/arm64` on every push to `main` (`edge`) and
+on `v*` tags (`v<version>`, `latest`).
+
+One caveat for per-bot Docker computers (`COMPUTER_KIND=docker`, the default for every bot but the
+primary one): a bot's home is a **host** bind mount, so the folder in `COMPUTER_HOME_DIR` must exist
+at the same absolute path on the host and inside the `api` container. With `COMPUTER_KIND=orgo` (or
+by setting `ORBIT_HOST_DATA` and mounting it at the same path — see the comments in the compose file)
+no such mapping is needed.
+
+Also note that today the server exits at start-up if `COMPOSIO_API_KEY` or `XAI_API_KEY` is empty: both
+SDKs validate their key in the constructor. A placeholder boots it; the desktop setup window is where
+real keys come from.

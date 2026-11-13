@@ -11,9 +11,16 @@ const TTL_MS = 30 * 24 * 3600 * 1000;
 
 export type AuthVars = { Variables: { user: User } };
 
-export function createSession(c: Context, userId: string) {
+/** A new session row. Callers decide whether to also hand it out as a cookie. */
+export function issueSessionToken(userId: string): { token: string; expiresAt: number } {
   const t = token();
-  db.prepare('INSERT INTO auth_sessions(token,user_id,created_at,expires_at) VALUES (?,?,?,?)').run(t, userId, now(), now() + TTL_MS);
+  const expiresAt = now() + TTL_MS;
+  db.prepare('INSERT INTO auth_sessions(token,user_id,created_at,expires_at) VALUES (?,?,?,?)').run(t, userId, now(), expiresAt);
+  return { token: t, expiresAt };
+}
+
+export function createSession(c: Context, userId: string) {
+  const { token: t } = issueSessionToken(userId);
   setCookie(c, COOKIE, t, { httpOnly: true, sameSite: 'Lax', secure: env.appUrl.startsWith('https:'), path: '/', maxAge: TTL_MS / 1000 });
 }
 
@@ -36,8 +43,26 @@ export function userFromCookieHeader(cookieHeader: string | undefined): User | n
   return userFromToken(m ? decodeURIComponent(m.slice(COOKIE.length + 1)) : undefined);
 }
 
+/** The session token in `Authorization: Bearer <token>`, if that is what the request uses. */
+export function bearerToken(authorizationHeader: string | undefined): string | undefined {
+  const m = /^Bearer\s+(\S+)\s*$/i.exec((authorizationHeader ?? '').trim());
+  return m?.[1];
+}
+
+/**
+ * The mobile and desktop clients cannot hold cookies, so they send the same `auth_sessions` token
+ * as a bearer. Accept both everywhere a session is needed.
+ */
+export function userFromAuthorizationHeader(authorizationHeader: string | undefined): User | null {
+  return userFromToken(bearerToken(authorizationHeader));
+}
+
+export function userFromRequest(c: Context): User | null {
+  return userFromToken(getCookie(c, COOKIE)) ?? userFromAuthorizationHeader(c.req.header('authorization'));
+}
+
 export const requireUser: MiddlewareHandler<AuthVars> = async (c, next) => {
-  const u = userFromToken(getCookie(c, COOKIE));
+  const u = userFromRequest(c);
   if (!u) return c.json({ error: 'unauthenticated' }, 401);
   c.set('user', u);
   await next();

@@ -1,0 +1,79 @@
+# The stack the desktop app bundles and runs: published images only, no build step, no network
+# beyond the registry pull. The app writes .env in this folder before `up` (SESSION_SECRET,
+# DB_ENCRYPTION_KEY and STACK_TOKEN are generated there) and then reads the stack's state from
+# GET /api/health.
+#
+#   docker compose -f docker-compose.images.yml --env-file .env up -d
+#
+# Run it from a directory holding both files (the desktop app copies them into userData/stack and
+# puts its generated .env beside them). ORBIT_IMAGE_TAG selects the release: edge tracks main.
+name: orbit
+
+services:
+  api:
+    image: ghcr.io/raybello/orbit/app:${ORBIT_IMAGE_TAG:-edge}
+    init: true
+    restart: unless-stopped
+    env_file:
+      # Written by the desktop app's stack controller (or copied from .env.images.example) beside
+      # this file before `up`. Not required here so `docker compose config` works on a fresh clone.
+      - path: .env
+        required: false
+    environment:
+      PORT: "8787"
+      # The container's paths, not the host's: the app must not be able to override these.
+      DB_PATH: /data/orbit.db
+      ENGINES_DIR: /data/engines
+      COMPUTER_HOME_DIR: ${COMPUTER_HOME_DIR:-/data/computers}
+      DOCKER_SOCKET: /var/run/docker.sock
+      APP_URL: ${APP_URL:-http://127.0.0.1:8787}
+      SERVER_URL: ${SERVER_URL:-http://127.0.0.1:8787}
+      MCP_BASE_URL: ${MCP_BASE_URL:-http://host.docker.internal:8787}
+      HERMES_URL: ${HERMES_URL:-http://host.docker.internal:8642}
+      LOG_LEVEL: ${LOG_LEVEL:-info}
+    ports:
+      # Loopback only. ORBIT_API_PORT=0 in .env.images.example is the "let the OS pick" case the
+      # desktop controller uses when 8787 is taken; this port is the one the app loads.
+      - "127.0.0.1:${ORBIT_WEB_PORT:-8787}:8787"
+    volumes:
+      - orbit-data:/data
+      - /var/run/docker.sock:/var/run/docker.sock
+      # Per-bot computers need one host folder mounted at the same path here and on the host:
+      # - ${ORBIT_HOST_DATA}:${ORBIT_HOST_DATA}
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    healthcheck:
+      test:
+        - CMD
+        - node
+        - -e
+        - "fetch('http://127.0.0.1:8787/api/health').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))"
+      interval: 10s
+      timeout: 5s
+      retries: 6
+      start_period: 20s
+
+  sandbox-supervisor:
+    # Same image as api; this entrypoint binds nothing and only pauses idle bot containers. It has
+    # to see the same database and the same Docker daemon, hence the same volume and socket.
+    image: ghcr.io/raybello/orbit/app:${ORBIT_IMAGE_TAG:-edge}
+    command: ["node", "dist/supervisor.js"]
+    init: true
+    restart: unless-stopped
+    env_file:
+      - path: .env
+        required: false
+    environment:
+      DB_PATH: /data/orbit.db
+      ENGINES_DIR: /data/engines
+      COMPUTER_HOME_DIR: ${COMPUTER_HOME_DIR:-/data/computers}
+      DOCKER_SOCKET: /var/run/docker.sock
+      SANDBOX_SUPERVISOR_TOKEN: ${SANDBOX_SUPERVISOR_TOKEN:-}
+      LOG_LEVEL: ${LOG_LEVEL:-info}
+    volumes:
+      - orbit-data:/data
+      - /var/run/docker.sock:/var/run/docker.sock
+      # - ${ORBIT_HOST_DATA}:${ORBIT_HOST_DATA}
+
+volumes:
+  orbit-data:

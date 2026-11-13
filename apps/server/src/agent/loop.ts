@@ -12,6 +12,7 @@ import { engineFor } from '../engine.js';
 import { instructionsFor } from './prompt.js';
 import { activityFor, appToolName, humanizeSlug, LIBRARY_ROOT, policyFor } from './tools.js';
 import { MIME_BY_EXTENSION } from '../lib/mime.js';
+import { sendPushNotification } from '../push.js';
 
 /**
  * A turn: one message handed to the bot's Hermes engine and streamed back into the conversation.
@@ -193,6 +194,12 @@ export async function requestApproval(
   setLive(botId, { isRunning: false, activity: { kind: 'waiting_for_you', since: now() }, awaiting: { reason: humanizeSlug(pol.key), since: now() } });
   hub.emit(userId, { type: 'tasks', botId });
   emitBot(botId);
+  // Nothing moves until someone answers, so this one is pushed even when a screen is open.
+  void sendPushNotification(userId, {
+    title: `${getBotRow(botId).name} needs your input`,
+    body: card.body.type === 'card' && card.body.card === 'approval' ? card.body.title.slice(0, 80) : 'A tool needs your approval.',
+    data: { botId },
+  });
 
   let timer: NodeJS.Timeout | undefined;
   const decision = await new Promise<ApprovalDecision>((resolve) => {
@@ -338,6 +345,8 @@ async function runTurn(botId: string, trigger: Trigger) {
   // The assistant message being written right now.
   let msgSeq: number | null = null;
   let text = '';
+  /** Text of the last assistant message this turn wrote, for the push notification at the end. */
+  let lastMessageText = '';
   let lastFlush = 0;
   let wroteText = false;
   // Parse [hq-file:path|filename|mediaType] markers out of text, returning cleaned text + files.
@@ -373,6 +382,7 @@ async function runTurn(botId: string, trigger: Trigger) {
     const b: MessageBody = { type: 'message', role: 'assistant', text: cleanText, streaming, ...(allFiles.length ? { files: allFiles } : {}) };
     if (msgSeq === null) msgSeq = appendRow(botId, 'message', b).seq;
     else updateRow(botId, msgSeq, b);
+    if (cleanText) lastMessageText = cleanText;
     lastFlush = Date.now();
   };
   const hasPendingFiles = () => pendingFiles.length > 0 || (pendingFilesByBot.get(botId)?.length ?? 0) > 0;
@@ -401,6 +411,7 @@ async function runTurn(botId: string, trigger: Trigger) {
     pendingFiles.length = 0;
     appendRow(botId, 'message', { type: 'message', role: 'assistant', text: cleanText, streaming: false, ...(allFiles.length ? { files: allFiles } : {}) });
     db.prepare('UPDATE bots SET unread = unread + 1 WHERE id=?').run(botId);
+    if (cleanText) lastMessageText = cleanText;
     wroteText = true;
   };
 
@@ -598,5 +609,11 @@ async function runTurn(botId: string, trigger: Trigger) {
     if (!pendingApprovals(botId).length) setLive(botId, { isRunning: false, activity: null, awaiting: null, startedAt: null, caption: null });
     else setLive(botId, { isRunning: false, caption: null });
     emitBot(botId);
+    // The bot is idle and said something. Someone with no stream open (phone in a pocket) is told;
+    // anyone watching the app in a browser already sees the message arrive.
+    const finished = lastMessageText.trim();
+    if (finished && !failed && !turn.silent && hub.connections(userId) === 0) {
+      void sendPushNotification(userId, { title: `${bot.name} finished`, body: finished.slice(0, 80), data: { botId } });
+    }
   }
 }

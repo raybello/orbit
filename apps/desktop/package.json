@@ -1,0 +1,32 @@
+{
+  "name": "@orbit/desktop",
+  "productName": "Orbit",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Orbit desktop app: the Orbit server (local Docker stack or an existing instance) in its own window.",
+  "type": "module",
+  "main": "dist/main.js",
+  "scripts": {
+    "dev": "pnpm build && electron .",
+    "build": "node scripts/build.mjs",
+    "check-resources": "node scripts/check-resources.mjs",
+    "pack": "pnpm --filter @orbit/web build && pnpm build && pnpm check-resources && electron-builder",
+    "release": "pnpm --filter @orbit/web build && pnpm build && pnpm check-resources && electron-builder --publish always",
+    "test": "tsx --test src/__tests__/*.test.ts",
+    "typecheck": "tsc -p tsconfig.json --noEmit"
+  },
+  "dependencies": {
+    "electron-updater": "^6.3.9",
+    "yaml": "^2.6.1"
+  },
+  "devDependencies": {
+    "@orbit/contracts": "workspace:*",
+    "@orbit/logger": "workspace:*",
+    "@types/node": "^22.10.2",
+    "electron": "^36.0.0",
+    "electron-builder": "^26.0.12",
+    "esbuild": "^0.24.2",
+    "tsx": "^4.19.2",
+    "typescript": "^5.7.2"
+  }
+}

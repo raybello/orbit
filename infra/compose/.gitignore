@@ -1,0 +1,6 @@
+# The repo's root .gitignore ignores .env.* (to keep real secrets out of git). The examples in
+# this folder are documentation and must be committed; the stack's own .env must not.
+!.env.example
+!.env.images.example
+.env
+.env.images
