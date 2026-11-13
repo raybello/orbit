@@ -1,7 +1,7 @@
 {
-  "name": "grokbot",
+  "name": "orbit",
   "private": true,
-  "description": "Bot HQ: a team of Hermes agents, each with its own screen on one Orgo computer, with Composio apps and xAI voice.",
+  "description": "Orbit: a team of Hermes agents, each with its own screen on one Orgo computer, with Composio apps and xAI voice.",
   "workspaces": [
     "server",
     "web"
