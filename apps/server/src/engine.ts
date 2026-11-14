@@ -22,7 +22,9 @@ import type { EngineInfo, EngineProvider } from './types.js';
  *   server; we never write its config, restart it or stop it.
  * - A 'managed' engine is a Hermes home of our own under ENGINES_DIR/<botId> with its own
  *   `hermes gateway run`, started here and left running when this server exits. Its home sits
- *   outside ~/.hermes, so Hermes treats it as a separate tenant beside the primary gateway.
+ *   *inside* the primary agent's home (ENGINES_DIR defaults to `<primary>/orbit-agents`): separate
+ *   state, but still under Hermes' root, which is what lets a bot read the primary's OAuth
+ *   subscription sign-ins instead of needing a copy of them.
  */
 
 export type EngineKind = 'primary' | 'managed';
@@ -157,6 +159,248 @@ function extraMcpServers(): Record<string, any> {
   }
 }
 
+/** Providers whose OAuth refresh token is single-use: redeeming it rotates the pair for everyone. */
+const SINGLE_USE_OAUTH = new Set(['anthropic', 'openai-codex', 'xai-oauth', 'nous']);
+/** Files that hold the same single-use grants outside auth.json. */
+const OAUTH_SINGLETON_FILES = ['.anthropic_oauth.json'];
+/** Marks a row this server wrote from the primary's grant, so it is never mistaken for a bot's own. */
+const INHERITED_SOURCE = 'inherited:orbit';
+
+interface AuthStore {
+  version?: number;
+  providers?: Record<string, any>;
+  credential_pool?: Record<string, any[]>;
+  active_provider?: string;
+  updated_at?: string;
+  [key: string]: any;
+}
+
+function readAuthStore(file: string): AuthStore | null {
+  try {
+    const store = JSON.parse(fs.readFileSync(file, 'utf8'));
+    return store && typeof store === 'object' ? store : null;
+  } catch {
+    return null;
+  }
+}
+
+const isInheritedRow = (row: any) =>
+  Boolean(row && typeof row === 'object' && String(row.source ?? '') === INHERITED_SOURCE);
+const tokenOf = (row: any) => String(row?.access_token ?? '').trim();
+const refreshOf = (row: any) => String(row?.refresh_token ?? '').trim();
+
+/** An access token that is present and not (about to be) expired. */
+function liveToken(row: any, skewSeconds = 120): boolean {
+  if (!row || typeof row !== 'object' || !tokenOf(row)) return false;
+  const expMs = Number(row.expires_at_ms ?? NaN);
+  if (Number.isFinite(expMs)) return expMs - skewSeconds * 1000 > Date.now();
+  const expSec = Number(row.expires_at ?? NaN);
+  if (Number.isFinite(expSec)) return expSec * 1000 - skewSeconds * 1000 > Date.now();
+  return true;
+}
+
+/** A row this server wrote: no refresh token, so using it can never rotate the primary's grant. */
+function usableInheritedRow(row: any): boolean {
+  return isInheritedRow(row) && !refreshOf(row) && liveToken(row);
+}
+
+/** The subscription sign-ins the primary agent holds, one per provider, as access tokens only. */
+export interface PrimarySubscription {
+  provider: string;
+  label: string;
+  token: string;
+  expiresAtMs: number | null;
+  baseUrl?: string;
+}
+
+/** Providers Hermes reads a subscription token for from the environment (anthropic: ANTHROPIC_TOKEN). */
+const SUBSCRIPTION_ENV: Record<string, string> = { anthropic: 'ANTHROPIC_TOKEN' };
+
+export function primarySubscriptions(): PrimarySubscription[] {
+  const store = readAuthStore(path.join(env.hermesHome, 'auth.json'));
+  const pool = (store?.credential_pool ?? {}) as Record<string, any[]>;
+  const out: PrimarySubscription[] = [];
+  for (const provider of SINGLE_USE_OAUTH) {
+    const rows = Array.isArray(pool[provider]) ? pool[provider] : [];
+    const row = rows.find((r) => liveToken(r));
+    if (!row) continue;
+    out.push({
+      provider,
+      label: String(row.label ?? provider),
+      token: tokenOf(row),
+      expiresAtMs: Number(row.expires_at_ms ?? NaN) || null,
+      ...(row.base_url ? { baseUrl: String(row.base_url) } : {}),
+    });
+  }
+  return out;
+}
+
+/** The env vars that hand a bot those tokens (only the providers Hermes reads from the environment). */
+export function subscriptionEnv(subs: PrimarySubscription[]): Record<string, string> {
+  const vars: Record<string, string> = {};
+  for (const sub of subs) {
+    const name = SUBSCRIPTION_ENV[sub.provider];
+    if (name) vars[name] = sub.token;
+  }
+  return vars;
+}
+
+/**
+ * Hand a managed bot the primary agent's subscription sign-ins, without copying the grant.
+ *
+ * Hermes treats an OAuth refresh token as single-use: redeeming it rotates the pair and strands
+ * every other holder with `invalid_grant` — which is exactly the "No Anthropic credentials found"
+ * a bot shows after inheriting one by copy. So the bot gets the primary's *access token only*, in
+ * its `.env` as ANTHROPIC_TOKEN / as a pool row with no refresh token. Neither can rotate anything
+ * the user signed in with, and `startSubscriptionSync` re-reads them as the primary refreshes.
+ *
+ * A bot that signed in for itself keeps its own rows: only rows this server wrote (`source:
+ * inherited:orbit`) are replaced, and rows that are provably a fork of the primary's grant are
+ * dropped. Returns what it changed, for logging and tests.
+ */
+export function inheritSubscriptions(home: string): string[] {
+  const subs = primarySubscriptions();
+  const ownFile = path.join(home, 'auth.json');
+  const own: AuthStore = readAuthStore(ownFile) ?? { version: 1, providers: {} };
+  own.credential_pool = own.credential_pool && typeof own.credential_pool === 'object' ? own.credential_pool : {};
+  if (!own.providers || typeof own.providers !== 'object') own.providers = {};
+  const changed: string[] = [];
+
+  for (const provider of SINGLE_USE_OAUTH) {
+    const mine: any[] = Array.isArray(own.credential_pool[provider]) ? own.credential_pool[provider] : [];
+    const sub = subs.find((x) => x.provider === provider) ?? null;
+
+    // A fork carries the primary's refresh token; using it could rotate the user's sign-in away.
+    const forked = mine.filter(
+      (r) => !isInheritedRow(r) && refreshOf(r) && (!sub || tokenOf(r) !== sub.token),
+    );
+    const kept = mine.filter((r) => !forked.includes(r));
+    let dirty = forked.length > 0;
+    if (forked.length) changed.push(`-fork:${provider}`);
+
+    // A bot's own sign-in wins over anything inherited.
+    if (kept.some((r) => !isInheritedRow(r))) {
+      if (dirty) own.credential_pool[provider] = kept;
+      continue;
+    }
+    if (!sub) {
+      if (kept.length) { delete own.credential_pool[provider]; changed.push(`-expired:${provider}`); }
+      continue;
+    }
+    const row: Record<string, any> = {
+      id: kept[0]?.id ?? crypto.randomBytes(3).toString('hex'),
+      label: `inherited:${sub.label}`,
+      auth_type: 'oauth',
+      source: INHERITED_SOURCE,
+      priority: 0,
+      access_token: sub.token,
+      request_count: 0,
+    };
+    if (sub.expiresAtMs) row.expires_at_ms = sub.expiresAtMs;
+    if (sub.baseUrl) row.base_url = sub.baseUrl;
+    if (JSON.stringify(kept) === JSON.stringify([row])) continue;
+    own.credential_pool[provider] = [row];
+    changed.push(provider);
+  }
+
+  // Singleton credential files carry the same single-use grants; a copy re-seeds a forked row.
+  for (const name of OAUTH_SINGLETON_FILES) {
+    const file = path.join(home, name);
+    if (!fs.existsSync(file)) continue;
+    fs.rmSync(file, { force: true });
+    changed.push(`-${name}`);
+  }
+
+  if (changed.length) {
+    own.updated_at = new Date().toISOString();
+    writePrivate(ownFile, `${JSON.stringify(own, null, 2)}\n`);
+  }
+  return changed;
+}
+
+/**
+ * Keep every managed bot's inherited credentials fresh.
+ *
+ * Hermes reads a pool row when it needs one and re-reads auth.json when the file changes, so
+ * rewriting a row is enough. A token passed through the environment is read once at gateway start,
+ * so when that one changes the bot's engine is restarted — which happens when the primary agent
+ * refreshes (roughly every eight hours), not on every pass.
+ */
+export function startSubscriptionSync(intervalMs = 5 * 60_000): NodeJS.Timeout {
+  const run = async () => {
+    const subs = primarySubscriptions();
+    const envVars = subscriptionEnv(subs);
+    let bots: any[] = [];
+    try {
+      bots = db.prepare("SELECT id FROM bots WHERE engine='managed'").all() as any[];
+    } catch {
+      return;
+    }
+    for (const b of bots) {
+      try {
+        const home = homeFor(b.id);
+        if (!fs.existsSync(home)) continue;
+        inheritSubscriptions(home);
+        const envFile = path.join(home, '.env');
+        const vars = readDotenv(envFile);
+        let changed = false;
+        for (const [name, value] of Object.entries(envVars)) {
+          // A bot with its own key keeps it: the user set it for this bot.
+          if (vars[`${name}_OWN`]) continue;
+          if (vars[name] === value) continue;
+          vars[name] = value;
+          changed = true;
+        }
+        if (!changed) continue;
+        writePrivate(envFile, dotenvText(vars));
+        await restartEngine(b.id).catch((e: any) => console.warn(`[engine] restart after subscription sync ${b.id} failed: ${e?.message ?? e}`));
+        console.log(`[engine] subscription sync ${b.id}: restarted with a refreshed token`);
+      } catch (e: any) {
+        console.warn(`[engine] subscription sync ${b.id} failed: ${e?.message ?? e}`);
+      }
+    }
+  };
+  void run();
+  const timer = setInterval(() => void run(), intervalMs);
+  timer.unref?.();
+  return timer;
+}
+
+/** A loopback model endpoint on the host is not the container's loopback. */
+function inContainer(): boolean {
+  try {
+    return fs.existsSync('/.dockerenv');
+  } catch {
+    return false;
+  }
+}
+
+/**
+ * Repoint loopback model endpoints at the machine the primary agent runs on.
+ *
+ * A local server (LM Studio on :1234, ollama, a custom endpoint) is copied from the primary's
+ * config as `http://localhost:1234/v1`. Inside the stack container that address is the container
+ * itself, where nothing listens — the bot then fails to reach a model that works for the primary.
+ * `host.docker.internal` is that same port on the host.
+ */
+export function adaptLocalEndpoints<T>(cfg: T): T {
+  if (!inContainer() || !cfg || typeof cfg !== 'object') return cfg;
+  const fix = (value: unknown) =>
+    typeof value === 'string'
+      ? value.replace(/\/\/(?:127\.0\.0\.1|localhost|\[::1\])(?=[:/]|$)/i, '//host.docker.internal')
+      : value;
+  for (const key of ['providers', 'custom_providers'] as const) {
+    const block = (cfg as any)[key];
+    if (!block || typeof block !== 'object') continue;
+    for (const entry of Object.values<any>(block)) {
+      if (!entry || typeof entry !== 'object') continue;
+      if ('base_url' in entry) entry.base_url = fix(entry.base_url);
+      if ('api_base' in entry) entry.api_base = fix(entry.api_base);
+    }
+  }
+  return cfg;
+}
+
 /** Create or refresh the home. config.yaml is created once; after that only the keys we own are patched. */
 async function writeHome(botId: string): Promise<{ home: string; key: string; display: string | null }> {
   const b = botRow(botId);
@@ -203,6 +447,9 @@ async function writeHome(botId: string): Promise<{ home: string; key: string; di
     for (const k of SHARED_CONFIG) if (primary[k] !== undefined) cfg[k] = primary[k];
     cfg.agent = { reasoning_effort: 'medium' };
   }
+  // A model endpoint on the host's loopback (LM Studio, ollama, a custom server) has to be addressed
+  // through the host when this server runs in a container.
+  adaptLocalEndpoints(cfg);
   cfg.platform_toolsets = { ...(cfg.platform_toolsets ?? {}), api_server: ['hermes-api-server', ...(display ? ['computer_use'] : [])] };
   cfg.terminal = { ...(cfg.terminal ?? {}), cwd };
   if (cdp) cfg.browser = { ...(cfg.browser ?? {}), cdp_url: cdp };
@@ -215,11 +462,9 @@ async function writeHome(botId: string): Promise<{ home: string; key: string; di
 
   if (!fs.existsSync(path.join(home, 'SOUL.md'))) fs.writeFileSync(path.join(home, 'SOUL.md'), soul(b));
 
-  // Subscription sign-ins live in auth.json. Start from the primary agent's; later sign-ins are this bot's own.
-  const auth = path.join(home, 'auth.json');
-  if (!fs.existsSync(auth)) {
-    try { writePrivate(auth, fs.readFileSync(path.join(env.hermesHome, 'auth.json'), 'utf8')); } catch { /* the primary agent has none */ }
-  }
+  // Subscription sign-ins: the bot gets the primary's access token, never its refresh token, so the
+  // user's own sign-in can never be rotated away by a bot. See inheritSubscriptions().
+  inheritSubscriptions(home);
 
   // .env is ours entirely: the API server plus inherited model keys. Keys the user added by hand are kept.
   const envFile = path.join(home, '.env');
@@ -231,6 +476,12 @@ async function writeHome(botId: string): Promise<{ home: string; key: string; di
   for (const k of SHARED_ENV) {
     const v = primaryEnv[k] ?? process.env[k];
     if (v) vars[k] = v;
+  }
+  // Subscription sign-ins travel as access tokens in the environment (never a copy of the grant).
+  for (const [name, value] of Object.entries(subscriptionEnv(primarySubscriptions()))) {
+    const own = mine[name] && vars[name] === mine[name];
+    if (own) vars[`${name}_OWN`] ??= '1'; // the user put this bot's own key there; keep it
+    if (!own) vars[name] = value;
   }
   Object.assign(vars, { API_SERVER_ENABLED: 'true', API_SERVER_KEY: key, API_SERVER_PORT: String(b.engine_port), API_SERVER_HOST: '127.0.0.1' });
   if (cdp) vars.BROWSER_CDP_URL = cdp; else delete vars.BROWSER_CDP_URL;
@@ -250,7 +501,9 @@ async function writeHome(botId: string): Promise<{ home: string; key: string; di
  * - `.env`: every SHARED_ENV key the primary has a value for is overwritten, so a rotated key reaches
  *   the bot. A key the primary lacks is left as the bot had it (the user may have set it by hand).
  * - `config.yaml`: a SHARED_CONFIG key is copied only when the bot's config has never had it. An
- *   existing value is the bot's own choice (it may deliberately run a different model) and is kept.
+ *   existing value is the bot's own choice (it may deliberately run a different model) and is kept —
+ *   except a placeholder model (the settings panel writes the literal `Default` when none is picked),
+ *   which is not a choice and must not shadow the primary's model forever.
  *
  * Safe to call at any time; returns the keys it wrote, for logging and tests.
  */
@@ -258,17 +511,29 @@ export function syncManagedAuth(botId: string): string[] {
   if (engineKind(botId) !== 'managed') return [];
   const home = managedHome(botId);
   const synced: string[] = [];
+  // A home written by an older build still holds a forked copy of the primary's grant; this replaces
+  // it with the access token the bot may actually use, and refreshes one that has gone stale.
+  for (const key of inheritSubscriptions(home)) synced.push(key);
 
   const primaryEnv = readDotenv(path.join(env.hermesHome, '.env'));
+  if (!SHARED_ENV.some((k) => (primaryEnv[k] ?? '').trim())) warnNoPrimaryCredentials();
   const envFile = path.join(home, '.env');
   const vars = readDotenv(envFile);
   const envSynced: string[] = [];
   for (const k of SHARED_ENV) {
-    const v = (primaryEnv[k] ?? '').trim();
+    // The stack's own environment counts too: it is where a containerized server keeps its .env.
+    const v = (primaryEnv[k] ?? process.env[k] ?? '').trim();
     if (!v) continue; // nothing to share: keep whatever this bot has
     if (vars[k] === v) continue;
     vars[k] = v;
     envSynced.push(k);
+  }
+  // Subscription sign-ins as environment tokens (see inheritSubscriptions): refreshed whenever the
+  // primary agent refreshes its own, so a bot never runs on a token the user's sign-in outgrew.
+  for (const [name, value] of Object.entries(subscriptionEnv(primarySubscriptions()))) {
+    if (vars[`${name}_OWN`] || vars[name] === value) continue;
+    vars[name] = value;
+    envSynced.push(name);
   }
   if (envSynced.length) {
     writePrivate(envFile, dotenvText(vars));
@@ -281,24 +546,93 @@ export function syncManagedAuth(botId: string): string[] {
   const cfgSynced: string[] = [];
   for (const k of SHARED_CONFIG) {
     if (primaryCfg[k] === undefined || primaryCfg[k] === null) continue;
+    if (k === 'model' && isPlaceholderModel(cfg.model)) {
+      cfg.model = primaryCfg.model;
+      cfgSynced.push(k);
+      continue;
+    }
     if (Object.prototype.hasOwnProperty.call(cfg, k)) continue; // the bot already has its own
     cfg[k] = primaryCfg[k];
     cfgSynced.push(k);
   }
   if (cfgSynced.length) writePrivate(cfgFile, YAML.stringify(cfg));
   synced.push(...cfgSynced);
+  // Existing homes copied `providers` before endpoints were adapted; fix them in place so a local
+  // model server on the host is reachable from this container.
+  if (inContainer()) {
+    const before = JSON.stringify(cfg.providers ?? null) + JSON.stringify(cfg.custom_providers ?? null);
+    adaptLocalEndpoints(cfg);
+    if (JSON.stringify(cfg.providers ?? null) + JSON.stringify(cfg.custom_providers ?? null) !== before) {
+      writePrivate(cfgFile, YAML.stringify(cfg));
+      synced.push('providers.base_url');
+    }
+  }
+
+  // The roster row names the model every turn asks for. The settings panel used to save the word
+  // `Default` there, which pins a model id no provider knows; repair it from the config that is now
+  // right, so the panel stops showing a placeholder and the turn stops sending one.
+  const row = botRow(botId);
+  const storedModel = typeof row?.model === 'string' ? row.model.trim() : '';
+  // Only a stored word is repaired: no model stored at all is a legitimate "use the engine default".
+  if (storedModel && storedModel.toLowerCase() === 'default') {
+    const block = cfg.model;
+    const name = typeof block === 'string' ? block : (block as any)?.default;
+    if (typeof name === 'string' && name.trim() && !isPlaceholderModel(name)) {
+      db.prepare('UPDATE bots SET model=?, updated_at=? WHERE id=?').run(name.trim(), Date.now(), botId);
+      const provider = (block as any)?.provider;
+      if (typeof provider === 'string' && provider.trim()) db.prepare('UPDATE bots SET provider=? WHERE id=?').run(provider.trim(), botId);
+      synced.push('bots.model');
+    }
+  }
 
   for (const k of synced) console.log(`[engine] auth sync ${botId}: ${k}`);
   return synced;
 }
 
+/** `Default`, `default` and an empty block are what "no model chosen" looks like on disk. */
+function isPlaceholderModel(model: unknown): boolean {
+  const placeholder = (v: unknown) => typeof v === 'string' && /^(?:|default)$/i.test(v.trim());
+  if (model === undefined || model === null) return true;
+  if (typeof model === 'string') return placeholder(model);
+  if (typeof model !== 'object' || Array.isArray(model)) return false;
+  const block = model as Record<string, unknown>;
+  // A model block with a provider and no `default` is a deliberate choice (the provider's own
+  // default model), not a placeholder.
+  if (!Object.prototype.hasOwnProperty.call(block, 'default')) return Object.keys(block).length === 0;
+  return placeholder(block.default);
+}
+
+let warnedNoPrimary = false;
+
+/**
+ * Say once, clearly, that the primary agent's credentials could not be read. Without this the only
+ * symptom is a new bot answering "Hermes is not connected to any AI provider yet", which points at
+ * the bot rather than at the missing primary home.
+ */
+function warnNoPrimaryCredentials() {
+  if (warnedNoPrimary) return;
+  warnedNoPrimary = true;
+  console.warn(
+    `[engine] no model credentials in ${path.join(env.hermesHome, '.env')}: new agents will start without ` +
+      `an API key. In the desktop app this home is the host's Hermes home, mounted into the stack; ` +
+      `outside it, set HERMES_HOME_PRIMARY to the directory holding the primary agent's .env.`,
+  );
+}
+
 /** The same pass over every managed bot. Returns how many bots had something brought in line. */
-export async function syncAllManagedAuth(): Promise<number> {
+export async function syncAllManagedAuth({ restart = false }: { restart?: boolean } = {}): Promise<number> {
   const bots = db.prepare("SELECT id FROM bots WHERE engine='managed'").all() as any[];
   let synced = 0;
   for (const b of bots) {
     try {
-      if (syncManagedAuth(b.id).length) synced++;
+      const written = syncManagedAuth(b.id);
+      if (!written.length) continue;
+      synced++;
+      // A gateway reads its .env when it starts, so a key that arrived afterwards only takes effect
+      // on the next start. Restarting is opt-in: at boot the gateway is being started right now.
+      if (restart) {
+        void restartEngine(b.id).catch((e: any) => console.warn(`[engine] restart after auth sync ${b.id} failed: ${e?.message ?? e}`));
+      }
     } catch (e: any) {
       console.warn(`[engine] auth sync ${b.id} failed: ${e?.message ?? e}`);
     }
@@ -396,9 +730,10 @@ async function startGateway(botId: string, attempt = 0): Promise<void> {
   if ((await healthy(url)) && managedKey(botId) && (await keyAccepted(url, managedKey(botId)))) return;
   if (await healthy(url)) {
     if (gatewayPid(homeFor(botId))) await stopGateway(botId);
-    else if (attempt < 3) {
-      // Something we do not manage holds this port (a gateway from a Bot that no longer exists).
-      // Take the next free one instead of leaving this Bot without an agent.
+    else if (attempt < 10) {
+      // Something we do not manage holds this port (a gateway from a Bot that no longer exists, or
+      // one still shutting down). Walk forward: ten attempts covers a burst of stale engines, and
+      // giving up after three left a brand new Bot answering "port is taken by something else".
       const taken = Number(botRow(botId).engine_port);
       db.prepare('UPDATE bots SET engine_port=? WHERE id=?').run(freePort([taken]), botId);
       return startGateway(botId, attempt + 1);

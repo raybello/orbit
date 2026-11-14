@@ -224,6 +224,10 @@
   height: calc(100% - 14px);
 }
 
+/* A still of the screen, or the bot's avatar while there is nothing to show yet. */
+.screen-shot { display: block; width: 100%; height: 100%; object-fit: cover; }
+.screen-shot.is-empty { display: grid; place-items: center; }
+
 .computer-card__preview.is-sleeping .computer-card__frame-body,
 .computer-card__preview.is-unknown .computer-card__frame-body {
   opacity: 0.45;

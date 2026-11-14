@@ -36,7 +36,20 @@ export const api = {
   createBot: (b: Pick<Bot, 'name' | 'avatarShape' | 'avatarColor' | 'mode'>) => req<{ bot: Bot }>('POST', '/bots', b),
   markRead: (id: string) => req<{ ok: true }>('POST', `/bots/${id}/read`),
   rows: (id: string) => req<{ generation: number; rows: Row[] }>('GET', `/bots/${id}/rows`),
-  send: (id: string, text: string) => req<{ row: Row }>('POST', `/bots/${id}/messages`, { text }),
+  send: (id: string, text: string, files?: { path: string; filename: string; mediaType: string }[]) =>
+    req<{ row: Row }>('POST', `/bots/${id}/messages`, files?.length ? { text, files } : { text }),
+
+  uploadAttachment: async (id: string, file: File): Promise<{ path: string; filename: string; mediaType: string }> => {
+    const form = new FormData();
+    form.append('file', file);
+    const res = await fetch(`/api/bots/${id}/attachments`, { method: 'POST', credentials: 'include', body: form });
+    if (!res.ok) {
+      let msg = res.statusText;
+      try { msg = ((await res.json()) as { error?: string }).error ?? msg; } catch { /* not json */ }
+      throw new ApiError(res.status, msg);
+    }
+    return res.json() as Promise<{ path: string; filename: string; mediaType: string }>;
+  },
   interrupt: (id: string) => req<{ ok: true }>('POST', `/bots/${id}/interrupt`),
   fresh: (id: string) => req<{ ok: true }>('POST', `/bots/${id}/fresh`),
 

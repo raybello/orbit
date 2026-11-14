@@ -14,7 +14,7 @@ const SECTIONS: readonly { id: NavSection; label: string; icon: IconName }[] = [
   { id: 'calendar', label: 'Calendar', icon: 'calendar' },
   { id: 'calls', label: 'Calls', icon: 'calls' },
   { id: 'files', label: 'Files', icon: 'files_folder' },
-  { id: 'computers', label: 'Computers', icon: 'computers' },
+  { id: 'computers', label: 'Screens', icon: 'computers' },
   { id: 'skills', label: 'Skills', icon: 'skills' },
 ];
 

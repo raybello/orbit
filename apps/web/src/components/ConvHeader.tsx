@@ -1,9 +1,9 @@
 import { useState } from 'react';
 import type { Bot } from '@orbit/contracts';
 import { BotAvatarFor } from '../avatar/BotAvatar';
-import { api } from '../lib/api';
 import { displayName, useStore } from '../store';
 import { useConfigUI } from '../configStore';
+import { configApi } from '../lib/configApi';
 import { Icon } from './Icon';
 import { Menu } from './Menu';
 
@@ -11,18 +11,29 @@ import { Menu } from './Menu';
  * The conversation top bar, Teams style: identity on the left, the Chat / Files tab strip,
  * then the overflow menu and the details-panel toggle on the right.
  */
-export function ConvHeader({ bot, running, onNotice }: {
+export function ConvHeader({ bot, running, activeTab, onTabChange, onNotice }: {
   bot: Bot;
   running: boolean;
+  activeTab: 'chat' | 'files';
+  onTabChange: (tab: 'chat' | 'files') => void;
   /** Small status message shown by the view (e.g. "started a new conversation"). */
   onNotice?: (text: string) => void;
 }) {
   const detailsOpen = useStore((s) => s.detailsOpen);
   const set = useStore((s) => s.set);
-  const navSection = useConfigUI((s) => s.navSection);
-  const setNavSection = useConfigUI((s) => s.setNavSection);
+  const loadBots = useStore((s) => s.loadBots);
   const [menu, setMenu] = useState(false);
   const flash = (t: string) => onNotice?.(t);
+
+  const handleDelete = async () => {
+    if (!window.confirm(`Delete ${displayName(bot)}? This cannot be undone.`)) return;
+    try {
+      await configApi.deleteBot(bot.id);
+      await loadBots();
+    } catch (e) {
+      flash(e instanceof Error ? e.message : 'Could not delete bot');
+    }
+  };
 
   return (
     <header className="conv-header">
@@ -33,7 +44,7 @@ export function ConvHeader({ bot, running, onNotice }: {
           onClick={() => setMenu(!menu)}
           aria-haspopup="menu"
           aria-expanded={menu}
-          title="Conversation options"
+          title="Bot options"
         >
           <span className="conv-header__avatar">
             <BotAvatarFor bot={bot} size={32} />
@@ -47,10 +58,9 @@ export function ConvHeader({ bot, running, onNotice }: {
             align="left"
             onClose={() => setMenu(false)}
             items={[
-              { label: detailsOpen ? 'Hide details' : 'Show details', hint: '⇧⌘,', onSelect: () => set({ detailsOpen: !detailsOpen }) },
-              { label: 'Open computer', onSelect: () => set({ viewerOpen: true, viewerMode: 'watch', viewerHint: null }) },
-              { label: 'New conversation', onSelect: () => api.fresh(bot.id).then(() => flash('Started a new conversation')).catch((e) => flash(e.message)) },
-              { label: 'Bot settings', onSelect: () => useConfigUI.getState().openBotSettings(bot.id) },
+              { label: 'Edit bot', onSelect: () => useConfigUI.getState().openBotSettings(bot.id) },
+              { label: 'Clear chat', onSelect: () => configApi.fresh(bot.id).then(() => flash('Started a new conversation')).catch((e: Error) => flash(e.message)) },
+              { label: 'Delete bot', danger: true, onSelect: handleDelete },
             ]}
           />
         )}
@@ -60,18 +70,18 @@ export function ConvHeader({ bot, running, onNotice }: {
         <button
           type="button"
           role="tab"
-          aria-selected={navSection === 'chat'}
-          className={`conv-tab${navSection === 'chat' ? ' is-active' : ''}`}
-          onClick={() => setNavSection('chat')}
+          aria-selected={activeTab === 'chat'}
+          className={`conv-tab${activeTab === 'chat' ? ' is-active' : ''}`}
+          onClick={() => onTabChange('chat')}
         >
           Chat
         </button>
         <button
           type="button"
           role="tab"
-          aria-selected={navSection === 'files'}
-          className={`conv-tab${navSection === 'files' ? ' is-active' : ''}`}
-          onClick={() => setNavSection('files')}
+          aria-selected={activeTab === 'files'}
+          className={`conv-tab${activeTab === 'files' ? ' is-active' : ''}`}
+          onClick={() => onTabChange('files')}
         >
           Files
         </button>

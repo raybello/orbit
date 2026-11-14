@@ -1,5 +1,5 @@
 import { useEffect, useLayoutEffect, useRef, useState } from 'react';
-import type { Bot } from '@orbit/contracts';
+import type { Bot, MessageFile } from '@orbit/contracts';
 import { api } from '../lib/api';
 import { displayName, useStore } from '../store';
 import { useConfigUI } from '../configStore';
@@ -17,11 +17,14 @@ export function Composer({ bot, running }: { bot: Bot; running: boolean }) {
   const [sending, setSending] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [menu, setMenu] = useState<'attach' | 'emoji' | null>(null);
+  const [pendingFiles, setPendingFiles] = useState<MessageFile[]>([]);
+  const [uploading, setUploading] = useState(false);
   const ref = useRef<HTMLTextAreaElement>(null);
+  const fileInputRef = useRef<HTMLInputElement>(null);
   const setModal = useStore((s) => s.setModal);
 
   // Per-bot drafts.
-  useEffect(() => { setText(drafts.get(bot.id) ?? ''); setError(null); ref.current?.focus(); }, [bot.id]);
+  useEffect(() => { setText(drafts.get(bot.id) ?? ''); setError(null); setPendingFiles([]); ref.current?.focus(); }, [bot.id]);
   useEffect(() => { drafts.set(bot.id, text); }, [bot.id, text]);
 
   // Auto-grow.
@@ -42,16 +45,34 @@ export function Composer({ bot, running }: { bot: Bot; running: boolean }) {
 
   const send = async () => {
     const t = text.trim();
-    if (!t || sending) return;
+    if ((!t && pendingFiles.length === 0) || sending || uploading) return;
     setSending(true); setError(null);
     try {
-      await api.send(bot.id, t);
+      await api.send(bot.id, t || '​', pendingFiles.length > 0 ? pendingFiles : undefined);
       setText('');
+      setPendingFiles([]);
       drafts.delete(bot.id);
     } catch (e) {
       setError((e as Error).message || 'Message failed to send');
     } finally {
       setSending(false);
+      ref.current?.focus();
+    }
+  };
+
+  const handleFileSelect = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const files = Array.from(e.target.files ?? []);
+    if (files.length === 0) return;
+    setMenu(null);
+    setUploading(true); setError(null);
+    try {
+      const uploaded = await Promise.all(files.map((f) => api.uploadAttachment(bot.id, f)));
+      setPendingFiles((prev) => [...prev, ...uploaded]);
+    } catch (e) {
+      setError((e as Error).message || 'Upload failed');
+    } finally {
+      setUploading(false);
+      if (fileInputRef.current) fileInputRef.current.value = '';
       ref.current?.focus();
     }
   };
@@ -88,11 +109,26 @@ export function Composer({ bot, running }: { bot: Bot; running: boolean }) {
   };
 
   const hasText = text.trim().length > 0;
+  const canSend = (hasText || pendingFiles.length > 0) && !uploading;
 
   return (
     <div className="composer-area">
       {error && <div className="composer__error">{error} <button type="button" className="link-btn" onClick={() => setError(null)}>Dismiss</button></div>}
+      {pendingFiles.length > 0 && (
+        <div className="composer__attachments">
+          {pendingFiles.map((f, i) => (
+            <div key={i} className="composer__attachment-chip">
+              <Icon name="file" size={14} />
+              <span className="composer__attachment-name">{f.filename}</span>
+              <button type="button" className="composer__attachment-remove" aria-label={`Remove ${f.filename}`} onClick={() => setPendingFiles((prev) => prev.filter((_, j) => j !== i))}>
+                <Icon name="close" size={12} />
+              </button>
+            </div>
+          ))}
+        </div>
+      )}
       <div className="composer">
+        <input ref={fileInputRef} type="file" multiple style={{ display: 'none' }} onChange={handleFileSelect} />
         <div className="composer__toolbar">
           <button type="button" className="composer__toolbar-btn" onClick={toggleBold} aria-label="Bold" title="Bold the selection">
             <span aria-hidden style={{ fontSize: 12, fontWeight: 600, lineHeight: '18px' }}>Aa</span>
@@ -107,6 +143,7 @@ export function Composer({ bot, running }: { bot: Bot; running: boolean }) {
                 placement="above"
                 onClose={() => setMenu(null)}
                 items={[
+                  { label: 'Upload file', onSelect: () => { setMenu(null); fileInputRef.current?.click(); } },
                   { label: 'New conversation', onSelect: fresh },
                   { label: 'Connect apps', onSelect: () => setModal('apps') },
                 ]}
@@ -165,11 +202,11 @@ export function Composer({ bot, running }: { bot: Bot; running: boolean }) {
             >
               <Icon name="mic" opacity={0.7} />
             </button>
-            {inCall && !hasText ? (
+            {inCall && !canSend ? (
               <button type="button" className="composer__cta is-in-call" onClick={endCall} aria-label="End voice call" title="End voice call">
                 <Icon name="voice_a" size={16} />
               </button>
-            ) : running && !hasText ? (
+            ) : running && !canSend ? (
               <button type="button" className="composer__cta" onClick={stop} aria-label="Stop" title="Stop">
                 <Icon name="stop" size={14} />
               </button>
@@ -177,12 +214,12 @@ export function Composer({ bot, running }: { bot: Bot; running: boolean }) {
               <button
                 type="button"
                 className="composer__cta"
-                onClick={hasText ? send : () => startCall(bot.id)}
-                disabled={hasText && sending}
-                aria-label={hasText ? 'Send' : `Start voice chat with ${bot.name}`}
-                title={hasText ? 'Send (Enter)' : 'Start voice chat'}
+                onClick={canSend ? send : () => startCall(bot.id)}
+                disabled={canSend && sending}
+                aria-label={canSend ? 'Send' : `Start voice chat with ${bot.name}`}
+                title={canSend ? 'Send (Enter)' : 'Start voice chat'}
               >
-                <Icon name={hasText ? 'arrow_up' : 'voice_a'} size={16} />
+                <Icon name={canSend ? 'arrow_up' : 'voice_a'} size={16} />
               </button>
             )}
           </div>

@@ -8,10 +8,11 @@ import { computerStatusText, screenSize, screensFull } from '../lib/computer';
 import { configApi } from '../lib/configApi';
 import { useSelectedBot, useStore } from '../store';
 import { Icon } from './Icon';
+import { useScreenPreview } from './ScreenPreview';
 
 export type ScreenMode = 'watch' | 'control';
 type Conn = 'idle' | 'connecting' | 'connected' | 'disconnected' | 'error';
-type Phase = 'live' | 'switching' | 'waking' | 'asleep' | 'idle' | 'paused' | 'error';
+type Phase = 'live' | 'preview' | 'switching' | 'waking' | 'asleep' | 'idle' | 'paused' | 'error';
 
 interface ScreenProps {
   bot: Bot;
@@ -61,6 +62,11 @@ export function ComputerScreen({ bot, variant, initialMode = 'watch', hint, paus
   const large = variant === 'stage' || fullscreen;
   // The small panel view only streams a screen that already exists, so browsing bots never uses up screens.
   const wantLive = running && !paused && (variant === 'stage' || visible) && (opened || hasScreen);
+  // The panel shows a still of the screen until the stream takes over, so the details panel is never
+  // an empty frame for a bot that has a computer. A screenshot is cheap; a stream holds a screen.
+  const { src: still } = useScreenPreview(bot.id, {
+    enabled: variant === 'panel' && !paused && conn !== 'connected',
+  });
 
   const wake = useCallback(() => {
     setWaking(true); setWakeError(null);
@@ -148,7 +154,8 @@ export function ComputerScreen({ bot, variant, initialMode = 'watch', hint, paus
   if (paused) phase = 'paused';
   else if (status === 'error' || wakeError) phase = 'error';
   else if (!running) phase = busy || waking ? 'waking' : 'asleep';
-  else if (!opened && !hasScreen) phase = 'idle';
+  // A still of a running computer is worth more than a paragraph explaining that nothing is open.
+  else if (!opened && !hasScreen) phase = still && variant === 'panel' ? 'preview' : 'idle';
   else if (conn === 'error' || conn === 'disconnected') phase = 'error';
   else if (conn === 'connected') phase = 'live';
   else phase = hadFrame.current ? 'switching' : 'waking';
@@ -174,7 +181,7 @@ export function ComputerScreen({ bot, variant, initialMode = 'watch', hint, paus
   };
 
   const canFullscreen = typeof document !== 'undefined' && document.fullscreenEnabled;
-  const expandable = variant === 'panel' && !fullscreen && phase === 'live';
+  const expandable = variant === 'panel' && !fullscreen && (phase === 'live' || phase === 'preview');
   const mascot = large ? 64 : 40;
   const style = { ...botVars(bot.avatarColor), ['--screen-ratio' as string]: String(width / height) } as CSSProperties;
 
@@ -186,6 +193,9 @@ export function ComputerScreen({ bot, variant, initialMode = 'watch', hint, paus
     >
       <div className="screen__body">
         <div className="screen__view" style={{ aspectRatio: `${width} / ${height}` }}>
+          {variant === 'panel' && still && (phase === 'preview' || phase === 'live' || phase === 'switching') && (
+            <img className="screen__shot" src={still} alt="" draggable={false} />
+          )}
           <div ref={canvasRef} className="screen__canvas" />
           {/* noVNC swallows clicks on its canvas, so the way into the large view is a button laid over it. */}
           {expandable && <button type="button" className="screen__expand" onClick={() => onExpand?.('watch')} aria-label={`Open ${bot.name}’s computer in the large view`} title="Open the large view" />}

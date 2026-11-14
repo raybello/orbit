@@ -77,7 +77,9 @@ still driven over CDP (`browser.cdp_url`).
 
 ## Model
 
-Managed Bots start on `DEFAULT_BOT_MODEL` / `DEFAULT_BOT_PROVIDER` (default: `deepseek-flash` /
+Managed Bots start on the primary agent's model and credentials (the bot's home is written from the
+primary's config, and an Anthropic subscription sign-in is inherited as an access token). They fall
+back to `DEFAULT_BOT_MODEL` / `DEFAULT_BOT_PROVIDER` (default: `deepseek-flash` /
 `deepseek`). The DeepSeek key is inherited from the primary agent's `~/.hermes/.env`
 (`DEEPSEEK_API_KEY`, `DEEPSEEK_BASE_URL`).
 

@@ -118,7 +118,10 @@ export const env = {
   dockerSocket: process.env.DOCKER_SOCKET ?? '',
   /** Display index ceilings for bot screens (each index owns one VNC and one CDP port). */
   computerMaxDisplays: Number(process.env.COMPUTER_MAX_DISPLAYS ?? 50),
-  /** Model a managed Bot starts on when the user has not chosen one (DeepSeek's flash model). */
+  /**
+   * Last-resort model for a managed Bot whose own home names none. A new Bot normally inherits the
+   * primary agent's model, so this is only the fallback for a primary with no model configured.
+   */
   defaultBotModel: process.env.DEFAULT_BOT_MODEL ?? 'deepseek-flash',
   defaultBotProvider: process.env.DEFAULT_BOT_PROVIDER ?? 'deepseek',
   /** Host directory holding each bot's home folder and workspace checkpoints. */

@@ -40,6 +40,7 @@ import {
   writeStackWebUrl,
 } from './local-stack-networking';
 import { sessionSecretFromEnvFile } from './desktop-session';
+import { hermesHome } from './hermes-setup';
 import type { DesktopLocalStackState, DockerFailureKind, StackPhase } from './shared/api';
 
 const log = createLogger({ scope: 'stack' });
@@ -340,6 +341,11 @@ export class LocalStackController {
     // describe the port we actually bound rather than the example file's 8787.
     text = setEnvValue(text, 'APP_URL', webUrl);
     text = setEnvValue(text, 'SERVER_URL', webUrl);
+    // Compose mounts this into the api container as the primary agent's home, so a new bot can copy
+    // its model credentials from the .env the desktop setup wrote. Nothing else can supply it: the
+    // container has no way to know where the host keeps ~/.hermes, and with the value missing the
+    // mount falls back to /tmp and every new agent starts with no API key.
+    text = setEnvValue(text, 'HERMES_HOME_HOST', hermesHome());
     fs.writeFileSync(envPath, text, { encoding: 'utf8', mode: 0o600 });
     try {
       fs.chmodSync(envPath, 0o600);

@@ -1,6 +1,7 @@
 import type { Bot, BotComputerStatus } from '@orbit/contracts';
 import { BotAvatarFor } from '../avatar/BotAvatar';
 import { useStore } from '../store';
+import { ScreenFrame, useScreenPreview } from './ScreenPreview';
 
 /** Badge copy per server status. 'Awake' is the only one that means the computer is usable now. */
 const STATUS_LABEL: Record<BotComputerStatus['status'], string> = {
@@ -24,17 +25,19 @@ interface Props {
 /**
  * One bot's computer: who it belongs to, whether it is awake, and the way into the large viewer.
  *
- * The preview is a stand-in frame rather than a live `<ComputerScreen>`: that component streams a
- * noVNC relay connection per mount and reads screen availability from the single shared
- * `store.computer`, so a grid of cards would open one stream (and one of the computer's limited
- * screens) for every bot just by being looked at — the panel view deliberately avoids exactly that.
- * Until the grid can share a stream, the frame shows the state and links to the viewer instead.
+ * The preview is a still of the screen, refreshed on a timer, rather than a live `<ComputerScreen>`:
+ * that component streams a noVNC relay connection per mount, so a grid of cards would open one
+ * stream (and one of the computer's limited screens) for every bot just by being looked at. A still
+ * is always on — nobody should have to ask for a preview of a screen that exists.
  */
 export function ComputerCard({ bot, onOpen }: Props) {
   const full = useStore((s) => s.bots.find((b) => b.id === bot.botId));
   const status = STATUS_LABEL[bot.status] ?? 'Unknown';
   const canOpen = bot.vncAvailable;
   const kind = KIND_LABEL[bot.kind] ?? '';
+  // Nothing to photograph while the computer is asleep or gone; the last frame stays on screen.
+  const live = bot.status === 'awake' || bot.status === 'starting';
+  const { src } = useScreenPreview(bot.botId, { enabled: live });
 
   // The roster can lag behind /computers; a neutral avatar keeps the card from shifting shape.
   const avatar: Pick<Bot, 'avatarShape' | 'avatarColor' | 'name'> = full ?? {
@@ -71,7 +74,7 @@ export function ComputerCard({ bot, onOpen }: Props) {
             <i /><i /><i />
           </span>
           <span className="computer-card__frame-body">
-            <BotAvatarFor bot={avatar} size={30} />
+            <ScreenFrame src={src} bot={avatar} size={30} />
           </span>
         </span>
         <span className="computer-card__caption">

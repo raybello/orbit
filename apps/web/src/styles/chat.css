@@ -7,34 +7,38 @@
 
 /* ---------- conversation header: identity · tabs · actions ---------- */
 .conv-header {
-  display: flex; align-items: center; gap: 8px;
-  height: 48px; flex-shrink: 0; padding: 0 8px 0 16px;
+  display: flex; align-items: center; gap: 0;
+  height: 48px; flex-shrink: 0; padding: 0 8px 0 12px;
   background: var(--color-bg-stage);
   border-bottom: 1px solid var(--color-border-subtle);
 }
-.conv-header__identity { display: flex; align-items: center; gap: 10px; flex: 0 0 auto; min-width: 0; }
+.conv-header__identity { position: relative; display: flex; align-items: center; flex: 0 0 auto; min-width: 0; }
 .conv-header__avatar { position: relative; display: inline-flex; flex-shrink: 0; }
 .conv-header__avatar .status-dot { right: -1px; top: -1px; box-shadow: 0 0 0 2px var(--color-bg-stage); }
 .conv-header__name {
   min-width: 0; font-size: 14px; font-weight: 600; line-height: 20px; color: var(--color-fg-default);
   white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
 }
-.conv-header__pill-btn { display: flex; align-items: center; gap: 10px; min-width: 0; height: 36px; padding: 0 8px 0 4px; border-radius: var(--radius-sm); }
+.conv-header__pill-btn {
+  display: flex; align-items: center; gap: 8px; min-width: 0;
+  height: 36px; padding: 0 6px 0 4px; border-radius: var(--radius-sm);
+}
 .conv-header__pill-btn:hover { background: var(--color-msg-bg-hover); }
-.conv-header__tabs { display: flex; align-items: stretch; height: 100%; margin-left: 8px; gap: 0; }
+/* Teams-style: tabs are right next to the identity block with a small left margin */
+.conv-header__tabs { display: flex; align-items: stretch; height: 100%; margin-left: 12px; gap: 0; }
 .conv-tab {
-  display: flex; align-items: center; padding: 0 12px; height: 100%;
+  display: flex; align-items: center; padding: 0 16px; height: 100%;
   font-size: 14px; line-height: 20px; color: var(--color-fg-subtle); position: relative;
   transition: color 120ms var(--ease-standard), background-color 120ms var(--ease-standard);
 }
 .conv-tab:hover { color: var(--color-fg-default); background: var(--color-msg-bg-hover); }
 .conv-tab.is-active { color: var(--color-fg-default); font-weight: 600; }
 .conv-tab.is-active::after {
-  content: ''; position: absolute; bottom: 0; left: 12px; right: 12px;
+  content: ''; position: absolute; bottom: 0; left: 16px; right: 16px;
   height: 2px; background: var(--accent-500); border-radius: 2px 2px 0 0;
 }
 .conv-header__spacer { flex: 1 1 0; min-width: 0; }
-.conv-header__actions { display: flex; align-items: center; gap: 2px; flex-shrink: 0; }
+.conv-header__actions { display: flex; align-items: center; gap: 4px; flex-shrink: 0; padding-right: 4px; }
 .conv-header__icon-btn {
   width: 32px; height: 32px; border-radius: var(--radius-sm);
   color: var(--color-fg-subtle); display: flex; align-items: center; justify-content: center;
@@ -366,7 +370,7 @@
 .composer__main { display: flex; align-items: flex-end; gap: 4px; flex: 1 1 0; min-width: 0; }
 .composer__main .composer__input { padding: 8px 0 6px 4px; }
 .composer__left { display: flex; align-items: flex-end; gap: 4px; flex: 1 1 0; min-width: 0; }
-.composer__right { display: flex; align-items: center; gap: 4px; padding: 4px 0 0; flex-shrink: 0; }
+.composer__right { display: flex; align-items: center; gap: 4px; padding-bottom: 2px; flex-shrink: 0; }
 .composer__plus-anchor { position: relative; display: inline-flex; }
 .composer__btn {
   display: inline-flex; align-items: center; justify-content: center; width: 28px; height: 28px; border-radius: var(--radius-sm);
@@ -391,3 +395,21 @@
   max-width: 860px; margin: 0 auto 8px; padding: 6px 12px; border-radius: var(--radius-md); background: var(--color-danger-bg); color: var(--color-danger);
   font-size: 13px; line-height: 18px; display: flex; align-items: center; justify-content: space-between; gap: 8px;
 }
+.composer__attachments {
+  max-width: 860px; margin: 0 auto 6px; display: flex; flex-wrap: wrap; gap: 6px;
+}
+.composer__attachment-chip {
+  display: inline-flex; align-items: center; gap: 5px; max-width: 200px;
+  padding: 3px 6px 3px 8px; border-radius: var(--radius-full);
+  background: var(--color-bg-canvas); box-shadow: 0 0 0 1px var(--color-border-subtle) inset;
+  font-size: 12px; line-height: 16px; color: var(--color-fg-subtle);
+}
+.composer__attachment-name {
+  flex: 1 1 0; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+}
+.composer__attachment-remove {
+  display: inline-flex; align-items: center; justify-content: center; flex-shrink: 0;
+  width: 16px; height: 16px; border-radius: 50%; color: var(--color-fg-muted);
+  transition: background 120ms, color 120ms;
+}
+.composer__attachment-remove:hover { background: var(--color-bg-nav-hover); color: var(--color-fg-default); }

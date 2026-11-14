@@ -220,12 +220,25 @@ async function engineAuthRow(b: any): Promise<BotEngineAuthRow | null> {
   if (!engine) return null;
   let status: BotEngineAuthRow['status'] = 'unknown';
   try { status = (await engineInfo(b.id)).status; } catch { status = 'unknown'; }
+  let model: string | null = b.model ?? null;
+  let provider: string | null = b.provider ?? null;
+  // Most bots have no model of their own: their config is the primary agent's, so say which model
+  // that is rather than showing a blank (or the old 'Default' placeholder the panel used to store).
+  if (engine === 'managed' && (!model || String(model).trim().toLowerCase() === 'default')) {
+    try {
+      const block = readYaml(path.join(managedHome(b.id), 'config.yaml')).model;
+      const name = typeof block === 'string' ? block : block?.default;
+      if (typeof name === 'string' && name.trim()) model = name.trim();
+      const fromCfg = typeof block === 'object' ? block?.provider : undefined;
+      if (!provider && typeof fromCfg === 'string' && fromCfg.trim()) provider = fromCfg.trim();
+    } catch { /* no config yet */ }
+  }
   return {
     botId: b.id,
     name: b.name,
     engine,
-    provider: b.provider ?? null,
-    model: b.model ?? null,
+    provider,
+    model,
     status,
     keysPresent: keysPresentFor(b.id, engine),
   };
@@ -247,7 +260,9 @@ configApi.put('/config/engine-auth/:botId', async (c) => {
   if (!engine) return c.json({ error: 'This bot has no agent.' }, 409);
   const p = await c.req.json<{ provider?: string | null; model?: string | null }>().catch(() => ({} as { provider?: string | null; model?: string | null }));
   const provider = p.provider === undefined ? undefined : engineField(p.provider);
-  const model = p.model === undefined ? undefined : engineField(p.model);
+  // The settings panel shows the word Default when nothing is chosen; saving it back would pin a
+  // model id no provider knows and quietly stop the bot answering. It means "no choice".
+  const model = p.model === undefined ? undefined : (String(p.model ?? '').trim().toLowerCase() === 'default' ? null : engineField(p.model));
 
   // A managed bot's own Hermes reads its model from its config.yaml, so patch those two fields there.
   // The rest of the file (providers, base_url, toolsets, mcp_servers) is its own and is left alone.
@@ -270,7 +285,8 @@ configApi.put('/config/engine-auth/:botId', async (c) => {
 
 /** Bring every managed bot's credentials up to date with the primary agent's. */
 configApi.post('/config/engine-auth/sync', async (c) => {
-  const synced = await syncAllManagedAuth();
+  // A restart is what makes a newly copied key take effect: the gateway read its .env at start.
+  const synced = await syncAllManagedAuth({ restart: true });
   // The web app keeps an engine row per bot; a sync can change what each one reports.
   for (const b of db.prepare("SELECT id FROM bots WHERE user_id=? AND engine='managed'").all(c.get('user').id) as any[]) emitBot(b.id);
   return c.json({ synced });

@@ -24,6 +24,8 @@
 .screen__view { position: relative; width: 100%; color: var(--screen-ink); }
 .screen.is-live .screen__view { background: #000000; }
 .screen__canvas { position: absolute; inset: 0; }
+/* The still the details panel shows until a live stream takes over (and behind it while switching). */
+.screen__shot { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: cover; background: #000000; }
 .screen__canvas > div { background: transparent !important; }
 .screen__canvas canvas { cursor: default !important; }
 .screen:not(.is-live) .screen__canvas { visibility: hidden; }

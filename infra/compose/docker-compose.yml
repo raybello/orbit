@@ -55,13 +55,22 @@ services:
       COMPUTER_IMAGE: ${COMPUTER_IMAGE:-orbit/computer:local}
       # Where the primary agent's home would be inside the container; on the volume, so it survives
       # `up --build`. The live primary agent is the host one, reached over HERMES_URL.
-      HERMES_HOME_PRIMARY: ${HERMES_HOME_PRIMARY:-/data/hermes}
+      # The primary agent's Hermes home, mounted below. Fixed, not overridable: the app must not be
+      # able to point it at a folder the mount does not cover.
+      HERMES_HOME_PRIMARY: /host-hermes
     ports:
       - "127.0.0.1:${ORBIT_WEB_PORT:-8787}:8787"
     volumes:
       - orbit-data:/data
       # One bot = one container: the API has to reach the daemon to start them.
       - /var/run/docker.sock:/var/run/docker.sock
+      # The host's Hermes home (the primary agent's .env, config.yaml and auth.json), mounted at this
+      # container's own Hermes root so that everything Hermes resolves from a bot's home — model keys,
+      # model choice, and the single-use OAuth grants of an Anthropic/ChatGPT subscription — is the
+      # primary agent's. Mounting it anywhere else (or not at all) leaves every new bot without
+      # credentials. The desktop app writes the absolute path into the stack .env as HERMES_HOME_HOST;
+      # /tmp is the fallback that always exists, so `up` works and bots are merely keyless.
+      - ${HERMES_HOME_HOST:-/tmp}:/host-hermes
       # Per-bot computers are host folders bind-mounted into bot containers, so the path has to be
       # the same on the host and in this container. Set ORBIT_HOST_DATA (e.g. $HOME/.orbit/data)
       # and COMPUTER_HOME_DIR=$ORBIT_HOST_DATA/computers, then uncomment:

@@ -1,4 +1,6 @@
 import crypto from 'node:crypto';
+import fs from 'node:fs';
+import path from 'node:path';
 import { Hono } from 'hono';
 import { streamSSE } from 'hono/streaming';
 import { ORBIT_HEADERS, type DesktopConfigResponse, type DesktopProbeResponse, type PushPlatform, type PushRegisterRequest, type SignInResponse } from '@orbit/contracts';
@@ -18,6 +20,8 @@ import { assignEngine, provisionEngine, removeEngine, syncPersona } from './engi
 import { deleteMemory, listMemories, memoryBot } from './engine-memory.js';
 import { orgo } from './orgo.js';
 import { catalog, composioEnabled, connectedToolkits, deleteConnection, disconnect, googleProfile, startConnect, startGoogleLogin, toolkitInfo } from './composio.js';
+import { libraryRoot, safeRel } from './files.js';
+import { mediaTypeFor } from './lib/mime.js';
 import { generateAuthUrl, exchangeCode, hasGoogleAccess, googleEmail, revokeGoogle } from './google-oauth.js';
 import { runRoutine, scheduleRoutine, unscheduleRoutine } from './routines.js';
 import { deleteEventTrigger } from './triggers.js';
@@ -51,11 +55,10 @@ function createBot(userId: string, b: { name: string; label?: string; descriptio
     'INSERT INTO bots(id,user_id,name,label,description,instructions,avatar_shape,avatar_color,mode,is_primary,created_at,updated_at) VALUES (?,?,?,?,?,?,?,?,?,?,?,?)',
   ).run(id, userId, b.name.trim().slice(0, 60) || 'New Bot', b.label ?? '', b.description ?? '', b.instructions ?? '', shape, color, b.mode === 'teammate' ? 'teammate' : 'personal', b.isPrimary ? 1 : 0, now(), now());
   // The first bot is the agent that already runs on the computer; the others get an engine of their own.
-  // A managed Bot starts on the default model (DeepSeek flash unless configured otherwise).
-  if (assignEngine(id) === 'managed') {
-    db.prepare('UPDATE bots SET model=?, provider=? WHERE id=? AND model IS NULL').run(env.defaultBotModel, env.defaultBotProvider, id);
-    provisionEngine(id);
-  }
+  // Nothing pins a model here: a managed Bot's home is written from the primary agent's config, so it
+  // runs the primary's model with the primary's credentials. Pinning a default would both ignore that
+  // model and ask for a provider key the bot may not have.
+  if (assignEngine(id) === 'managed') provisionEngine(id);
   // Where this bot's desktop lives is fixed now (a container for managed bots, the shared computer
   // for the first one); see computer-provider-registry.ts.
   registerBotComputer(id);
@@ -364,12 +367,43 @@ api.get('/bots/:id/rows', (c) => {
   return c.json({ generation: b.generation, rows: listRows(b.id, { beforeSeq, limit: Number(c.req.query('limit') ?? 200) }) });
 });
 
+api.post('/bots/:id/attachments', async (c) => {
+  const b = ownBot(c.get('user').id, c.req.param('id'));
+  if (!b) return c.json({ error: 'not found' }, 404);
+
+  const formData = await c.req.formData();
+  const file = formData.get('file');
+  if (!file || !(file instanceof File)) return c.json({ error: 'file required' }, 400);
+  if (file.size > 50 * 1024 * 1024) return c.json({ error: 'file too large (max 50 MB)' }, 413);
+
+  const rawName = file.name ?? 'upload';
+  const safeName = path.basename(rawName).replace(/[^\w.\-]/g, '_').slice(0, 200) || 'upload';
+  if (!safeRel(`attachments/${safeName}`)) return c.json({ error: 'invalid filename' }, 400);
+
+  const dir = path.join(libraryRoot(b.id), 'attachments');
+  fs.mkdirSync(dir, { recursive: true });
+
+  let dest = path.join(dir, safeName);
+  if (fs.existsSync(dest)) {
+    const ext = path.extname(safeName);
+    const base = path.basename(safeName, ext);
+    let n = 1;
+    while (fs.existsSync(dest)) { dest = path.join(dir, `${base}_${n++}${ext}`); }
+  }
+  const finalName = path.basename(dest);
+
+  fs.writeFileSync(dest, Buffer.from(await file.arrayBuffer()));
+  return c.json({ path: `attachments/${finalName}`, filename: finalName, mediaType: mediaTypeFor(finalName) });
+});
+
 api.post('/bots/:id/messages', async (c) => {
   const b = ownBot(c.get('user').id, c.req.param('id'));
   if (!b) return c.json({ error: 'not found' }, 404);
-  const { text } = await c.req.json<{ text: string }>();
+  const { text, files } = await c.req.json<{ text: string; files?: { path: string; filename: string; mediaType: string }[] }>();
   if (!text?.trim()) return c.json({ error: 'empty' }, 400);
-  const row = appendRow(b.id, 'message', { type: 'message', role: 'user', text: text.trim() });
+  const body: { type: 'message'; role: 'user'; text: string; files?: typeof files } = { type: 'message', role: 'user', text: text.trim() };
+  if (Array.isArray(files) && files.length > 0) body.files = files;
+  const row = appendRow(b.id, 'message', body);
   // Group chats dispatch to their member Bots instead of running their own loop.
   if (b.kind === 'room') dispatchRoomMessage(b.id, text.trim(), enqueue);
   // Any pending question card is answered by a free-text message.

@@ -339,6 +339,12 @@ function captionFrom(reasoning: string): string | null {
 /** Hermes' own tool lookup (it loads rarely used tools on demand). */
 const TOOLBOX = new Set(['tool_search', 'tool_describe']);
 
+/** `Default`/`` is what the settings panel stores when nothing was picked; treat it as "no choice". */
+function realModel(value: string | null | undefined): string | null {
+  const text = (value ?? '').trim();
+  return !text || text.toLowerCase() === 'default' ? null : text;
+}
+
 async function runTurn(botId: string, trigger: Trigger) {
   const bot = getBotRow(botId);
   if (!bot || bot.kind === 'room') return;
@@ -467,8 +473,11 @@ async function runTurn(botId: string, trigger: Trigger) {
       signal: ctrl.signal,
       headers: { 'content-type': 'application/json', accept: 'text/event-stream', ...(engine.key ? { authorization: `Bearer ${engine.key}` } : {}) },
       body: JSON.stringify({
-        model: bot.model || (engine.kind === 'managed' ? env.defaultBotModel : 'hermes-agent'),
-        ...(bot.provider || engine.kind === 'managed' ? { provider: bot.provider || env.defaultBotProvider } : {}),
+        // A stored `Default` is the settings panel's placeholder, not a model id. A managed Bot with no
+        // model of its own sends neither field, so its gateway answers with the model in its own config —
+        // the primary agent's — instead of a default this app invented.
+        ...(realModel(bot.model) ? { model: realModel(bot.model) } : engine.kind === 'managed' ? {} : { model: 'hermes-agent' }),
+        ...(realModel(bot.provider) ? { provider: realModel(bot.provider) } : {}),
         input,
         instructions: await instructionsFor(userId, botId),
         // One engine-side thread per conversation; "New chat" bumps the generation and starts another.

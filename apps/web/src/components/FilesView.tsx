@@ -211,12 +211,13 @@ function FileItem({
 /**
  * One browser for every file the bots own: library saves, message attachments and workspace output.
  * Filter by bot, type and name; previews stay in-app for images and text, everything else downloads.
+ * When `botId` is provided the view is scoped to that bot (Files tab inside a bot chat).
  */
-export function FilesView() {
+export function FilesView({ botId: scopedBotId }: { botId?: string } = {}) {
   const bots = useStore((s) => s.bots);
   const [view, setView] = useState<ViewMode>(readView);
   const [rawSearch, setRawSearch] = useState('');
-  const [query, setQuery] = useState({ botId: '', type: 'all' as FileType, search: '', page: 1 });
+  const [query, setQuery] = useState({ botId: scopedBotId ?? '', type: 'all' as FileType, search: '', page: 1 });
   const [files, setFiles] = useState<FileEntry[]>([]);
   const [total, setTotal] = useState(0);
   const [loading, setLoading] = useState(true);
@@ -301,16 +302,18 @@ export function FilesView() {
           )}
         </div>
         <div className="files-view__controls">
-          <select
-            className="files-view__bot"
-            aria-label="Filter by bot"
-            value={query.botId}
-            onChange={(e) => pick({ botId: e.target.value })}
-            disabled={!bots.length}
-          >
-            <option value="">All bots</option>
-            {bots.map((b) => <option key={b.id} value={b.id}>{b.name}</option>)}
-          </select>
+          {!scopedBotId && (
+            <select
+              className="files-view__bot"
+              aria-label="Filter by bot"
+              value={query.botId}
+              onChange={(e) => pick({ botId: e.target.value })}
+              disabled={!bots.length}
+            >
+              <option value="">All bots</option>
+              {bots.map((b) => <option key={b.id} value={b.id}>{b.name}</option>)}
+            </select>
+          )}
           <div className="files-view__views" role="group" aria-label="Layout">
             <button
               type="button"

@@ -25,7 +25,7 @@ import { computersApi } from './routes-computers.js';
 import { skillsApi } from './routes-skills.js';
 import { startIdleWatcher } from './idle.js';
 import { mcpApi } from './mcp.js';
-import { initEngines, syncAllManagedAuth } from './engine.js';
+import { initEngines, startSubscriptionSync, syncAllManagedAuth } from './engine.js';
 import { recoverComputers, suspendComputers } from './computer-provider-registry.js';
 import { startDockerIdleSuspender } from './docker-provider.js';
 
@@ -85,12 +85,19 @@ if (process.env.GROKBOT_NO_SCHEDULER !== '1') {
 initProactive(enqueue);
 } else console.log('[grokbot] scheduler disabled (GROKBOT_NO_SCHEDULER=1)');
 startIdleWatcher();
+// Every managed bot's credentials come from the primary agent, so the sync has to land *before* the
+// gateways start: a gateway reads its .env once, at start, and one started against a stale home
+// answers "not connected to any AI provider yet" for the rest of its life.
+try {
+  await syncAllManagedAuth();
+  console.log('[engine] auth sync complete');
+} catch (e: any) {
+  console.warn(`[engine] auth sync failed: ${e?.message ?? e}`);
+}
 initEngines();
-// Every managed bot's model credentials come from the primary agent; bring them in line at boot so a
-// key the user added or rotated later still reaches the bots that were created before it.
-void syncAllManagedAuth()
-  .then((n) => n && console.log(`[engine] auth sync: ${n} managed bot(s) updated`))
-  .catch((e) => console.warn(`[engine] auth sync failed: ${e?.message ?? e}`));
+// Subscription sign-ins are inherited as access tokens, so they have to be re-read as the primary
+// agent refreshes its own. A bot's gateway picks the new token up from auth.json without a restart.
+startSubscriptionSync();
 // Containers left "running" by a crash are paused, not trusted: each bot's home folder on the host
 // is what survives, and the next open starts its container again.
 void recoverComputers().catch((e) => console.warn(`[docker] startup recovery failed: ${e?.message ?? e}`));

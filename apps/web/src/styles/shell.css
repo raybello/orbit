@@ -43,19 +43,20 @@
   background: var(--color-danger); color: #FFFFFF;
   font-size: 10px; font-weight: 600; line-height: 16px; text-align: center;
 }
-.nav-rail__footer { display: flex; flex-direction: column; align-items: center; gap: 6px; padding: 8px 0 12px; flex-shrink: 0; }
-.nav-rail .account { flex: 0 0 auto; padding: 0; gap: 0; }
-.account__btn--rail { padding: 0; }
+.nav-rail__footer { display: flex; flex-direction: column; align-items: center; gap: 4px; padding: 8px 0 12px; flex-shrink: 0; width: 100%; }
+.nav-rail .account { flex: 0 0 auto; padding: 0; gap: 0; width: 100%; }
+.nav-rail .account__btn--rail { padding: 0; display: flex; align-items: center; justify-content: center; width: 100%; height: 44px; }
 .nav-rail .account__initials {
   width: 32px; height: 32px; font-size: 12px; line-height: 12px;
   background: rgb(255 255 255 / 0.14); box-shadow: rgb(255 255 255 / 0.18) 0 0 0 0.5px inset; color: #FFFFFF;
 }
 .nav-rail .menu { left: 6px; }
 .icon-btn--rail {
-  width: 28px; height: 28px; background: transparent; border: 0;
-  color: var(--nav-rail-icon);
+  width: 100%; height: 44px; background: transparent; border: 0;
+  color: var(--nav-rail-icon); display: flex; align-items: center; justify-content: center;
+  border-radius: 0;
 }
-.icon-btn--rail:hover { background: rgb(255 255 255 / 0.1); color: var(--nav-rail-icon-selected); }
+.icon-btn--rail:hover { background: rgb(255 255 255 / 0.08); color: var(--nav-rail-icon-selected); }
 
 /* ---------- section panel: the list beside the rail, collapses to 0 ---------- */
 .section-panel {
@@ -64,7 +65,9 @@
   background: var(--section-panel-bg); border-right: 1px solid var(--section-panel-border);
   overflow: hidden; transition: width 0.2s var(--ease-standard);
 }
-.section-panel.is-collapsed { width: 0; border-right: 0; }
+/* Collapsed, the panel keeps a narrow strip: the strip is where its expand control lives, so the
+   sidebar can always be brought back with the mouse and not only with ⌘B. */
+.section-panel.is-collapsed { width: 34px; }
 .section-panel__header { display: flex; align-items: center; justify-content: space-between; gap: 8px; height: 48px; padding: 0 8px 0 16px; flex-shrink: 0; }
 .section-panel__title {
   margin: 0; min-width: 0; font-size: 16px; font-weight: 600; line-height: 24px; letter-spacing: -0.1px;
@@ -81,7 +84,7 @@
 .section-panel[data-section='chat'] .section-panel__header { height: 28px; padding: 0 6px; }
 .section-panel[data-section='chat'] .section-panel__title { display: none; }
 .section-panel[data-section='chat'] .section-panel__body { padding: 0 0 0; }
-.section-panel.is-collapsed .section-panel__header,
+.section-panel.is-collapsed .section-panel__header { justify-content: center; padding: 0; height: 48px; }
 .section-panel.is-collapsed .section-panel__body { display: none; }
 
 /* ---------- main content column ---------- */
@@ -148,3 +151,37 @@
   color: var(--color-fg-subtle); font-size: 12px; font-weight: 600; letter-spacing: -0.2px; line-height: 12px;
 }
 .account__name { font-size: 14px; font-weight: 600; line-height: 20px; color: var(--color-fg-default); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+
+/* ---------- the window handle ---------- */
+/*
+ * On macOS the desktop window has no title bar of its own (`titleBarStyle: 'hiddenInset'`), so the
+ * app's chrome is the only thing that can move the window — and until these rules existed, nothing
+ * could: dragging any part of it moved the window's contents not at all. The rail's dots strip and
+ * every view's first row now act as the handle; controls inside them opt back out so they stay
+ * clickable. `-webkit-app-region` means nothing outside Electron, so a browser is unaffected.
+ */
+.nav-rail__titlebar,
+.section-panel__header,
+.chat-list__header,
+.conv-header,
+.activity__header,
+.cal-header,
+.files-view__bar,
+.computers__bar,
+.skills-view__header,
+.details__top,
+.viewer__top { -webkit-app-region: drag; }
+
+.nav-rail__titlebar :is(button, a, input, textarea, select, [role='button'], [role='tab']),
+.section-panel__header :is(button, a, input, textarea, select, [role='button'], [role='tab']),
+.chat-list__header :is(button, a, input, textarea, select, [role='button'], [role='tab']),
+.conv-header :is(button, a, input, textarea, select, [role='button'], [role='tab']),
+.activity__header :is(button, a, input, textarea, select, [role='button'], [role='tab']),
+.cal-header :is(button, a, input, textarea, select, [role='button'], [role='tab']),
+.files-view__bar :is(button, a, input, textarea, select, [role='button'], [role='tab']),
+.computers__bar :is(button, a, input, textarea, select, [role='button'], [role='tab']),
+.skills-view__header :is(button, a, input, textarea, select, [role='button'], [role='tab']),
+.details__top :is(button, a, input, textarea, select, [role='button'], [role='tab']),
+.viewer__top :is(button, a, input, textarea, select, [role='button'], [role='tab']) {
+  -webkit-app-region: no-drag;
+}

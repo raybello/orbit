@@ -48,30 +48,38 @@ function SectionBody({ section }: { section: NavSection }) {
   }
 }
 
-/** The 280px list beside the rail: a titled header with a collapse control, then the section body. */
+/**
+ * The 280px list beside the rail: a titled header with a collapse control, then the section body.
+ *
+ * Collapsed, it keeps a narrow strip holding its own expand control. The panel used to slide to
+ * zero width with the button inside it, which left a keyboard shortcut as the only way back — a
+ * collapsed sidebar that cannot be reopened is a broken one.
+ */
 export function SectionPanel({ section, collapsed, onToggleCollapsed }: Props) {
   return (
     <aside
       className={`section-panel${collapsed ? ' is-collapsed' : ''}`}
       data-section={section}
       aria-label={`${TITLES[section]} panel`}
-      aria-hidden={collapsed || undefined}
     >
       <div className="section-panel__header">
-        <h2 className="section-panel__title">{TITLES[section]}</h2>
+        {!collapsed && <h2 className="section-panel__title">{TITLES[section]}</h2>}
         <button
           type="button"
           className="icon-btn icon-btn--plain section-panel__collapse"
           onClick={onToggleCollapsed}
-          aria-label={collapsed ? 'Expand panel' : 'Collapse panel'}
+          aria-label={collapsed ? `Expand the ${TITLES[section]} panel` : 'Collapse panel'}
+          aria-expanded={!collapsed}
           title={collapsed ? 'Expand panel (⌘B)' : 'Collapse panel (⌘B)'}
         >
-          <Icon name={collapsed ? 'expand' : 'shrink'} size={16} opacity={0.66} />
+          <Icon name={collapsed ? 'chev_right' : 'shrink'} size={16} opacity={0.66} />
         </button>
       </div>
-      <div className="section-panel__body">
-        <SectionBody section={section} />
-      </div>
+      {!collapsed && (
+        <div className="section-panel__body">
+          <SectionBody section={section} />
+        </div>
+      )}
     </aside>
   );
 }
