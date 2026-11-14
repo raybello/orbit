@@ -85,6 +85,10 @@ services:
     # socket, the image still defaults to its non-root user.
     user: "0:0"
     command: ["node", "dist/supervisor.js"]
+    # The image's healthcheck probes :8787, and this entrypoint deliberately binds no port — without
+    # this it reports "unhealthy" forever while doing exactly its job.
+    healthcheck:
+      test: ["NONE"]
     init: true
     restart: unless-stopped
     env_file:
