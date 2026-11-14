@@ -1,0 +1,69 @@
+/* ---------- cross-bot Activity feed (rail → Activity, in the main area) ---------- */
+
+.activity { display: flex; flex-direction: column; min-height: 100%; }
+
+.activity__header { display: flex; align-items: baseline; justify-content: space-between; gap: 8px; padding: 2px 4px 8px; }
+.activity__title {
+  margin: 0; min-width: 0; font-size: 17px; font-weight: 600; line-height: 24px; letter-spacing: -0.2px;
+  color: var(--color-ink); white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+}
+.activity__count { flex-shrink: 0; font-size: 12px; line-height: 16px; color: var(--color-text-tertiary); font-variant-numeric: tabular-nums; }
+
+/* ---------- filter chips ---------- */
+.activity__filters { display: flex; flex-wrap: wrap; gap: 6px; padding: 0 4px 10px; }
+.activity__filter {
+  height: 26px; padding: 0 10px; border-radius: var(--radius-full);
+  background: var(--color-bg-tertiary); color: var(--color-text-secondary);
+  font-size: 12px; font-weight: 500; line-height: 26px; letter-spacing: 0.1px; white-space: nowrap;
+  transition: background-color 120ms var(--ease-out), color 120ms var(--ease-out);
+}
+.activity__filter:hover { background: var(--color-bg-hover); color: var(--color-text-primary); }
+.activity__filter.is-active { background: var(--color-primary); color: var(--color-on-primary); }
+
+/* ---------- feed ---------- */
+.activity__list { display: flex; flex-direction: column; gap: 2px; }
+
+.activity-item {
+  display: flex; align-items: center; gap: 10px; width: 100%;
+  padding: 8px; border-radius: var(--radius-md); text-align: left;
+  transition: background-color 120ms var(--ease-out);
+}
+.activity-item:hover { background: var(--color-bg-hover); }
+.activity-item:active { background: var(--color-bg-active); }
+
+.activity-item__avatar { display: inline-flex; flex-shrink: 0; align-items: center; justify-content: center; }
+.activity-item__text { display: flex; flex-direction: column; gap: 1px; flex: 1 1 0; min-width: 0; }
+.activity-item__top { display: flex; align-items: baseline; gap: 8px; min-width: 0; }
+.activity-item__name {
+  flex: 1 1 auto; min-width: 0; font-size: 14px; font-weight: 500; line-height: 20px; letter-spacing: 0.14px;
+  color: var(--color-ink); white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+}
+.activity-item__time {
+  flex-shrink: 0; font-size: 11px; line-height: 16px; color: var(--color-text-tertiary);
+  font-variant-numeric: tabular-nums;
+}
+.activity-item__preview {
+  font-size: 13px; line-height: 18px; letter-spacing: 0.195px; color: var(--color-text-secondary);
+  white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+}
+/* A card or a turn in progress is the thing worth noticing, so its line is not dimmed. */
+.activity-item.is-card .activity-item__preview { color: var(--color-text-primary); }
+
+.activity-item__tag {
+  flex-shrink: 0; height: 18px; padding: 0 7px; border-radius: var(--radius-full);
+  background: var(--color-bg-tertiary); color: var(--color-text-tertiary);
+  font-size: 10px; font-weight: 600; line-height: 18px; letter-spacing: 0.1px; white-space: nowrap;
+}
+.activity-item__tag.is-card { background: var(--color-warn-bg); color: var(--color-warn-text); }
+.activity-item__tag.is-working { background: var(--color-success-bg); color: var(--color-success-text); }
+.activity-item__tag.is-working::before {
+  content: ''; display: inline-block; width: 5px; height: 5px; margin-right: 5px; border-radius: 50%;
+  background: currentColor; vertical-align: middle;
+}
+
+/* ---------- empty ---------- */
+.activity__empty {
+  margin: 0; padding: 22px 14px; border-radius: var(--radius-md);
+  border: 0.5px dashed var(--color-border-secondary); background: transparent;
+  font-size: 13px; line-height: 19px; color: var(--color-text-tertiary); text-align: center;
+}

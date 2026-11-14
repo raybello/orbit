@@ -19,9 +19,13 @@ import { roomsApi } from './routes-rooms.js';
 import { enqueue, expireStaleApprovals } from './agent/loop.js';
 import { desSelfTest } from './lib/des.js';
 import { configApi } from './routes-config.js';
+import { calendarApi } from './routes-calendar.js';
+import { filesApi } from './routes-files.js';
+import { computersApi } from './routes-computers.js';
+import { skillsApi } from './routes-skills.js';
 import { startIdleWatcher } from './idle.js';
 import { mcpApi } from './mcp.js';
-import { initEngines } from './engine.js';
+import { initEngines, syncAllManagedAuth } from './engine.js';
 import { recoverComputers, suspendComputers } from './computer-provider-registry.js';
 import { startDockerIdleSuspender } from './docker-provider.js';
 
@@ -53,12 +57,23 @@ app.route('/api/checkins', checkinsApi);
 app.route('/api/rooms', roomsApi);
 app.route('/api', api);
 app.route('/api', configApi);
+// Calendar (routines + occurrences), Skills (MCP servers) and the two routers that own a prefix.
+app.route('/api', calendarApi);
+app.route('/api', skillsApi);
+app.route('/api/files', filesApi);
+app.route('/api/computers', computersApi);
 
 // Serve the built web app in production.
 const webDist = path.resolve(new URL('.', import.meta.url).pathname, '../../web/dist');
 if (fs.existsSync(webDist)) {
+  // index.html must never be cached by Electron across container rebuilds: the shell
+  // references content-hashed assets, so a stale shell loads the wrong (or missing) JS.
+  const indexHtml = () => fs.readFileSync(path.join(webDist, 'index.html'), 'utf8');
+  const noStore = { 'Cache-Control': 'no-store' } as const;
+  app.get('/', (c) => c.html(indexHtml(), 200, noStore));
+  app.get('/index.html', (c) => c.html(indexHtml(), 200, noStore));
   app.use('/*', serveStatic({ root: path.relative(process.cwd(), webDist) }));
-  app.get('*', (c) => c.html(fs.readFileSync(path.join(webDist, 'index.html'), 'utf8')));
+  app.get('*', (c) => c.html(indexHtml(), 200, noStore));
 }
 
 const server = serve({ fetch: app.fetch, port: env.port }, (info) => console.log(`[grokbot] server on http://localhost:${info.port}`));
@@ -71,6 +86,11 @@ initProactive(enqueue);
 } else console.log('[grokbot] scheduler disabled (GROKBOT_NO_SCHEDULER=1)');
 startIdleWatcher();
 initEngines();
+// Every managed bot's model credentials come from the primary agent; bring them in line at boot so a
+// key the user added or rotated later still reaches the bots that were created before it.
+void syncAllManagedAuth()
+  .then((n) => n && console.log(`[engine] auth sync: ${n} managed bot(s) updated`))
+  .catch((e) => console.warn(`[engine] auth sync failed: ${e?.message ?? e}`));
 // Containers left "running" by a crash are paused, not trusted: each bot's home folder on the host
 // is what survives, and the next open starts its container again.
 void recoverComputers().catch((e) => console.warn(`[docker] startup recovery failed: ${e?.message ?? e}`));

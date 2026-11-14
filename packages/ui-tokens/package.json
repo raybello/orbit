@@ -10,9 +10,10 @@
       "types": "./dist/index.d.ts",
       "default": "./dist/index.js"
     },
-    "./tokens.css": "./tokens.css"
+    "./tokens.css": "./tokens.css",
+    "./themes/*": "./themes/*"
   },
-  "files": ["dist", "tokens.css"],
+  "files": ["dist", "tokens.css", "themes"],
   "scripts": {
     "build": "tsc -p tsconfig.json",
     "typecheck": "tsc -p tsconfig.json --noEmit"

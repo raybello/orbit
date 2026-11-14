@@ -1,14 +1,24 @@
 import { Fragment, useCallback, useMemo, useState } from 'react';
 import { Alert, Linking, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
 import * as Clipboard from 'expo-clipboard';
-import type { MessageFile } from '@orbit/contracts';
+import type { Bot, MessageFile } from '@orbit/contracts';
+import { BotAvatarFor } from './bot-avatar';
 import { timeAgo } from '../lib/format';
 import { useMobileTokens, type MobileTokens } from '../lib/native';
 
 /**
- * A chat bubble with just enough markdown for agent replies: fenced code, inline code, bold,
- * links, headings, bullet and numbered lists. Links open in the system browser — the app has no
- * in-app browser, and the server's own links (a bot's screen, a toolkit) belong there.
+ * One message, Teams style (plan §12.3): not a bubble.
+ *
+ * A flat row — a 28px avatar column on the left, then a body whose first line carries the sender
+ * name (14/600) and the timestamp (12, muted), with the message itself at 14/20 in the default
+ * foreground. Agent messages sit straight on the canvas with no background at all.
+ *
+ * The person's own messages keep a quiet marker rather than a shape: a 3px accent bar down the left
+ * edge and a 4% accent tint, so they read as "mine" without breaking the single column.
+ *
+ * Markdown is just enough for agent replies: fenced code, inline code, bold, links, headings, bullet
+ * and numbered lists. Links open in the system browser — the app has no in-app browser, and the
+ * server's own links (a bot's screen, a toolkit) belong there.
  */
 
 type Segment = { type: 'text'; value: string } | { type: 'code'; value: string; lang: string };
@@ -97,7 +107,7 @@ function CodeBlock({ code, tokens }: { code: string; tokens: MobileTokens }) {
       <View
         style={{
           backgroundColor: tokens.colors.bgSubtle,
-          borderColor: tokens.colors.border,
+          borderColor: tokens.colors.borderTertiary,
           borderWidth: StyleSheet.hairlineWidth,
           borderRadius: tokens.radii.sm,
           padding: tokens.space.md,
@@ -114,7 +124,8 @@ function CodeBlock({ code, tokens }: { code: string; tokens: MobileTokens }) {
 /** Paragraphs, headings and list items. Anything else renders as a plain paragraph. */
 function TextBody({ value, color, tokens }: { value: string; color: string; tokens: MobileTokens }) {
   const blocks = useMemo(() => value.split(/\n{2,}/).filter((b) => b.trim().length > 0), [value]);
-  const bodyStyle = { color, fontSize: tokens.fontSizes.message, lineHeight: tokens.fontSizes.message * 1.45 };
+  // 14/20: the message text size from the plan, on the token's own line height.
+  const bodyStyle = { color, fontSize: tokens.fontSizes.base, lineHeight: tokens.lineHeights.base };
 
   return (
     <View>
@@ -162,6 +173,18 @@ function TextBody({ value, color, tokens }: { value: string; color: string; toke
   );
 }
 
+/** Avatar column width, and the accent bar that marks the person's own messages. */
+const AVATAR_SIZE = 28;
+const USER_BAR = 3;
+
+/**
+ * 4% of the accent, as an 8-digit hex (`#RRGGBBAA`). Transparent when the accent is not a plain
+ * six-digit hex, so a themed or high-contrast accent can never render as an opaque block.
+ */
+function accentTint(accent: string): string {
+  return /^#[0-9a-f]{6}$/i.test(accent) ? `${accent}0A` : 'transparent';
+}
+
 export interface MessageBubbleProps {
   role: 'user' | 'assistant';
   text: string;
@@ -170,14 +193,19 @@ export interface MessageBubbleProps {
   /** Set when the message came from another bot, a routine or a voice call. */
   from?: { kind: string; name: string };
   files?: MessageFile[];
+  /** The bot whose thread this is: gives the row its 28px avatar. Omit for a bare row. */
+  bot?: Pick<Bot, 'avatarShape' | 'avatarColor' | 'name'> | null;
+  /** Not the first message of a run: the avatar and the name/time line are left off. */
+  follow?: boolean;
 }
 
-export function MessageBubble({ role, text, createdAt, streaming, from, files }: MessageBubbleProps) {
+export function MessageBubble({ role, text, createdAt, streaming, from, files, bot, follow }: MessageBubbleProps) {
   const tokens = useMobileTokens();
   const [copied, setCopied] = useState(false);
   const isUser = role === 'user';
   const segments = useMemo(() => splitFences(text), [text]);
-  const color = isUser ? tokens.colors.onAccent : tokens.colors.fg;
+  const color = tokens.colors.fg;
+  const sender = isUser ? 'You' : (from?.name ?? bot?.name ?? 'Assistant');
 
   const copy = useCallback(async () => {
     try {
@@ -192,78 +220,93 @@ export function MessageBubble({ role, text, createdAt, streaming, from, files }:
   return (
     <View
       style={{
-        alignSelf: isUser ? 'flex-end' : 'flex-start',
-        maxWidth: '88%',
-        marginHorizontal: tokens.space.xl,
-        marginVertical: tokens.space.xxs,
+        flexDirection: 'row',
+        // The gap between the avatar column and the text, unchanged by the accent bar.
+        gap: tokens.space.lg,
+        paddingTop: tokens.space.xs,
+        paddingBottom: tokens.space.xs,
+        // The bar eats into the gutter instead of shifting the text right.
+        paddingLeft: isUser ? tokens.space.xl - USER_BAR : tokens.space.xl,
+        paddingRight: tokens.space.xl,
+        borderLeftWidth: isUser ? USER_BAR : 0,
+        borderLeftColor: tokens.colors.accent,
+        backgroundColor: isUser ? accentTint(tokens.colors.accent) : 'transparent',
       }}
     >
-      {from && !isUser ? (
-        <Text style={{ color: tokens.colors.fgTertiary, fontSize: tokens.fontSizes.xs, marginBottom: 2, marginLeft: tokens.space.md }}>
-          {from.name}
-        </Text>
-      ) : null}
-      <Pressable
-        onLongPress={copy}
-        delayLongPress={350}
-        style={{
-          backgroundColor: isUser ? tokens.colors.bubbleUser : tokens.colors.bubbleAgent,
-          borderRadius: tokens.radii.bubble,
-          paddingHorizontal: tokens.space.lg,
-          paddingVertical: tokens.space.md,
-        }}
-      >
-        {segments.map((segment, i) =>
-          segment.type === 'code' ? (
-            <CodeBlock key={i} code={segment.value} tokens={tokens} />
-          ) : (
-            <TextBody key={i} value={segment.value} color={color} tokens={tokens} />
-          ),
-        )}
-        {streaming ? (
-          <Text style={{ color, opacity: 0.5, fontSize: tokens.fontSizes.sm, marginTop: tokens.space.xs }}>…</Text>
-        ) : null}
-      </Pressable>
+      <View style={{ width: AVATAR_SIZE, alignItems: 'center' }}>
+        {!isUser && !follow && bot ? <BotAvatarFor bot={bot} size={AVATAR_SIZE} /> : null}
+      </View>
 
-      {copied ? (
-        <Text style={{ color: tokens.colors.fgTertiary, fontSize: 11, marginTop: 2, marginHorizontal: tokens.space.xs }}>
-          Copied
-        </Text>
-      ) : null}
-
-      {files?.length ? (
-        <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: tokens.space.xs, marginTop: tokens.space.xs }}>
-          {files.map((file) => (
-            <Pressable
-              key={file.path}
-              onPress={() => Alert.alert(file.filename, 'Files open on the web app for now.')}
+      <View style={{ flex: 1, minWidth: 0 }}>
+        {follow ? null : (
+          <View style={{ flexDirection: 'row', alignItems: 'baseline', gap: tokens.space.md, marginBottom: 2 }}>
+            <Text
+              numberOfLines={1}
               style={{
-                borderColor: tokens.colors.border,
-                borderWidth: StyleSheet.hairlineWidth,
-                borderRadius: tokens.radii.sm,
-                paddingHorizontal: tokens.space.sm,
-                paddingVertical: 2,
+                flexShrink: 1,
+                color: isUser ? tokens.colors.accent : tokens.colors.fg,
+                fontSize: tokens.fontSizes.base,
+                fontWeight: tokens.fontWeights.semibold,
+                lineHeight: tokens.lineHeights.base,
               }}
             >
-              <Text style={{ color: tokens.colors.fgSecondary, fontSize: tokens.fontSizes.xs }}>{file.filename}</Text>
-            </Pressable>
-          ))}
-        </View>
-      ) : null}
+              {sender}
+            </Text>
+            {createdAt ? (
+              <Text
+                style={{
+                  color: tokens.colors.fgTertiary,
+                  fontSize: tokens.fontSizes.caption,
+                  lineHeight: tokens.lineHeights.caption,
+                }}
+              >
+                {timeAgo(createdAt)}
+              </Text>
+            ) : null}
+          </View>
+        )}
 
-      {createdAt ? (
-        <Text
-          style={{
-            color: tokens.colors.fgTertiary,
-            fontSize: 11,
-            alignSelf: isUser ? 'flex-end' : 'flex-start',
-            marginTop: 2,
-            marginHorizontal: tokens.space.xs,
-          }}
-        >
-          {timeAgo(createdAt)}
-        </Text>
-      ) : null}
+        <Pressable onLongPress={copy} delayLongPress={350}>
+          {segments.map((segment, i) =>
+            segment.type === 'code' ? (
+              <CodeBlock key={i} code={segment.value} tokens={tokens} />
+            ) : (
+              <TextBody key={i} value={segment.value} color={color} tokens={tokens} />
+            ),
+          )}
+          {streaming ? (
+            <Text style={{ color, opacity: 0.5, fontSize: tokens.fontSizes.sm, marginTop: tokens.space.xs }}>…</Text>
+          ) : null}
+        </Pressable>
+
+        {copied ? (
+          <Text style={{ color: tokens.colors.fgTertiary, fontSize: tokens.fontSizes.caption, marginTop: 2 }}>
+            Copied
+          </Text>
+        ) : null}
+
+        {files?.length ? (
+          <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: tokens.space.xs, marginTop: tokens.space.xs }}>
+            {files.map((file) => (
+              <Pressable
+                key={file.path}
+                onPress={() => Alert.alert(file.filename, 'Files open on the web app for now.')}
+                style={{
+                  borderColor: tokens.colors.borderTertiary,
+                  borderWidth: StyleSheet.hairlineWidth,
+                  borderRadius: tokens.radii.sm,
+                  paddingHorizontal: tokens.space.sm,
+                  paddingVertical: 2,
+                }}
+              >
+                <Text style={{ color: tokens.colors.fgSecondary, fontSize: tokens.fontSizes.caption }}>
+                  {file.filename}
+                </Text>
+              </Pressable>
+            ))}
+          </View>
+        ) : null}
+      </View>
     </View>
   );
 }

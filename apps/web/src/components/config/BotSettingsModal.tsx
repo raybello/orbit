@@ -89,6 +89,13 @@ export function BotSettingsModal() {
 type Draft = Pick<Bot, 'name' | 'label' | 'description' | 'instructions' | 'avatarShape' | 'avatarColor' | 'effort' | 'mode'>;
 const draftOf = (b: Bot): Draft => ({ name: b.name, label: b.label, description: b.description, instructions: b.instructions, avatarShape: b.avatarShape, avatarColor: b.avatarColor, effort: b.effort, mode: b.mode });
 
+/** App Settings owns the shared engine credentials; the bot dialog closes first so it doesn't sit on top. */
+function openEngineCredentials() {
+  const ui = useConfigUI.getState();
+  ui.closeBotSettings();
+  ui.openAppSettings('engine-auth');
+}
+
 function GeneralTab({ bot, onClose }: { bot: Bot; onClose: () => void }) {
   const [draft, setDraft] = useState<Draft>(() => draftOf(bot));
   const [picker, setPicker] = useState(false);
@@ -163,6 +170,21 @@ function GeneralTab({ bot, onClose }: { bot: Bot; onClose: () => void }) {
         <button type="button" className="cfg-btn cfg-btn--secondary" disabled={!dirty || saving} onClick={() => setDraft(draftOf(bot))}>Discard</button>
         <button type="button" className="cfg-btn cfg-btn--primary" disabled={!dirty || saving || !nameOk} onClick={save}>{saving ? 'Saving…' : 'Save changes'}</button>
       </div>
+
+      <section className="cfg-section">
+        <div className="cfg-section__label">Engine</div>
+        <div className="cfg-card">
+          <div className="cfg-row">
+            <div className="cfg-row__text">
+              <div className="cfg-row__title">{bot.model || 'No model set'}</div>
+              <div className="cfg-row__sub">
+                {bot.provider ? `${bot.provider} · ` : ''}Credentials are shared with your other Bots and managed once in Settings.
+              </div>
+            </div>
+            <button type="button" className="cfg-btn cfg-btn--secondary" onClick={openEngineCredentials}>Manage credentials →</button>
+          </div>
+        </div>
+      </section>
 
       <section className="cfg-section">
         <div className="cfg-section__label">Conversation</div>

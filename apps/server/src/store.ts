@@ -185,6 +185,11 @@ export function toRoutine(r: any): Routine {
   return {
     id: r.id, botId: r.bot_id, name: r.name, prompt: r.prompt, schedule: r.schedule, timezone: r.timezone,
     enabled: !!r.enabled, nextRunAt, lastRunAt: r.last_run_at, description: r.schedule.startsWith('event:') ? describeEventSlug(r.schedule) : describeCron(r.schedule),
+    calendarTitle: r.calendar_title ?? null,
+    eventType: r.event_type === 'one_time' ? 'one_time' : 'recurring',
+    eventDate: r.event_date ?? null,
+    assignedBotId: r.assigned_bot_id ?? null,
+    completedAt: r.completed_at ?? null,
   };
 }
 

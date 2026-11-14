@@ -77,7 +77,7 @@ function BotCard({ bot, tokens, running, caption }: { bot: Bot; tokens: MobileTo
             {bot.kind === 'room' ? <Chip tokens={tokens} label="Room" /> : null}
             {bot.isPrimary ? <Chip tokens={tokens} label="Primary" /> : null}
           </View>
-          <Text style={{ color: tokens.colors.fgSecondary, fontSize: tokens.fontSizes.xs }}>
+          <Text style={{ color: tokens.colors.fgSecondary, fontSize: tokens.fontSizes.caption }}>
             {bot.label || (bot.mode === 'personal' ? 'Personal' : 'Teammate')}
             {bot.lastActivityAt ? ` · ${timeAgo(bot.lastActivityAt)}` : ''}
           </Text>
@@ -94,7 +94,7 @@ function BotCard({ bot, tokens, running, caption }: { bot: Bot; tokens: MobileTo
         {running ? (
           <View style={{ flexDirection: 'row', alignItems: 'center', gap: tokens.space.xxs }}>
             <ActivityIndicator size="small" color={tokens.colors.success} />
-            <Text style={{ color: tokens.colors.fgSecondary, fontSize: tokens.fontSizes.xs }}>{caption ?? 'Working…'}</Text>
+            <Text style={{ color: tokens.colors.fgSecondary, fontSize: tokens.fontSizes.caption }}>{caption ?? 'Working…'}</Text>
           </View>
         ) : null}
         <View style={{ flex: 1 }} />

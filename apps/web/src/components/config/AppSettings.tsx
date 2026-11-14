@@ -4,16 +4,20 @@ import type { Toolkit } from '@orbit/contracts';
 import { BotAvatarFor } from '../../avatar/BotAvatar';
 import { configApi, type ComputerDetails } from '../../lib/configApi';
 import { relativeShort } from '../../lib/time';
-import { useConfigUI, type AppSection, type Theme } from '../../configStore';
+import { presets } from '@orbit/ui-tokens';
+import { useConfigUI, type AppSection, type Preset, type Theme } from '../../configStore';
 import { useStore } from '../../store';
 import { computerStatusText } from '../DetailsPanel';
 import { Icon } from '../Icon';
 import { ToolkitLogo } from '../ToolkitLogo';
+import { EngineAuthPanel } from './EngineAuthPanel';
 import { Glyph } from './glyphs';
 import { ConfirmButton } from './ui';
 
 const SECTIONS: { id: AppSection; label: string }[] = [
   { id: 'general', label: 'General' },
+  { id: 'appearance', label: 'Appearance' },
+  { id: 'engine-auth', label: 'Engine Auth' },
   { id: 'computer', label: 'Computer' },
   { id: 'permissions', label: 'Permissions' },
   { id: 'apps', label: 'Connected apps' },
@@ -46,6 +50,8 @@ export function AppSettings() {
         <button type="button" className="app-settings__close icon-btn" onClick={close} aria-label="Close settings" title="Close (Esc)"><Icon name="close" opacity={0.8} /></button>
         <div className="app-settings__page">
           {section === 'general' && <GeneralSection />}
+          {section === 'appearance' && <AppearanceSection />}
+          {section === 'engine-auth' && <EngineAuthSection />}
           {section === 'computer' && <ComputerSection />}
           {section === 'permissions' && <PermissionsSection />}
           {section === 'apps' && <AppsSection />}
@@ -81,19 +87,105 @@ function ThemeTile({ value, label, current, onPick }: { value: Theme; label: str
 }
 
 function GeneralSection() {
+  const open = useConfigUI((s) => s.openAppSettings);
   const theme = useConfigUI((s) => s.theme);
-  const setTheme = useConfigUI((s) => s.setTheme);
+  const preset = useConfigUI((s) => s.preset);
+  const label = preset === 'custom' ? 'Custom accent' : presets.find((p) => p.id === preset)?.label ?? 'Orbit Purple';
   return (
     <>
       <PageHead title="General" />
       <section className="cfg-section">
+        <div className="cfg-card">
+          <button type="button" className="cfg-row cfg-row--button" onClick={() => open('appearance')}>
+            <div className="cfg-row__text">
+              <div className="cfg-row__title">Appearance</div>
+              <div className="cfg-row__sub">{theme === 'system' ? 'System theme' : theme === 'hc' ? 'High contrast' : `${theme[0].toUpperCase()}${theme.slice(1)} theme`} · {label}</div>
+            </div>
+            <Glyph name="arrow_left" size={14} style={{ transform: 'rotate(180deg)', opacity: 0.6 }} />
+          </button>
+        </div>
+      </section>
+    </>
+  );
+}
+
+// ---------------------------------------------------------------------------
+
+/** Theme, the six accent presets, and a free-form accent colour. */
+function AppearanceSection() {
+  const theme = useConfigUI((s) => s.theme);
+  const setTheme = useConfigUI((s) => s.setTheme);
+  const preset = useConfigUI((s) => s.preset);
+  const setPreset = useConfigUI((s) => s.setPreset);
+  const accent = useConfigUI((s) => s.accentColor);
+  const setAccentColor = useConfigUI((s) => s.setAccentColor);
+  const presetAccent = presets.find((p) => p.id === preset)?.accent ?? '#5B5FC7';
+  const swatch = accent ?? presetAccent;
+
+  return (
+    <>
+      <PageHead title="Appearance" sub="Light or dark, a colour theme, and the accent every control uses." />
+
+      <section className="cfg-section">
         <div className="cfg-section__label">Theme</div>
         <div className="theme-tiles" role="radiogroup" aria-label="Theme">
-          <ThemeTile value="system" label="System" current={theme} onPick={setTheme} />
           <ThemeTile value="light" label="Light" current={theme} onPick={setTheme} />
           <ThemeTile value="dark" label="Dark" current={theme} onPick={setTheme} />
+          <ThemeTile value="hc" label="High contrast" current={theme} onPick={setTheme} />
+          <ThemeTile value="system" label="System" current={theme} onPick={setTheme} />
         </div>
-        <div className="cfg-field__hint">System follows your device’s light or dark setting.</div>
+        <div className="cfg-field__hint">System follows your device’s light or dark setting. High contrast uses pure black and white.</div>
+      </section>
+
+      <section className="cfg-section">
+        <div className="cfg-section__label">Colour theme</div>
+        <div className="cfg-card">
+          <div className="cfg-row">
+            <span className="appearance__swatch" style={{ background: swatch }} aria-hidden />
+            <div className="cfg-row__text">
+              <div className="cfg-row__title">Accent preset</div>
+              <div className="cfg-row__sub">Sets the accent ramp and the nav rail colour.</div>
+            </div>
+            <select
+              className="text-input appearance__select"
+              value={preset}
+              aria-label="Colour theme"
+              onChange={(e) => setPreset(e.target.value as Preset)}
+            >
+              {presets.map((p) => <option key={p.id} value={p.id}>{p.label}</option>)}
+              <option value="custom">Custom</option>
+            </select>
+          </div>
+          <div className="cfg-row">
+            <span className="appearance__swatch" style={{ background: swatch }} aria-hidden />
+            <div className="cfg-row__text">
+              <div className="cfg-row__title">Accent colour</div>
+              <div className="cfg-row__sub">{accent ? 'A custom accent is in use.' : 'Follows the preset.'}</div>
+            </div>
+            <input
+              type="color"
+              className="appearance__color"
+              value={swatch}
+              aria-label="Accent colour"
+              onChange={(e) => setAccentColor(e.target.value.toUpperCase())}
+            />
+            <code className="appearance__hex">{swatch.toUpperCase()}</code>
+            {accent && <button type="button" className="cfg-btn cfg-btn--secondary" onClick={() => setPreset('default')}>Reset</button>}
+          </div>
+        </div>
+      </section>
+    </>
+  );
+}
+
+// ---------------------------------------------------------------------------
+
+function EngineAuthSection() {
+  return (
+    <>
+      <PageHead title="Engine Auth" sub="Which provider and model runs each Bot, and whether it has the credentials to reach them." />
+      <section className="cfg-section">
+        <EngineAuthPanel />
       </section>
     </>
   );

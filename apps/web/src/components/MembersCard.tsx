@@ -66,7 +66,7 @@ export function MembersCard({ room }: { room: Bot }) {
         </button>
       )}
       {error && <div className="card__error">{error}</div>}
-      <div className="members__hint">@mention a Bot to ask just them; otherwise the group answers.</div>
+      <div className="members__hint">@mention a Bot to ask just them; Bots can also @mention each other to collaborate.</div>
     </div>
   );
 }

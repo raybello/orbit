@@ -23,6 +23,18 @@ export function elapsed(ms: number): string {
   return `${Math.floor(m / 60)}h ${m % 60}m`;
 }
 
+/** Chat-list stamp, Teams style: 1:40 PM today, Yesterday, then the date or weekday. */
+export function listStamp(ts: number, now = Date.now()): string {
+  if (!ts) return '';
+  const d = new Date(ts);
+  const today = new Date(now);
+  if (sameDay(d, today)) return clock(ts);
+  const y = new Date(now - 86_400_000);
+  if (sameDay(d, y)) return 'Yesterday';
+  if (now - ts < 6 * 86_400_000) return d.toLocaleDateString('en-US', { weekday: 'short' });
+  return d.toLocaleDateString('en-US', { month: 'numeric', day: 'numeric', year: d.getFullYear() === today.getFullYear() ? undefined : '2-digit' });
+}
+
 export function relativeShort(ts: number, now = Date.now()): string {
   const s = (now - ts) / 1000;
   if (s < 60) return 'now';

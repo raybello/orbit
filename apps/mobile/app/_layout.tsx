@@ -145,7 +145,17 @@ function handleServerEvent(event: ServerEvent) {
     case 'roster':
       void queryClient.invalidateQueries({ queryKey: queryKeys.bots });
       break;
+    case 'activity':
+      // The server has no activity producer yet; when it does, the feed picks it up here.
+      store.pushActivity(event.item);
+      break;
+    case 'files-updated':
+      void queryClient.invalidateQueries({ queryKey: ['files'] });
+      break;
+    case 'computer-status':
     case 'computer':
+      void queryClient.invalidateQueries({ queryKey: queryKeys.computers });
+      break;
     case 'routines':
     case 'tasks':
     case 'memories':
@@ -192,6 +202,7 @@ export default function RootLayout() {
           <Stack.Screen name="server" options={{ presentation: 'modal', headerShown: true, title: 'Server' }} />
           <Stack.Screen name="sign-out" options={{ presentation: 'modal', headerShown: true, title: 'Sign out' }} />
           <Stack.Screen name="thread/[botId]" options={{ headerShown: false }} />
+          <Stack.Screen name="skills/index" options={{ headerShown: true, title: 'Skills' }} />
           <Stack.Screen
             name="computer/[botId]"
             options={{

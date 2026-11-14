@@ -1,0 +1,25 @@
+/* Preset: midnight. Compound with the light/dark base via [data-preset]. */
+:root[data-preset='midnight'] {
+  --accent-100: #DEECF9;
+  --accent-200: #BDD8F4;
+  --accent-300: #69B1E5;
+  --accent-400: #3A96D9;
+  --accent-500: #0078D4;
+  --accent-600: #005BA1;
+  --accent-700: #00407E;
+  --accent-800: #002451;
+  --nav-rail-bg: #032551;
+}
+
+/* Dark keeps the hue but lifts the primary so it reads on a dark stage. */
+:root[data-theme='dark'][data-preset='midnight'] {
+  --accent-100: #8CC7EA;
+  --accent-200: #032551;
+  --accent-300: #005BA1;
+  --accent-400: #0078D4;
+  --accent-500: #3A96D9;
+  --accent-600: #3A96D9;
+  --accent-700: #69B1E5;
+  --accent-800: #BDD8F4;
+  --nav-rail-bg: 021A3A;
+}

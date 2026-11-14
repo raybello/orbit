@@ -1,19 +1,145 @@
-/* Design tokens: light theme. */
+/* =============================================================================
+ * Orbit design tokens — Fluent 2 (Teams) visual system.
+ *
+ * This file is the source of truth for the web + desktop renderers. Theme files
+ * are imported at the top so `data-theme` / `data-preset` on <html> cascade over
+ * the light base below. Legacy variable names are kept as aliases at the bottom
+ * so older components keep resolving; new work should use the semantic tokens.
+ *
+ *   4px grid · three radius tiers · Fluent type ramp · accent ramp 100…800
+ * ========================================================================== */
+
+@import './themes/dark.css';
+@import './themes/hc.css';
+@import './themes/presets/midnight.css';
+@import './themes/presets/ocean.css';
+@import './themes/presets/forest.css';
+@import './themes/presets/rose.css';
+@import './themes/presets/slate.css';
+@import './themes/presets/amber.css';
+
 :root {
-  --color-bg-chrome: #FCFCFC;
-  --color-bg-sidebar: #F5F5F5;
-  --color-bg-pane: #FFFFFF;
-  --color-bg-active: #1C1C1C14;
-  --color-bg-tertiary: #1C1C1C0F;
-  --color-bg-scrim: #00000080;
-  --color-text-primary: #1C1C1C;
-  --color-text-secondary: #1C1C1CAD;
-  --color-text-tertiary: #1C1C1C8F;
-  --color-text-quaternary: #1C1C1C66;
-  --color-icon-secondary: #1C1C1CA8;
-  --color-border-secondary: #1C1C1C1F;
-  --color-border-tertiary: #1C1C1C14;
-  --color-primary: #1C1C1C;
+  /* ── Background layers ── */
+  --color-bg-canvas:       #F5F5F5;   /* window background (Teams outer gray) */
+  --color-bg-nav:          #E8EBEF;   /* section panel / left sidebar */
+  --color-bg-nav-hover:    #DEE1E5;
+  --color-bg-nav-active:   #D5D8DD;
+  --color-bg-stage:        #FFFFFF;   /* main chat / content area */
+  --color-bg-elevated:     #FFFFFF;
+  --color-bg-overlay:      #FFFFFF;   /* modal, popover */
+  --color-bg-disabled:     #F0F0F0;
+  --color-bg-scrim:        #00000080;
+  --color-bg-scrim-heavy:  #000000E5;
+
+  /* ── Foreground ── */
+  --color-fg-default:      #242424;
+  --color-fg-subtle:       #616161;
+  --color-fg-muted:        #8A8A8A;
+  --color-fg-disabled:     #BDBDBD;
+  --color-fg-on-accent:    #FFFFFF;
+
+  /* ── Border ── */
+  --color-border-default:  #D1D1D1;
+  --color-border-subtle:   #E0E0E0;
+  --color-border-stronger: #A0A0A0;
+  --color-border-focus:    var(--accent-500);
+
+  /* ── Accent (Teams purple default; overridden by the preset / accent picker) ── */
+  --accent-100: #E5E5F7;
+  --accent-200: #CCCCEF;
+  --accent-300: #9999DF;
+  --accent-400: #7777D3;
+  --accent-500: #5B5FC7;
+  --accent-600: #4D51B4;
+  --accent-700: #3F43A0;
+  --accent-800: #31358D;
+
+  /* ── Status ── */
+  --color-success:      #107C41;
+  --color-success-bg:   #DFF6DD;
+  --color-danger:       #C4262E;
+  --color-danger-bg:    #FDE7E9;
+  --color-warn:         #835B00;
+  --color-warn-bg:      #FFF4CE;
+  --color-info:         #0078D4;
+  --color-info-bg:      #DEECF9;
+
+  /* ── Message surface (flat Teams style — no bubbles) ── */
+  --color-msg-bg-hover: rgba(0, 0, 0, 0.04);
+  --color-msg-bg-focus: rgba(0, 0, 0, 0.06);
+  --color-msg-mine-bar: var(--accent-500);
+
+  /* ── Nav rail (dark strip in both light and dark) ── */
+  --nav-rail-width:        48px;
+  --nav-rail-bg:           #1F1F1F;
+  --nav-rail-icon:         rgba(255, 255, 255, 0.72);
+  --nav-rail-icon-selected: #FFFFFF;
+  --nav-rail-active-bar:   var(--accent-500);
+  --nav-rail-titlebar:     36px;
+
+  /* ── Section panel ── */
+  --section-panel-width:   280px;
+  --section-panel-bg:      var(--color-bg-nav);
+  --section-panel-border:  var(--color-border-subtle);
+
+  /* ── Right details panel ── */
+  --details-panel-width:   360px;
+
+  /* ── Spacing (4px base unit) ── */
+  --space-1:  4px;
+  --space-2:  8px;
+  --space-3:  12px;
+  --space-4:  16px;
+  --space-5:  20px;
+  --space-6:  24px;
+  --space-8:  32px;
+  --space-10: 40px;
+  --space-12: 48px;
+
+  /* ── Radius (three tiers) ── */
+  --radius-none: 0px;
+  --radius-sm:   4px;
+  --radius-md:   8px;
+  --radius-lg:   12px;
+  --radius-full: 9999px;
+
+  /* ── Typography ── */
+  --font-stack: "Segoe UI", -apple-system, BlinkMacSystemFont, "SF Pro Text", Inter, system-ui, sans-serif;
+  --font-mono-stack: ui-monospace, "SF Mono", SFMono-Regular, Menlo, Consolas, "Liberation Mono", monospace;
+
+  /* Fluent 2 type ramp: size / line-height / weight */
+  --font-size-caption: 12px;  --lh-caption: 16px;
+  --font-size-body-sm: 13px;  --lh-body-sm: 20px;
+  --font-size-body:    14px;  --lh-body:    20px;
+  --font-size-body-lg: 16px;  --lh-message: 22px;
+  --font-size-subtitle: 18px; --lh-subtitle: 24px;
+  --font-size-title:   20px;  --lh-title:   28px;
+  --type-caption:  12px / 16px 400;
+  --type-body-sm:  13px / 20px 400;
+  --type-body:     14px / 20px 400;
+  --type-body-md:  14px / 20px 600;
+  --type-body-lg:  16px / 22px 400;
+  --type-subtitle: 18px / 24px 600;
+  --type-title:    20px / 28px 600;
+  --font-weight-regular: 400;
+  --font-weight-medium: 500;
+  --font-weight-semibold: 600;
+
+  /* ── Shadows ── */
+  --shadow-nav:     0 1px 4px rgba(0, 0, 0, 0.12);
+  --shadow-card:    0 2px 8px rgba(0, 0, 0, 0.12);
+  --shadow-modal:   0 8px 32px rgba(0, 0, 0, 0.20);
+  --shadow-popover: 0 4px 16px rgba(0, 0, 0, 0.14);
+
+  /* ── Motion ── */
+  --ease-standard: cubic-bezier(0.4, 0, 0.2, 1);
+  --ease-decel:    cubic-bezier(0, 0, 0.2, 1);
+  --ease-accel:    cubic-bezier(0.4, 0, 1, 1);
+  --duration-fast: 100ms;
+  --duration-base: 160ms;
+  --duration-slow: 280ms;
+
+  /* ── Bot palette (unchanged) ── */
   --color-bot-pink: #F93498;
   --color-bot-pink-bubble: #C82779;
   --color-bot-pink-action: #E52F8B;
@@ -26,109 +152,57 @@
   --color-bot-purple: #8F59F9;
   --color-bot-brown: #A06B39;
   --color-bot-gray: #999999;
+  --bot-on-action: #FFFFFF;
+
+  /* ==========================================================================
+   * Legacy aliases — components still read these names. They point at the
+   * semantic tokens above, so a theme change flows through without a second
+   * definition block. Migrate call sites to the new names over time.
+   * ======================================================================== */
+  --color-bg-chrome:       var(--color-bg-canvas);
+  --color-bg-sidebar:      var(--color-bg-nav);
+  --color-bg-pane:         var(--color-bg-stage);
+  --color-bg-active:       var(--color-bg-nav-active);
+  --color-bg-tertiary:     var(--color-msg-bg-hover);
+  --color-bg-hover:        var(--color-msg-bg-hover);
+  --color-bg-secondary-hover: var(--color-msg-bg-focus);
+  --color-bg-secondary-active: rgba(0, 0, 0, 0.12);
+  --color-bg-primary-hover: var(--accent-600);
+  --color-bg-elevated-hover: #F0F0F0;
+  --color-bg-subtle:       rgba(0, 0, 0, 0.03);
+  --color-bg-primary-disabled: var(--color-bg-disabled);
+  --color-bg-active-solid: var(--color-bg-nav-hover);
+
+  --color-text-primary:    var(--color-fg-default);
+  --color-text-secondary:  var(--color-fg-subtle);
+  --color-text-tertiary:   var(--color-fg-muted);
+  --color-text-quaternary: var(--color-fg-disabled);
+  --color-ink:             var(--color-fg-default);
+  --color-icon-secondary:  var(--color-fg-subtle);
+
+  --color-border-secondary: var(--color-border-default);
+  --color-border-tertiary:  var(--color-border-subtle);
+  --color-border-primary:   var(--color-border-stronger);
+
+  --color-primary:         var(--accent-500);
+  --color-on-primary:      var(--color-fg-on-accent);
+  --color-success-text:    var(--color-success);
+  --color-warn-text:       var(--color-warn);
+  --color-danger-text:     var(--color-danger);
+  --color-danger-hover:    #A81F26;
+
+  --color-bubble-agent:    rgba(0, 0, 0, 0.05);
+  --color-bubble-user:     var(--accent-500);
+  --shadow-pill:           var(--shadow-card);
+  --shadow-composer:       var(--shadow-card);
+  --bubble-ring:           0 0 0 1px var(--color-border-subtle) inset;
+  --ease-out:              var(--ease-standard);
+
   --text-xs: 12px;
   --text-sm: 13px;
   --text-base: 14px;
-  --text-message: 15px;
-  --text-lg: 17px;
-  --font-weight-regular: 425;
-  --font-weight-medium: 500;
-  --font-weight-semibold: 600;
-  --radius-sm: 8px;
-  --radius-md: 12px;
-  --radius-bubble: 18px;
-  --radius-composer: 22px;
-  --radius-card: 24px;
-  --radius-full: 9999px;
+  --text-message: 16px;
+  --text-lg: 18px;
 
-  /* --- font stacks and interaction states --- */
-  --font-stack: -apple-system, BlinkMacSystemFont, "SF Pro Text", "Segoe UI", Inter, system-ui, sans-serif;
-  --font-mono-stack: ui-monospace, "SF Mono", SFMono-Regular, Menlo, Consolas, "Liberation Mono", monospace;
-  --color-bg-hover: #1C1C1C0F;
-  --color-bg-secondary-hover: #1C1C1C1A;
-  --color-bg-secondary-active: #1C1C1C2E;
-  --color-bg-primary-hover: #363636;
-  --color-bg-elevated-hover: #F1F1F1;
-  --color-border-focus: #1E86FC;
-  --color-bg-scrim-heavy: #000000E5;
-  --color-ink: #000000;
-  --color-success: #10AB61;
-  --color-warn: #DA830E;
-  --color-danger: #E72E3B;
-  --shadow-pill: #1C1C1C14 0px 4px 12px -1px, #1C1C1C0A 0px 1px 2px;
-  --shadow-composer: #0000000D 0px 2px 8px -1px, #00000008 0px 1px 2px, #E4E4E40A 0px 0px 0px 1px;
-  --shadow-card: #1C1C1C1F 0px 0px 0px 0.5px, #1C1C1C09 0px 2px 8px;
-  --shadow-modal: #1C1C1C1A 0px 20px 32px -5px, #1C1C1C1A 0px 8px 12px -6px;
-  --bubble-ring: #FFFFFF29 0px 0.5px 0px inset, #FFFFFF29 0px -0.5px 0px inset, #1C1C1C0F 0px 0px 0px 0.5px inset;
-  --ease-out: cubic-bezier(0.2, 0, 0, 1);
-
-  /* --- semantic extras used for theming (light values; dark below) --- */
-  --color-bg-elevated: #FFFFFF;
-  --color-bg-subtle: #1C1C1C08;
-  --color-bg-primary-disabled: #1C1C1C26;
-  --color-bg-active-solid: #E9E9E9;
-  --color-border-primary: #1C1C1C3D;
-  --color-on-primary: #FCFCFC;
-  --color-bubble-agent: #1C1C1C0F;
-  --color-bubble-user: #1C1C1C;
-  --color-danger-hover: #C82532;
-  --color-danger-bg: #FB2B3E14;
-  --color-danger-text: #CD2834;
-  --color-warn-bg: #F5931217;
-  --color-warn-text: #AA6300;
-  --color-success-bg: #14C16F17;
-  --color-success-text: #00854A;
-  --shadow-popover: #1C1C1C1A 0 10px 20px -3px, #1C1C1C14 0 4px 6px -4px;
-  --bot-on-action: #FFFFFF;
-}
-
-/* ---------- dark theme. Flat: no shadows. ---------- */
-:root[data-theme='dark'] {
-  --color-bg-chrome: #121212;
-  --color-bg-sidebar: #0E0E0E;
-  --color-bg-pane: #161616;
-  --color-bg-active: #F5F5F514;
-  --color-bg-tertiary: #F5F5F50A;
-  --color-bg-scrim: #000000B2;
-  --color-text-primary: #F5F5F5;
-  --color-text-secondary: #F5F5F5A8;
-  --color-text-tertiary: #F5F5F58A;
-  --color-text-quaternary: #F5F5F561;
-  --color-icon-secondary: #F5F5F5A3;
-  --color-border-secondary: #F5F5F51A;
-  --color-border-tertiary: #F5F5F50F;
-  --color-primary: #F5F5F5;
-  --color-bg-hover: #F5F5F50F;
-  --color-bg-secondary-hover: #F5F5F514;
-  --color-bg-secondary-active: #F5F5F533;
-  --color-bg-primary-hover: #DBDBDB;
-  --color-bg-elevated-hover: #2C2C2C;
-  --color-border-focus: #1884FC;
-  --color-bg-scrim-heavy: #000000F2;
-  --color-ink: #F5F5F5;
-  --color-success: #0E9F5A;
-  --color-warn: #C8770C;
-  --color-danger: #CF2B35;
-  --shadow-pill: #F5F5F51A 0 0 0 0.5px;
-  --shadow-composer: #F5F5F51A 0 0 0 0.5px;
-  --shadow-card: #F5F5F51A 0 0 0 0.5px;
-  --shadow-modal: #000000 0 0 0 0;
-  --shadow-popover: #F5F5F51A 0 0 0 0.5px;
-  --bubble-ring: #F5F5F50F 0 0 0 0.5px inset;
-
-  --color-bg-elevated: #1F1F1F;
-  --color-bg-subtle: #F5F5F505;
-  --color-bg-primary-disabled: #F5F5F521;
-  --color-bg-active-solid: #262626;
-  --color-border-primary: #F5F5F538;
-  --color-on-primary: #121212;
-  --color-bubble-agent: #F5F5F50F;
-  --color-bubble-user: #F5F5F52E;
-  --color-danger-hover: #F73643;
-  --color-danger-bg: #FC2C3E1F;
-  --color-danger-text: #FF6463;
-  --color-warn-bg: #F694121F;
-  --color-warn-text: #E28600;
-  --color-success-bg: #14C3701F;
-  --color-success-text: #00BA69;
+  --radius-card: var(--radius-lg);
 }

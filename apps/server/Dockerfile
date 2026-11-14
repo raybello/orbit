@@ -40,6 +40,14 @@ COPY apps/web/package.json apps/web/
 RUN pnpm install --frozen-lockfile --store-dir=/pnpm/store \
       --filter @orbit/server... --filter @orbit/web...
 
+# dev-rebuild-loop.sh passes --build-arg CACHE_BUST=$(date +%s) so that every
+# rebuild-loop invocation re-runs the COPY + build steps even when source files
+# haven't changed, without paying the cost of re-running pnpm install above.
+# Production / CI builds omit the arg; it defaults to "never" and the layer
+# cache works as normal.
+ARG CACHE_BUST=never
+RUN :
+
 COPY packages ./packages
 COPY apps/server ./apps/server
 COPY apps/web ./apps/web

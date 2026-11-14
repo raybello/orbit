@@ -1,9 +1,9 @@
 import { Fragment, memo, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import type { Bot, LiveState, MessageBody, Row, ToolCallBody } from '@orbit/contracts';
-import { BotAvatar, BotAvatarFor } from '../avatar/BotAvatar';
+import { BotAvatarFor } from '../avatar/BotAvatar';
 import { isWaitingForYou } from '../lib/phrases';
 import { clock, dividerLabel, duration } from '../lib/time';
-import { useStore } from '../store';
+import { displayName, useStore } from '../store';
 import { ThinkingBlock } from './ActivityLine';
 import { CardRow } from './cards/Cards';
 import { FileParts } from './FilePart';
@@ -52,22 +52,45 @@ function buildItems(rows: Row[]): Item[] {
   return items;
 }
 
-function cornerClass(i: number, n: number) {
-  if (n < 2) return '';
-  if (i === 0) return ' is-first';
-  if (i === n - 1) return ' is-last';
-  return ' is-mid';
+function initialsOf(name: string) {
+  const parts = name.trim().split(/\s+/).filter(Boolean);
+  return ((parts[0]?.[0] ?? '') + (parts.length > 1 ? parts[parts.length - 1][0] : '')).toUpperCase() || '?';
 }
 
-const Bubble = memo(function Bubble({ row, side, pos, botId }: { row: Row; side: 'left' | 'right'; pos: string; botId: string }) {
+/**
+ * One flat message row, Teams style. The first row of a run carries the avatar, name and
+ * timestamp; follow-up rows drop the avatar and show their time only on hover.
+ */
+const MsgRow = memo(function MsgRow({ row, bot, name, mine, follow }: {
+  row: Row;
+  bot: Bot;
+  /** Sender name shown on the first row of the run. */
+  name: string;
+  /** The person's own message: left-aligned with an accent bar. */
+  mine: boolean;
+  /** Not the first row of a run from this sender. */
+  follow: boolean;
+}) {
   const b = row.body as MessageBody;
+  const userName = useStore((s) => s.user?.name ?? s.user?.email ?? '');
+  const cls = `msg-row${mine ? ' msg-row--mine' : ''}${follow ? ' msg-row--follow' : ''}${b.streaming ? ' msg-row--streaming' : ''}`;
   return (
-    <div className={`bubble-wrap is-${side}`}>
-      <div className={`bubble is-${side === 'right' ? 'user' : 'agent'}${pos}${b.streaming ? ' is-streaming' : ''}`}>
-        {side === 'right' ? <div className="bubble__plain">{b.text}</div> : <Markdown text={b.text || ' '} />}
-        {b.files && b.files.length > 0 && <FileParts files={b.files} botId={botId} />}
+    <div className={cls}>
+      <span className="msg-row__avatar">
+        {mine ? <span className="msg-row__me" aria-hidden>{initialsOf(userName)}</span> : <BotAvatarFor bot={bot} size={32} />}
+      </span>
+      <div className="msg-row__body">
+        <div className="msg-row__header">
+          <span className="msg-row__name">{name}</span>
+          <span className="msg-row__time">{clock(row.createdAt)}</span>
+        </div>
+        <span className="msg-row__hover-time" aria-hidden>{clock(row.createdAt)}</span>
+        <div className={`msg-row__text${mine ? ' msg-row__text--plain' : ''}`}>
+          {mine ? b.text : <Markdown text={b.text || ' '} />}
+        </div>
+        {b.files && b.files.length > 0 && <FileParts files={b.files} botId={bot.id} />}
         {b.citations && b.citations.length > 0 && (
-          <div className="bubble__cites">
+          <div className="msg-row__cites">
             {b.citations.slice(0, 6).map((c, i) => {
               let host = c.url;
               try { host = new URL(c.url).hostname.replace(/^www\./, ''); } catch { /* keep */ }
@@ -76,17 +99,17 @@ const Bubble = memo(function Bubble({ row, side, pos, botId }: { row: Row; side:
           </div>
         )}
       </div>
-      <span className="bubble__time">{clock(row.createdAt)}</span>
     </div>
   );
 });
 
-function SenderLabel({ from }: { from: NonNullable<MessageBody['from']> }) {
-  const bot = useStore((s) => (from.kind === 'bot' ? s.bots.find((b) => b.id === from.id) : undefined));
+/** Where a message came from when it was not typed in this chat (a routine, a voice call). */
+function OriginLabel({ from }: { from: NonNullable<MessageBody['from']> }) {
+  if (from.kind === 'bot') return null;
   return (
-    <div className="sender-label">
-      {bot ? <BotAvatarFor bot={bot} size={16} /> : from.kind === 'routine' ? <Icon name="clock" size={12} opacity={0.56} /> : from.kind === 'voice' ? <Icon name="voice_a" size={12} opacity={0.56} /> : <BotAvatar shape="blob" color="gray" size={16} />}
-      <span>{from.kind === 'routine' ? `Routine · ${from.name}` : from.kind === 'voice' ? 'Asked on a voice call' : `From ${from.name}`}</span>
+    <div className="msg-group__origin">
+      {from.kind === 'routine' ? <Icon name="clock" size={12} opacity={0.7} /> : <Icon name="voice_a" size={12} opacity={0.7} />}
+      <span>{from.kind === 'routine' ? `Routine · ${from.name}` : 'Asked on a voice call'}</span>
     </div>
   );
 }
@@ -257,15 +280,18 @@ export function Transcript({ bot, rows, live, loaded }: Props) {
               return <Steps key={it.key} item={it} active={it.key === activeKey} open={it.key === openKey} extra={extraSteps} />;
             case 'row':
               return <SystemRow key={it.key} row={it.row} />;
-            case 'group':
+            case 'group': {
+              const mine = it.side === 'right';
+              const name = mine ? 'You' : it.from?.kind === 'bot' ? it.from.name : displayName(bot);
               return (
-                <div key={it.key} className={`group is-${it.side}`}>
-                  {it.from && <SenderLabel from={it.from} />}
+                <div key={it.key} className="msg-group">
+                  {it.from && <OriginLabel from={it.from} />}
                   {it.rows.map((r, i) => (
-                    <Fragment key={r.seq}><Bubble row={r} side={it.side} pos={cornerClass(i, it.rows.length)} botId={bot.id} /></Fragment>
+                    <Fragment key={r.seq}><MsgRow row={r} bot={bot} name={name} mine={mine} follow={i > 0} /></Fragment>
                   ))}
                 </div>
               );
+            }
           }
         })}
         {showActivity && live && <ThinkingBlock bot={bot} live={live} rows={rows} steps={openKey ? 0 : serverSteps} />}

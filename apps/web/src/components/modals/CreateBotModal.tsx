@@ -3,6 +3,7 @@ import type { AvatarColor, AvatarShape, Bot } from '@orbit/contracts';
 import { BotAvatar, PICKER_SHAPES } from '../../avatar/BotAvatar';
 import { api } from '../../lib/api';
 import { COLOR_ORDER, palette } from '../../lib/colors';
+import { configApi } from '../../lib/configApi';
 import { useStore } from '../../store';
 import { Icon } from '../Icon';
 import { Modal } from './Modal';
@@ -30,6 +31,8 @@ export function CreateBotModal() {
       st.set({ bots: st.bots.some((b) => b.id === bot.id) ? st.bots : [...st.bots, bot] });
       st.selectBot(bot.id);
       close();
+      // A new Bot gets the primary Bot's credentials; it can take a moment, so never hold the modal open for it.
+      void configApi.syncEngineAuth().catch(() => {});
     } catch (e) {
       setError((e as Error).message);
       setBusy(false);

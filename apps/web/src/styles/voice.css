@@ -48,7 +48,7 @@
 .vcall__btn--end:hover { background: #C82532; }
 .vcall__captions {
   display: flex; flex-direction: column; gap: 2px; width: 100%; text-align: left; margin-top: 8px; padding: 8px 10px;
-  border-radius: 14px; background: #FFFFFF0F; font-size: 13px; line-height: 18px; cursor: pointer;
+  border-radius: var(--radius-lg); background: #FFFFFF0F; font-size: 13px; line-height: 18px; cursor: pointer;
 }
 .vcall__captions:hover { background: #FFFFFF17; }
 .vcall__caption { display: block; overflow: hidden; text-overflow: ellipsis; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; }
@@ -57,7 +57,7 @@
 .vcall__caption.is-partial { opacity: 0.8; }
 .vcall__caption.is-empty { color: #FFFFFF73; }
 .vcall__log {
-  margin-top: 8px; padding: 8px 10px; border-radius: 14px; background: #FFFFFF0F; max-height: 220px; overflow-y: auto;
+  margin-top: 8px; padding: 8px 10px; border-radius: var(--radius-lg); background: #FFFFFF0F; max-height: 220px; overflow-y: auto;
   font-size: 13px; line-height: 18px; display: flex; flex-direction: column; gap: 6px;
 }
 .vcall__line b { font-weight: var(--font-weight-semibold); margin-right: 4px; }

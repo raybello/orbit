@@ -15,10 +15,11 @@ import { computerKindFor, providerFor } from './computer-provider-registry.js';
 import { box } from './box.js';
 import { orgo } from './orgo.js';
 import { openTerminal } from './desk.js';
-import { engineHome, engineInfo, engineKind, forgetEngineOptions, restartEngine, stopOwnScreen } from './engine.js';
+import { engineHome, engineInfo, engineKind, forgetEngineOptions, managedHome, readDotenv, readYaml, restartEngine, stopOwnScreen, syncAllManagedAuth, writePrivate, SHARED_ENV } from './engine.js';
 import { listMemories } from './engine-memory.js';
 import { idleConfig, viewerCount } from './idle.js';
-import type { LibraryFile, Skill } from './types.js';
+import type { BotEngineAuthRow, LibraryFile, Skill } from './types.js';
+import YAML from 'yaml';
 
 /**
  * Bot settings, skills, library, computer controls and memory maintenance.
@@ -26,12 +27,15 @@ import type { LibraryFile, Skill } from './types.js';
  */
 export const configApi = new Hono<AuthVars>();
 
-for (const p of ['/bots/*', '/skills/*', '/computer/*']) configApi.use(p, requireUser);
+for (const p of ['/bots/*', '/skills/*', '/computer/*', '/config/*']) configApi.use(p, requireUser);
 
 const ownBot = (userId: string, id: string) => {
   const b = getBotRow(id);
   return b && b.user_id === userId ? b : null;
 };
+
+/** A provider/model value from a settings request: trimmed and capped, or null for "the agent's default". */
+const engineField = (v: unknown): string | null => (typeof v === 'string' && v.trim() ? v.trim().slice(0, 120) : null);
 
 const toSkill = (s: any): Skill => ({ id: s.id, botId: s.bot_id, name: s.name, description: s.description ?? '', body: s.body, createdAt: s.created_at, updatedAt: s.updated_at ?? s.created_at });
 const listSkills = (botId: string) => (db.prepare('SELECT * FROM skills WHERE bot_id=? ORDER BY created_at ASC').all(botId) as any[]).map(toSkill);
@@ -130,9 +134,8 @@ configApi.patch('/bots/:id/engine', async (c) => {
   const b = ownBot(c.get('user').id, c.req.param('id'));
   if (!b) return c.json({ error: 'not found' }, 404);
   const p = await c.req.json<{ provider?: string | null; model?: string | null }>().catch(() => ({} as { provider?: string | null; model?: string | null }));
-  const clean = (v: unknown) => (typeof v === 'string' && v.trim() ? v.trim().slice(0, 120) : null);
-  if (p.provider !== undefined) db.prepare('UPDATE bots SET provider=?, updated_at=? WHERE id=?').run(clean(p.provider), now(), b.id);
-  if (p.model !== undefined) db.prepare('UPDATE bots SET model=?, updated_at=? WHERE id=?').run(clean(p.model), now(), b.id);
+  if (p.provider !== undefined) db.prepare('UPDATE bots SET provider=?, updated_at=? WHERE id=?').run(engineField(p.provider), now(), b.id);
+  if (p.model !== undefined) db.prepare('UPDATE bots SET model=?, updated_at=? WHERE id=?').run(engineField(p.model), now(), b.id);
   emitBot(b.id);
   return c.json({ engine: await engineInfo(b.id) });
 });
@@ -200,6 +203,77 @@ configApi.post('/bots/:id/handback', (c) => {
   if (!b) return c.json({ error: 'not found' }, 404);
   db.prepare('UPDATE bots SET handback_at=? WHERE id=?').run(now(), b.id);
   return c.json({ ok: true });
+});
+
+// ---------- App Settings → Engine Auth: the credentials behind each bot ----------
+
+/** Which SHARED_ENV keys a bot's .env has non-empty. Never the values themselves. */
+function keysPresentFor(botId: string, engine: 'primary' | 'managed'): string[] {
+  const file = engine === 'primary' ? path.join(env.hermesHome, '.env') : path.join(managedHome(botId), '.env');
+  const vars = readDotenv(file);
+  return SHARED_ENV.filter((k) => (vars[k] ?? '').trim() !== '');
+}
+
+/** One row of the table. A bot whose agent does not answer still gets a row, with status 'unknown'. */
+async function engineAuthRow(b: any): Promise<BotEngineAuthRow | null> {
+  const engine = engineKind(b.id);
+  if (!engine) return null;
+  let status: BotEngineAuthRow['status'] = 'unknown';
+  try { status = (await engineInfo(b.id)).status; } catch { status = 'unknown'; }
+  return {
+    botId: b.id,
+    name: b.name,
+    engine,
+    provider: b.provider ?? null,
+    model: b.model ?? null,
+    status,
+    keysPresent: keysPresentFor(b.id, engine),
+  };
+}
+
+configApi.get('/config/engine-auth', async (c) => {
+  // SELECT * and filter in JS: `kind` and `hidden` are added to the bots table lazily (initRooms,
+  // initSubagents), so naming them in the SQL would fail wherever those have not run.
+  const bots = (db.prepare("SELECT * FROM bots WHERE user_id=? AND engine IN ('primary','managed') ORDER BY is_primary DESC, created_at ASC").all(c.get('user').id) as any[])
+    .filter((r) => !r.hidden && r.kind !== 'room');
+  const rows = await Promise.all(bots.map(engineAuthRow));
+  return c.json({ bots: rows.filter((r): r is BotEngineAuthRow => r !== null) });
+});
+
+configApi.put('/config/engine-auth/:botId', async (c) => {
+  const b = ownBot(c.get('user').id, c.req.param('botId'));
+  if (!b) return c.json({ error: 'not found' }, 404);
+  const engine = engineKind(b.id);
+  if (!engine) return c.json({ error: 'This bot has no agent.' }, 409);
+  const p = await c.req.json<{ provider?: string | null; model?: string | null }>().catch(() => ({} as { provider?: string | null; model?: string | null }));
+  const provider = p.provider === undefined ? undefined : engineField(p.provider);
+  const model = p.model === undefined ? undefined : engineField(p.model);
+
+  // A managed bot's own Hermes reads its model from its config.yaml, so patch those two fields there.
+  // The rest of the file (providers, base_url, toolsets, mcp_servers) is its own and is left alone.
+  if (engine === 'managed' && (provider !== undefined || model !== undefined)) {
+    const cfgFile = path.join(managedHome(b.id), 'config.yaml');
+    const cfg = readYaml(cfgFile);
+    const m = cfg.model && typeof cfg.model === 'object' && !Array.isArray(cfg.model) ? { ...cfg.model } : {};
+    if (provider !== undefined) { if (provider) m.provider = provider; else delete m.provider; }
+    if (model !== undefined) { if (model) m.default = model; else delete m.default; }
+    cfg.model = m;
+    writePrivate(cfgFile, YAML.stringify(cfg));
+  }
+
+  if (provider !== undefined) db.prepare('UPDATE bots SET provider=?, updated_at=? WHERE id=?').run(provider, now(), b.id);
+  if (model !== undefined) db.prepare('UPDATE bots SET model=?, updated_at=? WHERE id=?').run(model, now(), b.id);
+  emitBot(b.id);
+  const row = await engineAuthRow(getBotRow(b.id));
+  return c.json({ bot: row });
+});
+
+/** Bring every managed bot's credentials up to date with the primary agent's. */
+configApi.post('/config/engine-auth/sync', async (c) => {
+  const synced = await syncAllManagedAuth();
+  // The web app keeps an engine row per bot; a sync can change what each one reports.
+  for (const b of db.prepare("SELECT id FROM bots WHERE user_id=? AND engine='managed'").all(c.get('user').id) as any[]) emitBot(b.id);
+  return c.json({ synced });
 });
 
 // ---------- library: files under /root/grokbot/files/<botId> on the bot's computer ----------

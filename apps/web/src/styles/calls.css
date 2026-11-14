@@ -1,0 +1,61 @@
+/* Calls: a placeholder panel, centred on the section pane. */
+.calls {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 12px;
+  height: 100%;
+  padding: 32px 28px;
+  text-align: center;
+  color: var(--foreground, inherit);
+}
+
+.calls__badge {
+  display: grid;
+  place-items: center;
+  width: 48px;
+  height: 48px;
+  border-radius: var(--radius-lg);
+  background: var(--accent-soft, rgba(98, 100, 167, 0.12));
+  color: var(--accent, #6264a7);
+}
+
+.calls__title {
+  margin: 4px 0 0;
+  font-size: 17px;
+  font-weight: 600;
+}
+
+.calls__text {
+  max-width: 34ch;
+  margin: 0;
+  font-size: 13px;
+  line-height: 1.55;
+  color: var(--muted-foreground, #6b6b76);
+}
+
+.calls__cta {
+  margin-top: 4px;
+  padding: 8px 16px;
+  border: 0;
+  border-radius: 8px;
+  background: var(--accent, #6264a7);
+  color: #fff;
+  font: inherit;
+  font-size: 13px;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.calls__cta:hover:not(:disabled) { filter: brightness(1.08); }
+.calls__cta:disabled { opacity: 0.55; cursor: default; }
+
+.calls__hint {
+  max-width: 40ch;
+  margin: 8px 0 0;
+  font-size: 12px;
+  line-height: 1.5;
+  color: var(--muted-foreground, #6b6b76);
+  opacity: 0.85;
+}

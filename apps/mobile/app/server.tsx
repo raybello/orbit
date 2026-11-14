@@ -132,7 +132,7 @@ export default function ServerScreen() {
             <Text style={{ color: result.ok ? tokens.colors.success : tokens.colors.destructive, fontSize: tokens.fontSizes.sm, fontWeight: '600' }}>
               {result.ok ? 'Connected' : 'Not reachable'}
             </Text>
-            <Text style={{ color: tokens.colors.fgSecondary, fontSize: tokens.fontSizes.xs }}>
+            <Text style={{ color: tokens.colors.fgSecondary, fontSize: tokens.fontSizes.caption }}>
               {result.ok
                 ? [result.engine ? `engine ${result.engine}` : null, result.version ? `v${result.version}` : null]
                     .filter(Boolean)
@@ -148,7 +148,7 @@ export default function ServerScreen() {
           style={{
             backgroundColor: tokens.colors.accent,
             opacity: normalized.ok ? 1 : 0.4,
-            borderRadius: tokens.radii.composer,
+            borderRadius: tokens.radii.md,
             paddingVertical: tokens.space.lg,
             alignItems: 'center',
           }}

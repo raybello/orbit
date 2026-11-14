@@ -3,6 +3,9 @@
 // Signs in with dev login (E2E_EMAIL, server needs DEV_LOGIN=1) or with an existing session
 // (E2E_SESSION=<grokbot_session cookie value>). Creates a throwaway "QA" bot, which gets its own
 // Hermes engine and screen, exercises the core flows, then deletes it.
+//
+// The API *surface* checks (every endpoint, no real engine needed) live in scripts/smoke-server.mjs
+// and run with `pnpm smoke`; this file is the UI pass over a live stack. See docs/e2e-checklist.md.
 import { chromium } from 'playwright';
 import fs from 'node:fs';
 import path from 'node:path';

@@ -2,6 +2,7 @@ import { useEffect, useLayoutEffect, useRef, useState } from 'react';
 import type { Bot } from '@orbit/contracts';
 import { api } from '../lib/api';
 import { displayName, useStore } from '../store';
+import { useConfigUI } from '../configStore';
 import { Icon } from './Icon';
 import { Menu } from './Menu';
 import { endCall, isCallActive, startCall, useVoice } from '../voice/call';
@@ -9,12 +10,13 @@ import { useDictation } from '../voice/dictation';
 
 const MAX_H = 200;
 const drafts = new Map<string, string>();
+const QUICK_EMOJI = ['👍', '🙂', '🎉', '✅', '👀', '🔥', '🙏', '💡'];
 
 export function Composer({ bot, running }: { bot: Bot; running: boolean }) {
   const [text, setText] = useState(() => drafts.get(bot.id) ?? '');
   const [sending, setSending] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const [menu, setMenu] = useState(false);
+  const [menu, setMenu] = useState<'attach' | 'emoji' | null>(null);
   const ref = useRef<HTMLTextAreaElement>(null);
   const setModal = useStore((s) => s.setModal);
 
@@ -74,22 +76,36 @@ export function Composer({ bot, running }: { bot: Bot; running: boolean }) {
   const dictation = useDictation(insertText, setError, bot.voiceLanguage);
   const inCall = useVoice((s) => isCallActive(s) && s.botId === bot.id);
 
+  /** Wrap the selection in ** ** so the composer doubles as a formatting bar. */
+  const toggleBold = () => {
+    const el = ref.current;
+    if (!el) return;
+    const { selectionStart: start, selectionEnd: end } = el;
+    if (start === end) { el.focus(); return; }
+    const next = `${text.slice(0, start)}**${text.slice(start, end)}**${text.slice(end)}`;
+    setText(next);
+    requestAnimationFrame(() => { el.focus(); el.setSelectionRange(start + 2, end + 2); });
+  };
+
   const hasText = text.trim().length > 0;
-  const multiline = text.includes('\n') || (ref.current?.scrollHeight ?? 0) > 30;
 
   return (
     <div className="composer-area">
       {error && <div className="composer__error">{error} <button type="button" className="link-btn" onClick={() => setError(null)}>Dismiss</button></div>}
-      <div className={`composer${multiline ? ' is-multiline' : ''}`}>
-        <div className="composer__left">
+      <div className="composer">
+        <div className="composer__toolbar">
+          <button type="button" className="composer__toolbar-btn" onClick={toggleBold} aria-label="Bold" title="Bold the selection">
+            <span aria-hidden style={{ fontSize: 12, fontWeight: 600, lineHeight: '18px' }}>Aa</span>
+          </button>
+          <span className="composer__toolbar-sep" aria-hidden />
           <span className="composer__plus-anchor">
-            <button type="button" className="composer__btn" onClick={() => setMenu(!menu)} aria-label="More actions" aria-expanded={menu}>
-              <Icon name="composer_plus" opacity={0.56} />
+            <button type="button" className="composer__toolbar-btn" onClick={() => setMenu(menu === 'attach' ? null : 'attach')} aria-label="More actions" aria-expanded={menu === 'attach'} title="Attach and more">
+              <Icon name="paperclip" size={16} />
             </button>
-            {menu && (
+            {menu === 'attach' && (
               <Menu
                 placement="above"
-                onClose={() => setMenu(false)}
+                onClose={() => setMenu(null)}
                 items={[
                   { label: 'New conversation', onSelect: fresh },
                   { label: 'Connect apps', onSelect: () => setModal('apps') },
@@ -97,54 +113,79 @@ export function Composer({ bot, running }: { bot: Bot; running: boolean }) {
               />
             )}
           </span>
-          <textarea
-            ref={ref}
-            className="composer__input"
-            rows={1}
-            value={text}
-            placeholder={`Message ${displayName(bot)}`}
-            onChange={(e) => setText(e.target.value)}
-            onKeyDown={(e) => {
-              if (e.key === 'Enter' && !e.shiftKey && !e.nativeEvent.isComposing) { e.preventDefault(); send(); }
-            }}
-            aria-label={`Message ${bot.name}`}
-          />
-        </div>
-        <div className="composer__right">
+          <span className="composer__plus-anchor">
+            <button type="button" className="composer__toolbar-btn" onClick={() => setMenu(menu === 'emoji' ? null : 'emoji')} aria-label="Emoji" aria-expanded={menu === 'emoji'} title="Emoji">
+              <Icon name="emoji" size={16} />
+            </button>
+            {menu === 'emoji' && (
+              <Menu
+                placement="above"
+                onClose={() => setMenu(null)}
+                items={QUICK_EMOJI.map((e) => ({ label: e, onSelect: () => insertText(e) }))}
+              />
+            )}
+          </span>
           <button
             type="button"
-            className={`composer__btn${dictation.state === 'recording' ? ' is-recording' : dictation.state === 'transcribing' ? ' is-transcribing' : ''}`}
-            aria-label={dictation.state === 'recording' ? 'Stop dictation' : 'Dictate'}
-            aria-pressed={dictation.state === 'recording'}
-            title={dictation.state === 'recording' ? 'Release or click to stop · Esc cancels' : dictation.state === 'transcribing' ? 'Transcribing…' : 'Hold to dictate, or click to start'}
-            disabled={dictation.state === 'transcribing'}
-            onPointerDown={dictation.onPointerDown}
-            onPointerUp={dictation.onPointerUp}
-            onKeyDown={dictation.onKeyDown}
-            onContextMenu={(e) => e.preventDefault()}
+            className="composer__toolbar-btn"
+            onClick={() => useConfigUI.getState().openBotSettings(bot.id, 'routines')}
+            aria-label="Routines"
+            title="Routines for this Bot"
           >
-            <Icon name="mic" opacity={0.56} />
+            <Icon name="refresh" size={16} />
           </button>
-          {inCall && !hasText ? (
-            <button type="button" className="composer__cta is-in-call" onClick={endCall} aria-label="End voice call" title="End voice call">
-              <Icon name="voice_a" size={16} />
-            </button>
-          ) : running && !hasText ? (
-            <button type="button" className="composer__cta" onClick={stop} aria-label="Stop" title="Stop">
-              <Icon name="stop" size={14} />
-            </button>
-          ) : (
+        </div>
+        <div className="composer__main">
+          <div className="composer__left">
+            <textarea
+              ref={ref}
+              className="composer__input"
+              rows={1}
+              value={text}
+              placeholder="Type a new message"
+              onChange={(e) => setText(e.target.value)}
+              onKeyDown={(e) => {
+                if (e.key === 'Enter' && !e.shiftKey && !e.nativeEvent.isComposing) { e.preventDefault(); send(); }
+              }}
+              aria-label={`Message ${displayName(bot)}`}
+            />
+          </div>
+          <div className="composer__right">
             <button
               type="button"
-              className="composer__cta"
-              onClick={hasText ? send : () => startCall(bot.id)}
-              disabled={hasText && sending}
-              aria-label={hasText ? 'Send' : `Start voice chat with ${bot.name}`}
-              title={hasText ? 'Send (Enter)' : 'Start voice chat'}
+              className={`composer__btn${dictation.state === 'recording' ? ' is-recording' : dictation.state === 'transcribing' ? ' is-transcribing' : ''}`}
+              aria-label={dictation.state === 'recording' ? 'Stop dictation' : 'Dictate'}
+              aria-pressed={dictation.state === 'recording'}
+              title={dictation.state === 'recording' ? 'Release or click to stop · Esc cancels' : dictation.state === 'transcribing' ? 'Transcribing…' : 'Hold to dictate, or click to start'}
+              disabled={dictation.state === 'transcribing'}
+              onPointerDown={dictation.onPointerDown}
+              onPointerUp={dictation.onPointerUp}
+              onKeyDown={dictation.onKeyDown}
+              onContextMenu={(e) => e.preventDefault()}
             >
-              <Icon name={hasText ? 'arrow_up' : 'voice_a'} size={16} />
+              <Icon name="mic" opacity={0.7} />
             </button>
-          )}
+            {inCall && !hasText ? (
+              <button type="button" className="composer__cta is-in-call" onClick={endCall} aria-label="End voice call" title="End voice call">
+                <Icon name="voice_a" size={16} />
+              </button>
+            ) : running && !hasText ? (
+              <button type="button" className="composer__cta" onClick={stop} aria-label="Stop" title="Stop">
+                <Icon name="stop" size={14} />
+              </button>
+            ) : (
+              <button
+                type="button"
+                className="composer__cta"
+                onClick={hasText ? send : () => startCall(bot.id)}
+                disabled={hasText && sending}
+                aria-label={hasText ? 'Send' : `Start voice chat with ${bot.name}`}
+                title={hasText ? 'Send (Enter)' : 'Start voice chat'}
+              >
+                <Icon name={hasText ? 'arrow_up' : 'voice_a'} size={16} />
+              </button>
+            )}
+          </div>
         </div>
       </div>
     </div>

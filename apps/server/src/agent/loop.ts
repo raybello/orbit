@@ -29,7 +29,8 @@ export type Trigger =
   | { type: 'user'; text: string }
   | { type: 'routine'; routineId: string; name: string; prompt: string }
   | { type: 'bot'; fromBotId: string; fromName: string; text: string; depth: number }
-  | { type: 'system'; text: string };
+  /** `_groupDepth` is set by the group-chat dispatcher (agent/rooms.ts): how many bot-to-bot hops into one group conversation this turn is. */
+  | { type: 'system'; text: string; _groupDepth?: number };
 
 // ---------- pending files from tool calls ----------
 
@@ -109,6 +110,8 @@ interface Turn {
   userId: string;
   /** How many bot-to-bot hops led here (send_to_bot stops a ping-pong at 3). */
   depth: number;
+  /** How deep into one group conversation this turn is (a user turn is 0); post_to_group dispatches from it. */
+  groupDepth: number;
   /** A tool ended the conversation for now (asked the user, stayed silent): drop any closing text. */
   silent: boolean;
   tools: ToolRef[];
@@ -119,6 +122,9 @@ interface Turn {
 const turns = new Map<string, Turn>();
 
 export const turnDepth = (botId: string) => turns.get(botId)?.depth ?? 0;
+
+/** How deep into one group conversation the bot's current turn is (0 for a user turn or no turn). */
+export const turnGroupDepth = (botId: string) => turns.get(botId)?.groupDepth ?? 0;
 
 export function markSilent(botId: string) {
   const t = turns.get(botId);
@@ -339,7 +345,15 @@ async function runTurn(botId: string, trigger: Trigger) {
   const userId: string = bot.user_id;
   const ctrl = new AbortController();
   aborts.set(botId, ctrl);
-  const turn: Turn = { botId, userId, depth: trigger.type === 'bot' ? trigger.depth : 0, silent: false, tools: [], outcomes: new Map() };
+  const turn: Turn = {
+    botId,
+    userId,
+    depth: trigger.type === 'bot' ? trigger.depth : 0,
+    groupDepth: trigger.type === 'system' ? Number(trigger._groupDepth ?? 0) : 0,
+    silent: false,
+    tools: [],
+    outcomes: new Map(),
+  };
   turns.set(botId, turn);
   setLive(botId, { isRunning: true, activity: { kind: 'thinking', since: now() }, awaiting: null, startedAt: now(), caption: null, steps: 0 });
 

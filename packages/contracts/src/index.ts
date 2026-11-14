@@ -176,6 +176,15 @@ export interface LiveState {
 export interface Routine {
   id: string; botId: string; name: string; prompt: string; schedule: string; timezone: string;
   enabled: boolean; nextRunAt: number | null; lastRunAt: number | null; description: string;
+  /** Calendar metadata. A routine without these is a plain recurring cron routine. */
+  calendarTitle: string | null;
+  eventType: 'recurring' | 'one_time';
+  /** ISO 8601 date-time, only for one_time events. */
+  eventDate: string | null;
+  /** Bot that runs it when the calendar event is assigned to another bot; null = the routine's own bot. */
+  assignedBotId: string | null;
+  /** ISO 8601, set once a one_time event has run. */
+  completedAt: string | null;
 }
 
 export interface Task { id: string; botId: string; title: string; state: 'working' | 'needs_input' | 'done'; note: string; updatedAt: number }
@@ -226,6 +235,21 @@ export interface Toolkit {
   managedAuth: boolean; noAuth: boolean; connected: boolean;
 }
 
+/** One row of App Settings → Engine Auth: a bot's engine plus which shared credentials it has. */
+export interface BotEngineAuthRow {
+  botId: string;
+  name: string;
+  engine: 'primary' | 'managed';
+  provider: string | null;
+  model: string | null;
+  status: 'ready' | 'starting' | 'stopped' | 'error' | 'unknown';
+  /** Which SHARED_ENV keys are non-empty in this bot's .env. Never the values. */
+  keysPresent: string[];
+}
+
+/** GET /api/config/engine-auth */
+export interface EngineAuthResponse { bots: BotEngineAuthRow[] }
+
 /** Server-sent events on GET /api/events */
 export type ServerEvent =
   /** `seq` is the server's authoritative event cursor for this user, for `GET /api/events?since=`. */
@@ -240,7 +264,113 @@ export type ServerEvent =
   | { type: 'tasks'; botId: string }
   | { type: 'memories'; botId: string }
   | { type: 'connections' }
+  | { type: 'activity'; item: ActivityItem }
+  | { type: 'computer-status'; status: BotComputerStatus }
+  | { type: 'files-updated'; botId: string }
   | { type: 'ping' };
+
+// ------------------------------------------------------------------ nav
+
+/** The sections of the left icon rail. */
+export type NavSection = 'activity' | 'chat' | 'calendar' | 'calls' | 'files' | 'computers' | 'skills';
+
+/** One entry of the cross-bot Activity feed. */
+export interface ActivityItem {
+  botId: string;
+  botName: string;
+  kind: 'message' | 'card' | 'working' | 'completed';
+  preview: string;
+  at: number;
+  seq?: number;
+}
+
+// ------------------------------------------------------------------ calendar
+
+/** One occurrence on the calendar. The server expands recurring routines into these. */
+export interface CalendarEvent {
+  routineId: string;
+  botId: string;
+  botName: string;
+  title: string;
+  /** ISO datetimes. */
+  start: string;
+  end: string;
+  /** Cron expression for a recurring event, null for a one-time event. */
+  recurrenceRule: string | null;
+  eventType: 'recurring' | 'one_time';
+  completedAt: string | null;
+}
+
+/** GET /api/calendar?from=&to= */
+export interface CalendarResponse { events: CalendarEvent[] }
+
+/** POST /api/routines */
+export interface CreateRoutineRequest {
+  botId: string;
+  title: string;
+  prompt: string;
+  eventType: 'recurring' | 'one_time';
+  /** Cron expression for a recurring event. */
+  schedule?: string;
+  /** ISO datetime for a one-time event. */
+  eventDate?: string;
+  timezone?: string;
+  description?: string;
+}
+
+// ------------------------------------------------------------------ files
+
+/** One file in the unified Files view. */
+export interface FileEntry {
+  /** Opaque, URL-safe id: it encodes the source and path, and the download route resolves it. */
+  id: string;
+  botId: string;
+  botName: string;
+  type: 'library' | 'attachment' | 'workspace';
+  filename: string;
+  /** Path relative to that source's root. */
+  path: string;
+  size: number;
+  mediaType: string;
+  /** Unix ms. */
+  createdAt: number;
+  downloadUrl: string;
+}
+
+/** GET /api/files */
+export interface FilesResponse { files: FileEntry[]; total: number; page: number; pageSize: number }
+
+// ------------------------------------------------------------------ computers
+
+export interface BotComputerStatus {
+  botId: string;
+  botName: string;
+  kind: 'docker' | 'orgo' | 'none';
+  status: 'awake' | 'sleeping' | 'starting' | 'unknown';
+  /** The agent is running a turn right now. */
+  isRunning: boolean;
+  vncAvailable: boolean;
+  screenId: string | null;
+}
+
+/** GET /api/computers */
+export interface ComputersResponse { computers: BotComputerStatus[] }
+
+// ------------------------------------------------------------------ skills (MCP servers)
+
+/** A skill/MCP server from the primary agent's config, and which bots have it. */
+export interface SkillEntry {
+  name: string;
+  type: 'http' | 'stdio' | string;
+  url: string | null;
+  description: string | null;
+  /** Always true: the primary agent's config is the source of truth and is read-only here. */
+  primaryEnabled: boolean;
+  bots: { botId: string; botName: string; enabled: boolean }[];
+}
+
+/** GET /api/skills */
+export interface SkillsResponse { skills: SkillEntry[] }
 
 // ------------------------------------------------------------------ aliases
 // The implementation plan names some of these differently (BotRow / MessageRow /

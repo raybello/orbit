@@ -134,7 +134,7 @@ function ChatRow({
       </View>
 
       <View style={{ alignItems: 'flex-end', gap: tokens.space.xs, minWidth: 44 }}>
-        <Text style={{ color: tokens.colors.fgTertiary, fontSize: tokens.fontSizes.xs }}>
+        <Text style={{ color: tokens.colors.fgTertiary, fontSize: tokens.fontSizes.caption }}>
           {bot.lastActivityAt ? timeAgo(bot.lastActivityAt) : ''}
         </Text>
         {bot.unread > 0 ? (

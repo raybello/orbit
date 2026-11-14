@@ -18,6 +18,10 @@ export interface ToolCtx {
   botId: string;
   enqueueBotMessage: (fromBotId: string, toBotId: string, text: string, depth: number) => void;
   depth: number;
+  /** The agent loop's per-bot queue, so post_to_group can dispatch @mentioned group members. */
+  enqueue?: (botId: string, turn: any) => void;
+  /** The group-chat chain depth of this turn (the dispatcher's `_groupDepth`), 0 outside a group. */
+  groupDepth?: number;
 }
 
 export interface ToolResult {
@@ -326,7 +330,8 @@ export const TOOLS: ToolDef[] = [
     activity: 'messaging_named',
     label: 'Posting to the group',
     impl: async (a, ctx) => {
-      const out = postToRoom(ctx.botId, String(a.group_name), String(a.text));
+      // The turn's chain depth keeps a bot-to-bot @mention chain inside the group's depth limit.
+      const out = postToRoom(ctx.botId, String(a.group_name), String(a.text), ctx.groupDepth ?? 0, ctx.enqueue);
       return { output: out, summary: `Posted to ${a.group_name}`, endTurn: out === 'Posted to the group.' };
     },
   },

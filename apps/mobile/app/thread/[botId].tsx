@@ -14,7 +14,7 @@ import {
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { router, useLocalSearchParams } from 'expo-router';
 import Svg, { Path } from 'react-native-svg';
-import type { CardBody, Row, ToolCallBody } from '@orbit/contracts';
+import type { Bot, CardBody, Row, ToolCallBody } from '@orbit/contracts';
 import { BotAvatarFor } from '../../components/bot-avatar';
 import { MessageBubble } from '../../components/message-bubble';
 import { durationLabel } from '../../lib/format';
@@ -24,8 +24,18 @@ import { useOrbitStore } from '../../lib/store';
 
 /** One transcript item: a single row, or a run of tool calls folded into one chip. */
 type Block =
-  | { kind: 'row'; key: string; row: Row }
+  | { kind: 'row'; key: string; row: Row; /** Not the first message of a run from this sender. */ follow?: boolean }
   | { kind: 'tools'; key: string; rows: Row[] };
+
+/** Messages from one sender closer together than this render as a single run. */
+const RUN_GAP = 5 * 60 * 1000;
+
+/** Who sent a message row, or null if the row is not a message. */
+function senderOf(row: Row): string | null {
+  const body = row.body;
+  if (body.type !== 'message') return null;
+  return body.from ? `${body.from.kind}:${body.from.id}` : body.role;
+}
 
 function toBlocks(rows: Row[]): Block[] {
   const blocks: Block[] = [];
@@ -35,7 +45,17 @@ function toBlocks(rows: Row[]): Block[] {
       if (last && last.kind === 'tools') last.rows.push(row);
       else blocks.push({ kind: 'tools', key: `tools-${row.seq}`, rows: [row] });
     } else {
-      blocks.push({ kind: 'row', key: `${row.kind}-${row.seq}`, row });
+      // `rows` is chronological (the list is inverted), so the block before this one is the row a
+      // reader sees directly above it. Same sender, close in time: this row continues that run.
+      const last = blocks[blocks.length - 1];
+      const previous = last && last.kind === 'row' ? last.row : null;
+      const sender = senderOf(row);
+      const follow =
+        previous !== null &&
+        sender !== null &&
+        sender === senderOf(previous) &&
+        Math.abs(row.createdAt - previous.createdAt) < RUN_GAP;
+      blocks.push({ kind: 'row', key: `${row.kind}-${row.seq}`, row, follow });
     }
   }
   return blocks;
@@ -149,7 +169,7 @@ export default function ThreadScreen() {
           item.kind === 'tools' ? (
             <ToolRunChip rows={item.rows} tokens={tokens} />
           ) : (
-            <RowView row={item.row} botId={botId} tokens={tokens} />
+            <RowView row={item.row} botId={botId} tokens={tokens} bot={bot} follow={item.follow} />
           )
         }
       />
@@ -214,7 +234,7 @@ export default function ThreadScreen() {
             minHeight: 40,
             backgroundColor: tokens.colors.bgSubtle,
             color: tokens.colors.fg,
-            borderRadius: tokens.radii.composer,
+            borderRadius: tokens.radii.md,
             paddingHorizontal: tokens.space.lg,
             paddingTop: tokens.space.md,
             paddingBottom: tokens.space.md,
@@ -257,7 +277,20 @@ function activityLabel(kind: string | null | undefined): string {
   return kind.replace(/_/g, ' ').replace(/^\w/, (c) => c.toUpperCase());
 }
 
-function RowView({ row, botId, tokens }: { row: Row; botId: string; tokens: MobileTokens }) {
+function RowView({
+  row,
+  botId,
+  tokens,
+  bot,
+  follow,
+}: {
+  row: Row;
+  botId: string;
+  tokens: MobileTokens;
+  bot: Bot | undefined;
+  /** Not the first message of a run: no avatar, no name, just the text. */
+  follow?: boolean;
+}) {
   const body = row.body;
 
   switch (body.type) {
@@ -270,6 +303,8 @@ function RowView({ row, botId, tokens }: { row: Row; botId: string; tokens: Mobi
           streaming={body.streaming}
           from={body.from}
           files={body.files}
+          bot={bot}
+          follow={follow}
         />
       );
     case 'card':
@@ -283,7 +318,7 @@ function RowView({ row, botId, tokens }: { row: Row; botId: string; tokens: Mobi
         <Text
           style={{
             color: body.type === 'notice' && body.tone === 'error' ? tokens.colors.destructive : tokens.colors.fgTertiary,
-            fontSize: tokens.fontSizes.xs,
+            fontSize: tokens.fontSizes.caption,
             textAlign: 'center',
             marginVertical: tokens.space.sm,
             marginHorizontal: tokens.space.xxl,
@@ -340,20 +375,20 @@ function ToolRunChip({ rows, tokens }: { rows: Row[]; tokens: MobileTokens }) {
         <Text style={{ color: tokens.colors.fgSecondary, fontSize: tokens.fontSizes.sm }}>
           {running ? 'Working' : `Worked for ${durationLabel(endedAt - startedAt)}`} · {rows.length} step{rows.length === 1 ? '' : 's'}
         </Text>
-        <Text style={{ color: tokens.colors.fgTertiary, fontSize: tokens.fontSizes.xs }}>{open ? 'Hide' : 'Show'}</Text>
+        <Text style={{ color: tokens.colors.fgTertiary, fontSize: tokens.fontSizes.caption }}>{open ? 'Hide' : 'Show'}</Text>
       </Pressable>
 
       {open ? (
         <View style={{ marginTop: tokens.space.xs, gap: tokens.space.xs, paddingLeft: tokens.space.md }}>
           {calls.map((call) => (
             <View key={call.callId} style={{ flexDirection: 'row', gap: tokens.space.sm, alignItems: 'flex-start' }}>
-              <Text style={{ color: tokens.colors.fgTertiary, fontSize: tokens.fontSizes.xs, marginTop: 2 }}>
+              <Text style={{ color: tokens.colors.fgTertiary, fontSize: tokens.fontSizes.caption, marginTop: 2 }}>
                 {call.status === 'error' || call.status === 'denied' ? '×' : call.status === 'running' ? '·' : '✓'}
               </Text>
               <View style={{ flex: 1 }}>
                 <Text style={{ color: tokens.colors.fgSecondary, fontSize: tokens.fontSizes.sm }}>{call.label || call.name}</Text>
                 {call.summary ? (
-                  <Text numberOfLines={3} style={{ color: tokens.colors.fgTertiary, fontSize: tokens.fontSizes.xs }}>
+                  <Text numberOfLines={3} style={{ color: tokens.colors.fgTertiary, fontSize: tokens.fontSizes.caption }}>
                     {call.summary}
                   </Text>
                 ) : null}
@@ -377,7 +412,7 @@ function CardView({ body, seq, botId, tokens }: { body: Extract<CardBody, { type
     <View style={cardStyle(tokens)}>
       <Text style={{ color: tokens.colors.fg, fontSize: tokens.fontSizes.message, fontWeight: '600' }}>{title}</Text>
       <Text style={{ color: tokens.colors.fgSecondary, fontSize: tokens.fontSizes.sm, lineHeight: 19 }}>{text}</Text>
-      <Text style={{ color: tokens.colors.fgTertiary, fontSize: tokens.fontSizes.xs }}>
+      <Text style={{ color: tokens.colors.fgTertiary, fontSize: tokens.fontSizes.caption }}>
         Finish this on the web app.
       </Text>
     </View>
@@ -424,7 +459,7 @@ function ApprovalCard({ body, botId, tokens }: { body: Extract<CardBody, { card:
           />
         </View>
       ) : statusText ? (
-        <Text style={{ color: tokens.colors.fgTertiary, fontSize: tokens.fontSizes.xs }}>{statusText}</Text>
+        <Text style={{ color: tokens.colors.fgTertiary, fontSize: tokens.fontSizes.caption }}>{statusText}</Text>
       ) : null}
     </View>
   );
@@ -474,7 +509,7 @@ function QuestionCard({
           </Pressable>
         </View>
       ) : (
-        <Text style={{ color: tokens.colors.fgTertiary, fontSize: tokens.fontSizes.xs }}>
+        <Text style={{ color: tokens.colors.fgTertiary, fontSize: tokens.fontSizes.caption }}>
           {body.status === 'answered' ? `Answered: ${body.answer ?? ''}` : 'Dismissed'}
         </Text>
       )}

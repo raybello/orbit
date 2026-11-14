@@ -1,0 +1,66 @@
+/* ---------- chat section: bots + group chats, search, header actions ---------- */
+
+.chat-list { display: flex; flex-direction: column; gap: 4px; padding: 0 0 8px; }
+
+/* header: section title on the left, labeled action buttons on the right */
+.chat-list__header { display: flex; align-items: center; justify-content: space-between; gap: 8px; height: 44px; padding: 0 12px 0 16px; }
+.chat-list__title {
+  margin: 0; min-width: 0; display: inline-flex; align-items: center; gap: 4px;
+  font-size: 16px; font-weight: 600; line-height: 24px; letter-spacing: -0.1px;
+  color: var(--color-fg-default); white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+}
+.chat-list__actions { display: flex; align-items: center; gap: 2px; flex-shrink: 0; }
+.chat-list__action {
+  display: inline-flex; align-items: center; gap: 6px; height: 28px; padding: 0 8px;
+  border-radius: var(--radius-sm); color: var(--color-fg-subtle);
+  font-size: 12px; line-height: 16px; white-space: nowrap;
+  transition: background-color 120ms var(--ease-standard), color 120ms var(--ease-standard);
+}
+.chat-list__action:hover { background: var(--color-bg-nav-hover); color: var(--color-fg-default); }
+.chat-list__action:active { background: var(--color-bg-nav-active); }
+
+.chat-list__search {
+  display: flex; align-items: center; gap: 6px; height: 32px; margin: 0 12px; padding: 0 10px;
+  border-radius: var(--radius-sm); border: 1px solid var(--color-border-default);
+  background: var(--color-bg-stage); color: var(--color-fg-muted);
+  transition: border-color 120ms var(--ease-standard), box-shadow 120ms var(--ease-standard);
+}
+.chat-list__search:focus-within { border-color: var(--accent-500); box-shadow: 0 0 0 2px color-mix(in srgb, var(--accent-500) 20%, transparent); }
+.chat-list__search input {
+  flex: 1 1 0; min-width: 0; width: 100%; border: 0; outline: none; background: transparent;
+  font-family: inherit; font-size: 13px; line-height: 18px; color: var(--color-fg-default);
+}
+.chat-list__search input::placeholder { color: var(--color-fg-muted); }
+.chat-list__clear { display: flex; align-items: center; justify-content: center; width: 16px; height: 16px; flex-shrink: 0; border-radius: 50%; color: var(--color-fg-muted); }
+.chat-list__clear:hover { background: var(--color-msg-bg-hover); color: var(--color-fg-default); }
+
+.chat-list__rows { display: flex; flex-direction: column; gap: 0; padding: 4px 8px 0; }
+.chat-list__sep { height: 1px; margin: 6px 4px; background: var(--color-border-subtle); }
+.chat-list__empty { padding: 20px 12px; font-size: 13px; line-height: 20px; color: var(--color-fg-muted); text-align: center; }
+
+/* ---------- group rows: overlapping member avatars + count ---------- */
+.group-avatars { position: relative; display: inline-flex; align-items: center; min-width: 32px; }
+.group-avatars__item {
+  position: relative; display: inline-flex; align-items: center; justify-content: center; width: 20px; height: 20px;
+  flex-shrink: 0; border-radius: 50%; background: var(--color-bg-nav);
+  box-shadow: 0 0 0 1.5px var(--color-bg-nav);
+}
+.group-avatars__item + .group-avatars__item { margin-left: -8px; }
+.group-avatars .status-dot { right: -1px; top: -3px; }
+
+.group-row__count {
+  display: inline-flex; align-items: center; justify-content: center; flex-shrink: 0;
+  min-width: 18px; height: 18px; padding: 0 5px; border-radius: var(--radius-full);
+  background: var(--color-bg-nav-active); color: var(--color-fg-subtle);
+  font-size: 10px; font-weight: 600; line-height: 18px;
+}
+
+/* ---------- new group chat modal ---------- */
+.create-modal__sub {
+  max-width: 340px; margin: -2px auto 0; text-align: center;
+  font-size: 12px; line-height: 17px; color: var(--color-fg-muted);
+}
+.group-pick__text { display: flex; flex-direction: column; flex: 1 1 0; min-width: 0; }
+/* Beats the single-class rule in modals.css regardless of stylesheet order. */
+.group-pick__opt .group-pick__name { flex: none; font-size: 13px; line-height: 18px; color: var(--color-fg-default); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.group-pick__sub { font-size: 12px; line-height: 16px; color: var(--color-fg-muted); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }

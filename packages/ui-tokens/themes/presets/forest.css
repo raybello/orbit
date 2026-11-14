@@ -1,0 +1,25 @@
+/* Preset: forest. Compound with the light/dark base via [data-preset]. */
+:root[data-preset='forest'] {
+  --accent-100: #E1F3E7;
+  --accent-200: #BFE5CC;
+  --accent-300: #79C79A;
+  --accent-400: #3FAC72;
+  --accent-500: #107C41;
+  --accent-600: #0A6334;
+  --accent-700: #064B27;
+  --accent-800: #2B2612;
+  --nav-rail-bg: #052612;
+}
+
+/* Dark keeps the hue but lifts the primary so it reads on a dark stage. */
+:root[data-theme='dark'][data-preset='forest'] {
+  --accent-100: #8FD0AC;
+  --accent-200: #052612;
+  --accent-300: #0A6334;
+  --accent-400: #107C41;
+  --accent-500: #2F9A5B;
+  --accent-600: #2F9A5B;
+  --accent-700: #79C79A;
+  --accent-800: #BFE5CC;
+  --nav-rail-bg: 02170B;
+}

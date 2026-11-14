@@ -24,7 +24,7 @@
 .question-option:hover:not(:disabled) { background: var(--color-bg-hover); }
 .question-option__key {
   display: inline-flex; align-items: center; justify-content: center; width: 24px; height: 24px; flex-shrink: 0; border-radius: 8px;
-  background: var(--color-bg-tertiary); border: 0.5px solid var(--color-border-tertiary);
+  background: var(--color-bg-tertiary); border: 1px solid var(--color-border-tertiary);
   font-size: 12px; font-weight: 500; line-height: 16px; letter-spacing: 0.12px; color: var(--color-text-secondary);
 }
 .question-option__label { padding: 2px 6px 0; font-size: 14px; line-height: 20px; letter-spacing: 0.14px; color: var(--color-text-primary); }

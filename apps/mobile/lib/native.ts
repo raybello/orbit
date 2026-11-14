@@ -3,6 +3,7 @@ import {
   botColors,
   fontSizes,
   fontWeights,
+  lineHeights,
   radii,
   space,
   type ColorToken,
@@ -22,6 +23,7 @@ export interface MobileTokens {
   radii: typeof radii;
   fontSizes: typeof fontSizes;
   fontWeights: typeof fontWeights;
+  lineHeights: typeof lineHeights;
   mono: string;
   /** RN's thinnest line, scaled by the device. */
   hairline: number;
@@ -41,6 +43,7 @@ export function useMobileTokens(): MobileTokens {
     radii,
     fontSizes,
     fontWeights,
+    lineHeights,
     mono: monoFont,
     hairline: 0.5,
   };

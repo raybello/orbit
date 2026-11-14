@@ -5,6 +5,12 @@ import { useStore } from '../../store';
 import { Icon } from '../Icon';
 import { Modal } from './Modal';
 
+/** One line under a Bot's name in the picker: what it is, and which model answers. */
+function engineLabel(bot: { label: string; model: string | null; provider: string | null }) {
+  const engine = `${bot.model ?? 'Engine default'}${bot.provider ? ` · ${bot.provider}` : ''}`;
+  return bot.label ? `${bot.label} · ${engine}` : engine;
+}
+
 /** New group chat: a name plus at least two Bots. */
 export function CreateGroupModal() {
   const setModal = useStore((s) => s.setModal);
@@ -26,7 +32,9 @@ export function CreateGroupModal() {
       const { bots: all } = await api.bots();
       const st = useStore.getState();
       st.set({ bots: all });
+      // Open the group straight away: the transcript, composer and MembersCard follow the selection.
       st.selectBot(id);
+      st.set({ detailsOpen: true });
       close();
     } catch (e) {
       setError((e as Error).message);
@@ -43,16 +51,21 @@ export function CreateGroupModal() {
         </div>
         <div className="create-modal__body" style={{ alignItems: "stretch" }}>
           <input className="text-input create-modal__name" placeholder="Name your group" value={name} onChange={(e) => setName(e.target.value)} autoFocus aria-label="Group name" />
-          <div className="section-label" style={{ marginTop: 14 }}>Bots in this group</div>
+          <p className="create-modal__sub">Bots in this group can talk to each other and to you. @mention a specific bot to address them directly.</p>
+          <div className="section-label" style={{ marginTop: 4 }}>Bots in this group</div>
           <div className="group-pick">
             {bots.map((b) => (
               <button key={b.id} type="button" role="checkbox" aria-checked={picked.includes(b.id)} className={`group-pick__opt${picked.includes(b.id) ? ' is-active' : ''}`} onClick={() => toggle(b.id)}>
                 <BotAvatarFor bot={b} size={24} />
-                <span className="group-pick__name">{b.name}{b.label ? ` · ${b.label}` : ''}</span>
+                <span className="group-pick__text">
+                  <span className="group-pick__name">{b.name}</span>
+                  <span className="group-pick__sub">{engineLabel(b)}</span>
+                </span>
                 {picked.includes(b.id) && <Icon name="check" size={12} opacity={0.8} />}
               </button>
             ))}
           </div>
+          {picked.length < 2 && <div className="cfg-field__hint">Pick at least two Bots.</div>}
           {error && <div className="card__error">{error}</div>}
         </div>
         <div className="modal__footer">

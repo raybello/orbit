@@ -1,0 +1,311 @@
+/* Computers section: a status bar, then a grid of per-bot computer cards. */
+
+.computers {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  padding: 4px 2px 16px;
+  min-height: 0;
+}
+
+.computers__bar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  padding: 0 8px;
+}
+
+.computers__count {
+  font-size: var(--text-xs);
+  font-weight: var(--font-weight-medium);
+  color: var(--color-text-secondary);
+  letter-spacing: 0.11px;
+}
+
+.computers__refresh {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  height: 26px;
+  padding: 0 10px;
+  border-radius: var(--radius-full);
+  background: var(--color-bg-tertiary);
+  color: var(--color-text-secondary);
+  font-size: var(--text-xs);
+  font-weight: var(--font-weight-medium);
+  transition: background-color 120ms var(--ease-out), color 120ms var(--ease-out);
+}
+
+.computers__refresh:hover:not(:disabled) {
+  background: var(--color-bg-hover);
+  color: var(--color-text-primary);
+}
+
+.computers__refresh:disabled {
+  opacity: 0.6;
+  cursor: default;
+}
+
+/*
+ * Two columns when the section is wide, one when it is narrow. Track sizing (not a viewport media
+ * query) decides: the section panel is 280px on every screen size, so what matters is the space the
+ * grid actually gets, not the window's width.
+ */
+.computers__grid {
+  display: grid;
+  gap: 10px;
+  grid-template-columns: repeat(auto-fit, minmax(min(240px, 100%), 1fr));
+  /* Past two columns the screens stop reading as screens; keep the pair at a comfortable size. */
+  max-width: 1120px;
+}
+
+.computers__state {
+  padding: 24px 12px;
+  text-align: center;
+  font-size: var(--text-sm);
+  color: var(--color-text-tertiary);
+}
+
+.computers__error {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 10px;
+  border-radius: var(--radius-sm);
+  background: var(--color-danger-bg);
+  color: var(--color-danger-text);
+  font-size: var(--text-xs);
+  line-height: 16px;
+}
+
+.computers__error-text { flex: 1; min-width: 0; overflow-wrap: anywhere; }
+
+.computers__retry {
+  height: 24px;
+  padding: 0 10px;
+  border-radius: var(--radius-full);
+  background: var(--color-danger-text);
+  color: #FFFFFF;
+  font-size: var(--text-xs);
+  font-weight: var(--font-weight-medium);
+}
+
+.computers__retry:hover { background: var(--color-danger-hover); }
+
+.computers__muted {
+  margin: 2px 8px 0;
+  font-size: var(--text-xs);
+  line-height: 16px;
+  color: var(--color-text-quaternary);
+}
+
+/* ---------- card ---------- */
+
+.computer-card {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 10px;
+  border-radius: var(--radius-md);
+  background: var(--color-bg-pane);
+  box-shadow: var(--shadow-card);
+  min-width: 0;
+}
+
+.computer-card__head {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  min-width: 0;
+}
+
+.computer-card__avatar { display: inline-flex; flex-shrink: 0; }
+
+.computer-card__name {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: var(--text-sm);
+  font-weight: var(--font-weight-medium);
+  color: var(--color-text-primary);
+}
+
+.computer-card__badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  flex-shrink: 0;
+  height: 20px;
+  padding: 0 8px;
+  border-radius: var(--radius-full);
+  font-size: 11px;
+  font-weight: var(--font-weight-medium);
+  line-height: 16px;
+  letter-spacing: 0.11px;
+}
+
+.computer-card__dot {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: currentColor;
+}
+
+.computer-card__badge.is-awake { background: var(--color-success-bg); color: var(--color-success-text); }
+.computer-card__badge.is-sleeping { background: var(--color-warn-bg); color: var(--color-warn-text); }
+.computer-card__badge.is-starting { background: color-mix(in srgb, var(--color-bot-blue) 12%, transparent); color: var(--color-bot-blue); }
+.computer-card__badge.is-unknown { background: var(--color-bg-tertiary); color: var(--color-text-tertiary); }
+
+/* Starting is the only state that is on its way somewhere: let its dot breathe. */
+.computer-card__badge.is-starting .computer-card__dot { animation: computer-pulse 1.4s ease-in-out infinite; }
+
+@keyframes computer-pulse {
+  0%, 100% { opacity: 1; transform: scale(1); }
+  50% { opacity: 0.35; transform: scale(0.82); }
+}
+
+/* ---------- preview frame ---------- */
+
+.computer-card__preview {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 5px;
+  width: 100%;
+  padding: 0;
+  border-radius: var(--radius-sm);
+  text-align: center;
+  cursor: pointer;
+}
+
+.computer-card__preview:disabled { cursor: default; }
+
+.computer-card__frame {
+  display: block;
+  width: 100%;
+  aspect-ratio: 16 / 10;
+  border-radius: var(--radius-sm);
+  overflow: hidden;
+  background: var(--color-bg-subtle);
+  box-shadow: inset 0 0 0 0.5px var(--color-border-tertiary);
+  transition: box-shadow 140ms var(--ease-out), background-color 140ms var(--ease-out);
+}
+
+.computer-card__preview:hover:not(:disabled) .computer-card__frame {
+  background: var(--color-bg-hover);
+  box-shadow: inset 0 0 0 0.5px var(--color-border-secondary);
+}
+
+.computer-card__preview:focus-visible .computer-card__frame { box-shadow: 0 0 0 2px var(--color-border-focus); }
+
+.computer-card__frame-bar {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  height: 14px;
+  padding: 0 7px;
+  background: var(--color-bg-tertiary);
+}
+
+.computer-card__frame-bar i {
+  width: 4px;
+  height: 4px;
+  border-radius: 50%;
+  background: var(--color-border-primary);
+}
+
+.computer-card__frame-body {
+  display: grid;
+  place-items: center;
+  height: calc(100% - 14px);
+}
+
+.computer-card__preview.is-sleeping .computer-card__frame-body,
+.computer-card__preview.is-unknown .computer-card__frame-body {
+  opacity: 0.45;
+  filter: saturate(0.4);
+}
+
+.computer-card__preview:disabled .computer-card__frame {
+  background: repeating-linear-gradient(
+    45deg,
+    var(--color-bg-subtle) 0 6px,
+    transparent 6px 12px
+  );
+}
+
+.computer-card__caption {
+  font-size: 11px;
+  line-height: 14px;
+  letter-spacing: 0.11px;
+  color: var(--color-text-quaternary);
+}
+
+.computer-card__chip {
+  position: absolute;
+  top: 20px;
+  left: 6px;
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  height: 18px;
+  padding: 0 7px;
+  border-radius: var(--radius-full);
+  background: #000000A6;
+  color: #FFFFFF;
+  font-size: 10px;
+  font-weight: var(--font-weight-medium);
+  letter-spacing: 0.11px;
+  pointer-events: none;
+}
+
+.computer-card__chip-dot {
+  width: 5px;
+  height: 5px;
+  border-radius: 50%;
+  background: var(--color-bot-green);
+  animation: computer-pulse 1.6s ease-in-out infinite;
+}
+
+/* ---------- footer ---------- */
+
+.computer-card__foot {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+.computer-card__kind {
+  font-size: 11px;
+  letter-spacing: 0.11px;
+  color: var(--color-text-quaternary);
+  text-transform: uppercase;
+}
+
+.computer-card__open {
+  height: 26px;
+  padding: 0 12px;
+  border-radius: var(--radius-full);
+  background: var(--color-primary);
+  color: var(--color-on-primary);
+  font-size: var(--text-xs);
+  font-weight: var(--font-weight-medium);
+  transition: background-color 120ms var(--ease-out), opacity 120ms var(--ease-out);
+}
+
+.computer-card__open:hover:not(:disabled) { background: var(--color-bg-primary-hover); }
+
+.computer-card__open:disabled {
+  background: var(--color-bg-primary-disabled);
+  cursor: default;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .computer-card__badge.is-starting .computer-card__dot,
+  .computer-card__chip-dot { animation: none; }
+}

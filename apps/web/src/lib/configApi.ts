@@ -1,4 +1,4 @@
-import type { Bot, ComputerState, EngineInfo, LibraryFile, Memory, Routine, Skill, Task, Toolkit } from '@orbit/contracts';
+import type { Bot, BotEngineAuthRow, ComputerState, EngineAuthResponse, EngineInfo, LibraryFile, Memory, Routine, Skill, Task, Toolkit } from '@orbit/contracts';
 import { ApiError } from './api';
 
 async function req<T>(method: string, path: string, body?: unknown): Promise<T> {
@@ -71,6 +71,12 @@ export const configApi = {
   restartEngine: (botId: string) => req<{ engine: EngineInfo }>('POST', `/bots/${botId}/engine/restart`),
   /** Stops the private screen the agent runs for itself, so its computer work shows on the screen in the app. */
   stopOwnScreen: (botId: string) => req<{ engine: EngineInfo }>('POST', `/bots/${botId}/engine/screen/stop`),
+
+  /** Every Bot's engine plus which shared credentials it has. Key values are never sent. */
+  engineAuth: () => req<EngineAuthResponse>('GET', '/config/engine-auth'),
+  setEngineAuth: (botId: string, p: { provider?: string; model?: string }) => req<{ bot: BotEngineAuthRow }>('PUT', `/config/engine-auth/${botId}`, p),
+  /** Copies the primary Bot's shared credentials to every managed Bot. */
+  syncEngineAuth: () => req<{ synced: number }>('POST', '/config/engine-auth/sync'),
 
   policies: () => req<{ policies: { tool: string; mode: string }[] }>('GET', '/policies'),
   deletePolicy: (tool: string) => req<{ ok: true }>('DELETE', `/policies/${encodeURIComponent(tool)}`),

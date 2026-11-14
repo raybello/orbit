@@ -1,11 +1,15 @@
 /* ---------- details panel, 360px: the bot's computer leads ---------- */
 .details {
-  display: flex; flex-direction: column; width: 360px; flex-shrink: 0; height: 100%;
-  background: var(--color-bg-chrome); border-left: 0.5px solid var(--color-border-tertiary);
-  animation: slideIn 200ms var(--ease-out);
+  display: flex; flex-direction: column; flex: 0 0 var(--details-panel-width); width: var(--details-panel-width);
+  flex-shrink: 0; height: 100%; background: var(--color-bg-stage);
+  border-left: 1px solid var(--color-border-subtle); overflow: hidden;
+  transition: width var(--duration-slow) var(--ease-decel), flex-basis var(--duration-slow) var(--ease-decel);
+  animation: slideIn 200ms var(--ease-standard);
 }
+/* Closed by default: the column collapses to nothing and the conversation takes the width. */
+.details.is-closed { width: 0; flex-basis: 0; border-left: 0; }
 @keyframes slideIn { from { opacity: 0; transform: translateX(12px); } to { opacity: 1; transform: none; } }
-.details__top { display: flex; align-items: center; justify-content: flex-end; height: 60px; padding: 12px; flex-shrink: 0; }
+.details__top { display: flex; align-items: center; justify-content: flex-end; gap: 4px; height: 48px; padding: 0 8px; flex-shrink: 0; }
 .details__scroll { flex: 1 1 0; min-height: 0; overflow-y: auto; scrollbar-width: thin; }
 .details__identity { display: flex; flex-direction: column; align-items: center; gap: 16px; padding: 8px 16px 12px; }
 .details__name {
@@ -21,7 +25,42 @@
 .details__who-sub { font-size: 12px; line-height: 16px; letter-spacing: 0.12px; color: var(--color-text-tertiary); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .details__model { flex: 0 2 auto; min-width: 0; padding: 0 6px; line-height: 16px; white-space: nowrap; border-radius: 5px; background: var(--color-bg-tertiary); font-family: var(--font-mono-stack); font-size: 11px; color: var(--color-text-secondary); overflow: hidden; text-overflow: ellipsis; }
 .details__open { height: 28px; padding: 4px 12px; flex-shrink: 0; }
-.details__tabs { display: flex; justify-content: center; padding: 4px 16px 10px; }
+
+/* tab bar: Teams-style underline indicator, never pills */
+.details-tabs {
+  display: flex; align-items: stretch; flex-shrink: 0;
+  padding: 0 8px; border-bottom: 1px solid var(--color-border-subtle);
+}
+.details-tab {
+  position: relative; flex: 1 1 0; min-width: 0; height: 34px; padding: 0 4px;
+  font-size: 13px; line-height: 18px; letter-spacing: 0.195px; color: var(--color-text-secondary);
+  white-space: nowrap; overflow: hidden; text-overflow: ellipsis; border-radius: 6px 6px 0 0;
+  transition: color 140ms var(--ease-out), background-color 140ms var(--ease-out);
+}
+.details-tab::after {
+  content: ''; position: absolute; left: 6px; right: 6px; bottom: 0; height: 2px;
+  border-radius: 2px 2px 0 0; background: transparent;
+  transition: background-color 140ms var(--ease-out);
+}
+.details-tab:hover { color: var(--color-text-primary); background: var(--color-bg-hover); }
+.details-tab.is-active { color: var(--color-ink); font-weight: 500; }
+.details-tab.is-active::after { background: var(--accent-500); }
+.details-tab:focus-visible { outline: none; }
+.details-tab:focus-visible::after { background: var(--accent-500); opacity: 0.5; }
+
+/* engine tab: the settings card carries the border, the card inside it goes flat */
+.engine-tab-panel {
+  display: flex; flex-direction: column; gap: 10px;
+  margin: 10px 16px 16px; padding: 10px 4px 4px;
+  border-radius: 12px; background: var(--color-bg-pane); border: 1px solid var(--color-border-tertiary);
+}
+.engine-tab-panel > .section-label { padding: 0 8px; }
+.engine-tab-panel .panel-card { border: none; background: transparent; }
+/* The engine's error line can carry a long file path with no spaces in it; without this the path
+   pushes the row under the Restart button instead of wrapping. */
+.engine-tab-panel .engine__error,
+.engine-tab-panel .engine__status { overflow-wrap: anywhere; word-break: break-word; }
+.engine-tab-panel .engine__error { min-width: 0; }
 .segmented { display: flex; align-items: center; gap: 2px; }
 .segmented button { padding: 4px 8px; border-radius: var(--radius-full); font-size: 13px; line-height: 18px; letter-spacing: 0.195px; color: var(--color-text-secondary); }
 .segmented button:hover { color: var(--color-text-primary); }
@@ -31,7 +70,7 @@
 .section-label { padding: 0 12px; font-size: 13px; line-height: 18px; letter-spacing: 0.195px; color: var(--color-text-secondary); }
 .section-label--row { display: flex; align-items: center; justify-content: space-between; height: 18px; padding-right: 6px; }
 
-.panel-card { display: flex; flex-direction: column; padding: 4px; border-radius: 12px; background: var(--color-bg-pane); border: 0.5px solid var(--color-border-tertiary); }
+.panel-card { display: flex; flex-direction: column; padding: 4px; border-radius: 12px; background: var(--color-bg-pane); border: 1px solid var(--color-border-tertiary); }
 .panel-row { display: flex; align-items: center; gap: 8px; padding: 6px 8px; border-radius: 8px; width: 100%; text-align: left; }
 .panel-row--routine { height: 48px; }
 .panel-row--link, .panel-row--action { cursor: pointer; }
@@ -55,7 +94,7 @@
   transition: background-color 160ms var(--ease-out);
 }
 .toggle__knob { width: 16px; height: 16px; border-radius: 50%; background: #FFFFFF; box-shadow: #1C1C1C1F 0 1px 3px; transition: transform 200ms var(--ease-out); }
-.toggle.is-on { background: var(--bot-action, var(--color-primary)); }
+.toggle.is-on { background: var(--accent-500); }
 .toggle.is-on .toggle__knob { transform: translateX(12px); }
 
 .mini-select { display: inline-flex; align-items: center; gap: 4px; height: 24px; padding: 2px 4px 2px 6px; border-radius: 8px; border: 1px solid var(--color-border-tertiary); font-size: 13px; line-height: 18px; letter-spacing: -0.08px; color: var(--color-ink); }
@@ -68,7 +107,7 @@
 .members__remove { width: 22px; height: 22px; border-radius: 6px; }
 .members__remove:disabled { opacity: 0.3; cursor: default; }
 .members__dot { width: 24px; height: 24px; border-radius: 50%; background: var(--color-bg-hover); }
-.members__add { border-top: 0.5px solid var(--color-border-tertiary); margin-top: 4px; padding-top: 4px; }
+.members__add { border-top: 1px solid var(--color-border-tertiary); margin-top: 4px; padding-top: 4px; }
 .members__hint { font-size: 12px; line-height: 16px; color: var(--color-text-tertiary); padding: 6px 8px 2px; }
 
 /* engine: provider, model, sign-in */
@@ -89,10 +128,10 @@
 .engine__actions { display: flex; align-items: center; gap: 6px; padding: 6px 4px 6px 8px; }
 .engine__actions .btn { height: 28px; padding: 4px 14px; }
 .engine__actions .btn:disabled { opacity: 0.45; cursor: default; }
-.engine__signin { border-top: 0.5px solid var(--color-border-tertiary); border-radius: 0 0 8px 8px; margin-top: 2px; }
+.engine__signin { border-top: 1px solid var(--color-border-tertiary); border-radius: 0 0 8px 8px; margin-top: 2px; }
 .engine__signin:disabled { opacity: 0.6; cursor: default; }
-.engine__meta { display: flex; align-items: center; justify-content: space-between; gap: 8px; min-height: 28px; padding: 4px 4px 4px 8px; border-top: 0.5px solid var(--color-border-tertiary); font-size: 12px; line-height: 16px; letter-spacing: 0.12px; color: var(--color-text-tertiary); }
+.engine__meta { display: flex; align-items: center; justify-content: space-between; gap: 8px; min-height: 28px; padding: 4px 4px 4px 8px; border-top: 1px solid var(--color-border-tertiary); font-size: 12px; line-height: 16px; letter-spacing: 0.12px; color: var(--color-text-tertiary); }
 .engine__state { display: inline-flex; align-items: center; gap: 6px; min-width: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-.engine__notice { display: flex; flex-direction: column; align-items: flex-start; gap: 4px; padding: 8px; border-top: 0.5px solid var(--color-border-tertiary); font-size: 12px; line-height: 16px; letter-spacing: 0.12px; color: var(--color-text-secondary); }
+.engine__notice { display: flex; flex-direction: column; align-items: flex-start; gap: 4px; padding: 8px; border-top: 1px solid var(--color-border-tertiary); font-size: 12px; line-height: 16px; letter-spacing: 0.12px; color: var(--color-text-secondary); }
 .engine__error { padding: 0 8px 8px; font-size: 12px; line-height: 16px; color: var(--color-danger); overflow-wrap: anywhere; }
 @media (prefers-reduced-motion: reduce) { .engine__state.is-starting i { animation: none; } }

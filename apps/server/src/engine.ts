@@ -33,7 +33,7 @@ const botRow = (botId: string) => db.prepare('SELECT * FROM bots WHERE id=?').ge
 // ---------- small file helpers ----------
 
 /** KEY=value lines of a dotenv file (quotes stripped). Missing file = {}. */
-function readDotenv(file: string): Record<string, string> {
+export function readDotenv(file: string): Record<string, string> {
   const out: Record<string, string> = {};
   let text = '';
   try { text = fs.readFileSync(file, 'utf8'); } catch { return out; }
@@ -47,14 +47,19 @@ function readDotenv(file: string): Record<string, string> {
   return out;
 }
 
-function readYaml(file: string): any {
+export function readYaml(file: string): any {
   try { return YAML.parse(fs.readFileSync(file, 'utf8')) ?? {}; } catch { return {}; }
 }
 
-function writePrivate(file: string, content: string) {
+export function writePrivate(file: string, content: string) {
   fs.mkdirSync(path.dirname(file), { recursive: true });
   fs.writeFileSync(file, content, { mode: 0o600 });
   fs.chmodSync(file, 0o600);
+}
+
+/** KEY=value lines for a dotenv file. */
+function dotenvText(vars: Record<string, string>): string {
+  return Object.entries(vars).map(([k, v]) => `${k}=${v}`).join('\n') + '\n';
 }
 
 // ---------- identity ----------
@@ -74,6 +79,8 @@ export function engineKind(botId: string): EngineKind | null {
 }
 
 const homeFor = (botId: string) => path.join(env.enginesDir, botId);
+/** A managed bot's Hermes home. Exported for the auth-sync and skills modules. */
+export const managedHome = homeFor;
 
 let cachedPrimaryKey: string | null = null;
 function primaryKey(): string {
@@ -108,7 +115,7 @@ export function assignEngine(botId: string): EngineKind {
 // ---------- a managed bot's Hermes home ----------
 
 /** Model credentials a managed agent may inherit from the primary agent. Never messaging tokens. */
-const SHARED_ENV = [
+export const SHARED_ENV = [
   'ANTHROPIC_API_KEY', 'ANTHROPIC_BASE_URL', 'ANTHROPIC_TOKEN', 'CLAUDE_CODE_OAUTH_TOKEN',
   'OPENAI_API_KEY', 'OPENAI_BASE_URL', 'OPENROUTER_API_KEY', 'XAI_API_KEY', 'GEMINI_API_KEY', 'GOOGLE_API_KEY', 'NOUS_API_KEY',
   'FIRECRAWL_API_KEY', 'TAVILY_API_KEY', 'EXA_API_KEY', 'PARALLEL_API_KEY',
@@ -117,7 +124,7 @@ const SHARED_ENV = [
 ];
 
 /** Parts of the primary agent's config a managed agent starts from, so it reaches the same models. */
-const SHARED_CONFIG = ['model', 'providers', 'custom_providers', 'auxiliary', 'fallback_model', 'fallback_providers'];
+export const SHARED_CONFIG = ['model', 'providers', 'custom_providers', 'auxiliary', 'fallback_model', 'fallback_providers', 'mcp_servers'];
 
 function soul(b: any): string {
   const owner = (db.prepare('SELECT name FROM users WHERE id=?').get(b.user_id) as any)?.name ?? 'the user';
@@ -220,15 +227,83 @@ async function writeHome(botId: string): Promise<{ home: string; key: string; di
   const key = mine.API_SERVER_KEY || crypto.randomBytes(24).toString('hex');
   const primaryEnv = readDotenv(path.join(env.hermesHome, '.env'));
   const vars: Record<string, string> = { ...mine };
+  // The primary's value always wins: a key the user rotated there must reach every managed bot.
   for (const k of SHARED_ENV) {
     const v = primaryEnv[k] ?? process.env[k];
-    if (v && !vars[k]) vars[k] = v;
+    if (v) vars[k] = v;
   }
   Object.assign(vars, { API_SERVER_ENABLED: 'true', API_SERVER_KEY: key, API_SERVER_PORT: String(b.engine_port), API_SERVER_HOST: '127.0.0.1' });
   if (cdp) vars.BROWSER_CDP_URL = cdp; else delete vars.BROWSER_CDP_URL;
-  writePrivate(envFile, Object.entries(vars).map(([k, v]) => `${k}=${v}`).join('\n') + '\n');
+  writePrivate(envFile, dotenvText(vars));
+
+  // Credentials and config keys the home was missing (an existing home keeps its own choices).
+  syncManagedAuth(botId);
 
   return { home, key, display };
+}
+
+// ---------- keeping managed credentials in line with the primary ----------
+
+/**
+ * Bring a managed bot's .env and config.yaml up to date with the primary agent's credentials.
+ *
+ * - `.env`: every SHARED_ENV key the primary has a value for is overwritten, so a rotated key reaches
+ *   the bot. A key the primary lacks is left as the bot had it (the user may have set it by hand).
+ * - `config.yaml`: a SHARED_CONFIG key is copied only when the bot's config has never had it. An
+ *   existing value is the bot's own choice (it may deliberately run a different model) and is kept.
+ *
+ * Safe to call at any time; returns the keys it wrote, for logging and tests.
+ */
+export function syncManagedAuth(botId: string): string[] {
+  if (engineKind(botId) !== 'managed') return [];
+  const home = managedHome(botId);
+  const synced: string[] = [];
+
+  const primaryEnv = readDotenv(path.join(env.hermesHome, '.env'));
+  const envFile = path.join(home, '.env');
+  const vars = readDotenv(envFile);
+  const envSynced: string[] = [];
+  for (const k of SHARED_ENV) {
+    const v = (primaryEnv[k] ?? '').trim();
+    if (!v) continue; // nothing to share: keep whatever this bot has
+    if (vars[k] === v) continue;
+    vars[k] = v;
+    envSynced.push(k);
+  }
+  if (envSynced.length) {
+    writePrivate(envFile, dotenvText(vars));
+    synced.push(...envSynced);
+  }
+
+  const primaryCfg = readYaml(path.join(env.hermesHome, 'config.yaml'));
+  const cfgFile = path.join(home, 'config.yaml');
+  const cfg = readYaml(cfgFile);
+  const cfgSynced: string[] = [];
+  for (const k of SHARED_CONFIG) {
+    if (primaryCfg[k] === undefined || primaryCfg[k] === null) continue;
+    if (Object.prototype.hasOwnProperty.call(cfg, k)) continue; // the bot already has its own
+    cfg[k] = primaryCfg[k];
+    cfgSynced.push(k);
+  }
+  if (cfgSynced.length) writePrivate(cfgFile, YAML.stringify(cfg));
+  synced.push(...cfgSynced);
+
+  for (const k of synced) console.log(`[engine] auth sync ${botId}: ${k}`);
+  return synced;
+}
+
+/** The same pass over every managed bot. Returns how many bots had something brought in line. */
+export async function syncAllManagedAuth(): Promise<number> {
+  const bots = db.prepare("SELECT id FROM bots WHERE engine='managed'").all() as any[];
+  let synced = 0;
+  for (const b of bots) {
+    try {
+      if (syncManagedAuth(b.id).length) synced++;
+    } catch (e: any) {
+      console.warn(`[engine] auth sync ${b.id} failed: ${e?.message ?? e}`);
+    }
+  }
+  return synced;
 }
 
 // ---------- a managed bot's gateway ----------

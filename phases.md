@@ -175,7 +175,7 @@ Phase 5 (Integration tests + polish)  depends on all prior phases
 **Tasks**:
 
 1. **`packages/ui-tokens`**: Add new design tokens:
-   - `navRailBg`, `navRailWidth` (60px), `navRailSelected`, `navRailIcon`, `navRailIconSelected`
+   - `navRailBg`, `navRailWidth` (48px, Fluent 2 rail), `navRailSelected`, `navRailIcon`, `navRailIconSelected`
    - `sectionPanelBg`, `sectionPanelWidth` (280px), `sectionPanelBorder`
 
 2. **`apps/web/src/styles/tokens.css`**: Add CSS custom properties matching new tokens. Add dark mode variants.

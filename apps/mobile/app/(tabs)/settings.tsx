@@ -60,7 +60,7 @@ export default function SettingsScreen() {
             tone={health ? (health.ok ? 'success' : 'error') : 'muted'}
           />
           {warning ? (
-            <Text style={{ color: tokens.colors.warn, fontSize: tokens.fontSizes.xs, paddingHorizontal: tokens.space.lg, paddingBottom: tokens.space.sm }}>
+            <Text style={{ color: tokens.colors.warn, fontSize: tokens.fontSizes.caption, paddingHorizontal: tokens.space.lg, paddingBottom: tokens.space.sm }}>
               {warning}
             </Text>
           ) : null}
@@ -96,7 +96,7 @@ export default function SettingsScreen() {
 function Section({ title, tokens, children }: { title: string; tokens: MobileTokens; children: React.ReactNode }) {
   return (
     <View style={{ gap: tokens.space.sm }}>
-      <Text style={{ color: tokens.colors.fgTertiary, fontSize: tokens.fontSizes.xs, textTransform: 'uppercase', letterSpacing: 0.6, paddingHorizontal: tokens.space.xs }}>
+      <Text style={{ color: tokens.colors.fgTertiary, fontSize: tokens.fontSizes.caption, textTransform: 'uppercase', letterSpacing: 0.6, paddingHorizontal: tokens.space.xs }}>
         {title}
       </Text>
       <View

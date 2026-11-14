@@ -1,0 +1,25 @@
+/* Preset: slate. Compound with the light/dark base via [data-preset]. */
+:root[data-preset='slate'] {
+  --accent-100: #E9EDF0;
+  --accent-200: #CFD6DC;
+  --accent-300: #9AA6B0;
+  --accent-400: #7B8894;
+  --accent-500: #5C6670;
+  --accent-600: #4A535C;
+  --accent-700: #383F47;
+  --accent-800: #262B31;
+  --nav-rail-bg: #1A2026;
+}
+
+/* Dark keeps the hue but lifts the primary so it reads on a dark stage. */
+:root[data-theme='dark'][data-preset='slate'] {
+  --accent-100: #C2CBD2;
+  --accent-200: #1A2026;
+  --accent-300: #4A535C;
+  --accent-400: #5C6670;
+  --accent-500: #7B8894;
+  --accent-600: #7B8894;
+  --accent-700: #9AA6B0;
+  --accent-800: #CFD6DC;
+  --nav-rail-bg: 0E1216;
+}

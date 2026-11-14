@@ -1,0 +1,75 @@
+/* ---------- App Settings → Engine Auth: one row per Bot's engine, provider, model and credentials ---------- */
+
+.engine-auth { display: flex; flex-direction: column; gap: 14px; min-width: 0; }
+
+/* head: title on the left, Sync all on the right */
+.engine-auth__bar { display: flex; align-items: flex-start; justify-content: space-between; gap: 16px; }
+.engine-auth__bar-text { display: flex; flex-direction: column; gap: 2px; min-width: 0; }
+.engine-auth__bar-title { font-size: 13px; font-weight: 500; line-height: 18px; color: var(--color-text-primary); }
+.engine-auth__bar-sub { font-size: 12px; line-height: 16px; letter-spacing: 0.12px; color: var(--color-text-tertiary); }
+
+.engine-auth__error { display: flex; align-items: center; justify-content: space-between; gap: 12px; }
+.engine-auth__error .link-btn { flex-shrink: 0; }
+
+/* table */
+.engine-auth__table-wrap { border-radius: var(--radius-md); background: var(--color-bg-chrome); border: 1px solid var(--color-border-tertiary); overflow: hidden; }
+.engine-auth__table { width: 100%; border-collapse: collapse; table-layout: fixed; }
+.engine-auth__table th {
+  padding: 8px 10px; text-align: left; white-space: nowrap;
+  font-size: 11px; font-weight: 500; line-height: 14px; letter-spacing: 0.3px; text-transform: uppercase;
+  color: var(--color-text-tertiary); box-shadow: var(--color-border-tertiary) 0 -0.5px 0 inset;
+}
+.engine-auth__table th:first-child { width: 22%; }
+.engine-auth__table th:nth-child(2) { width: 20%; }
+.engine-auth__table th:nth-child(3) { width: 21%; }
+.engine-auth__table th:nth-child(4) { width: 21%; }
+.engine-auth__table th:nth-child(5) { width: 16%; }
+
+.engine-auth__row td { padding: 8px 10px; vertical-align: middle; }
+.engine-auth__row + .engine-auth__row td { box-shadow: var(--color-border-tertiary) 0 0.5px 0 inset; }
+
+.engine-auth__bot { font-size: 13px; line-height: 18px; color: var(--color-ink); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.engine-auth__value { font-size: 12px; line-height: 16px; color: var(--color-text-secondary); overflow-wrap: anywhere; }
+.engine-auth__note { margin-top: 3px; font-size: 11px; line-height: 14px; color: var(--color-text-tertiary); }
+
+/* inline editors on managed rows */
+.engine-auth__select,
+.engine-auth__input {
+  width: 100%; height: 26px; padding: 0 8px; border-radius: var(--radius-sm);
+  border: 1px solid var(--color-border-secondary); background: var(--color-bg-elevated);
+  font-family: inherit; font-size: 12px; line-height: 16px; color: var(--color-text-primary);
+  transition: border-color 120ms var(--ease-out), background-color 120ms;
+}
+.engine-auth__select {
+  appearance: none; padding-right: 22px;
+  background-image: linear-gradient(45deg, transparent 50%, var(--color-text-tertiary) 50%), linear-gradient(135deg, var(--color-text-tertiary) 50%, transparent 50%);
+  background-position: calc(100% - 12px) 11px, calc(100% - 8px) 11px;
+  background-size: 4px 4px, 4px 4px; background-repeat: no-repeat;
+}
+.engine-auth__input { font-family: var(--font-mono-stack); }
+.engine-auth__select:hover,
+.engine-auth__input:hover { border-color: var(--color-text-tertiary); }
+.engine-auth__select:focus-visible,
+.engine-auth__input:focus-visible { outline: none; border-color: var(--color-primary); }
+.engine-auth__input::placeholder { color: var(--color-text-tertiary); }
+
+/* credentials */
+.engine-auth__keys { font-family: var(--font-mono-stack); }
+.engine-auth__warn {
+  display: inline-flex; align-items: center; height: 18px; padding: 0 7px; border-radius: var(--radius-full);
+  background: var(--color-danger-bg); color: var(--color-danger-text);
+  font-size: 11px; font-weight: 500; line-height: 14px; letter-spacing: 0.1px; white-space: nowrap;
+}
+
+/* loading skeleton */
+.engine-auth__skeleton { display: flex; flex-direction: column; gap: 8px; padding: 4px; border-radius: var(--radius-md); background: var(--color-bg-chrome); border: 1px solid var(--color-border-tertiary); }
+.engine-auth__skeleton span {
+  display: block; height: 34px; border-radius: var(--radius-sm);
+  background: linear-gradient(90deg, var(--color-bg-tertiary), var(--color-bg-hover), var(--color-bg-tertiary));
+  background-size: 200% 100%; animation: engine-auth-shimmer 1.4s ease-in-out infinite;
+}
+@keyframes engine-auth-shimmer { 0% { background-position: 130% 0; } 100% { background-position: -30% 0; } }
+
+@media (prefers-reduced-motion: reduce) {
+  .engine-auth__skeleton span { animation: none; }
+}

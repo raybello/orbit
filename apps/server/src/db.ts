@@ -180,5 +180,11 @@ addColumn('bots', 'engine_port', 'INTEGER');
 addColumn('bots', 'handback_at', 'INTEGER');
 addColumn('screens', 'width', 'INTEGER');
 addColumn('screens', 'height', 'INTEGER');
+// Calendar metadata for routines. A routine without these stays a plain recurring cron routine.
+addColumn('routines', 'calendar_title', 'TEXT');
+addColumn('routines', 'event_type', "TEXT NOT NULL DEFAULT 'recurring'");
+addColumn('routines', 'event_date', 'TEXT');
+addColumn('routines', 'assigned_bot_id', 'TEXT');
+addColumn('routines', 'completed_at', 'TEXT');
 
 export const now = () => Date.now();

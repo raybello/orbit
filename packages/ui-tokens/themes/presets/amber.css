@@ -1,0 +1,25 @@
+/* Preset: amber. Compound with the light/dark base via [data-preset]. */
+:root[data-preset='amber'] {
+  --accent-100: #FBF0D9;
+  --accent-200: #F6E0B4;
+  --accent-300: #EFC46E;
+  --accent-400: #DDA637;
+  --accent-500: #C8880B;
+  --accent-600: #A66E08;
+  --accent-700: #845405;
+  --accent-800: #5C3A03;
+  --nav-rail-bg: #1F1600;
+}
+
+/* Dark keeps the hue but lifts the primary so it reads on a dark stage. */
+:root[data-theme='dark'][data-preset='amber'] {
+  --accent-100: #F0D08A;
+  --accent-200: #1F1600;
+  --accent-300: #A66E08;
+  --accent-400: #C8880B;
+  --accent-500: #DDA637;
+  --accent-600: #DDA637;
+  --accent-700: #EFC46E;
+  --accent-800: #F6E0B4;
+  --nav-rail-bg: 120D00;
+}

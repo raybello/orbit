@@ -1,0 +1,25 @@
+/* Preset: ocean. Compound with the light/dark base via [data-preset]. */
+:root[data-preset='ocean'] {
+  --accent-100: #DDF3F5;
+  --accent-200: #B7E7EC;
+  --accent-300: #5FC6D2;
+  --accent-400: #26ADBC;
+  --accent-500: #0097A7;
+  --accent-600: #007A87;
+  --accent-700: #005D68;
+  --accent-800: #003F47;
+  --nav-rail-bg: #003D47;
+}
+
+/* Dark keeps the hue but lifts the primary so it reads on a dark stage. */
+:root[data-theme='dark'][data-preset='ocean'] {
+  --accent-100: #8EDCE5;
+  --accent-200: #003D47;
+  --accent-300: #007A87;
+  --accent-400: #0097A7;
+  --accent-500: #2FB8C8;
+  --accent-600: #2FB8C8;
+  --accent-700: #5FC6D2;
+  --accent-800: #B7E7EC;
+  --nav-rail-bg: 002228;
+}

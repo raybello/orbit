@@ -1,5 +1,5 @@
 import { create } from 'zustand';
-import type { Bot, ComputerState, LiveState, Routine, Row, ServerEvent, User } from '@orbit/contracts';
+import type { ActivityItem, Bot, CardBody, ComputerState, LiveState, Routine, Row, ServerEvent, User } from '@orbit/contracts';
 import { api } from './lib/api';
 
 export type ModalKind = 'create' | 'search' | 'apps' | 'group' | null;
@@ -17,12 +17,18 @@ interface State {
   transcripts: Record<string, Transcript>;
   routines: Record<string, Routine[]>;
   computer: ComputerState | null;
+  /** Cross-bot feed of finished assistant messages, pending cards and turn status changes. Newest first. */
+  recentActivity: ActivityItem[];
+  /**
+   * What has already been folded into `recentActivity`, keyed `row:<botId>:<seq>` (value: updatedSeq)
+   * or `live:<botId>:<kind>:<turn stamp>`. Keeps a streamed row and a running turn from repeating.
+   */
+  activitySeen: Record<string, number>;
   /** Bumped on every `connections` event so open views can refetch. */
   connectionsVersion: number;
   sseConnected: boolean;
 
   detailsOpen: boolean;
-  sidebarCollapsed: boolean;
   modal: ModalKind;
   viewerOpen: boolean;
   /** How the large computer view opens, and the mode it is in while open. */
@@ -44,9 +50,72 @@ interface State {
 
 const LS_SELECTED = 'grokbot.selectedBot';
 const LS_DETAILS = 'grokbot.detailsOpen';
-const LS_SIDEBAR = 'grokbot.sidebarCollapsed';
 const lsGet = (k: string) => { try { return localStorage.getItem(k); } catch { return null; } };
 const lsSet = (k: string, v: string) => { try { localStorage.setItem(k, v); } catch { /* ignore */ } };
+
+// ---------- cross-bot activity feed ----------
+
+/** How many feed entries we keep, and how long a preview line is. */
+const ACTIVITY_LIMIT = 200;
+const PREVIEW_CHARS = 110;
+/** `activitySeen` is pruned past this many keys so it cannot grow without bound. */
+const SEEN_LIMIT = 1000;
+
+/** One line of preview text: whitespace collapsed, cut at ~110 characters. */
+export function activityPreview(text: string, max = PREVIEW_CHARS): string {
+  const flat = text.replace(/\s+/g, ' ').trim();
+  return flat.length > max ? `${flat.slice(0, max).trimEnd()}…` : flat;
+}
+
+/** What a pending card says in the feed, or null when it no longer needs anyone. */
+export function cardPreview(body: CardBody): string | null {
+  if (body.status !== 'pending') return null;
+  switch (body.card) {
+    case 'approval': return body.title;
+    case 'question': return body.question;
+    case 'connect': return `Connect ${body.toolkitName}`;
+    case 'draft': return body.subject || `Draft ${body.channel} message to ${body.to}`;
+  }
+}
+
+const botNameFor = (bots: Bot[], botId: string) => bots.find((b) => b.id === botId)?.name ?? botId;
+
+/** Feed identity: one entry per row, one per turn status change. */
+export const activityKey = (item: ActivityItem): string =>
+  item.seq === undefined ? `live:${item.botId}:${item.kind}:${item.at}` : `row:${item.botId}:${item.seq}`;
+
+/** Newest first, deduped against what is already there, capped at ACTIVITY_LIMIT. */
+export function mergeActivity(prev: ActivityItem[], incoming: ActivityItem[], max = ACTIVITY_LIMIT): ActivityItem[] {
+  if (incoming.length === 0) return prev;
+  const keys = new Set(incoming.map(activityKey));
+  return [...incoming, ...prev.filter((p) => !keys.has(activityKey(p)))]
+    .sort((a, b) => b.at - a.at || (b.seq ?? 0) - (a.seq ?? 0))
+    .slice(0, max);
+}
+
+function pruneSeen(seen: Record<string, number>): Record<string, number> {
+  const keys = Object.keys(seen);
+  if (keys.length <= SEEN_LIMIT) return seen;
+  const kept: Record<string, number> = {};
+  for (const k of keys.slice(-Math.floor(SEEN_LIMIT / 2))) kept[k] = seen[k];
+  return kept;
+}
+
+/** An assistant message that finished streaming, or a pending card — everything else stays out of the feed. */
+function activityFromRow(row: Row, botName: string): ActivityItem | null {
+  let preview: string | null = null;
+  let kind: ActivityItem['kind'] | null = null;
+  if (row.body.type === 'message') {
+    if (row.body.role !== 'assistant' || row.body.streaming) return null;
+    preview = activityPreview(row.body.text);
+    kind = 'message';
+  } else if (row.body.type === 'card') {
+    const card = cardPreview(row.body);
+    if (card) { preview = activityPreview(card); kind = 'card'; }
+  }
+  if (!preview || !kind) return null;
+  return { botId: row.botId, botName, kind, preview, at: row.createdAt, seq: row.seq };
+}
 
 export const useStore = create<State>((set, get) => ({
   user: null,
@@ -58,10 +127,12 @@ export const useStore = create<State>((set, get) => ({
   transcripts: {},
   routines: {},
   computer: null,
+  recentActivity: [],
+  activitySeen: {},
   connectionsVersion: 0,
   sseConnected: false,
-  detailsOpen: lsGet(LS_DETAILS) !== '0',
-  sidebarCollapsed: lsGet(LS_SIDEBAR) === '1',
+  // Closed by default (Teams): the conversation takes the full width until asked otherwise.
+  detailsOpen: lsGet(LS_DETAILS) === '1',
   modal: null,
   viewerOpen: false,
   viewerMode: 'watch',
@@ -145,12 +216,64 @@ export const useStore = create<State>((set, get) => ({
         return;
       case 'rows':
         s.upsertRows(ev.botId, ev.generation, ev.rows);
+        // Fold the same batch into the cross-bot feed. A row we already showed is only
+        // replaced when its updatedSeq moved on, so streaming rewrites never duplicate.
+        set((st) => {
+          const seen = { ...st.activitySeen };
+          const fresh: ActivityItem[] = [];
+          for (const r of ev.rows) {
+            const key = `row:${r.botId}:${r.seq}`;
+            const shown = seen[key];
+            if (shown !== undefined && shown >= r.updatedSeq) continue;
+            const item = activityFromRow(r, botNameFor(st.bots, r.botId));
+            if (!item) continue;
+            seen[key] = r.updatedSeq;
+            fresh.push(item);
+          }
+          if (fresh.length === 0) return {};
+          return { recentActivity: mergeActivity(st.recentActivity, fresh), activitySeen: pruneSeen(seen) };
+        });
         return;
       case 'cleared':
-        set((st) => ({ transcripts: { ...st.transcripts, [ev.botId]: { generation: ev.generation, bySeq: {}, loaded: true } } }));
+        set((st) => ({
+          transcripts: { ...st.transcripts, [ev.botId]: { generation: ev.generation, bySeq: {}, loaded: true } },
+          // Rows are gone, so their feed entries would open an empty chat.
+          recentActivity: st.recentActivity.filter((a) => a.botId !== ev.botId),
+        }));
         return;
-      case 'live':
-        set((st) => ({ live: { ...st.live, [ev.state.botId]: ev.state } }));
+      case 'live': {
+        const prev = s.live[ev.state.botId];
+        const state = ev.state;
+        set((st) => ({ live: { ...st.live, [state.botId]: state } }));
+        // A bot we have not heard from before counts as idle, so its first running tick is a flip.
+        if ((prev?.isRunning ?? false) === state.isRunning) return;
+        // One entry per turn: keyed by when the turn started, not by this tick.
+        const turn = state.isRunning ? (state.startedAt ?? Date.now()) : (prev?.startedAt ?? state.startedAt ?? Date.now());
+        const kind: ActivityItem['kind'] = state.isRunning ? 'working' : 'completed';
+        const key = `live:${state.botId}:${kind}:${turn}`;
+        set((st) => {
+          if (st.activitySeen[key] !== undefined) return {};
+          const detail = state.isRunning ? (state.activity?.detail ?? state.caption ?? null) : null;
+          const item: ActivityItem = {
+            botId: state.botId,
+            botName: botNameFor(st.bots, state.botId),
+            kind,
+            preview: detail ? activityPreview(detail) : state.isRunning ? 'Working on it' : 'Finished working',
+            at: Date.now(),
+          };
+          return {
+            recentActivity: mergeActivity(st.recentActivity, [item]),
+            activitySeen: pruneSeen({ ...st.activitySeen, [key]: turn }),
+          };
+        });
+        return;
+      }
+      case 'activity':
+        set((st) => ({
+          recentActivity: mergeActivity(st.recentActivity, [
+            { ...ev.item, botName: ev.item.botName || botNameFor(st.bots, ev.item.botId) },
+          ]),
+        }));
         return;
       case 'roster':
         s.loadBots().catch(console.error);
@@ -183,7 +306,6 @@ export const useStore = create<State>((set, get) => ({
 
   set(p) {
     if (p.detailsOpen !== undefined) lsSet(LS_DETAILS, p.detailsOpen ? '1' : '0');
-    if (p.sidebarCollapsed !== undefined) lsSet(LS_SIDEBAR, p.sidebarCollapsed ? '1' : '0');
     set(p);
   },
 }));

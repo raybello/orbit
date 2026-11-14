@@ -1,0 +1,71 @@
+/* =============================================================================
+ * Dark theme — Fluent 2 dark neutrals.
+ * Overrides the semantic tokens only; the legacy aliases in tokens.css follow.
+ * ========================================================================== */
+
+:root[data-theme='dark'] {
+  /* ── Background layers ── */
+  --color-bg-canvas:       #111111;
+  --color-bg-nav:          #1A1A1A;
+  --color-bg-nav-hover:    #252525;
+  --color-bg-nav-active:   #2F2F2F;
+  --color-bg-stage:        #1E1E1E;
+  --color-bg-elevated:     #2A2A2A;
+  --color-bg-overlay:      #242424;
+  --color-bg-disabled:     #2A2A2A;
+  --color-bg-scrim:        #000000B2;
+  --color-bg-scrim-heavy:  #000000F2;
+
+  /* ── Foreground ── */
+  --color-fg-default:      #E8E8E8;
+  --color-fg-subtle:       #ABABAB;
+  --color-fg-muted:        #767676;
+  --color-fg-disabled:     #4A4A4A;
+  --color-fg-on-accent:    #FFFFFF;
+
+  /* ── Border ── */
+  --color-border-default:  #383838;
+  --color-border-subtle:   #2D2D2D;
+  --color-border-stronger: #555555;
+  --color-border-focus:    var(--accent-400);
+
+  /* ── Accent ramp (lighter purple for dark) ── */
+  --accent-100: #1E1E3A;
+  --accent-200: #2A2A50;
+  --accent-300: #4A4AA0;
+  --accent-400: #7777D3;
+  --accent-500: #8080D7;
+  --accent-600: #9494DD;
+  --accent-700: #AAAAE3;
+  --accent-800: #BFBFEA;
+
+  /* ── Status ── */
+  --color-success:    #54B054;
+  --color-success-bg: #0F2A0F;
+  --color-warn:       #E5C365;
+  --color-warn-bg:    #2A1E00;
+  --color-danger:     #EF6868;
+  --color-danger-bg:  #2D0A0A;
+  --color-info:       #4CA6F7;
+  --color-info-bg:    #001833;
+
+  /* ── Message surface ── */
+  --color-msg-bg-hover: rgba(255, 255, 255, 0.04);
+  --color-msg-bg-focus: rgba(255, 255, 255, 0.07);
+
+  /* ── Nav rail ── */
+  --nav-rail-bg:           #111111;
+  --nav-rail-icon:         rgba(255, 255, 255, 0.68);
+
+  /* ── Legacy-only surfaces that need their own dark value ── */
+  --color-bg-elevated-hover: #333333;
+  --color-bg-secondary-active: rgba(255, 255, 255, 0.14);
+  --color-bg-subtle: rgba(255, 255, 255, 0.025);
+  --color-danger-hover: #FF7C7C;
+
+  /* ── Shadows are flat in dark: borders instead of elevation ── */
+  --shadow-nav:     0 0 0 1px var(--color-border-subtle);
+  --shadow-card:    0 0 0 1px var(--color-border-subtle);
+  --shadow-modal:   0 0 0 1px var(--color-border-default);
+  --shadow-popover: 0 0 0 1px var(--color-border-default);
+}

@@ -88,7 +88,7 @@ export default function SignInScreen() {
             borderBottomColor: tokens.colors.border,
           }}
         >
-          <Text style={{ color: tokens.colors.fgTertiary, fontSize: tokens.fontSizes.xs }}>SERVER</Text>
+          <Text style={{ color: tokens.colors.fgTertiary, fontSize: tokens.fontSizes.caption }}>SERVER</Text>
           <Text numberOfLines={1} style={{ color: tokens.colors.fgSecondary, fontSize: tokens.fontSizes.sm, flex: 1 }}>
             {apiBase ?? 'Looking up…'}
           </Text>
@@ -135,7 +135,7 @@ export default function SignInScreen() {
           style={{
             backgroundColor: tokens.colors.accent,
             opacity: canSubmit ? 1 : 0.4,
-            borderRadius: tokens.radii.composer,
+            borderRadius: tokens.radii.md,
             paddingVertical: tokens.space.lg,
             alignItems: 'center',
             marginTop: tokens.space.sm,
@@ -148,7 +148,7 @@ export default function SignInScreen() {
           )}
         </Pressable>
 
-        <Text style={{ color: tokens.colors.fgTertiary, fontSize: tokens.fontSizes.xs, lineHeight: 17 }}>
+        <Text style={{ color: tokens.colors.fgTertiary, fontSize: tokens.fontSizes.caption, lineHeight: 17 }}>
           The owner key is the one in your server&apos;s .env (SESSION_SECRET). With DEV_LOGIN=1 a dev server
           accepts your email alone.
         </Text>

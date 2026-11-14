@@ -1,0 +1,98 @@
+/* =============================================================================
+ * High contrast — Windows HC conventions: pure black/white, yellow accent,
+ * borders instead of elevation.
+ * ========================================================================== */
+
+:root[data-theme='hc'] {
+  --color-bg-canvas:       #000000;
+  --color-bg-nav:          #000000;
+  --color-bg-nav-hover:    #1AEBFF;
+  --color-bg-nav-active:   #1AEBFF;
+  --color-bg-stage:        #000000;
+  --color-bg-elevated:     #000000;
+  --color-bg-overlay:      #000000;
+  --color-bg-disabled:     #000000;
+  --color-bg-scrim:        #000000CC;
+  --color-bg-scrim-heavy:  #000000F2;
+
+  --color-fg-default:      #FFFFFF;
+  --color-fg-subtle:       #FFFFFF;
+  --color-fg-muted:        #A6A6A6;
+  --color-fg-disabled:     #A6A6A6;
+  --color-fg-on-accent:    #000000;
+
+  --color-border-default:  #FFFFFF;
+  --color-border-subtle:   #FFFFFF;
+  --color-border-stronger: #FFFFFF;
+  --color-border-focus:    #FFFF00;
+
+  --accent-100: #333300;
+  --accent-200: #666600;
+  --accent-300: #999900;
+  --accent-400: #CCCC00;
+  --accent-500: #FFFF00;
+  --accent-600: #FFE500;
+  --accent-700: #FFF566;
+  --accent-800: #FFFF99;
+
+  --color-success:    #00FF00;
+  --color-success-bg: #000000;
+  --color-warn:       #FFFF00;
+  --color-warn-bg:    #000000;
+  --color-danger:     #FF0000;
+  --color-danger-bg:  #000000;
+  --color-info:       #1AEBFF;
+  --color-info-bg:    #000000;
+
+  --color-msg-bg-hover: rgba(255, 255, 255, 0.12);
+  --color-msg-bg-focus: rgba(255, 255, 255, 0.18);
+
+  --nav-rail-bg:         #000000;
+  --nav-rail-icon:       #A6A6A6;
+  --nav-rail-icon-selected: #FFFFFF;
+  --nav-rail-active-bar: #FFFF00;
+
+  --color-bg-elevated-hover: #000000;
+  --color-bg-secondary-active: #000000;
+  --color-bg-subtle: transparent;
+  --color-danger-hover: #FF6666;
+
+  --shadow-nav:     0 0 0 1px #FFFFFF;
+  --shadow-card:    0 0 0 1px #FFFFFF;
+  --shadow-modal:   0 0 0 2px #FFFFFF;
+  --shadow-popover: 0 0 0 1px #FFFFFF;
+}
+
+/* HC: interactive states keep a visible outline instead of a soft fill. */
+:root[data-theme='hc'] .nav-rail__item {
+  outline: 1px solid transparent;
+  outline-offset: -1px;
+}
+:root[data-theme='hc'] .nav-rail__item:hover {
+  background: #1AEBFF;
+  color: #000000;
+}
+:root[data-theme='hc'] .nav-rail__item.is-active {
+  background: #000000;
+  color: #FFFFFF;
+  outline-color: #FFFFFF;
+}
+:root[data-theme='hc'] :focus-visible { outline: 2px solid #FFFF00; outline-offset: 1px; }
+
+/* HC: Windows highlight = cyan fill with black text, never white-on-cyan. */
+:root[data-theme='hc'] .bot-row:hover,
+:root[data-theme='hc'] .bot-row.is-selected,
+:root[data-theme='hc'] .chat-list__action:hover,
+:root[data-theme='hc'] .cfg-nav__item:hover,
+:root[data-theme='hc'] .cfg-nav__item.is-active,
+:root[data-theme='hc'] .menu__item:hover,
+:root[data-theme='hc'] .step__row.is-clickable:hover { background: #1AEBFF; color: #000000; }
+:root[data-theme='hc'] .bot-row:hover .bot-row__name,
+:root[data-theme='hc'] .bot-row:hover .bot-row__preview,
+:root[data-theme='hc'] .bot-row:hover .bot-row__time,
+:root[data-theme='hc'] .bot-row.is-selected .bot-row__name,
+:root[data-theme='hc'] .bot-row.is-selected .bot-row__preview,
+:root[data-theme='hc'] .bot-row.is-selected .bot-row__time,
+:root[data-theme='hc'] .menu__item:hover .menu__hint { color: #000000; }
+:root[data-theme='hc'] .bot-row__unread,
+:root[data-theme='hc'] .group-row__count { background: #FFFF00; color: #000000; }

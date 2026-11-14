@@ -1,0 +1,25 @@
+/* Preset: rose. Compound with the light/dark base via [data-preset]. */
+:root[data-preset='rose'] {
+  --accent-100: #FCE4E8;
+  --accent-200: #F8C7CF;
+  --accent-300: #F08A99;
+  --accent-400: #E85C70;
+  --accent-500: #E03A52;
+  --accent-600: #C02440;
+  --accent-700: #9C1730;
+  --accent-800: #6E0A1F;
+  --nav-rail-bg: #2D0611;
+}
+
+/* Dark keeps the hue but lifts the primary so it reads on a dark stage. */
+:root[data-theme='dark'][data-preset='rose'] {
+  --accent-100: #F5A6B1;
+  --accent-200: #2D0611;
+  --accent-300: #C02440;
+  --accent-400: #E03A52;
+  --accent-500: #E85C70;
+  --accent-600: #E85C70;
+  --accent-700: #F08A99;
+  --accent-800: #F8C7CF;
+  --nav-rail-bg: 1A030A;
+}
