@@ -17,14 +17,37 @@ const isPrimary = (botId: string) => (db.prepare('SELECT engine, is_primary FROM
   || Boolean((db.prepare('SELECT is_primary FROM bots WHERE id=?').get(botId) as any)?.is_primary);
 
 /** Where this bot's computer runs today. */
+/**
+ * The rule, with no database in the way, so it can be tested: a bot that already has a computer row
+ * keeps it; the shared machine wins for the primary bot when one is configured; the setting decides
+ * everything else (and `auto`/`docker` means a container per bot).
+ */
+export function decideComputerKind(input: {
+  existing?: ComputerKind;
+  isPrimary: boolean;
+  sharedComputerAvailable: boolean;
+  setting: string;
+}): ComputerKind {
+  // A bot parked on the shared machine when none is configured (an install that never had Orgo, or
+  // one that switched away from it) has no desktop; give it a container like every other bot.
+  if (input.existing === 'orgo' && !input.sharedComputerAvailable) return 'docker';
+  if (input.existing) return input.existing;
+  if (input.isPrimary && input.sharedComputerAvailable) return 'orgo';
+  if (input.setting === 'orgo') return 'orgo';
+  return 'docker';
+}
+
 export function computerKindFor(botId: string): ComputerKind {
   const row = getComputer(botId);
-  if (row) return row.kind;
-  if (isPrimary(botId)) return 'orgo';
-  if (env.computerKind === 'orgo') return 'orgo';
-  // 'docker' and 'auto': every bot but the primary one gets its own container. The primary bot's
-  // computer is somebody's live desktop and is never replaced.
-  return 'docker';
+  return decideComputerKind({
+    existing: row?.kind,
+    isPrimary: isPrimary(botId),
+    // With no shared computer configured there is nothing for the primary bot to stay on, so it
+    // gets a container too. Without this, a Docker-only install (the desktop app) shows its main
+    // bot a permanent "couldn't reach the screen", which reads as a broken app on first launch.
+    sharedComputerAvailable: Boolean(env.orgoComputerId) || env.localBox,
+    setting: env.computerKind,
+  });
 }
 
 export function providerFor(botId: string): ComputerProvider {

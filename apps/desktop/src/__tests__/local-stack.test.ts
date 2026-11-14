@@ -337,20 +337,31 @@ describe('LocalStackController: staging files', () => {
     assert.equal(fs.readFileSync(path.join(h.stackDir, 'docker-compose.yml'), 'utf8'), IMAGES_COMPOSE);
   });
 
-  test('a packaged build leaves an existing compose file alone', async () => {
-    const untouched = 'services:\n  api:\n    image: ghcr.io/raybello/orbit/app:v0.1.0\n';
-    const h = harness({
-      name: 'packaged-keeps',
-      packaged: true,
-      server: selfAwareServer('v0.1.0'),
-    });
+  test('an out-of-date compose file is replaced, so an upgrade actually reaches the stack', async () => {
+    const stale = 'services:\n  api:\n    image: ghcr.io/raybello/orbit/app:v0.0.9\n';
+    const h = harness({ name: 'packaged-upgrade', packaged: true, server: selfAwareServer('v0.1.0') });
     fs.mkdirSync(h.stackDir, { recursive: true });
-    fs.writeFileSync(path.join(h.stackDir, 'docker-compose.yml'), untouched);
+    fs.writeFileSync(path.join(h.stackDir, 'docker-compose.yml'), stale);
     fs.writeFileSync(path.join(h.stackDir, '.env.example'), IMAGES_ENV);
 
     const state = await h.controller.start();
     assert.equal(state.phase, 'ready', state.error);
-    assert.equal(fs.readFileSync(path.join(h.stackDir, 'docker-compose.yml'), 'utf8'), untouched);
+    assert.equal(fs.readFileSync(path.join(h.stackDir, 'docker-compose.yml'), 'utf8'), IMAGES_COMPOSE);
+  });
+
+  test('a compose file that already matches the bundle is left alone, and .env survives', async () => {
+    const h = harness({ name: 'packaged-keeps', packaged: true, server: selfAwareServer('v0.1.0') });
+    fs.mkdirSync(h.stackDir, { recursive: true });
+    fs.writeFileSync(path.join(h.stackDir, 'docker-compose.yml'), IMAGES_COMPOSE);
+    fs.writeFileSync(path.join(h.stackDir, '.env.example'), IMAGES_ENV);
+    fs.writeFileSync(path.join(h.stackDir, '.env'), `${IMAGES_ENV}SESSION_SECRET=keepme\n`);
+
+    const before = fs.statSync(path.join(h.stackDir, 'docker-compose.yml')).mtimeMs;
+    const state = await h.controller.start();
+    assert.equal(state.phase, 'ready', state.error);
+    assert.equal(fs.readFileSync(path.join(h.stackDir, 'docker-compose.yml'), 'utf8'), IMAGES_COMPOSE);
+    assert.equal(fs.statSync(path.join(h.stackDir, 'docker-compose.yml')).mtimeMs, before);
+    assert.match(fs.readFileSync(path.join(h.stackDir, '.env'), 'utf8'), /SESSION_SECRET=keepme/);
   });
 
   test('prepareEnvFile creates .env from the example before anything starts', () => {

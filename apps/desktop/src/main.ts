@@ -146,7 +146,7 @@ function openSetupWindow(): void {
   setupWindow.on('closed', () => {
     setupWindow = null;
     // Closing setup on first run without saving means there is nothing to open.
-    if (!mainWindow && !booted) app.quit();
+    if (!mainWindow && !booted) quitApp('setup window closed before anything was saved');
   });
   void setupWindow.loadFile(path.join(here, 'setup.html'));
 }
@@ -410,11 +410,13 @@ async function startLocalStackOrExplain(): Promise<string | null> {
         'You can also connect to an Orbit server that is already running elsewhere.',
       buttons: ['Open Docker download', 'Choose another server', 'Quit'],
       defaultId: 0,
-      cancelId: 2,
+      // Dismissing a dialog (Escape, closing it) reports cancelId: it must never mean "quit the app".
+      cancelId: 1,
     });
+    log.warn(`docker-missing dialog answered ${response}`);
     if (response === 0) await openExternalSafely('https://www.docker.com/products/docker-desktop/');
     if (response === 1) openSetupWindow();
-    else app.quit();
+    else quitApp('docker is missing');
     return null;
   }
 
@@ -425,11 +427,12 @@ async function startLocalStackOrExplain(): Promise<string | null> {
       detail: state.error ?? 'Start Docker Desktop, then try again.',
       buttons: ['Try again', 'Choose another server', 'Quit'],
       defaultId: 0,
-      cancelId: 2,
+      cancelId: 1,
     });
+    log.warn(`docker-not-running dialog answered ${response}`);
     if (response === 0) return startLocalStackOrExplain();
     if (response === 1) openSetupWindow();
-    else app.quit();
+    else quitApp('docker is not running');
     return null;
   }
 
@@ -439,7 +442,7 @@ async function startLocalStackOrExplain(): Promise<string | null> {
     detail: `${native ? describeNativeState(state) : describeStackState(state)}\n\n${state.error ?? ''}`.trim(),
     buttons: ['Show details', 'Choose another server', 'Quit'],
     defaultId: 0,
-    cancelId: 2,
+    cancelId: 1,
   });
   if (response === 0) {
     await dialog.showMessageBox({
@@ -449,7 +452,7 @@ async function startLocalStackOrExplain(): Promise<string | null> {
     });
   }
   if (response === 1) openSetupWindow();
-  else app.quit();
+  else quitApp(`stack did not start (${state.phase})`);
   return null;
 }
 
@@ -488,6 +491,15 @@ function mirrorHermesKey(): void {
   } catch (err) {
     log.warn('could not mirror HERMES_KEY into the stack env before starting', err);
   }
+}
+
+/**
+ * Quitting is a product decision, so it says why in the log. Every silent exit from this app has
+ * cost an hour of guessing at a stack that was working perfectly.
+ */
+function quitApp(reason: string): void {
+  log.warn(`quitting: ${reason}`);
+  app.quit();
 }
 
 /**
@@ -860,13 +872,22 @@ async function runSmokeTest(): Promise<void> {
 
 // ------------------------------------------------------------------ lifecycle
 
+// A main-process error used to mean a silent exit with code 0 and one line of log at most. Say what
+// happened, and stay alive when the failure is recoverable (a single bad request must not end the app).
+process.on('uncaughtException', (err) => {
+  log.error('uncaught exception in the main process', err);
+});
+process.on('unhandledRejection', (reason) => {
+  log.error('unhandled rejection in the main process', reason);
+});
+
 // A second profile in one machine (the smoke harness, a test run, a support check) must not
 // fight the running app for the single-instance lock, which is keyed on userData.
 const userDataOverride = process.env.ORBIT_USER_DATA_DIR?.trim();
 if (userDataOverride) app.setPath('userData', path.resolve(userDataOverride));
 
 if (!app.requestSingleInstanceLock()) {
-  app.quit();
+  quitApp('another Orbit instance holds the single-instance lock');
 } else {
   app.on('second-instance', () => {
     if (mainWindow && !mainWindow.isDestroyed()) {
@@ -911,7 +932,7 @@ if (!app.requestSingleInstanceLock()) {
   app.on('window-all-closed', () => {
     // The local stack keeps running (containers survive a quit on purpose: Stop Local
     // Stack is the explicit action). macOS keeps the app in the dock.
-    if (process.platform !== 'darwin') app.quit();
+    if (process.platform !== 'darwin') quitApp('all windows closed (non-macOS)');
   });
 
   app.on('before-quit', () => {

@@ -257,17 +257,36 @@ export class LocalStackController {
   /**
    * Should an existing file in the stack dir be replaced by the bundled one?
    *
-   * Only in one case: a dev profile that already has the source-build compose file from an
-   * earlier launch. It can never start (its build context points outside the stack dir), so
-   * leaving it would keep the fix from reaching anyone who already tried. Packaged stacks
-   * and every other file are left exactly as the user has them.
+   * Two cases, both about shipping a fix to an install that already ran:
+   *   1. a dev profile still holding the source-build compose file from an earlier launch — it can
+   *      never start (its build context points outside the stack dir);
+   *   2. any app whose bundled compose file has changed since it was staged (a new service, a
+   *      healthcheck, a fixed env default). Upgrades otherwise never reach existing stacks.
+   * `.env` is never touched, so generated secrets and the user's edits survive.
    */
   private stageOverStale(destination: string, target: string): boolean {
-    if (this.opts.packaged || target !== 'docker-compose.yml') return false;
+    if (target !== 'docker-compose.yml') return false;
     try {
-      return SOURCE_BUILD_CONTEXT.test(fs.readFileSync(destination, 'utf8'));
+      const staged = fs.readFileSync(destination, 'utf8');
+      if (!this.opts.packaged && SOURCE_BUILD_CONTEXT.test(staged)) return true;
+      const bundled = this.bundledCompose();
+      return Boolean(bundled) && bundled !== staged;
     } catch {
       return false;
+    }
+  }
+
+  /** The compose file this build ships, for comparison with the staged copy. */
+  private bundledCompose(): string | null {
+    const resources = this.resourceDir();
+    const source = STACK_FILES.find((f) => f.target === 'docker-compose.yml')
+      ?.candidates.map((name) => path.join(resources, name))
+      .find((file) => fs.existsSync(file));
+    if (!source) return null;
+    try {
+      return fs.readFileSync(source, 'utf8');
+    } catch {
+      return null;
     }
   }
 
