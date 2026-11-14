@@ -44,6 +44,14 @@ export interface LocalVoiceStatus {
 
 export interface LocalPreview { pcm: Int16Array; rate: number }
 
+export interface LocalSession {
+  callId: string;
+  /** Rate the session expects on the socket, 16 000 Hz mono PCM16. */
+  sampleRate: number;
+  /** Rate the server synthesizes replies at (Piper lessac-medium: 22 050). */
+  ttsSampleRate: number;
+}
+
 /** Piper lessac-medium speaks at 22 050 Hz; the server reports the real rate in `X-Audio-Rate`. */
 export const LOCAL_TTS_RATE = 22050;
 
@@ -79,6 +87,22 @@ function downloadLocalModels(kind?: 'stt' | 'tts' | 'vad'): Promise<{ started: b
 }
 
 let optionsPromise: Promise<VoiceOptions> | null = null;
+
+/**
+ * `POST /api/voice/local/session` opens the streaming session; the socket URL is derived from it.
+ * The server always reports both rates, but keep the documented defaults if a field is missing.
+ */
+export async function startLocalSession(botId: string): Promise<LocalSession> {
+  const s = await post<{ callId?: unknown; sampleRate?: unknown; ttsSampleRate?: unknown }>('/local/session', { botId });
+  if (typeof s?.callId !== 'string' || !s.callId) throw new Error('Local voice session was not created');
+  const rate = Number(s.sampleRate);
+  const tts = Number(s.ttsSampleRate);
+  return {
+    callId: s.callId,
+    sampleRate: Number.isFinite(rate) && rate > 0 ? Math.round(rate) : 16000,
+    ttsSampleRate: Number.isFinite(tts) && tts > 0 ? Math.round(tts) : LOCAL_TTS_RATE,
+  };
+}
 
 export const voiceApi = {
   options: () => (optionsPromise ??= fetch('/api/voice/options', { credentials: 'include' }).then((r) => {

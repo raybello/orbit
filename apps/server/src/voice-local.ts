@@ -10,9 +10,11 @@
  */
 import { Hono } from 'hono';
 import { requireUser, type AuthVars } from './lib/auth.js';
+import { newId } from './lib/ids.js';
 import { getBotRow } from './store.js';
 import * as models from './voice-models.js';
 import * as runtime from './voice-runtime.js';
+import { CALL_SAMPLE_RATE, CALL_TTS_SAMPLE_RATE, createLocalCall } from './voice-local-session.js';
 
 export const localVoiceApi = new Hono<AuthVars>();
 
@@ -157,4 +159,27 @@ localVoiceApi.post('/models/download', async (c) => {
   const started = kind ? before[kind] !== 'ready' : models.VOICE_KINDS.some((k) => before[k] !== 'ready');
   if (started) void models.ensureModels(kind); // fire and forget: state is polled from /status
   return c.json({ started, state: models.modelStates() });
+});
+
+/**
+ * Mint a call id for a local voice call. The browser then opens
+ * `ws(s)://<host>/api/voice/local/call/<callId>` (see attachLocalCallRelay) and the session is
+ * claimed by that upgrade, so an id that is never used is swept after five minutes.
+ *
+ * The rates are the honest ones: the microphone side is resampled to 16 kHz by the client, the
+ * voice is Piper lessac-medium at 22 050 Hz and is never resampled on the way out.
+ */
+localVoiceApi.post('/session', async (c) => {
+  const user = c.get('user');
+  const p = await c.req.json<{ botId?: string }>().catch(() => ({} as { botId?: string }));
+  const bot = ownBot(user.id, p.botId);
+  if (!bot) return c.json({ error: 'not found' }, 404);
+
+  const info = runtime.runtimeInfo();
+  if (!info.addon) return unavailable(c);
+  if (!models.modelsReady()) return missingModels(c);
+
+  const callId = newId('call');
+  createLocalCall(callId, bot.id);
+  return c.json({ callId, sampleRate: CALL_SAMPLE_RATE, ttsSampleRate: CALL_TTS_SAMPLE_RATE });
 });

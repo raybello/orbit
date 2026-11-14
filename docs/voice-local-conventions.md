@@ -150,3 +150,112 @@ pnpm --filter @orbit/web test
 Budget assertions (server test): STT first partial < 300 ms, STT real-time factor ≥ 10×, TTS first
 audio < 400 ms, TTS real-time factor ≥ 5×, transcript similarity ≥ threshold per fixture. Print the
 measured value in the assertion message so a regression is diagnosable from CI output alone.
+
+## Phase 2 addendum — the local call session
+
+Phase 1 landed as commit `0122046` (141 server tests green, HTTP surface verified live). Phase 2 adds
+the streaming call path. Rules from above still hold; this section only adds what is new.
+
+### Server: `apps/server/src/voice-local-session.ts`
+
+```ts
+export interface LocalCallDeps {
+  /** Injected in tests: turns a final transcript into the bot's spoken reply. */
+  relay?: (text: string) => Promise<string>;
+  synthesize?: (text: string) => { pcm: Int16Array; rate: number };
+  onEvent?: (e: LocalCallEvent) => void;
+}
+export type LocalCallEvent =
+  | { type: 'ready'; ttsSampleRate: number }
+  | { type: 'transcript'; text: string; final: boolean }
+  | { type: 'thinking' }
+  | { type: 'speaking'; on: boolean }
+  | { type: 'done' }
+  | { type: 'error'; message: string }
+  | { type: 'end' };
+
+export class LocalCallSession {
+  constructor(opts: { callId: string; botId: string; deps?: LocalCallDeps });
+  /** 16 kHz mono PCM16, any chunk size; VAD runs on 32 ms windows (512 samples). */
+  accept(chunk: Int16Array): void;
+  setMuted(on: boolean): void;
+  close(): void;
+}
+export function createLocalCall(callId: string, botId: string): LocalCallSession;
+export function takeLocalCall(callId: string): LocalCallSession | undefined;
+export function attachLocalCallRelay(server: import('node:http').Server): void;
+```
+
+- `attachLocalCallRelay` mirrors `attachVncRelay` in `vnc.ts`: `WebSocketServer({ noServer: true })`,
+  `server.on('upgrade')`, path `^/api/voice/local/call/([^/]+)$`, auth from the cookie header or
+  `?token=` (same helpers `userFromCookieHeader` / `userFromToken`), 401 via a raw socket write when
+  unauthenticated, `takeLocalCall` for an unknown call id. The **parent** adds the one
+  `attachLocalCallRelay(server)` line to `index.ts` after `attachVncRelay` — do not edit `index.ts`.
+- Default relay (production path): `appendRow(bot.id, 'message', {type:'message', role:'user', text, from:{kind:'voice', id:callId, name:'Voice call'}})`,
+  then `enqueue(bot.id, { type: 'user', text: <the same '[Voice call: …] …' prompt voice.ts builds> })`,
+  then poll `rows` every 150 ms (max 120 s) for a new `kind='message'`, `role='assistant'`,
+  `!streaming` row with a non-empty `body.text`; return it. Return '' on timeout (the session then
+  sends `{type:'error'}` and ends).
+- `VOICE_CALL_RELAY=echo` makes the default relay return the user's text uppercased, so an end-to-end
+  socket test runs with no agent and no provider key. That env switch exists for tests/diagnostics
+  only and must be documented in a comment.
+- Reply → TTS: split on sentence boundaries (`/(?<=[.!?])\s+/`), cap each sentence at 240 chars,
+  synthesize sequentially with `maxNumSentences: 1`, and emit audio as soon as each sentence is ready
+  (100 ms PCM frames, 2205 samples at 22 050 Hz). `speaking:true` before the first frame,
+  `speaking:false` when the queue drains.
+- Barge-in: if VAD reports speech while `speaking`, emit `speaking:false`, drop the remaining
+  sentences, and keep the new utterance's transcript flowing. No queued audio may play after it.
+- Mute drops input before VAD; it never stops the reply that is playing.
+
+### Browser: `apps/web/src/voice/local-call.ts`
+
+- `startLocalCall(botId)` → `POST /api/voice/local/session` → open
+  `ws(s)://<host>/api/voice/local/call/<callId>` (cookies are sent automatically).
+- Capture with the existing `MicCapture` (it actually yields **40 ms Int16 frames at 24 kHz**, not the
+  20 ms Float32 the first draft of this doc claimed), convert to Float32, resample to 16 kHz, convert to
+  PCM16, send binary frames. Muted → send nothing.
+- Incoming binary → `PcmPlayer.push(pcm, ttsSampleRate)`; JSON → the existing `useVoice` zustand store
+  (`transcript` grows captions, `thinking`/`speaking`/`listening` flags, `done`, `error`, `end`).
+- `apps/web/src/voice/call.ts` dispatches: `localStatus()` reports `available` → `startLocalCall`,
+  otherwise today's `VoiceCall` unchanged. `endCall()` must close whichever one is live.
+- The resampler must be a pure exported function (`resampleTo16k(samples, rate)`) with a unit test in
+  `apps/web/src/lib/voice-resample.test.ts` (length, rate identity at 16 kHz, a 48 kHz sine keeps its
+  amplitude, DC preserved).
+
+### Phase 2 verification (parent)
+
+```bash
+# unit + socket tests, real models
+VOICE_MODELS_DIR=$HOME/.hermes/cache/voice-models pnpm --filter @orbit/server test
+# live: boot a scratch server with VOICE_CALL_RELAY=echo, stream en-command.wav over a real socket,
+# assert transcript + non-silent PCM back at 22050 Hz
+```
+
+## Phase 2 as built — measured, and what changed
+
+Commit `0122046` plus the phase-2 work. Numbers below are from the parent's own runs on this Mac, not
+from the agents' reports.
+
+| What | Measured |
+| --- | --- |
+| Live socket gate (`en-command.wav` streamed as 20 ms frames, echo relay) | partials within ~1.05 s of the first frame, final transcript complete, 21–23 binary frames (2.0–2.3 s at 22 050 Hz, peak 0.64–0.70), `done` after `speaking:false` |
+| Returned call audio re-transcribed through `/local/stt` | "…ON THE KITCHEN LIGHTS AND TELL ME THE WEATHER" — the reply really is speech |
+| Server suite | 148 tests, 148 pass, stable across three consecutive runs |
+| Web suite | 22 `tsx --test` + 59 vitest, all pass |
+| UI (built bundle, real server) | `On-device · Ready`, Preview fires only `/api/voice/local/preview`; fresh install shows `Not downloaded (0 of 263 MB)` + a Download button that fetched all 250 files to `Ready` in ~20 s |
+
+Two tuning decisions made at the gate, both after measurements:
+
+- **Endpoint backstop 500 ms** (`END_SILENCE_MS`, was 1200): with 1.2 s the caller waited ~1.2 s of
+  silence plus the VAD's own 350 ms before a turn closed. At 500 ms an utterance fed 0.9 s of trailing
+  silence endpoints with a complete transcript, so this is the better conversational trade.
+- **Barge-in accuracy is asserted on real speech, not on the synthetic clip.** The `say`-generated
+  command clip sits exactly on this model's decision boundary: 0.3 s of lead padding transcribes it as
+  "SWITCH ON THE KITCHEN…", 0.5 s as "SWITCH ON THE KIDS…". Gating on that would make the suite depend
+  on how a TTS voice imitates a person, so the interrupted utterance in `voice-local-session.test.ts`
+  is the LibriSpeech clip (similarity 0.946 measured) and the synthetic clip keeps its 0.9 gate in the
+  batch path, where the padding is fixed and it measures 1.000.
+
+Not exercised, and why: the production relay (`enqueue` → managed gateway → assistant row) needs a real
+Hermes gateway. Everything up to it is covered by the echo relay plus a simulated agent turn, and the
+`/local/session` → WS → TTS path is proven end to end here.

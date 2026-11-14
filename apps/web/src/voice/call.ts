@@ -6,6 +6,7 @@ import type { Row } from '@orbit/contracts';
 import { sortedRows, useStore } from '../store';
 import { voiceApi, type VoiceSession } from './api';
 import { MicCapture, PcmPlayer, base64ToPcm, createAudioContext, micErrorMessage, openMic, pcmToBase64 } from './audio';
+import { endLocalCall, isLocalCallActive, localLevels, setLocalMuted, startLocalCall } from './local-call';
 
 export interface Caption { id: string; role: 'user' | 'assistant'; text: string; final: boolean }
 
@@ -38,22 +39,73 @@ const setV = (p: Partial<VoiceState>) => useVoice.setState(p);
 
 let current: VoiceCall | null = null;
 
-/** Start a call with a bot. Must be called from a user gesture (click) so audio can start. */
-export function startCall(botId: string) {
-  if (current && !current.ended) {
-    if (current.botId === botId) return;
-    current.end();
+/**
+ * `null` until asked: whether this server can run a call on-device. Read from the same cached
+ * `/local/status` the settings panel polls, so it costs one request per page and never throws.
+ */
+let localSupport: boolean | null = null;
+let localCheckedAt = 0;
+
+async function probeLocal(refresh = false): Promise<boolean> {
+  if (!refresh && localSupport !== null) return localSupport;
+  try {
+    localSupport = (await voiceApi.localStatus(refresh)).available;
+  } catch {
+    localSupport = false; // no local endpoints (older server, offline): cloud only
   }
+  localCheckedAt = Date.now();
+  return localSupport;
+}
+
+/**
+ * Models can finish downloading mid-page; re-probe (throttled) so the next call goes on-device
+ * instead of staying on the cloud answer cached before the download.
+ */
+function reconsiderLocal() {
+  if (localSupport !== false || Date.now() - localCheckedAt < 15_000) return;
+  void probeLocal(true);
+}
+
+function startCloud(botId: string) {
   current = new VoiceCall(botId);
   void current.start();
 }
 
-export function endCall() { current?.end(); }
-export function toggleMute() { current?.setMuted(!useVoice.getState().muted); }
-export function callLevels(): { out: number; mic: number } {
-  return current && !current.ended ? { out: current.player.level(), mic: current.micLevel() } : { out: 0, mic: 0 };
+/** Start a call with a bot. Must be called from a user gesture (click) so audio can start. */
+export function startCall(botId: string) {
+  if ((current && !current.ended) || isLocalCallActive()) {
+    if ((current?.botId ?? useVoice.getState().botId) === botId) return;
+    endCall();
+  }
+  if (localSupport === true) { startLocalCall(botId); return; }
+  if (localSupport === false) { startCloud(botId); reconsiderLocal(); return; }
+  // First call in this page: the status probe decides. It is cached from here on, so every later
+  // click dispatches synchronously and keeps the click's user activation for the AudioContext.
+  void probeLocal().then((local) => {
+    if ((current && !current.ended) || isLocalCallActive()) return; // a call already took over
+    if (local) startLocalCall(botId);
+    else startCloud(botId);
+  });
 }
-export const isCallActive = (s: VoiceState = useVoice.getState()) => s.status === 'connecting' || s.status === 'live';
+
+export function endCall() {
+  current?.end();
+  endLocalCall();
+}
+
+export function toggleMute() {
+  const on = !useVoice.getState().muted;
+  if (current && !current.ended) current.setMuted(on);
+  else setLocalMuted(on);
+}
+
+export function callLevels(): { out: number; mic: number } {
+  if (!current || current.ended) return localLevels();
+  return { out: current.player.level(), mic: current.micLevel() };
+}
+
+export const isCallActive = (s: VoiceState = useVoice.getState()) =>
+  s.status === 'connecting' || s.status === 'live' || isLocalCallActive();
 
 type Json = Record<string, any>;
 
