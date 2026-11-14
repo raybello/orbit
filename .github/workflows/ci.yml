@@ -35,8 +35,8 @@ jobs:
       - name: Build packages and apps
         run: pnpm run build
 
-      - name: Desktop unit tests
-        run: pnpm --filter @orbit/desktop run test
+      - name: Unit tests (web + desktop)
+        run: pnpm run test
 
       - name: Server API smoke test
         run: node scripts/smoke-server.mjs

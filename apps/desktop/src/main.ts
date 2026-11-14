@@ -746,6 +746,49 @@ async function runSmokeTest(): Promise<void> {
     });
     console.log(`[orbit-smoke] ${JSON.stringify(report)}`);
 
+    /**
+     * The renderer check: load the app itself (ORBIT_SMOKE_APP_URL, a running Orbit server)
+     * and prove the web build does not draw window dots inside the desktop shell. The OS
+     * draws them here, so a second drawn set is exactly the "duplicated controls" bug.
+     */
+    const appUrl = process.env.ORBIT_SMOKE_APP_URL?.trim();
+    if (appUrl) {
+      const appWin = new BrowserWindow({
+        show: false,
+        width: 1280,
+        height: 860,
+        webPreferences: {
+          contextIsolation: true,
+          nodeIntegration: false,
+          sandbox: true,
+          partition: 'orbit-smoke-app',
+        },
+      });
+      try {
+        await appWin.loadURL(appUrl);
+        // Let the shell paint (the app renders after its first API round-trip).
+        await new Promise((r) => setTimeout(r, 1500));
+        const chrome = (await appWin.webContents.executeJavaScript(`(() => ({
+          url: location.href,
+          userAgentHasElectron: /Electron\\//.test(navigator.userAgent),
+          drawnWindowDots: document.querySelectorAll('.traffic-lights').length,
+          shell: document.querySelector('.app') ? 'app' : document.querySelector('.signin') ? 'signin' : 'unknown',
+        }))()`)) as Record<string, unknown>;
+        console.log(`[orbit-smoke] app ${JSON.stringify(chrome)}`);
+        if (chrome.drawnWindowDots !== 0) {
+          throw new Error(
+            `the web build drew ${chrome.drawnWindowDots} window-dot group(s) inside the desktop shell; ` +
+              'the OS controls are already there (see hasNativeWindowControls in apps/web).',
+          );
+        }
+        if (chrome.userAgentHasElectron !== true) {
+          throw new Error('the smoke window did not present an Electron user agent');
+        }
+      } finally {
+        appWin.destroy();
+      }
+    }
+
     // Optional visual check: composite the window invisibly, then save what it drew.
     const shotPath = process.env.ORBIT_SMOKE_SCREENSHOT;
     if (shotPath) {
@@ -801,6 +844,11 @@ async function runSmokeTest(): Promise<void> {
 }
 
 // ------------------------------------------------------------------ lifecycle
+
+// A second profile in one machine (the smoke harness, a test run, a support check) must not
+// fight the running app for the single-instance lock, which is keyed on userData.
+const userDataOverride = process.env.ORBIT_USER_DATA_DIR?.trim();
+if (userDataOverride) app.setPath('userData', path.resolve(userDataOverride));
 
 if (!app.requestSingleInstanceLock()) {
   app.quit();

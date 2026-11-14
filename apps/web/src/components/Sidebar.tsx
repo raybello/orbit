@@ -7,13 +7,19 @@ import { displayName, useStore } from '../store';
 import { api } from '../lib/api';
 import { Icon } from './Icon';
 import { Menu } from './Menu';
+import { hasNativeWindowControls } from '../lib/desktop-shell';
 
 function initials(name: string) {
   const parts = name.trim().split(/\s+/).filter(Boolean);
   return ((parts[0]?.[0] ?? '') + (parts.length > 1 ? parts[parts.length - 1][0] : '')).toUpperCase() || '?';
 }
 
+/**
+ * The window dots. A browser gets our drawn ones; the desktop app already has the real
+ * controls over the same corner (hidden inset title bar), so drawing ours again shows two.
+ */
 export function TrafficLights() {
+  if (hasNativeWindowControls()) return null;
   return (
     <div className="traffic-lights" aria-hidden>
       <span style={{ background: '#FF5F57' }} />
