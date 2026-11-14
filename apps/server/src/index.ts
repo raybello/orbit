@@ -10,6 +10,7 @@ import { api } from './routes.js';
 import { stackTokenMatches } from './lib/stack.js';
 import { attachVncRelay } from './vnc.js';
 import { attachLocalCallRelay } from './voice-local-session.js';
+import { warmVoiceIfReady } from './voice-local.js';
 import { initRoutines } from './routines.js';
 import { initTriggers } from './triggers.js';
 import { initProactive } from './proactive.js';
@@ -80,6 +81,8 @@ if (fs.existsSync(webDist)) {
 const server = serve({ fetch: app.fetch, port: env.port }, (info) => console.log(`[grokbot] server on http://localhost:${info.port}`));
 attachVncRelay(server as unknown as Server);
 attachLocalCallRelay(server as unknown as Server);
+// On-device voice, when this host has the models: loading the engines now keeps the first call fast.
+void warmVoiceIfReady();
 // GROKBOT_NO_SCHEDULER=1 for extra dev/test servers sharing a database copy, so routines and triggers don't fire twice.
 if (process.env.GROKBOT_NO_SCHEDULER !== '1') {
   initRoutines(enqueue);

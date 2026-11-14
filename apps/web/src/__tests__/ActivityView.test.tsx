@@ -28,7 +28,7 @@ const bot = (id: string, name: string): Bot => ({
   effort: 'medium',
   voice: '',
   voiceSpeed: 1,
-  voiceLanguage: 'auto',
+  voiceLanguage: 'auto', voiceProvider: 'cloud' as const, voiceModel: 'piper-lessac-medium',
   model: null,
   provider: null,
   generation: 1,

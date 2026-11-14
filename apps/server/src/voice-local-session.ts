@@ -19,7 +19,7 @@ import type { IncomingMessage, Server } from 'node:http';
 import { WebSocket, WebSocketServer } from 'ws';
 import { userFromCookieHeader, userFromToken } from './lib/auth.js';
 import { getBotRow } from './store.js';
-import { LEAD_PAD_S, floatToPcm16, getRecognizer, getVad, synthesize } from './voice-runtime.js';
+import { LEAD_PAD_S, floatToPcm16, getRecognizer, getVad, synthesize, ttsSampleRate } from './voice-runtime.js';
 import type { Vad, OnlineRecognizer, OnlineStream } from 'sherpa-onnx-node';
 
 /** Audio the client sends: 16 kHz mono PCM16 (the client resamples before it hits the wire). */
@@ -30,6 +30,9 @@ export const CALL_TTS_SAMPLE_RATE = 22050;
 /** Silero VAD window: 32 ms at 16 kHz. */
 const WINDOW = 512;
 const WINDOW_MS = (WINDOW / CALL_SAMPLE_RATE) * 1000;
+/** The recognizer's feature hop: 10 ms at 16 kHz. The onset search and the leading silence are both
+ * cut on this grid, so the utterance audio sits on the same frame grid the batch path gives it. */
+const ONSET_BLOCK = 160;
 /** Partials are pushed at most this often; the recognizer itself is faster than a caption can read. */
 const PARTIAL_MS = 100;
 /** How much audio before the VAD's first positive we keep, so the onset of the first word survives
@@ -40,7 +43,7 @@ const PREROLL_MS = 1500;
 const END_SILENCE_MS = 500;
 /** Audio out: 100 ms frames at 22 050 Hz. Paced in real time so barge-in can actually stop it. */
 const FRAME_MS = 100;
-const FRAME_SAMPLES = Math.round((CALL_TTS_SAMPLE_RATE * FRAME_MS) / 1000); // 2205
+const FRAME_SAMPLES = Math.round((CALL_TTS_SAMPLE_RATE * FRAME_MS) / 1000); // 2 205 at 22 050 Hz
 /** A sentence longer than this is cut at a word boundary before synthesis: Piper's prosody falls
  * apart on a 400-character "sentence", and the reply is meant to be spoken, not read. */
 const MAX_SENTENCE_CHARS = 240;
@@ -50,6 +53,47 @@ const UNCLAIMED_TTL_MS = 5 * 60_000;
 const RELAY_TIMEOUT_MS = 120_000;
 const RELAY_POLL_MS = 150;
 
+/**
+ * Conversational behaviour while a slow agent works. Measured on this machine: Piper's first audio
+ * for a two-word phrase lands 118–252 ms after the call, so a filler that starts this late is
+ * audible well inside the second after the transcript.
+ *
+ * Said if the agent has not answered shortly after the transcript.
+ */
+const FILLER_TEXT = 'One moment.';
+/** Said once if the agent is still working 20 s in. */
+const PROGRESS_TEXT = 'Still working on that.';
+/** Said at the hard deadline, after which the turn gives up and reports done. */
+const TIMEOUT_TEXT = "That's taking too long — I'll message you the answer.";
+/** The filler waits this long for the answer first: a reply faster than this never hears it, so a
+ * quick turn is not slowed down by a needless synthesise-and-play. */
+const FILLER_DELAY_MS = 400;
+/** One nudge, this long after the transcript. */
+const PROGRESS_MS = 20_000;
+/** Hard deadline for the agent, this long after the transcript. The default relay's own 120 s poll
+ * is the backstop behind it for the process, not for the caller. */
+const TURN_DEADLINE_MS = 90_000;
+
+/**
+ * Thresholds the tests drive directly, so the 20 s nudge and the 90 s deadline can be exercised in
+ * seconds rather than minutes. Production uses the defaults above; nothing on the wire changes.
+ */
+export interface LocalCallOptions {
+  /** Silence fed to the recognizer before an utterance's first speech block. Default 300 ms, the
+   * same lead the batch path applies (LEAD_PAD_S in voice-runtime.ts). */
+  leadPadMs?: number;
+  /** RMS a 10 ms block must exceed to count as speech when locating the onset in the preroll ring.
+   * Default 0.006: above a quiet room's floor (~0.002–0.004) and below the fixture's /s/ fricative
+   * (0.009–0.019), which is the quietest part of real speech here. */
+  speechRms?: number;
+  /** How long the agent gets before the filler is spoken. Default 400 ms. */
+  fillerDelayMs?: number;
+  /** How long the agent gets before the one progress nudge. Default 20 s. */
+  progressMs?: number;
+  /** How long the agent gets in total before the apology and done. Default 90 s. */
+  relayTimeoutMs?: number;
+}
+
 export interface LocalCallDeps {
   /** Injected in tests: turns a final transcript into the bot's spoken reply. */
   relay?: (text: string) => Promise<string>;
@@ -57,7 +101,7 @@ export interface LocalCallDeps {
    * Injected in tests. A synchronous `{ pcm, rate }` is honoured as-is, and so is a promise: the
    * production engine (voice-runtime.synthesize) is async, and callers must not have to lie about it.
    */
-  synthesize?: (text: string) => { pcm: Int16Array; rate: number } | Promise<{ pcm: Int16Array; rate: number }>;
+  synthesize?: (text: string, opts?: { model?: string }) => { pcm: Int16Array; rate: number } | Promise<{ pcm: Int16Array; rate: number }>;
   onEvent?: (e: LocalCallEvent) => void;
   /**
    * Binary frames are not control events: the 100 ms PCM16 frames that make up the bot's voice get
@@ -68,7 +112,7 @@ export interface LocalCallDeps {
 }
 
 export type LocalCallEvent =
-  | { type: 'ready'; ttsSampleRate: number }
+  | { type: 'ready'; ttsSampleRate: number; model?: string }
   | { type: 'transcript'; text: string; final: boolean }
   | { type: 'thinking' }
   | { type: 'speaking'; on: boolean }
@@ -102,6 +146,13 @@ interface Utterance {
   lastPartialText: string;
 }
 
+/** How a turn's wait for the agent ended. */
+type RelayOutcome =
+  | { kind: 'reply'; reply: string }
+  | { kind: 'failed'; error: unknown }
+  | { kind: 'timeout' }
+  | { kind: 'cancelled' };
+
 function toFloat(pcm: Int16Array): Float32Array {
   const out = new Float32Array(pcm.length);
   for (let i = 0; i < pcm.length; i++) out[i] = pcm[i] / 32768;
@@ -110,6 +161,38 @@ function toFloat(pcm: Int16Array): Float32Array {
 
 function errText(e: unknown): string {
   return String((e as any)?.message ?? e).slice(0, 300);
+}
+
+/** RMS of float samples in [-1, 1]; a block of digital silence is exactly 0. */
+function rmsOf(samples: Float32Array, from = 0, count = samples.length - from): number {
+  let energy = 0;
+  let n = 0;
+  for (let i = from; i < Math.min(from + count, samples.length); i++) {
+    energy += samples[i] * samples[i];
+    n++;
+  }
+  return n ? Math.sqrt(energy / n) : 0;
+}
+
+/** Where the utterance starts in the preroll ring: the first 32 ms window above the speech floor,
+ * then the first 10 ms block above it inside that window. */
+interface Onset {
+  /** Index into the ring of the window holding the onset. */
+  window: number;
+  /** Samples to skip at the start of that window (the quiet tail of it). */
+  skip: number;
+}
+
+function findOnset(windows: Float32Array[], threshold: number): Onset | null {
+  for (let i = 0; i < windows.length; i++) {
+    const window = windows[i];
+    if (rmsOf(window) <= threshold) continue;
+    for (let skip = 0; skip + ONSET_BLOCK <= window.length; skip += ONSET_BLOCK) {
+      if (rmsOf(window, skip, ONSET_BLOCK) > threshold) return { window: i, skip };
+    }
+    return { window: i, skip: 0 };
+  }
+  return null;
 }
 
 /**
@@ -136,6 +219,7 @@ export class LocalCallSession {
   readonly botId: string;
 
   private readonly deps: LocalCallDeps;
+  private readonly options: Required<LocalCallOptions>;
   private transport: Transport | null = null;
 
   private vad: Vad | null = null;
@@ -157,19 +241,43 @@ export class LocalCallSession {
   /** Bumped by barge-in and by every new turn: an older turn's audio queue sees the change and dies. */
   private turnGen = 0;
   private readonly wakers = new Set<() => void>();
+  /** Timers and waits that belong to the turn in flight; releasing the turn clears every one. */
+  private turnTimers = new Set<ReturnType<typeof setTimeout>>();
+  private turnWaits = new Set<() => void>();
+  /** Bumped when a cue ('One moment.', the nudge) is superseded: one that has not started is dropped. */
+  private cueToken = 0;
+  /** The cue currently playing, so the answer never interleaves with it. */
+  private cuePlaying: Promise<void> | null = null;
+  /** Set when the turn's wait for the agent ends: the filler must not start after that. */
+  private turnSettled = true;
 
-  constructor(opts: { callId: string; botId: string; deps?: LocalCallDeps }) {
+  /** On-device TTS model this call speaks with (the bot's `voice_model`). */
+  private readonly model: string;
+  /** Its native sample rate: 22 050 for Piper lessac, 24 000 for Kokoro. Never resampled. */
+  private readonly ttsRate: number;
+
+  constructor(opts: { callId: string; botId: string; model?: string; deps?: LocalCallDeps; options?: LocalCallOptions }) {
     this.callId = opts.callId;
     this.botId = opts.botId;
+    this.model = opts.model ?? 'piper-lessac-medium';
+    this.ttsRate = ttsSampleRate(this.model);
     this.deps = opts.deps ?? {};
+    this.options = {
+      leadPadMs: LEAD_PAD_S * 1000,
+      speechRms: 0.006,
+      fillerDelayMs: FILLER_DELAY_MS,
+      progressMs: PROGRESS_MS,
+      relayTimeoutMs: TURN_DEADLINE_MS,
+      ...opts.options,
+    };
     created.set(this, Date.now());
     binders.set(this, (transport) => {
       this.transport = transport;
       // A socket that attaches late still needs its first frame; the constructor's copy went to
       // whatever deps.onEvent it was given (in tests, the listener).
-      if (transport) transport.event({ type: 'ready', ttsSampleRate: CALL_TTS_SAMPLE_RATE });
+      if (transport) transport.event({ type: 'ready', ttsSampleRate: this.ttsRate, model: this.model });
     });
-    this.emit({ type: 'ready', ttsSampleRate: CALL_TTS_SAMPLE_RATE });
+    this.emit({ type: 'ready', ttsSampleRate: this.ttsRate, model: this.model });
   }
 
   /** 16 kHz mono PCM16, any chunk size; VAD runs on 32 ms windows (512 samples). */
@@ -200,6 +308,8 @@ export class LocalCallSession {
       this.emit({ type: 'speaking', on: false });
     }
     this.turnGen++;
+    this.cueToken++;
+    this.releaseTurn();
     this.wakeAll();
     this.chunks = [];
     this.pendingSamples = 0;
@@ -288,16 +398,40 @@ export class LocalCallSession {
   private async startUtterance(): Promise<void> {
     const recognizer = (this.recognizer ??= await getRecognizer());
     if (this.closed) return;
+    // The caller has started a new utterance: whatever the last turn was still waiting on (or
+    // still saying) is over. Barge-in covers the audible case; this covers a turn that is only
+    // waiting for the agent.
+    this.turnGen++;
+    this.cueToken++;
+    this.releaseTurn();
     const stream = recognizer.createStream();
-    // 0.3 s of leading silence: without it this model drops the first word ("Switch on the kitchen…"
-    // → "On the kitchen…"), the same padding the batch path in voice-runtime.ts applies. The preroll
-    // ring is fed after it, so the stream always starts with at least 0.3 s of silence.
-    stream.acceptWaveform({ samples: new Float32Array(Math.round(LEAD_PAD_S * CALL_SAMPLE_RATE)), sampleRate: CALL_SAMPLE_RATE });
-    for (const window of this.preroll) stream.acceptWaveform({ samples: window, sampleRate: CALL_SAMPLE_RATE });
+    const { lead, windows } = this.leadIn();
+    if (lead > 0) stream.acceptWaveform({ samples: new Float32Array(lead), sampleRate: CALL_SAMPLE_RATE });
+    for (const window of windows) stream.acceptWaveform({ samples: window, sampleRate: CALL_SAMPLE_RATE });
     this.preroll = [];
     this.prerollSamples = 0;
     this.decode(stream);
     this.utterance = { stream, silentMs: 0, lastPartialAt: 0, lastPartialText: '' };
+  }
+
+  /**
+   * Onset normalisation. This model's first word depends on how much silence the stream starts with
+   * — the synthetic fixture transcribes "SWITCH" at 0.3 s of lead and "ON THE KIDS" at 0.5 s, because
+   * the amount of silence shifts the chunk grid. Feeding a fixed pad plus however much preroll the
+   * caller happened to leave made the transcript vary with their pause before speaking, so the stream
+   * now always starts with the same thing: exactly the batch path's 0.3 s of silence, then the audio
+   * from the first window of speech in the preroll ring. Everything older is dropped.
+   *
+   * No onset found (a caller quieter than the speech floor) keeps the ring as it is: better to feed
+   * the audio than to invent a lead for something the recognizer may still hear.
+   */
+  private leadIn(): { lead: number; windows: Float32Array[] } {
+    const lead = Math.max(0, Math.round((this.options.leadPadMs / 1000) * CALL_SAMPLE_RATE));
+    const onset = findOnset(this.preroll, this.options.speechRms);
+    if (!onset) return { lead: 0, windows: this.preroll };
+    const windows = this.preroll.slice(onset.window);
+    if (onset.skip) windows[0] = windows[0].subarray(onset.skip);
+    return { lead, windows };
   }
 
   private feed(utterance: Utterance, window: Float32Array): void {
@@ -342,30 +476,216 @@ export class LocalCallSession {
 
   // ---------- turn ----------
 
+  /**
+   * One turn: the agent is asked, and while it works the caller hears something. Three clocks run
+   * against the relay — the filler (after fillerDelayMs), one progress nudge (after progressMs) and
+   * the hard deadline (after relayTimeoutMs) — and every one of them is dropped the moment the
+   * answer, a barge-in or a hang-up makes it pointless. Releasing the turn clears all of them, so a
+   * finished turn leaves no timer behind.
+   */
   private async respond(text: string): Promise<void> {
     const gen = ++this.turnGen;
+    this.releaseTurn();
+    this.cueToken++;
+    this.turnSettled = false;
     this.emit({ type: 'thinking' });
-    let reply: string;
-    try {
-      reply = await this.relay(text);
-    } catch (e) {
-      this.emit({ type: 'error', message: `relay failed: ${errText(e)}` });
+
+    const relayed = this.relay(text).then(
+      (reply) => ({ ok: true as const, reply }),
+      (error) => ({ ok: false as const, error }),
+    );
+
+    // A race, not a step: a reply faster than the filler's grace delay is spoken instead of it.
+    void this.filler(gen);
+    const outcome = await this.waitForRelay(relayed, gen);
+    if (this.closed || gen !== this.turnGen) return;
+
+    if (outcome.kind === 'cancelled') return;
+
+    if (outcome.kind === 'failed') {
+      this.emit({ type: 'error', message: `relay failed: ${errText(outcome.error)}` });
       this.close();
       return;
     }
-    if (this.closed || gen !== this.turnGen) return;
-    reply = String(reply ?? '').replace(/\s+/g, ' ').trim();
+
+    if (outcome.kind === 'timeout') {
+      // 90 s with no answer: say so, report the turn done and let go of everything. The default
+      // relay's own 120 s poll is the process-level backstop; its late resolve finds this turn
+      // finished and is ignored, as is any nudge still queued.
+      this.cueToken++;
+      await this.finishCue();
+      await this.speakCue(TIMEOUT_TEXT, gen);
+      if (this.closed || gen !== this.turnGen) return;
+      this.releaseTurn();
+      this.cueToken++;
+      this.emit({ type: 'done' });
+      return;
+    }
+
+    const reply = String(outcome.reply ?? '').replace(/\s+/g, ' ').trim();
     if (!reply) {
+      this.cueToken++;
       this.emit({ type: 'error', message: 'the bot did not answer' });
       this.close();
       return;
     }
+    // Whatever cue is audible finishes first (it is one short phrase); a cue that has not started
+    // is dropped by the token bump above, so the answer is never behind a needless 'One moment.'.
+    this.cueToken++;
+    await this.finishCue();
+    if (this.closed || gen !== this.turnGen) return;
     await this.speak(reply, gen);
     if (!this.closed && gen === this.turnGen) this.emit({ type: 'done' });
+    this.releaseTurn();
   }
 
   private relay(text: string): Promise<string> {
     return this.deps.relay ? this.deps.relay(text) : defaultRelay(this.botId, this.callId, text);
+  }
+
+  /**
+   * Wait for the agent, with the turn's two remaining clocks armed: one progress nudge at
+   * progressMs, and the hard deadline at relayTimeoutMs. Resolves with whatever happened first.
+   */
+  private waitForRelay(
+    relayed: Promise<{ ok: true; reply: string } | { ok: false; error: unknown }>,
+    gen: number,
+  ): Promise<RelayOutcome> {
+    return new Promise<RelayOutcome>((resolve) => {
+      let settled = false;
+      const finish = (outcome: RelayOutcome) => {
+        if (settled) return;
+        settled = true;
+        this.turnSettled = true;
+        this.turnWaits.delete(cancel);
+        this.cueToken++; // a cue that is not already audible has nothing left to cover
+        this.releaseTurn();
+        resolve(outcome);
+      };
+      // Barge-in and hang-up stop the wait without waiting for an answer nobody will hear.
+      const cancel = () => finish({ kind: 'cancelled' });
+      this.turnWaits.add(cancel);
+      this.armTurnTimer(this.options.progressMs, () => void this.progressCue(gen));
+      this.armTurnTimer(this.options.relayTimeoutMs, () => finish({ kind: 'timeout' }));
+      relayed.then((r) => (r.ok ? finish({ kind: 'reply', reply: r.reply }) : finish({ kind: 'failed', error: r.error })));
+    });
+  }
+
+  /** The filler: spoken only if the agent is still working after the grace delay. */
+  private async filler(gen: number): Promise<void> {
+    await this.turnSleep(this.options.fillerDelayMs);
+    if (this.turnSettled || this.closed || gen !== this.turnGen) return;
+    await this.speakCue(FILLER_TEXT, gen);
+  }
+
+  /** 'Still working on that.' — armed once per turn, so it can never be said twice. */
+  private async progressCue(gen: number): Promise<void> {
+    if (this.closed || gen !== this.turnGen) return;
+    await this.speakCue(PROGRESS_TEXT, gen);
+  }
+
+  /**
+   * Speak one short cue under the same pacing and barge-in rules as a reply. Cues queue behind each
+   * other rather than talking over each other, and one that is still being synthesised when the agent
+   * answers is dropped before it makes a sound (the token bump in respond/waitForRelay).
+   */
+  private speakCue(text: string, gen: number): Promise<void> {
+    const token = this.cueToken;
+    const previous = this.cuePlaying;
+    const started = (async () => {
+      if (previous) await previous;
+      if (!this.cueAudible(gen, token)) return;
+      let out: { pcm: Int16Array; rate: number };
+      try {
+        out = await this.synth(text);
+      } catch (e) {
+        this.emit({ type: 'error', message: `speech synthesis failed: ${errText(e)}` });
+        return;
+      }
+      if (!this.cueAudible(gen, token)) return;
+      await this.playPhrase(out, gen);
+    })();
+    this.cuePlaying = started;
+    void started.finally(() => {
+      if (this.cuePlaying === started) this.cuePlaying = null;
+    });
+    return started;
+  }
+
+  /** Whether a cue may still start: its turn is current and nothing newer has superseded it. */
+  private cueAudible(gen: number, token: number): boolean {
+    return !this.closed && gen === this.turnGen && token === this.cueToken;
+  }
+
+  /** Let a cue that can still be heard finish before the answer starts; drop one that cannot. */
+  private async finishCue(): Promise<void> {
+    const playing = this.cuePlaying;
+    if (playing) await playing;
+  }
+
+  /** Play one cue with the reply's 100 ms pacing, so barge-in can stop it mid-phrase. */
+  private async playPhrase(out: { pcm: Int16Array; rate: number }, gen: number): Promise<void> {
+    const frameSamples = out.rate > 0 ? Math.max(1, Math.round((out.rate * FRAME_MS) / 1000)) : FRAME_SAMPLES;
+    let started = false;
+    let nextAt = 0;
+    for (let i = 0; i < out.pcm.length; i += frameSamples) {
+      if (this.closed || gen !== this.turnGen) break;
+      const wait = nextAt - performance.now();
+      if (wait > 0) await this.sleep(wait);
+      if (this.closed || gen !== this.turnGen) break;
+      if (!started) {
+        started = true;
+        this.speaking = true;
+        this.emit({ type: 'speaking', on: true });
+        nextAt = performance.now();
+      }
+      this.pushAudio(out.pcm.subarray(i, Math.min(i + frameSamples, out.pcm.length)), out.rate);
+      nextAt = Math.max(nextAt + FRAME_MS, performance.now() - 5);
+    }
+    if (started && this.speaking && !this.closed && gen === this.turnGen) {
+      this.speaking = false;
+      this.emit({ type: 'speaking', on: false });
+    }
+  }
+
+  /** A timer that belongs to the current turn; unref'd so a pending one never holds the process. */
+  private armTurnTimer(ms: number, fn: () => void): ReturnType<typeof setTimeout> {
+    const timer = setTimeout(() => {
+      this.turnTimers.delete(timer);
+      if (!this.closed) fn();
+    }, Math.max(0, ms));
+    timer.unref?.();
+    this.turnTimers.add(timer);
+    return timer;
+  }
+
+  /** Sleep inside a turn: released early by the answer arriving, a barge-in or a hang-up. */
+  private turnSleep(ms: number): Promise<void> {
+    return new Promise<void>((resolve) => {
+      let done = false;
+      let timer: ReturnType<typeof setTimeout> | undefined;
+      const finish = () => {
+        if (done) return;
+        done = true;
+        if (timer) {
+          clearTimeout(timer);
+          this.turnTimers.delete(timer);
+        }
+        this.turnWaits.delete(finish);
+        resolve();
+      };
+      timer = this.armTurnTimer(ms, finish);
+      this.turnWaits.add(finish);
+    });
+  }
+
+  /** Drop everything the turn in flight owns: every timer and every wait. Idempotent. */
+  private releaseTurn(): void {
+    for (const timer of [...this.turnTimers]) {
+      clearTimeout(timer);
+      this.turnTimers.delete(timer);
+    }
+    for (const wake of [...this.turnWaits]) wake();
   }
 
   private async synth(text: string): Promise<{ pcm: Int16Array; rate: number }> {
@@ -373,7 +693,7 @@ export class LocalCallSession {
       const out = await this.deps.synthesize(text);
       return { pcm: out.pcm, rate: out.rate };
     }
-    const audio = await synthesize(text);
+    const audio = await synthesize(text, { model: this.model });
     return { pcm: new Int16Array(floatToPcm16(audio.samples)), rate: audio.sampleRate };
   }
 
@@ -423,6 +743,8 @@ export class LocalCallSession {
     if (!this.speaking) return;
     this.speaking = false;
     this.turnGen++; // invalidates the speaking turn's remaining frames and its {type:'done'}
+    this.cueToken++;
+    this.releaseTurn(); // and its pending filler/nudge/deadline: the new utterance owns the call now
     this.emit({ type: 'speaking', on: false });
     this.wakeAll();
   }
@@ -500,9 +822,9 @@ function sweep() {
 setInterval(sweep, 60_000).unref();
 
 /** Mint a call id's session. POST /local/session calls this; the socket upgrade claims it. */
-export function createLocalCall(callId: string, botId: string): LocalCallSession {
+export function createLocalCall(callId: string, botId: string, opts: { model?: string } = {}): LocalCallSession {
   sweep();
-  const session = new LocalCallSession({ callId, botId });
+  const session = new LocalCallSession({ callId, botId, model: opts.model });
   sessions.set(callId, session);
   return session;
 }

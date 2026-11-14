@@ -30,7 +30,7 @@ const sessionModule = await import('../voice-local-session.js');
 const { LocalCallSession, createLocalCall, takeLocalCall, pendingLocalCalls, attachLocalCallRelay } = sessionModule;
 /** The class's instance type; a destructured binding does not carry it. */
 type Session = InstanceType<typeof LocalCallSession>;
-const { synthesize, pcm16ToFloat } = await import('../voice-runtime.js');
+const { synthesize, pcm16ToFloat, floatToPcm16 } = await import('../voice-runtime.js');
 const { localVoiceApi } = await import('../voice-local.js');
 const { db } = await import('../db.js');
 
@@ -180,7 +180,10 @@ interface Recorded {
 }
 
 /** A session wired to a recorder, so assertions can talk about frames and their ordering. */
-function recorder(deps: { relay?: (t: string) => Promise<string>; synthesize?: any } = {}) {
+function recorder(
+  deps: { relay?: (t: string) => Promise<string>; synthesize?: any } = {},
+  options?: Record<string, number>,
+) {
   const rec: Recorded = { events: [], audio: [] };
   const session = new LocalCallSession({
     callId: `call_test_${Math.random().toString(36).slice(2, 9)}`,
@@ -190,8 +193,64 @@ function recorder(deps: { relay?: (t: string) => Promise<string>; synthesize?: a
       onEvent: (e) => rec.events.push({ e, at: performance.now() }),
       onAudio: (samples, rate) => rec.audio.push({ samples, rate, at: performance.now() }),
     },
+    options,
   });
   return { rec, session };
+}
+
+/**
+ * The real Piper engine, wrapped so a test can name the phrases the session asked for: the audio
+ * is genuine (the engine is not mocked), the log says which phrase it belongs to.
+ */
+function spokenThrough(log: { text: string; at: number }[]) {
+  return async (text: string) => {
+    const out = await synthesize(text);
+    log.push({ text, at: performance.now() });
+    return { pcm: new Int16Array(floatToPcm16(out.samples)), rate: out.sampleRate };
+  };
+}
+
+/**
+ * A short deterministic phrase for the tests whose subject is the clock and the ordering, not the
+ * voice: real PCM16 frames at the voice's rate, synthesised instantly, so a 3 s wait costs 3 s and
+ * not 3 s plus Piper. The real engine's filler latency is measured by the test above.
+ */
+function tonePhrase(ms = 120, rate = 22050): { pcm: Int16Array; rate: number } {
+  const n = Math.max(1, Math.round((rate * ms) / 1000));
+  const pcm = new Int16Array(n);
+  for (let i = 0; i < n; i++) pcm[i] = Math.round(3000 * Math.sin((2 * Math.PI * 440 * i) / rate));
+  return { pcm, rate };
+}
+
+/** tonePhrase per text, logging what was asked for; `msFor` lets a filler last long enough to be
+ * interrupted. */
+function tonesThrough(log: { text: string; at: number }[], msFor: (text: string) => number = () => 120) {
+  return (text: string) => {
+    log.push({ text, at: performance.now() });
+    return tonePhrase(msFor(text));
+  };
+}
+
+/** One utterance as the client sends it: optional silence, the fixture, then enough to endpoint
+ * (the recognizer's own rule is 0.8 s of trailing silence, so 1.2 s is enough with margin). */
+async function utterance(session: Session, samples: Int16Array, leadMs = 0) {
+  if (leadMs > 0) await feedSilence(session, leadMs);
+  await feed(session, samples);
+  await feedSilence(session, 1200);
+}
+
+/** Run one fixture through a session and return the final transcript it produced. */
+async function sessionTranscript(samples: Int16Array, leadMs: number, options?: Record<string, number>) {
+  const spoken: { text: string; at: number }[] = [];
+  const { rec, session } = recorder(
+    { relay: async (text) => `${text.toLowerCase()}.`, synthesize: tonesThrough(spoken) },
+    options,
+  );
+  await utterance(session, samples, leadMs);
+  await waitFor('the final transcript', () => rec.events.some((x) => x.e.type === 'transcript' && x.e.final));
+  const final = rec.events.find((x) => x.e.type === 'transcript' && x.e.final)!.e as { text: string };
+  session.close();
+  return final.text;
 }
 
 /**
@@ -465,6 +524,253 @@ test('a relay that fails reports error and ends the call, without a done frame',
   assert.equal(types.at(-1), 'end', `the call ends after the error, got ${JSON.stringify(types.slice(-2))}`);
   assert.equal(rec.audio.length, 0, 'a failed relay must not speak anything');
   t.diagnostic(`error path: ${JSON.stringify(error.message)} then end; frames ${JSON.stringify(types)}`);
+});
+
+// ---------- 4c. the synthetic fixture on the session path (the onset gate) ----------
+
+/**
+ * The gate this phase had to earn: streamed through the session — VAD, preroll ring, onset
+ * normalisation — the synthetic command clip must transcribe as well as the batch path does
+ * (1.000 with its fixed 0.3 s pad). Before onset normalisation this measured 0.842 at 1.5 s of
+ * leading silence, because the lead the caller left shifted the recognizer's chunk grid.
+ */
+test('the session transcribes en-command.wav at similarity >= 0.9', { skip: skipModels }, async (t) => {
+  const text = await sessionTranscript(COMMAND_WAV.samples, 0);
+  const sim = similarity(text, COMMAND.transcript);
+  assert.ok(
+    sim >= COMMAND.minSimilarity,
+    `session transcript similarity ${sim.toFixed(3)} < ${COMMAND.minSimilarity}; heard ${JSON.stringify(text)} ` +
+      `for ${JSON.stringify(COMMAND.transcript)}`,
+  );
+  t.diagnostic(`${COMMAND.file} through the session: similarity ${sim.toFixed(3)}/${COMMAND.minSimilarity}, heard ${JSON.stringify(text)}`);
+});
+
+/**
+ * The same clip with 1.5 s of leading silence — a caller who paused before speaking. The lead into
+ * the recognizer must be the same 0.3 s of silence either way; if it were not, this is the case that
+ * used to measure 0.842.
+ */
+test('1.5 s of leading silence leaves the fixture transcribing at >= 0.9 (the lead is normalised)', { skip: skipModels }, async (t) => {
+  const late = await sessionTranscript(COMMAND_WAV.samples, 1500);
+  const lateSim = similarity(late, COMMAND.transcript);
+  assert.ok(
+    lateSim >= COMMAND.minSimilarity,
+    `after 1500 ms of leading silence similarity ${lateSim.toFixed(3)} < ${COMMAND.minSimilarity}; heard ${JSON.stringify(late)}`,
+  );
+  t.diagnostic(
+    `lead normalisation: 1500 ms of client silence before the fixture -> ${lateSim.toFixed(3)} ${JSON.stringify(late)}; ` +
+      `the no-lead case is the test above (both must clear ${COMMAND.minSimilarity})`,
+  );
+});
+
+// ---------- 4d. the filler while a slow agent works ----------
+
+test('a caller quieter than the speech floor still reaches the recognizer (no onset: the ring as it is)', { skip: skipModels }, async (t) => {
+  // speechRms above anything real: no window qualifies, so the fallback feeds the ring unchanged
+  // rather than inventing a 0.3 s lead. The audio must still transcribe.
+  const text = await sessionTranscript(COMMAND_WAV.samples, 600, { speechRms: 1 });
+  const sim = similarity(text, COMMAND.transcript);
+  assert.ok(
+    sim >= COMMAND.minSimilarity,
+    `the no-onset fallback must still transcribe: similarity ${sim.toFixed(3)}, heard ${JSON.stringify(text)}`,
+  );
+  t.diagnostic(`no onset found (speechRms 1): ring fed as-is, similarity ${sim.toFixed(3)} ${JSON.stringify(text)}`);
+});
+
+test('a slow agent hears "One moment." within a second, once, before the answer', { skip: skipModels }, async (t) => {
+  const spoken: { text: string; at: number }[] = [];
+  const { rec, session } = recorder({
+    relay: async (text) => {
+      await sleep(3000);
+      return 'Yes, the lights are on.'; // a short answer keeps the real-engine cost down
+    },
+    synthesize: spokenThrough(spoken),
+  });
+
+  // Warm the voice so the measured delay is the call path, not the first model load.
+  await synthesize('warm up');
+
+  await utterance(session, COMMAND_WAV.samples);
+  await waitFor('the final transcript', () => rec.events.some((x) => x.e.type === 'transcript' && x.e.final));
+  const finalAt = rec.events.find((x) => x.e.type === 'transcript' && x.e.final)!.at;
+
+  await waitFor('the filler phrase', () => spoken.some((s) => s.text === 'One moment.'), 5000);
+  const fillerSynthAt = spoken.find((s) => s.text === 'One moment.')!.at;
+  await waitFor('the first filler frame', () => rec.audio.some((f) => f.at >= fillerSynthAt), 5000);
+  const fillerFrameAt = rec.audio.find((f) => f.at >= fillerSynthAt)!.at;
+  const fillerDelay = fillerFrameAt - finalAt;
+
+  await waitFor('the turn to finish', () => rec.events.some((x) => x.e.type === 'done'), 30_000);
+  const replies = spoken.filter((s) => s.text !== 'One moment.' && s.text !== 'Still working on that.');
+  const fillers = spoken.filter((s) => s.text === 'One moment.');
+
+  assert.equal(fillers.length, 1, `the filler must be spoken exactly once per turn, got ${fillers.length}: ${JSON.stringify(spoken.map((s) => s.text))}`);
+  assert.ok(replies.length >= 1, `the answer must still be spoken after the filler: ${JSON.stringify(spoken.map((s) => s.text))}`);
+  assert.ok(
+    spoken.indexOf(fillers[0]) < spoken.indexOf(replies[0]),
+    `the filler comes before the answer: ${JSON.stringify(spoken.map((s) => s.text))}`,
+  );
+  assert.ok(
+    fillerDelay < 1000,
+    `the filler must be audible within 1 s of the transcript, measured ${ms(fillerDelay)} (relay resolves after 3000 ms)`,
+  );
+  const answerSynthAt = replies[0].at;
+  const answerFrames = rec.audio.filter((f) => f.at >= answerSynthAt);
+  assert.ok(answerFrames.length > 0, 'the answer has audio after the filler');
+
+  t.diagnostic(
+    `relay 3000 ms: filler synthesised +${ms(fillerSynthAt - finalAt)} and first frame +${ms(fillerDelay)} after the transcript, ` +
+      `spoken once, answer synthesised +${ms(answerSynthAt - finalAt)}; phrases ${JSON.stringify(spoken.map((s) => s.text))}`,
+  );
+  session.close();
+});
+
+test('a fast agent is answered without a filler frame in front of it', { skip: skipModels }, async (t) => {
+  const spoken: { text: string; at: number }[] = [];
+  const { rec, session } = recorder({
+    relay: async (text) => {
+      await sleep(180); // a 180 ms agent: inside the 400 ms the filler waits
+      return `${text.toLowerCase()}.`;
+    },
+    synthesize: tonesThrough(spoken),
+  });
+
+  await utterance(session, COMMAND_WAV.samples);
+  await waitFor('the final transcript', () => rec.events.some((x) => x.e.type === 'transcript' && x.e.final));
+  const finalAt = rec.events.find((x) => x.e.type === 'transcript' && x.e.final)!.at;
+  await waitFor('the answer to be spoken', () => rec.audio.length > 0);
+  await waitFor('the turn to finish', () => rec.events.some((x) => x.e.type === 'done'), 30_000);
+
+  assert.equal(
+    spoken.filter((s) => s.text === 'One moment.').length,
+    0,
+    `a relay faster than the grace delay must not get a filler: ${JSON.stringify(spoken.map((s) => s.text))}`,
+  );
+  const answerAt = spoken[0].at;
+  const firstFrame = rec.audio[0].at;
+  assert.ok(firstFrame >= answerAt, 'the first audio frame of a fast turn belongs to the answer');
+  assert.ok(
+    firstFrame - finalAt < 1000,
+    `the answer must start promptly: first frame ${ms(firstFrame - finalAt)} after the transcript`,
+  );
+
+  t.diagnostic(
+    `relay 180 ms: no filler, first frame ${ms(firstFrame - finalAt)} after the transcript ` +
+      `(${ms(firstFrame - answerAt)} after synthesis); phrases ${JSON.stringify(spoken.map((s) => s.text))}`,
+  );
+  session.close();
+});
+
+test('speech over the filler cuts it off, and the answer it was covering is never spoken', { skip: skipModels }, async (t) => {
+  const spoken: { text: string; at: number }[] = [];
+  let turn = 0;
+  const covering = 'The kitchen lights are on.';
+  const { rec, session } = recorder({
+    relay: async (text) => {
+      turn++;
+      if (turn === 1) {
+        await sleep(3000); // the answer the filler is covering for
+        return covering;
+      }
+      return `(second turn) ${text.toLowerCase()}.`;
+    },
+    // A 1.5 s tone for the filler, so the interruption lands while it is still playing; the answers
+    // are short. What matters here is the cancellation, not the voice.
+    synthesize: tonesThrough(spoken, (text) => (text === 'One moment.' ? 1500 : 120)),
+  });
+  await utterance(session, COMMAND_WAV.samples);
+  await waitFor('the final transcript', () => rec.events.some((x) => x.e.type === 'transcript' && x.e.final));
+  await waitFor('the filler phrase', () => spoken.some((s) => s.text === 'One moment.'), 5000);
+  const fillerSynthAt = () => spoken.find((s) => s.text === 'One moment.')!.at;
+  await waitFor('the filler to be under way', () => rec.audio.filter((f) => f.at >= fillerSynthAt()).length >= 3);
+  const fillerFrames = rec.audio.filter((f) => f.at >= fillerSynthAt()).length;
+
+  // The caller talks over the filler. Any real utterance will do — this is about the cancellation,
+  // and the command clip is 2.4 s where the LibriSpeech clip is 16.7 s.
+  await feed(session, COMMAND_WAV.samples);
+  await feedSilence(session, 1600);
+  const offs = rec.events.filter((x) => x.e.type === 'speaking' && !x.e.on);
+  assert.ok(offs.length >= 1, `a barge-in over the filler must emit speaking:false: ${JSON.stringify(rec.events.map((x) => `${x.e.type}${x.e.type === 'speaking' ? `:${x.e.on}` : ''}`))}`);
+  const bargeAt = offs[0].at;
+
+  await waitFor('the interruption to be transcribed', () => rec.events.filter((x) => x.e.type === 'transcript' && x.e.final).length >= 2, 30_000);
+  await waitFor("the interruption's own answer", () => spoken.some((s) => s.text.startsWith('(second turn)')), 15_000);
+  const secondReplyAt = spoken.find((s) => s.text.startsWith('(second turn)'))!.at;
+
+  const leaked = rec.audio.filter((f) => f.at > bargeAt && f.at < secondReplyAt);
+  assert.equal(leaked.length, 0, `${leaked.length} audio frames played between the barge-in and the next answer`);
+  assert.ok(
+    !spoken.some((s) => s.text === covering),
+    `the answer the filler was covering must be dropped, not spoken later: ${JSON.stringify(spoken.map((s) => s.text))}`,
+  );
+
+  t.diagnostic(
+    `filler cut off after ${fillerFrames} frames: speaking:false at +${ms(bargeAt - fillerSynthAt())} of the filler, ` +
+      `0 frames until the next turn, covered answer never spoken; phrases ${JSON.stringify(spoken.map((s) => s.text))}`,
+  );
+  session.close();
+});
+
+test('a stalled agent gets one nudge, then a spoken apology and a clean done at the deadline', { skip: skipModels }, async (t) => {
+  const spoken: { text: string; at: number }[] = [];
+  // The production thresholds are 20 s and 90 s; the same clocks at test speed keep this honest and
+  // the whole case under a few seconds.
+  const PROGRESS = 600;
+  const DEADLINE = 1600;
+  let answer: (text: string) => void = () => {};
+  const stalled = new Promise<string>((resolve) => {
+    answer = resolve;
+  });
+  const { rec, session } = recorder(
+    // Short deterministic phrases: this test is about the clocks, and the tone is real PCM the
+    // session paces like any other audio.
+    { relay: () => stalled, synthesize: tonesThrough(spoken) },
+    { fillerDelayMs: 80, progressMs: PROGRESS, relayTimeoutMs: DEADLINE },
+  );
+
+  await utterance(session, COMMAND_WAV.samples);
+  await waitFor('the final transcript', () => rec.events.some((x) => x.e.type === 'transcript' && x.e.final));
+  const finalAt = rec.events.find((x) => x.e.type === 'transcript' && x.e.final)!.at;
+
+  await waitFor('the nudge', () => spoken.some((s) => s.text === 'Still working on that.'), 10_000);
+  const nudgeAt = spoken.find((s) => s.text === 'Still working on that.')!.at;
+  assert.ok(nudgeAt - finalAt >= PROGRESS - 100, `the nudge waits for the progress threshold: ${ms(nudgeAt - finalAt)} of ${PROGRESS} ms`);
+  assert.ok(
+    rec.audio.some((f) => f.at >= nudgeAt),
+    'the nudge must actually be spoken, not just synthesised',
+  );
+
+  await waitFor('the turn to finish after the deadline', () => rec.events.some((x) => x.e.type === 'done'), 20_000);
+  const doneAt = rec.events.find((x) => x.e.type === 'done')!.at;
+  const apology = spoken.filter((s) => s.text.startsWith("That's taking too long"));
+  assert.equal(apology.length, 1, `the apology must be spoken once: ${JSON.stringify(spoken.map((s) => s.text))}`);
+  assert.ok(apology[0].at > nudgeAt, 'the apology follows the nudge');
+  assert.ok(rec.audio.some((f) => f.at >= apology[0].at), 'the apology must be audible');
+  assert.equal(
+    spoken.filter((s) => s.text === 'Still working on that.').length,
+    1,
+    `the nudge is said once, not once per threshold: ${JSON.stringify(spoken.map((s) => s.text))}`,
+  );
+  assert.ok(doneAt - finalAt >= DEADLINE - 100, `done waits for the deadline: ${ms(doneAt - finalAt)} of ${DEADLINE} ms`);
+
+  // Nothing dangles: the turn released every timer it armed, and the relay answering late is ignored.
+  const active = (session as unknown as { turnTimers: Set<unknown> }).turnTimers;
+  assert.equal(active.size, 0, `the finished turn must leave no timer armed, ${active.size} still pending`);
+  const eventsAfterDone = rec.events.length;
+  const framesAfterDone = rec.audio.length;
+  answer('a very late reply.');
+  await sleep(500);
+  assert.equal(rec.audio.length, framesAfterDone, 'a reply that arrives after the deadline must not be spoken');
+  assert.equal(rec.events.length, eventsAfterDone, `no events after done, got ${JSON.stringify(rec.events.slice(eventsAfterDone).map((x) => x.e.type))}`);
+  const types = rec.events.map((x) => x.e.type);
+  assert.equal(types.at(-1), 'done', `done is the last frame of the abandoned turn: ${JSON.stringify(types.slice(-4))}`);
+
+  t.diagnostic(
+    `stalled agent: nudge +${ms(nudgeAt - finalAt)} (threshold ${PROGRESS} ms), apology +${ms(apology[0].at - finalAt)}, ` +
+      `done +${ms(doneAt - finalAt)} (deadline ${DEADLINE} ms), ${active.size} timers left, late reply ignored; ` +
+      `phrases ${JSON.stringify(spoken.map((s) => s.text))}`,
+  );
+  session.close();
 });
 
 // ---------- 5. the socket ----------

@@ -1,4 +1,4 @@
-import type { VoiceOption } from '@orbit/contracts';
+import type { Bot, VoiceOption } from '@orbit/contracts';
 
 export interface VoiceSession {
   callId: string;
@@ -42,6 +42,37 @@ export interface LocalVoiceStatus {
   download: { active: boolean; pct: number; name: string | null };
 }
 
+export type LocalModelKind = 'stt' | 'tts' | 'vad';
+export type LocalModelTier = 'required' | 'optional';
+
+/**
+ * One row of `GET /api/voice/local/models` — the model menu the voice picker renders. `rate` is the
+ * rate the engine actually produces (22 050 for Piper, 24 000 for Kokoro), `size` is bytes on disk.
+ */
+export interface LocalModelItem {
+  id: string;
+  kind: LocalModelKind;
+  name: string;
+  rate: number;
+  size: number;
+  state: LocalModelState;
+  pct: number;
+  tier: LocalModelTier;
+}
+
+/** `ready` here means the *required* set (stt + vad + Piper); an optional voice never gates it. */
+export interface LocalModels { items: LocalModelItem[]; ready: boolean }
+
+/** `POST /api/voice/local/models/download`: backgrounded, so `started` only says work was queued. */
+export interface LocalDownloadResult {
+  started: boolean;
+  model: string | null;
+  startedModels: string[];
+  state: LocalVoiceStatus['models'];
+  /** Per-model states — the only place an optional voice's state (or its error) shows up. */
+  states: Record<string, LocalModelState>;
+}
+
 export interface LocalPreview { pcm: Int16Array; rate: number }
 
 export interface LocalSession {
@@ -80,10 +111,56 @@ function localStatus(refresh = false): Promise<LocalVoiceStatus> {
     .catch((e) => { statusPromise = null; throw e; }));
 }
 
+let modelsPromise: Promise<LocalModels> | null = null;
+
 /** `POST /api/voice/local/models/download` is idempotent and runs in the background; poll status for progress. */
 function downloadLocalModels(kind?: 'stt' | 'tts' | 'vad'): Promise<{ started: boolean; state: LocalVoiceStatus['models'] }> {
   statusPromise = null; // the next status read must not be a pre-download snapshot
+  modelsPromise = null;
   return post<{ started: boolean; state: LocalVoiceStatus['models'] }>('/local/models/download', kind ? { kind } : {});
+}
+
+/**
+ * The voice menu. Cached like the status, because the picker polls it while a download runs; pass
+ * `refresh` to bypass (every 2 s poll does, and so does right after a download starts).
+ */
+export function localModels(refresh = false): Promise<LocalModels> {
+  if (refresh) modelsPromise = null;
+  return (modelsPromise ??= fetch('/api/voice/local/models', { credentials: 'include' })
+    .then(async (r) => {
+      if (!r.ok) throw new Error(`HTTP ${r.status}`);
+      return (await r.json()) as LocalModels;
+    })
+    .catch((e) => { modelsPromise = null; throw e; }));
+}
+
+/**
+ * Download one model by id (e.g. the optional Kokoro tier). Backgrounded: the caller polls
+ * `localModels(true)` until that model's own `state` is `ready`.
+ */
+export function downloadLocalModel(model: string): Promise<LocalDownloadResult> {
+  modelsPromise = null; // not a pre-download snapshot
+  statusPromise = null;
+  return post<LocalDownloadResult>('/local/models/download', { model });
+}
+
+/**
+ * The per-bot voice choice: `PATCH /api/bots/:id` with only the two voice keys, so saving a voice
+ * never races the bot's other fields. Returns the bot the server stored.
+ */
+export async function saveBotVoice(botId: string, patch: { voiceProvider?: 'cloud' | 'local'; voiceModel?: string }): Promise<{ bot: Bot }> {
+  const body: Record<string, string> = {};
+  if (patch.voiceProvider !== undefined) body.voiceProvider = patch.voiceProvider;
+  if (patch.voiceModel !== undefined) body.voiceModel = patch.voiceModel;
+  const res = await fetch(`/api/bots/${botId}`, {
+    method: 'PATCH', credentials: 'include', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body),
+  });
+  if (!res.ok) {
+    let msg = `HTTP ${res.status}`;
+    try { msg = ((await res.json()) as { error?: string }).error ?? msg; } catch { /* not json */ }
+    throw new Error(msg);
+  }
+  return res.json() as Promise<{ bot: Bot }>;
 }
 
 let optionsPromise: Promise<VoiceOptions> | null = null;
@@ -138,9 +215,12 @@ export const voiceApi = {
 
   localStatus,
   downloadLocalModels,
+  localModels,
+  downloadLocalModel,
+  saveBotVoice,
 
-  /** On-device Piper preview: raw PCM16 plus the rate the server actually produced (22 050 Hz). */
-  async localPreview(p: { text: string; speed?: number }): Promise<LocalPreview> {
+  /** On-device preview through the bot's chosen model: raw PCM16 plus the rate the engine produced. */
+  async localPreview(p: { text: string; speed?: number; model?: string }): Promise<LocalPreview> {
     const res = await fetch('/api/voice/local/preview', {
       method: 'POST', credentials: 'include', headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(p),

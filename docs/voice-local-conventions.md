@@ -13,7 +13,7 @@ not follow it where it disagrees with this file.
 | STT: `streaming-zipformer-en-20M` (~40 MB) | That release drops the first ~1.5–2 s of every utterance (first token timestamp 2.04 s on its own `test_wavs/0.wav`; "Hello…" → "O THIS IS…"). Measured with both int8 and fp32 encoders and with both package versions. | Use **`sherpa-onnx-streaming-zipformer-bilingual-zh-en-2023-02-20`, int8 encoder/decoder/joiner**, 197 MB of ONNX + 56 KB tokens. It transcribes from 0.32 s, and its English accuracy on the fixtures is 1.0 (see below). Bonus: it is already zh+en. |
 | TTS: `en_US-lessac-medium` | Works, but **22 050 Hz**, not 24 kHz | Keep Piper lessac-medium; the server reports the real rate and never resamples. |
 | GPU detection: CoreML on Apple Silicon, CUDA in Docker | `provider: 'coreml'` **segfaults** the process on Piper VITS (exit 139) and makes streaming STT 3× *slower* (18.9× vs 56.5× real-time on CPU). The `sherpa-onnx-linux-*` prebuilt binaries contain **zero** CUDA strings — there is no CUDA execution provider in the npm package. | `provider: 'cpu'` everywhere. Report `accelerated: false` honestly; never claim CUDA. A GPU/CPU gate that disables local voice would disable it everywhere, including the desktop app, which runs this server. |
-| Docker stack runs the same server, no image change | The image is `node:22-alpine` (musl). `require('sherpa-onnx-node')` fails there with `Error loading shared library ld-linux-aarch64.so.1`. | `apk add --no-cache gcompat libstdc++` in `apps/server/Dockerfile` — verified: the addon then loads inside `node:22-alpine`. |
+| Docker stack runs the same server, no image change | The image was `node:22-alpine` (musl). `require('sherpa-onnx-node')` there needs `gcompat` + `libstdc++`, and once it loads **every ONNX session creation dies** with `Ort::Exception ... No error information` — so on-device voice could not run in the image at all. | Ship `node:22-bookworm-slim` (glibc) for the `builder`, `hermes` and `runtime` stages in `apps/server/Dockerfile`: the addon loads, STT/TTS infer (17× / 2.4× real-time in-container), `addon:true`. |
 | Models ~103 MB | STT 197 MB + TTS 63 MB + espeak-ng (English subset) 1.7 MB + VAD 0.6 MB = **263 MB**, 250 files | `apps/server/src/voice-model-files.ts` (generated, parent-owned) lists every file with size and HF LFS sha256. |
 | Batch `/stt` over a multipart blob | There is no offline recognizer model in the set, and browsers give webm/opus which nothing here can decode | `/local/stt` takes **raw PCM16 LE mono** with an `X-Audio-Rate` header. Client decodes/resamples nothing: `MicCapture` already yields Float32; send `rate` and sherpa resamples internally. |
 
@@ -145,7 +145,20 @@ assert.
 cd apps/server && VOICE_MODELS_DIR=$HOME/.hermes/cache/voice-models pnpm --filter @orbit/server test
 cd /Users/raybello/Github/Orbit/orbit-app && pnpm typecheck
 pnpm --filter @orbit/web test
+# native-stack release gate: does the server archive carry the sherpa-onnx addon?
+# (accepts a .tar.xz or an already-unpacked bundle dir; node stdlib + system tar only, exit != 0 on failure)
+node scripts/verify-server-bundle.mjs <orbit-server-<version>.tar.xz | unpacked-bundle-dir>
+# proves the gate itself fails: builds a good and an addon-less tar.xz in a temp dir and asserts both
+node --test scripts/verify-server-bundle.test.mjs
 ```
+
+The bundle gate is one checklist line per assertion — unpack, `apps/server/dist/index.js` (or
+`dist/index.js`), `node_modules/sherpa-onnx-node`, `sherpa-onnx-darwin-arm64/sherpa-onnx.node`, its
+three dylibs, a real `node -e "require('sherpa-onnx-node')"` (skipped, never failed, with no node
+binary), and "no model dir bundled". A bundle that fails it is still a *working* server — local
+voice just degrades to the cloud path, which `apps/server/src/__tests__/voice-runtime-degraded.test.ts`
+pins down: `addon:false` → `/status {available:false, reason:'unsupported-runtime'}`, `/stt` and
+`/preview` 503, `getRecognizer()` rejects, and the model cache stays untouched.
 
 Budget assertions (server test): STT first partial < 300 ms, STT real-time factor ≥ 10×, TTS first
 audio < 400 ms, TTS real-time factor ≥ 5×, transcript similarity ≥ threshold per fixture. Print the
@@ -259,3 +272,129 @@ Two tuning decisions made at the gate, both after measurements:
 Not exercised, and why: the production relay (`enqueue` → managed gateway → assistant row) needs a real
 Hermes gateway. Everything up to it is covered by the echo relay plus a simulated agent turn, and the
 `/local/session` → WS → TTS path is proven end to end here.
+
+## Phase 3 addendum — closing the gaps in `docs/local-voice-status.md`
+
+Parent has already added the schema and shared plumbing (do not redo it): `bots.voice_provider`
+(`'cloud' | 'local'`, default `'cloud'`) and `bots.voice_model` (default `'piper-lessac-medium'`) via
+`addColumn` in `db.ts`, mapped in `store.ts#toBot` and `routes.ts`'s `PATCH /api/bots/:id` column map,
+and typed in `packages/contracts` (`Bot.voiceProvider`, `Bot.voiceModel`). Rebuild that package with
+`pnpm --filter @orbit/contracts build` after pulling; the server typechecks against its `dist`.
+
+### Model ids and the menu (server: `voice-runtime.ts`, `voice-models.ts`, `voice-local.ts`)
+
+| id | kind | engine | rate | size | notes |
+| --- | --- | --- | --- | --- | --- |
+| `zipformer-bilingual-int8` | stt | streaming zipformer | 16 kHz in | 197 MB | required, no alternative yet |
+| `silero-vad` | vad | silero | 16 kHz in | 0.6 MB | required |
+| `piper-lessac-medium` | tts | vits (espeak frontend) | 22 050 Hz | 64 MB | **default**; measured 10–17× real-time, first audio 183–252 ms |
+| `kokoro-multi-lang` | tts | kokoro | 24 000 Hz | 326 MB model + 28 MB voices + 6 MB lexicon | **optional tier**; measured **1.0–1.1× real-time** (2.5 s to synthesize a 2.7 s sentence), 54 speakers |
+
+- Optional models are downloaded on demand and must never gate `available`. `modelsReady()` means the
+  required set (stt + vad + piper). `/status` keeps `available` for that meaning.
+- Model files move to `<kind>/<model>/<relpath>` under `VOICE_MODELS_DIR`; migrate the phase-1/2 layout
+  (`tts/en_US-lessac-medium.onnx` → `tts/piper-lessac-medium/…`, `stt/encoder-…` →
+  `stt/zipformer-bilingual-int8/…`) on first touch, idempotently, instead of re-downloading 263 MB.
+- `GET /models` → `{ items: [{ id, kind, name, rate, size, state, pct, tier: 'required'|'optional' }], ready }`
+  (no `available` here; that is `/status`'s job).
+- `POST /models/download` takes `{ model }` (or `{ kind }` for the required set). Keep the existing
+  no-body behaviour working.
+- There is **no** global "select" endpoint: the chosen voice is per bot (`Bot.voiceModel`), so a global
+  active model would be a second source of truth. Document that in the route's comment.
+- `POST /preview` accepts `{ text, speed, model? }`, synthesises with that model (default
+  `piper-lessac-medium`) and returns raw PCM16 with the **engine's** rate in `X-Audio-Rate`
+  (22 050 or 24 000 — never resampled). Unknown/unavailable model → 409 `{ error }`, not a 500.
+- `POST /session` reads the bot's `voice_model` and returns it; the session synthesises with it and
+  emits `{ type:'ready', ttsSampleRate, model }`.
+- Kokoro needs the espeak data we already ship plus `lexicon-us-en.txt` + `voices.bin` + `tokens.txt`;
+  its `lang` is `en-us`, `sid` selects the speaker (0–53).
+
+### Session behaviour still to add (`voice-local-session.ts`)
+
+1. **Onset normalisation.** The synthetic fixture's first word flips with padding ("SWITCH" at 0.3 s,
+   "ON THE KIDS" at 0.5 s) because the chunk grid shifts with the amount of leading silence. Fix it in
+   the session, not in the test: trim the preroll ring so the ASR stream always starts with **0.3 s of
+   silence before the first speech window** (find the speech onset in the ring by RMS, keep 0.3 s before
+   it, drop anything older; fall back to keeping the whole ring if no onset is found). Then the session
+   path must transcribe the synthetic fixture at **similarity ≥ 0.9**, which it currently does not; that
+   assertion must be added, not relaxed.
+2. **Filler phrase.** Right after the final transcript and before the relay resolves, synthesise and play
+   a short filler ("One moment.") so the caller hears something while the agent works. It must be
+   barge-in cancellable, must not delay the real answer's first audio when the relay is fast (< 400 ms),
+   and must not be spoken twice for one turn.
+3. **Progress + hard timeout.** If the relay is still pending after 20 s, speak one nudge ("Still working
+   on that."). At 90 s, stop waiting, speak an apology ("That's taking too long — I'll message you the
+   answer."), emit `{type:'done'}` and close the turn cleanly (no dangling timers, no `enqueue` wake-up
+   left behind). The 120 s row-poll inside the default relay stays as a backstop.
+
+### Desktop bundle (native stack)
+
+The native stack runs a downloaded server bundle (`installServerBundle`), so local voice only works
+there if that archive carries `sherpa-onnx-<platform>` + its `.so`/`.dylib` files. Ship a checker
+(`scripts/verify-server-bundle.mjs <tar.xz|dir>`) that asserts the entrypoint, `node_modules/sherpa-onnx-node`
+and the platform binary are present, and make the server's degraded path explicit and tested:
+`runtimeInfo().addon === false` → `/status {available:false, reason:'unsupported-runtime'}`, `/stt` and
+`/preview` 503, no model download, no crash. Also warm the recognizer at boot (`warmUp()`: one 0.5 s
+silent decode) so the first real utterance is not the 7.5× cold-start case documented in the status doc.
+
+## Phase 3 as built — what the code actually does now
+
+Everything below was verified on this machine after the agents' work landed; the numbers are the
+parent's own runs, not the agents' reports.
+
+### Layout, models, endpoints
+
+- Cache: `<VOICE_MODELS_DIR>/<kind>/<model>/<relpath>`. The phase-1/2 flat layout
+  (`tts/en_US-lessac-medium.onnx`, `stt/encoder-…`) is migrated in place on first touch (moved, not
+  re-downloaded) with relative compatibility symlinks left behind.
+- `GET /models` → `{ items: [{ id, kind, name, rate, size, state, pct, tier }], ready }`; `/status`
+  carries the same list as `voices` plus `bytes`/`download`. `modelsReady()` and `bytes.total` mean the
+  **required** set only (zipformer 198.3 MB + silero 0.6 MB + piper 64.1 MB = 263 MB); Kokoro is
+  `tier: 'optional'` (359.7 MB) and must never gate availability.
+- `POST /models/download { model }` downloads one model's files; `POST /preview { text, speed?, model? }`
+  returns the engine's own rate (`X-Audio-Rate` 22 050 Piper / 24 000 Kokoro) and 409s for an unknown
+  or not-downloaded model.
+- No global select endpoint: the voice is per bot (`bots.voice_model`, default `piper-lessac-medium`),
+  persisted through `PATCH /api/bots/:id` and accepted by `POST /api/bots` too.
+- `POST /local/session` reads the bot's model, returns `{ callId, sampleRate, ttsSampleRate, model }`,
+  and the session emits `{ type:'ready', ttsSampleRate, model }`, synthesises with that model and sizes
+  its frames from the engine's rate (2 205 samples at 22 050 Hz, 2 400 at 24 000 Hz).
+
+### Session behaviour
+
+- **Onset normalisation**: the preroll ring is scanned for the first 10 ms block with RMS > 0.006 and
+  the ASR stream gets exactly 0.3 s of silence before it. The synthetic fixture then transcribes at
+  **1.000** for client leads of 0/200/300/500/800/1000/1500/3000 ms (before the fix: 0.842 at 200 ms
+  and at 1.5 s). No onset found → the ring is fed as-is (measured 0.900 on a 600 ms pause), which is the
+  weaker path and is documented rather than hidden.
+- **Filler**: `One moment.` after 400 ms of waiting, spoken once, cancelled by barge-in, and never
+  started once the answer has arrived (measured: 3 s relay → filler frame at +480 ms, answer at
+  +3 169 ms; 180 ms relay → no filler, first frame at +181 ms).
+- **Progress + deadline**: one nudge at 20 s, then a spoken apology and a clean `done` at 90 s with every
+  timer released (late replies are ignored). Both thresholds are injectable for tests.
+- **Warm-up** (`runtime.warmUp()`): loads the recogniser and decodes 0.5 s of silence. Cold first
+  utterance 778–1 215 ms vs 62–99 ms warm — a saving of 0.7–1.1 s that the user no longer pays.
+
+### Runtime bases
+
+- **Docker**: the server image is `node:22-bookworm-slim` (glibc) in all stages, because the prebuilt
+  onnxruntime aborts under musl + gcompat. Measured inside the image (linux/arm64): STT exact transcript
+  at **9.8× real-time**, TTS **2.1×** at 22 050 Hz, session init ~8.8 s (the reason for `warmUp`).
+  Hermes' venv now uses uv's managed CPython 3.14 (Debian ships 3.11 and Hermes targets 3.14).
+- **Native stack bundle**: `node scripts/verify-server-bundle.mjs <tar.xz|dir>` checks the entrypoint,
+  `node_modules/sherpa-onnx-node` + `sherpa-onnx-darwin-arm64/sherpa-onnx.node` and its dylibs, a real
+  `require`, and that no `voice-models/` or `.onnx` is bundled. `node --test
+  scripts/verify-server-bundle.test.mjs` proves the checker itself (13 cases).
+- **Degraded path** (no addon, e.g. a bundle shipped without it): `/status` →
+  `{available:false, reason:'unsupported-runtime'}`, `/stt` and `/preview` → 503, no download started,
+  no crash — covered by `voice-runtime-degraded.test.ts`.
+
+### Browser
+
+- Capture runs on its own **16 kHz** AudioContext (`openMic({ sampleRate: 16000 })` + worklet target
+  16 kHz), so the device is resampled once by the browser instead of twice (the extra linear 24 k → 16 k
+  step was turning "KITCHEN LIGHTS" into "KITCHEN LIKES" in one of three runs; two consecutive runs are
+  exact after the change).
+- `VoiceSettings` exposes a `Cloud / On-device` toggle bound to `bot.voiceProvider` and a two-line picker
+  (`data-model-id`, `data-state`, `data-selected`) with rate, size and an honest latency hint. Preview
+  follows the bot's provider, not merely availability.

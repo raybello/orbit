@@ -31,7 +31,8 @@ process.env.VOICE_AUTO_DOWNLOAD = '0';
 
 const { runtimeInfo, transcribe, synthesize, detectSegments, pcm16ToFloat, floatToPcm16 } = await import('../voice-runtime.js');
 const { localVoiceApi } = await import('../voice-local.js');
-const { downloadVoiceFiles, resetVoiceModelCaches, modelsReady, modelStates } = await import('../voice-models.js');
+const { downloadVoiceFiles, resetVoiceModelCaches, modelsReady, modelStates, REQUIRED_BYTES, VOICE_MODELS, filesForModel } =
+  await import('../voice-models.js');
 const { db } = await import('../db.js');
 const { VOICE_MODEL_BYTES } = await import('../voice-model-files.js');
 
@@ -114,12 +115,23 @@ function similarity(a: string, b: string): number {
 
 // ---------- the real model cache ----------
 
+/**
+ * The model cache, in either layout: the phase-3 layout is `<kind>/<model>/<path>`, and a cache that
+ * has not been touched by the migration yet still has the phase-1/2 flat `<kind>/<path>`. Checking
+ * both keeps this suite running on a cache of either age instead of skipping it.
+ */
+function cacheFile(model: string, rel: string, legacyRel = rel): string {
+  const kind = VOICE_MODELS.find((m) => m.id === model)!.kind;
+  const next = path.join(MODELS_DIR, kind, model, rel);
+  return fs.existsSync(next) ? next : path.join(MODELS_DIR, kind, legacyRel);
+}
+
 const NEEDS = [
-  path.join(MODELS_DIR, 'stt', 'encoder-epoch-99-avg-1.int8.onnx'),
-  path.join(MODELS_DIR, 'stt', 'tokens.txt'),
-  path.join(MODELS_DIR, 'tts', 'en_US-lessac-medium.onnx'),
-  path.join(MODELS_DIR, 'tts', 'espeak-ng-data', 'en_dict'),
-  path.join(MODELS_DIR, 'vad', 'silero_vad.onnx'),
+  cacheFile('zipformer-bilingual-int8', 'encoder-epoch-99-avg-1.int8.onnx'),
+  cacheFile('zipformer-bilingual-int8', 'tokens.txt'),
+  cacheFile('piper-lessac-medium', 'en_US-lessac-medium.onnx'),
+  cacheFile('piper-lessac-medium', 'espeak-ng-data/en_dict'),
+  cacheFile('silero-vad', 'silero_vad.onnx'),
 ];
 const missing = NEEDS.filter((p) => !fs.existsSync(p));
 const modelsPresent = missing.length === 0;
@@ -163,11 +175,17 @@ test('GET /local/status and /local/models describe the CPU runtime', async () =>
   const models = await route('/models');
   assert.equal(models.status, 200);
   const list = (await models.json()) as any;
-  assert.equal(list.items.length, 3, `one row per model kind, got ${list.items.length}`);
+  assert.equal(list.items.length, VOICE_MODELS.length, `one row per model, got ${list.items.length}`);
+  assert.deepEqual(
+    list.items.map((i: any) => i.id).sort(),
+    ['kokoro-multi-lang', 'piper-lessac-medium', 'silero-vad', 'zipformer-bilingual-int8'],
+    `the menu must list both TTS tiers: ${JSON.stringify(list.items.map((i: any) => i.id))}`,
+  );
   for (const item of list.items) {
-    assert.ok(['missing', 'downloading', 'ready', 'error'].includes(item.state), `bad state ${item.state} for ${item.kind}`);
-    assert.ok(item.size > 0, `${item.kind} size must be positive, got ${item.size}`);
-    assert.ok(item.pct >= 0 && item.pct <= 100, `${item.kind} pct out of range: ${item.pct}`);
+    assert.ok(['missing', 'downloading', 'ready', 'error'].includes(item.state), `bad state ${item.state} for ${item.id}`);
+    assert.ok(item.size > 0, `${item.id} size must be positive, got ${item.size}`);
+    assert.ok(item.pct >= 0 && item.pct <= 100, `${item.id} pct out of range: ${item.pct}`);
+    assert.ok(['required', 'optional'].includes(item.tier), `${item.id} tier: ${item.tier}`);
   }
 
   const badKind = await route('/models/download', {
@@ -193,10 +211,24 @@ test('GET /local/status and /local/models describe the CPU runtime', async () =>
   assert.equal(started.started, false, `a complete model must not restart downloading: ${JSON.stringify(started)}`);
   assert.equal(started.state.vad, 'ready', `state after the no-op download: ${JSON.stringify(started.state)}`);
   assert.equal(body.available, true, `status must be available with the cache present: ${JSON.stringify(body)}`);
-  assert.equal(body.bytes.total, VOICE_MODEL_BYTES, `bytes.total must be the manifest total (${VOICE_MODEL_BYTES}), got ${body.bytes.total}`);
-  assert.equal(body.bytes.have, VOICE_MODEL_BYTES, `every listed file should be on disk: have ${body.bytes.have}`);
+  // `bytes` covers the required set (stt + vad + piper): the optional voice has its own size in
+  // /models and never moves this bar, which is what the UI's "0 of 263 MB" reads.
+  assert.equal(
+    body.bytes.total,
+    REQUIRED_BYTES,
+    `bytes.total must be the required-set total (${REQUIRED_BYTES}), got ${body.bytes.total}`,
+  );
+  assert.equal(body.bytes.have, REQUIRED_BYTES, `every required file should be on disk: have ${body.bytes.have}`);
+  assert.ok(
+    VOICE_MODEL_BYTES > REQUIRED_BYTES,
+    `the manifest must include the optional tier on top of the required set (${VOICE_MODEL_BYTES} vs ${REQUIRED_BYTES})`,
+  );
   assert.deepEqual(body.models, { stt: 'ready', tts: 'ready', vad: 'ready' }, `states: ${JSON.stringify(body.models)}`);
   assert.equal(list.ready, true, `models.ready must be true: ${JSON.stringify(list.items)}`);
+  assert.ok(
+    filesForModel('kokoro-multi-lang').length === 4,
+    `the Kokoro tier is four files, got ${filesForModel('kokoro-multi-lang').length}`,
+  );
 });
 
 // ---------- 2. transcription accuracy ----------
@@ -383,9 +415,12 @@ test('model downloader verifies sha256, skips complete files and resumes a parti
   const urlFor = (file: VoiceModelFile) => `${base}/${file.path}`;
 
   const files: VoiceModelFile[] = [
-    { name: 'stt-a.bin', kind: 'stt', repo: 'test/fake', path: 'a.bin', size: a.length, sha256: sha256(a) },
-    { name: 'tts-b.bin', kind: 'tts', repo: 'test/fake', path: 'nested/b.bin', size: b.length, sha256: sha256(b) },
+    { name: 'stt-a.bin', kind: 'stt', model: 'fake-stt', repo: 'test/fake', path: 'a.bin', size: a.length, sha256: sha256(a) },
+    { name: 'tts-b.bin', kind: 'tts', model: 'fake-tts', repo: 'test/fake', path: 'nested/b.bin', size: b.length, sha256: sha256(b) },
   ];
+  // The cache path carries the model: <kind>/<model>/<path>.
+  const A = path.join('stt', 'fake-stt', 'a.bin');
+  const B = path.join('tts', 'fake-tts', 'nested', 'b.bin');
 
   const dir = fs.mkdtempSync(path.join(tmpRoot, 'voice-models-'));
   resetVoiceModelCaches();
@@ -395,14 +430,17 @@ test('model downloader verifies sha256, skips complete files and resumes a parti
   const first = await downloadVoiceFiles({ dir, files, urlFor, onProgress: (p) => progress.push({ pct: p.pct, name: p.name }), concurrency: 2 });
   assert.equal(first.ok, true, `first download should succeed: ${first.error ?? ''}`);
   assert.equal(first.downloaded, 2, `first run should download both files, got ${first.downloaded} (skipped ${first.skipped})`);
-  assert.deepEqual(fs.readFileSync(path.join(dir, 'stt', 'a.bin')), a, 'stt/a.bin content must match the served bytes');
-  assert.deepEqual(fs.readFileSync(path.join(dir, 'tts', 'nested', 'b.bin')), b, 'tts/nested/b.bin content must match');
-  assert.equal(fs.existsSync(path.join(dir, 'stt', 'a.bin.part')), false, 'a finished download must not leave a .part file');
+  assert.deepEqual(fs.readFileSync(path.join(dir, A)), a, 'stt/<model>/a.bin content must match the served bytes');
+  assert.deepEqual(fs.readFileSync(path.join(dir, B)), b, 'tts/<model>/nested/b.bin content must match');
+  assert.equal(fs.existsSync(path.join(dir, `${A}.part`)), false, 'a finished download must not leave a .part file');
   const state = JSON.parse(fs.readFileSync(path.join(dir, '.state.json'), 'utf8'));
   assert.equal(state.files['stt-a.bin'], sha256(a), '.state.json must record the verified sha256');
   assert.ok(progress.length >= 2, `expected progress events, got ${progress.length}`);
   assert.equal(progress.at(-1)?.pct, 100, `last progress event should be 100%, got ${JSON.stringify(progress.at(-1))}`);
-  assert.ok(progress.some((p) => p.name === 'stt-a.bin' || p.name === 'tts-b.bin'), `progress should name the file being written: ${JSON.stringify(progress)}`);
+  assert.ok(
+    progress.some((p) => p.name === 'fake-stt/a.bin' || p.name === 'fake-tts/nested/b.bin'),
+    `progress should name the model and the file being written: ${JSON.stringify(progress)}`,
+  );
 
   // Second run: nothing on the wire, everything skipped.
   const before = requests.length;
@@ -413,22 +451,22 @@ test('model downloader verifies sha256, skips complete files and resumes a parti
   assert.equal(requests.length, before, `warm run must make no requests, made ${requests.length - before}`);
 
   // A truncated file is re-fetched.
-  fs.writeFileSync(path.join(dir, 'stt', 'a.bin'), a.subarray(0, 10));
+  fs.writeFileSync(path.join(dir, A), a.subarray(0, 10));
   const third = await downloadVoiceFiles({ dir, files, urlFor });
   assert.equal(third.downloaded, 1, `only the truncated file should be re-downloaded, got ${third.downloaded}`);
-  assert.deepEqual(fs.readFileSync(path.join(dir, 'stt', 'a.bin')), a, 'the truncated file must be restored byte for byte');
+  assert.deepEqual(fs.readFileSync(path.join(dir, A)), a, 'the truncated file must be restored byte for byte');
 
   // Resume: a leftover .part is continued with a Range request instead of starting over.
   const resumeDir = fs.mkdtempSync(path.join(tmpRoot, 'voice-models-resume-'));
-  fs.mkdirSync(path.join(resumeDir, 'tts', 'nested'), { recursive: true });
-  fs.writeFileSync(path.join(resumeDir, 'tts', 'nested', 'b.bin.part'), b.subarray(0, 1234));
+  fs.mkdirSync(path.dirname(path.join(resumeDir, B)), { recursive: true });
+  fs.writeFileSync(path.join(resumeDir, `${B}.part`), b.subarray(0, 1234));
   const beforeRange = requests.length;
   const resumed = await downloadVoiceFiles({ dir: resumeDir, files: [files[1]], urlFor });
   assert.equal(resumed.ok, true, `resume should succeed: ${resumed.error ?? ''}`);
   const ranged = requests.slice(beforeRange).find((r) => r.url === '/nested/b.bin');
   assert.equal(ranged?.range, 'bytes=1234-', `resume must ask for bytes=1234-, got ${JSON.stringify(ranged)}`);
-  assert.deepEqual(fs.readFileSync(path.join(resumeDir, 'tts', 'nested', 'b.bin')), b, 'resumed file must be complete');
-  assert.equal(fs.existsSync(path.join(resumeDir, 'tts', 'nested', 'b.bin.part')), false, 'resume must clear the .part file');
+  assert.deepEqual(fs.readFileSync(path.join(resumeDir, B)), b, 'resumed file must be complete');
+  assert.equal(fs.existsSync(path.join(resumeDir, `${B}.part`)), false, 'resume must clear the .part file');
 
   // A bad checksum is an error state, not a corrupt model on disk.
   const badDir = fs.mkdtempSync(path.join(tmpRoot, 'voice-models-bad-'));
@@ -436,8 +474,8 @@ test('model downloader verifies sha256, skips complete files and resumes a parti
   const broken = await downloadVoiceFiles({ dir: badDir, files: bad, urlFor });
   assert.equal(broken.ok, false, 'a sha256 mismatch must resolve ok:false');
   assert.match(String(broken.error), /sha256 mismatch/, `error should name the checksum: ${broken.error}`);
-  assert.equal(fs.existsSync(path.join(badDir, 'stt', 'a.bin')), false, 'a mismatched file must never be renamed into place');
-  assert.equal(fs.existsSync(path.join(badDir, 'stt', 'a.bin.part')), false, 'a mismatched .part file must be deleted');
+  assert.equal(fs.existsSync(path.join(badDir, A)), false, 'a mismatched file must never be renamed into place');
+  assert.equal(fs.existsSync(path.join(badDir, `${A}.part`)), false, 'a mismatched .part file must be deleted');
 
   t.diagnostic(`downloader: ${requests.length} requests, ${progress.length} progress events, skip and resume verified`);
 });

@@ -11,16 +11,25 @@
 # It also ships the Hermes CLI, because the desktop app runs this server inside this image and every
 # managed Bot needs `hermes` to start its own gateway. Previously the image had no Hermes at all, so
 # every bot creation ended in `spawn hermes ENOENT` and a bot that could not answer.
+#
+# The base is glibc (node:22-bookworm-slim), not alpine, for one reason: sherpa-onnx's bundled
+# onnxruntime throws `Ort::Exception ... No error information` when it has to create a session under
+# musl + gcompat, so on-device voice could never run in this image. See the runtime stage for detail.
 
 # ---------------------------------------------------------------- build
-FROM node:22-alpine AS builder
+FROM node:22-bookworm-slim AS builder
 
 # corepack reads "packageManager": "pnpm@12.8.1" from package.json, so the image uses exactly the
 # pnpm that wrote pnpm-lock.yaml (--frozen-lockfile would fail on a different major).
-# python3/make/g++ are only for ssh2's optional crypto binding (dockerode depends on ssh2), which
-# compiles if it can and is skipped otherwise; without them the failure is loud.
+# python3/make/g++ are the toolchain for the native modules allowBuilds lets compile (better-sqlite3,
+# ssh2's cpu-features). They are not optional polish: better-sqlite3 has no musl prebuild, and its
+# .node file is linked against the libc that builds it, so an alpine builder would put a musl
+# binary into /out that the glibc runtime stage cannot even dlopen. The builder is glibc for that
+# reason -- it has to produce artefacts the runtime can load.
 RUN corepack enable \
- && apk add --no-cache python3 make g++
+ && apt-get update \
+ && apt-get install -y --no-install-recommends python3 make g++ \
+ && rm -rf /var/lib/apt/lists/*
 ENV PNPM_HOME=/pnpm \
     PATH=/pnpm:$PATH
 WORKDIR /app
@@ -71,11 +80,9 @@ RUN pnpm --filter @orbit/server deploy --prod --store-dir=/pnpm/store /out \
 # exactly what the official installer does -- shallow clone of a release tag, then `uv sync`
 # against the checkout's own uv.lock -- with the tag and uv pinned here instead of floating.
 #
-# It stays on the same alpine base as the runtime so the venv's interpreter (the image's own
-# python3, currently 3.14, which is the version Hermes targets) and its musl wheels match the
-# runtime exactly. The base's python drifting past 3.14 would fail the `hermes --version` check
-# below loudly rather than ship a broken engine.
-FROM node:22-alpine AS hermes
+# On the glibc base this is simpler than it was on alpine: uv's lock resolves manylinux wheels for
+# everything Hermes needs, whereas musl had to make do with the smaller musllinux wheel set.
+FROM node:22-bookworm-slim AS hermes
 
 # The release to ship. Bump this and the image gets a newer engine; the uv.lock in that tag pins
 # every Python dependency, so the build is reproducible.
@@ -83,7 +90,12 @@ ARG HERMES_VERSION=v0.23.1
 # The uv that resolves that lock (the version the upstream image builds with).
 ARG UV_VERSION=0.13.8
 
-RUN apk add --no-cache python3 ca-certificates curl git bash
+# ca-certificates/curl for the uv installer, git for the clone. No system python: the venv below
+# carries its own interpreter (see UV_PYTHON_INSTALL_DIR), so nothing here depends on bookworm's
+# Python 3.11.
+RUN apt-get update \
+ && apt-get install -y --no-install-recommends ca-certificates curl git \
+ && rm -rf /var/lib/apt/lists/*
 
 # --no-modify-path: PATH is set in the runtime stage, not by a shell profile this image never reads.
 RUN curl -LsSf "https://astral.sh/uv/${UV_VERSION}/install.sh" \
@@ -96,6 +108,12 @@ RUN git clone --depth 1 --branch "${HERMES_VERSION}" \
 
 WORKDIR /opt/hermes
 
+# The venv is CPython 3.14 because that is what Hermes targets, and bookworm only ships 3.11. So uv
+# fetches its own standalone (glibc) CPython 3.14 -- the same managed interpreter upstream uses.
+# UV_PYTHON_INSTALL_DIR puts that interpreter *inside* /opt/hermes, because .venv/bin/python is a
+# symlink to it and the whole tree is COPYed into the runtime stage: left in uv's default cache
+# (~/.local/share/uv) the symlink would dangle and every `hermes` call would die with ENOENT.
+#
 # --frozen installs exactly uv.lock (no re-resolve at build time) and --no-dev keeps pytest/ruff out.
 # The extras are the ones a managed Bot needs to be an Orbit engine rather than a bare REPL:
 #   anthropic  the Claude-subscription sign-in path imports the SDK
@@ -103,9 +121,10 @@ WORKDIR /opt/hermes
 # aiohttp is the gateway's api_server adapter -- without it `hermes gateway run` starts, says
 # "No adapter available for api_server" and never binds the port Orbit talks to. It is a pinned
 # dependency of several platform extras but no extra of its own, so it is installed by pin.
-# The browser/computer-use extras cannot be installed here: playwright publishes no musllinux
-# wheels, and those tools run inside a Bot's own computer container (see COMPUTER_IMAGE).
-RUN uv venv --python /usr/bin/python3 /opt/hermes/.venv \
+# The browser/computer-use extras are not installed: those tools run inside a Bot's own computer
+# container (see COMPUTER_IMAGE), not in this one.
+ENV UV_PYTHON_INSTALL_DIR=/opt/hermes/.python
+RUN uv venv --python 3.14 /opt/hermes/.venv \
  && uv sync --frozen --no-dev --extra anthropic --extra mcp \
  && uv pip install --python /opt/hermes/.venv/bin/python "aiohttp==3.14.5"
 
@@ -123,23 +142,33 @@ RUN rm -rf /opt/hermes/.git /opt/hermes/tests /opt/hermes/tests-js /opt/hermes/w
  && printf 'docker\n' > /opt/hermes/.install_method
 
 # The CLI must work for the non-root runtime user, and the install tree is immutable for it: state
-# belongs in HERMES_HOME (/data/hermes, on the volume), never here.
+# belongs in HERMES_HOME (/data/hermes, on the volume), never here. This has to cover .python too --
+# that is the interpreter every hermes process execs.
 RUN chmod -R a+rX,go-w /opt/hermes \
  && /opt/hermes/.venv/bin/hermes --version
 
 # ---------------------------------------------------------------- runtime
-FROM node:22-alpine AS runtime
+FROM node:22-bookworm-slim AS runtime
 
-# sherpa-onnx-node ships glibc-linked prebuilt binaries; alpine is musl, so gcompat (plus libstdc++,
-# which those binaries link against) is what makes `require('sherpa-onnx-node')` load. Without it
-# the addon dies with "Error loading shared library ld-linux-aarch64.so.1".
-# python3 runs the Hermes venv (its interpreter is this image's /usr/bin/python3.14); bash and git
-# are what Hermes' own tools shell out to. A non-root user, and /data owned by it so a named volume
-# created from this image is writable: SQLite needs orbit.db, and the engines/Hermes homes live
-# there too.
-RUN apk add --no-cache python3 bash git ca-certificates gcompat libstdc++ \
- && addgroup -S orbit \
- && adduser -S -G orbit -h /app orbit \
+# Debian bookworm, not alpine: sherpa-onnx-node's prebuilt binaries link against glibc, and under
+# musl + gcompat the addon loads but every ONNX session creation dies with
+# `terminate called after throwing an instance of 'Ort::Exception' / what(): Exception caught:
+# No error information`. That is not a missing-library problem gcompat can paper over, so the whole
+# on-device voice stack (STT/TTS/VAD) is unusable there. libstdc++6 (which sherpa-onnx.node really
+# does link) comes with the base; libgomp1 is kept as the one cheap guard for onnxruntime's OpenMP
+# kernels -- this sherpa-onnx build happens to link neither libgomp nor libgomp's symbols, so it is
+# insurance against a version bump, not something today's binary needs. python3 is for the shell-outs
+# Hermes tools and bot containers make (PATH puts the venv's own 3.14 interpreter first, so `python3`
+# is 3.14 as it was on the old alpine base); bash and git are what Hermes' own tools shell out to.
+#
+# A non-root user, and /data owned by it so a named volume created from this image is writable:
+# SQLite needs orbit.db, and the engines/Hermes homes live there too.
+RUN apt-get update \
+ && apt-get install -y --no-install-recommends \
+      python3 bash git ca-certificates libstdc++6 libgomp1 \
+ && rm -rf /var/lib/apt/lists/* \
+ && groupadd --system orbit \
+ && useradd --system --gid orbit --home-dir /app --no-create-home --shell /bin/bash orbit \
  && mkdir -p /data/hermes /app/apps/web/src/avatar \
  && chown orbit:orbit /data /data/hermes /app
 
@@ -173,7 +202,7 @@ WORKDIR /app/apps/server
 USER orbit
 EXPOSE 8787
 
-# No curl or wget in alpine beyond busybox, and busybox wget is not in every base — node is.
+# No curl or wget in this slim base either; node is, so it probes its own health endpoint.
 HEALTHCHECK --interval=15s --timeout=5s --start-period=20s --retries=5 \
   CMD node -e "fetch('http://127.0.0.1:'+(process.env.PORT||8787)+'/api/health').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))"
 

@@ -29,6 +29,10 @@ export interface Bot {
   voice: string;
   voiceSpeed: number;
   voiceLanguage: string;
+  /** Which pipeline a call uses: the xAI realtime path, or the on-device sherpa-onnx one. */
+  voiceProvider: VoiceProvider;
+  /** On-device voice model id (see GET /api/voice/local/models); unused on the cloud path. */
+  voiceModel: string;
   /** Hermes engine: model id and provider for this bot; null = the engine's default. */
   model: string | null;
   provider: string | null;

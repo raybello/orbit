@@ -12,8 +12,8 @@
 import type { Caption } from './call';
 import { useVoice } from './call';
 import { LOCAL_TTS_RATE, startLocalSession } from './api';
-import { MicCapture, PcmPlayer, RATE, createAudioContext, micErrorMessage, openMic } from './audio';
-import { StreamResampler, toPcm16 } from './resample';
+import { MicCapture, PcmPlayer, createAudioContext, micErrorMessage, openMic } from './audio';
+import { LOCAL_IN_RATE, StreamResampler, toPcm16 } from './resample';
 
 // The pure resampler helpers live in resample.ts so they can be unit-tested without a browser;
 // re-exported here because this is the module the call path owns.
@@ -45,6 +45,8 @@ class LocalCall {
   /** Server's reply rate; the session values are a fallback until `ready` lands. */
   private ttsRate = LOCAL_TTS_RATE;
   private readonly resampler = new StreamResampler();
+  /** Capture context, deliberately 16 kHz; `this.ctx` stays at the device rate for playback. */
+  private readonly captureCtx: AudioContext;
   /** The open (non-final) user caption, replaced in place until the transcript is final. */
   private userCaptionId: string | null = null;
   private captionSeq = 0;
@@ -57,6 +59,9 @@ class LocalCall {
     // Created synchronously inside the click so autoplay policy lets it run.
     this.ctx = createAudioContext();
     this.player = new PcmPlayer(this.ctx);
+    // Capture runs on its own 16 kHz context: the browser resamples the device once, at full
+    // quality, and the worklet then hands us 16 kHz frames with nothing left to interpolate.
+    this.captureCtx = createAudioContext(LOCAL_IN_RATE);
     // The server drives speaking via its own frames; the player only reports when audio drains.
     this.player.onIdle = () => setV({ speaking: false });
   }
@@ -71,14 +76,14 @@ class LocalCall {
     window.addEventListener('beforeunload', this.onUnload);
     let stream: MediaStream;
     try {
-      stream = await openMic();
+      stream = await openMic({ sampleRate: LOCAL_IN_RATE });
     } catch (e) {
       this.end(micErrorMessage(e));
       return;
     }
     if (this.ended) { stream.getTracks().forEach((t) => t.stop()); return; }
     try {
-      this.mic = new MicCapture(this.ctx, stream, (frame) => this.sendAudio(frame));
+      this.mic = new MicCapture(this.captureCtx, stream, (frame) => this.sendAudio(frame), LOCAL_IN_RATE);
       await this.mic.start();
       if (this.ended) return;
       const sess = await startLocalSession(this.botId);
@@ -134,7 +139,7 @@ class LocalCall {
     if (this.ws?.readyState !== WebSocket.OPEN) return;
     const f = new Float32Array(frame.length);
     for (let i = 0; i < frame.length; i++) f[i] = frame[i] / 0x8000;
-    const pcm = toPcm16(this.resampler.process(f, RATE));
+    const pcm = toPcm16(this.resampler.process(f, LOCAL_IN_RATE));
     if (pcm.length) this.sendRaw(pcm.buffer as ArrayBuffer);
   }
 
@@ -245,6 +250,7 @@ class LocalCall {
     this.mic?.stop();
     this.player.dispose();
     void this.ctx.close().catch(() => {});
+    void this.captureCtx.close().catch(() => {});
     if (current === this) current = null;
     if (error) {
       setV({ status: 'error', error, speaking: false, listening: false, thinking: false, working: [] });
