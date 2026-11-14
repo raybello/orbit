@@ -10,7 +10,7 @@ const ORDER: [NavSection, string][] = [
   ['calendar', 'Calendar'],
   ['calls', 'Calls'],
   ['files', 'Files'],
-  ['computers', 'Computers'],
+  ['computers', 'Screens'],
   ['skills', 'Skills'],
 ];
 
