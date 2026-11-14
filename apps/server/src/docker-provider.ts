@@ -5,6 +5,7 @@ import { tcpVncStream } from './lib/vnc-stream.js';
 import { dockerBox } from './docker/docker-box.js';
 import { containerStatus, createBotContainer, removeContainer, startContainer, stopContainer } from './docker/container.js';
 import { ensureScreen, screenPorts, teardownScreen } from './docker/screen.js';
+import { describeEndpoint, ensureBotOnNetwork, screenEndpointFor, serverPlacement } from './docker/reach.js';
 import { checkpointWorkspace, ensureHomeDir, homeDirFor, restoreWorkspace, wipeWorkspace } from './docker/workspace.js';
 import { claimScreen, dockerComputers, ensureComputerRow, getComputer, getScreen, saveScreen, setComputerState, setControlToken, touchScreen, deleteComputerRow, deleteScreen, type ScreenRow } from './computer-store.js';
 import { dressScreen, resetScreen as resetDesk, type DeskBot } from './desk.js';
@@ -96,6 +97,7 @@ export class DockerComputerProvider implements ComputerProvider {
         } else if (row.state !== 'running') {
           await this.afterStart(botId, row.container_id);
         }
+        await this.ensureReachable(botId, row.container_id);
         setComputerState(botId, 'running', { containerId: row.container_id, error: null, homePath });
         return { computerId: botId, kind: 'docker' };
       }
@@ -134,6 +136,24 @@ export class DockerComputerProvider implements ComputerProvider {
     const expected = screenPorts(screen.display_index);
     if (screen.vnc_port !== expected.vncPort || screen.cdp_port !== expected.cdpPort) {
       throw new Error(`container ${containerId.slice(0, 12)} was created for another display; remove it and open the bot again`);
+    }
+  }
+
+  /**
+   * A bot's screen is dialed over the Docker network the server shares with it (a containerized
+   * server) or over published loopback ports (a server on the host). A container made before the
+   * server moved into a container sits on the default bridge, which is a different bridge with no
+   * route between them, so it joins the server's network here.
+   */
+  private async ensureReachable(botId: string, containerId: string): Promise<void> {
+    const placement = await serverPlacement();
+    if (!placement.inContainer || !placement.network) return;
+    try {
+      if (await ensureBotOnNetwork(containerId, placement.network)) {
+        console.log(`[docker] ${botId} joined ${placement.network} so its screen is reachable from the server's container`);
+      }
+    } catch (e: any) {
+      console.warn(`[docker] could not put ${botId}'s container on ${placement.network}: ${String(e?.message ?? e)}`);
     }
   }
 
@@ -210,7 +230,8 @@ export class DockerComputerProvider implements ComputerProvider {
   async cdpUrl(botId: string, screenId: string): Promise<string> {
     const screen = getScreen(botId, screenId) ?? getScreen(botId);
     if (!screen) throw new Error(`${botId} has no screen`);
-    return `http://127.0.0.1:${screenPorts(screen.display_index).cdpPort}`;
+    const endpoint = await screenEndpointFor(this.containerId(botId), screen.display_index, 'cdp');
+    return `http://${endpoint.host.includes(':') ? `[${endpoint.host}]` : endpoint.host}:${endpoint.port}`;
   }
 
   // ------------------------------------------------------------ viewing and control
@@ -218,12 +239,17 @@ export class DockerComputerProvider implements ComputerProvider {
   async vncConnect(_userId: string, botId: string, screenId: string): Promise<VncStream> {
     const screen = getScreen(botId, screenId);
     if (!screen?.vnc_port) throw new Error(`${botId} has no VNC port yet`);
+    const containerId = this.containerId(botId);
     // Docker's port forward (and, on Docker Desktop/colima, the host's own forward) can trail the
     // container's start by a moment; a viewer opening the bot right after it wakes may beat it.
     let lastError: unknown;
     for (let attempt = 0; attempt < 10; attempt++) {
       try {
-        return await tcpVncStream(screen.vnc_port);
+        // Re-resolved every attempt: the first attempt is also what attaches a container made
+        // before the server ran inside Docker to the server's network.
+        const endpoint = await screenEndpointFor(containerId, screen.display_index, 'vnc');
+        if (attempt === 0) console.log(`[vnc] ${botId} display ${screen.display_index} upstream ${describeEndpoint(endpoint)}`);
+        return await tcpVncStream(endpoint.port, endpoint.host);
       } catch (e) {
         lastError = e;
         await new Promise((r) => setTimeout(r, 300));

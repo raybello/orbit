@@ -25,11 +25,15 @@ export interface ComputerRef {
 
 export interface ScreenRef {
   screenId: string;
-  /** Docker only: host port the screen's x11vnc listens on. */
+  /**
+   * Docker only: the port the screen's VNC server listens on. Where that port is (a published
+   * loopback port on the host, or the bot's address on a Docker network the server shares) is
+   * resolved by docker/reach.ts, not stored here.
+   */
   vncPort?: number;
   /** Docker only: the password the relay authenticates to VNC with. */
   viewToken?: string;
-  /** Chrome DevTools port of the browser on this screen. */
+  /** Chrome DevTools port of the browser on this screen (published; NOT the port inside the container). */
   cdpPort?: number;
 }
 

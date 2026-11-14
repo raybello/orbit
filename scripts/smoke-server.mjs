@@ -160,6 +160,15 @@ try {
   const hello = frames.split('\n').find((l) => l.startsWith('data: ') && l.includes('"hello"'));
   check('SSE sends a hello frame with a seq', Boolean(hello && /"seq":\d+/.test(hello)), hello ?? '(no frame)');
 
+  // The screen's Retry button calls this. In a stack with no Orgo computer it used to 500,
+  // because the handler went straight to Orgo instead of the bot's own Docker computer.
+  const ensureComputer = await request('/api/computer/ensure', { method: 'POST', headers: bearer });
+  check(
+    'POST /api/computer/ensure answers without an Orgo computer',
+    ensureComputer.status === 200 && ensureComputer.body?.computer?.status === 'running',
+    `${ensureComputer.status} ${JSON.stringify(ensureComputer.body?.computer?.status)}`,
+  );
+
   const anon = await request('/api/bots');
   check('unauthenticated /api/bots is 401', anon.status === 401, String(anon.status));
 } finally {

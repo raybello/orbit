@@ -6,11 +6,12 @@ import YAML from 'yaml';
 import { displayFor } from './box.js';
 import { cdpUrlFor, screenFor } from './computer.js';
 import { claimScreen } from './computer-store.js';
-import { computerKindFor } from './computer-provider-registry.js';
+import { computerKindFor, providerFor } from './computer-provider-registry.js';
 import { screenPorts } from './docker/screen.js';
 import { randomUUID } from 'node:crypto';
 import { db } from './db.js';
 import { env } from './env.js';
+import { DEFAULT_PATH, defaultHermesLookup, hermesBin, resolveHermesBin } from './hermes-bin.js';
 import type { EngineInfo, EngineProvider } from './types.js';
 
 /**
@@ -161,11 +162,16 @@ async function writeHome(botId: string): Promise<{ home: string; key: string; di
   let display: string | null = null;
   let cdp = '';
   if (computerKindFor(botId) === 'docker') {
-    // A container's browser answers DevTools on a host port; the display it draws on is inside the
-    // container, so the agent drives the browser over CDP and gets no local DISPLAY.
+    // A container's browser answers DevTools inside the container; the display it draws on is in
+    // there too, so the agent drives the browser over CDP and gets no local DISPLAY. Ask the
+    // provider for the address, because it depends on where *this server* runs: a host server dials
+    // a published loopback port, a containerized one dials the bot's address on the shared Docker
+    // network. Assuming 127.0.0.1 here is what made containerized bots' browsers unreachable.
     try {
       const s = claimScreen(botId, env.computerMaxDisplays, randomUUID);
-      cdp = `http://127.0.0.1:${screenPorts(s.display_index).cdpPort}`;
+      cdp = await providerFor(botId)
+        .cdpUrl(botId, s.screen_id)
+        .catch(() => `http://127.0.0.1:${screenPorts(s.display_index).cdpPort}`);
     } catch (e: any) {
       console.warn(`[engine] no display for ${b.name} yet: ${e?.message ?? e}`);
     }
@@ -196,7 +202,7 @@ async function writeHome(botId: string): Promise<{ home: string; key: string; di
   cfg.mcp_servers = {
     ...(cfg.mcp_servers ?? {}),
     ...extraMcpServers(),
-    hq: { url: `${env.mcpBaseUrl}/mcp/${botId}`, headers: { Authorization: `Bearer ${mcpToken(botId)}` }, timeout: 1800, connect_timeout: 30 },
+    hq: { url: managedMcpUrl(botId), headers: { Authorization: `Bearer ${mcpToken(botId)}` }, timeout: 1800, connect_timeout: 30 },
   };
   writePrivate(cfgFile, YAML.stringify(cfg));
 
@@ -286,6 +292,16 @@ function managedUrl(botId: string): string {
   return `http://127.0.0.1:${botRow(botId).engine_port}`;
 }
 
+/**
+ * Where a managed gateway reaches this server's MCP endpoint. We start that gateway ourselves, so it
+ * runs on this machine and loopback is the shortest path to us. MCP_BASE_URL describes the other
+ * case — a gateway on another machine, like the host's primary agent — and inside Docker its
+ * host.docker.internal address only reaches us while the published port happens to be 8787.
+ */
+function managedMcpUrl(botId: string): string {
+  return `http://127.0.0.1:${env.port}/mcp/${botId}`;
+}
+
 function managedKey(botId: string): string {
   let k = keys.get(botId);
   if (!k) {
@@ -318,14 +334,20 @@ async function startGateway(botId: string, attempt = 0): Promise<void> {
   keys.set(botId, key);
   if (gatewayPid(home)) await stopGateway(botId);
 
+  // Resolved before anything is spawned: when Hermes is not installed, this throws the message that
+  // the bot's settings panel shows, instead of leaving a bare `spawn hermes ENOENT` in the log.
+  const bin = hermesBin(defaultHermesLookup({ configured: env.hermesBinConfigured }));
+
   const log = fs.openSync(path.join(home, 'logs', 'gateway.out.log'), 'a');
-  const child = spawn(env.hermesBin, ['gateway', 'run', '--no-supervise'], {
+  const child = spawn(bin, ['gateway', 'run', '--no-supervise'], {
     cwd: home,
     detached: true,
     stdio: ['ignore', log, log],
     // Only what the agent needs. None of this server's secrets, and nothing of the primary agent's messaging.
     env: {
-      PATH: process.env.PATH ?? '/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin',
+      // The CLI's own directory first, so a `hermes` that shells out to itself or its venv tools
+      // resolves even when the image's PATH (or a launchd PATH) does not contain it.
+      PATH: [path.dirname(bin), process.env.PATH ?? DEFAULT_PATH].filter(Boolean).join(path.delimiter),
       HOME: process.env.HOME ?? '/root',
       USER: process.env.USER ?? 'root',
       LANG: process.env.LANG ?? 'C.UTF-8',
@@ -334,12 +356,26 @@ async function startGateway(botId: string, attempt = 0): Promise<void> {
       // Hermes' browser tool talks to a helper process it finds under this folder. With the default
       // (one folder per HOME) every agent on the computer would end up driving the same browser.
       BH_HOME: path.join(home, 'browser-harness'),
+      // The stack's api container runs as root so it can open the mounted Docker socket, and the
+      // bundled gateway refuses root unless this opt-in is forwarded to it. It is deliberately the
+      // only Hermes variable passed through: everything else here is chosen per bot.
+      ...(process.env.HERMES_ALLOW_ROOT_GATEWAY
+        ? { HERMES_ALLOW_ROOT_GATEWAY: process.env.HERMES_ALLOW_ROOT_GATEWAY }
+        : {}),
       ...(display ? { DISPLAY: display } : {}),
     },
   });
   fs.closeSync(log);
   let exited: string | null = null;
-  child.once('error', (e) => { exited = `could not run ${env.hermesBin}: ${e.message}`; });
+  child.once('error', (e: any) => {
+    exited =
+      e?.code === 'ENOENT'
+        // Resolved, then vanished between the check and the spawn (image swap, uninstall). Rare, but
+        // say what to fix rather than echoing "ENOENT".
+        ? `could not run ${bin}: the file is no longer executable or has gone. ` +
+          `Set HERMES_BIN to the hermes executable (currently ${env.hermesBinConfigured || `"hermes" on PATH`}).`
+        : `could not run ${bin}: ${e?.message ?? e}`;
+  });
   child.once('exit', (code) => { exited = `the agent stopped while starting (exit ${code}). See ${path.join(home, 'logs', 'gateway.out.log')}`; });
   child.unref();
 
@@ -351,7 +387,7 @@ async function startGateway(botId: string, attempt = 0): Promise<void> {
       return;
     }
   }
-  throw new Error('The agent did not come up within 90 seconds.');
+  throw new Error(`The agent did not come up within 90 seconds. See ${path.join(home, 'logs', 'gateway.out.log')}`);
 }
 
 /** Start (or adopt) the bot's gateway. Safe to call often; concurrent calls share one start. */
@@ -418,8 +454,14 @@ export function ownScreenOn(botId: string): boolean {
 export function stopOwnScreen(botId: string): Promise<void> {
   const home = engineHome(botId);
   if (!home) return Promise.reject(new Error('This bot has no agent.'));
+  let bin: string;
+  try {
+    bin = hermesBin(defaultHermesLookup({ configured: env.hermesBinConfigured }));
+  } catch (e: any) {
+    return Promise.reject(e);
+  }
   return new Promise((resolve, reject) => {
-    execFile(env.hermesBin, ['computer-use', 'screen', 'stop'], { env: { ...process.env, HERMES_HOME: home }, timeout: 60_000 }, (err, stdout, stderr) => {
+    execFile(bin, ['computer-use', 'screen', 'stop'], { env: { ...process.env, HERMES_HOME: home }, timeout: 60_000 }, (err, stdout, stderr) => {
       if (!ownScreenOn(botId)) return resolve();
       const said = `${stderr || ''}\n${stdout || ''}`.trim().split('\n').filter(Boolean).pop();
       reject(new Error(said || (err ? String(err.message) : 'The screen is still running.')));
@@ -469,6 +511,11 @@ function syncPrimaryHqConfig(botId: string) {
 
 export function initEngines() {
   fs.mkdirSync(env.enginesDir, { recursive: true });
+  // Say where the CLI came from (or what is missing) once, at boot: the first place to look when a
+  // managed bot will not start.
+  const resolution = resolveHermesBin(defaultHermesLookup({ configured: env.hermesBinConfigured }));
+  if (resolution.found) console.log(`[engine] hermes: ${resolution.path} (${resolution.via})`);
+  else console.warn(`[engine] ${resolution.message}`);
   const bots = db.prepare("SELECT id, is_primary FROM bots WHERE engine IS NULL AND COALESCE(kind,'agent') <> 'room' AND COALESCE(hidden,0)=0 ORDER BY is_primary DESC, created_at ASC").all() as any[];
   for (const b of bots) assignEngine(b.id);
   const primaryBot = db.prepare("SELECT id FROM bots WHERE engine='primary' LIMIT 1").get() as any;

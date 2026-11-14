@@ -12,6 +12,12 @@ name: orbit
 services:
   api:
     image: ghcr.io/raybello/orbit/app:${ORBIT_IMAGE_TAG:-edge}
+    # The mounted Docker socket is root:docker inside Docker Desktop's VM and its group id
+    # changes between installs, so a non-root user cannot open it (EACCES, which the screen
+    # relay reports as "couldn't reach the screen"). Socket access is already equivalent to
+    # host root, so the group workaround buys nothing; run as root and say so. Without the
+    # socket, the image still defaults to its non-root user.
+    user: "0:0"
     init: true
     restart: unless-stopped
     env_file:
@@ -21,6 +27,10 @@ services:
         required: false
     environment:
       PORT: "8787"
+      # The bundled gateway refuses to run as root unless this is set. It is set because this
+      # container is root for the Docker socket (see `user:` above) and its only Hermes home is
+      # the root-owned data volume — nothing else ever writes there.
+      HERMES_ALLOW_ROOT_GATEWAY: "1"
       # The container's paths, not the host's: the app must not be able to override these.
       DB_PATH: /data/orbit.db
       ENGINES_DIR: /data/engines
@@ -30,6 +40,17 @@ services:
       SERVER_URL: ${SERVER_URL:-http://127.0.0.1:8787}
       MCP_BASE_URL: ${MCP_BASE_URL:-http://host.docker.internal:8787}
       HERMES_URL: ${HERMES_URL:-http://host.docker.internal:8642}
+      # The CLI the image ships, used to start one `hermes gateway run` per managed Bot. A stack .env
+      # that still carries a host path (HERMES_BIN=/Users/you/.local/bin/hermes) is harmless: the
+      # server falls back to this one, then to the known install locations, before it reports a miss.
+      HERMES_BIN: ${HERMES_BIN:-/opt/hermes/.venv/bin/hermes}
+      # An empty COMPUTER_IMAGE from a copied .env used to reach the Docker client as "",
+      # which it turned into a request for a host named "images" and crashed the boot path.
+      COMPUTER_IMAGE: ${COMPUTER_IMAGE:-orbit/computer:local}
+      # The primary agent inside the container: its config/auth live on the data volume. The real
+      # primary agent runs on the host and is reached over HERMES_URL; this is only the home a
+      # managed bot seeds its own config from.
+      HERMES_HOME_PRIMARY: ${HERMES_HOME_PRIMARY:-/data/hermes}
       LOG_LEVEL: ${LOG_LEVEL:-info}
     ports:
       # Loopback only. ORBIT_API_PORT=0 in .env.images.example is the "let the OS pick" case the
@@ -57,6 +78,12 @@ services:
     # Same image as api; this entrypoint binds nothing and only pauses idle bot containers. It has
     # to see the same database and the same Docker daemon, hence the same volume and socket.
     image: ghcr.io/raybello/orbit/app:${ORBIT_IMAGE_TAG:-edge}
+    # The mounted Docker socket is root:docker inside Docker Desktop's VM and its group id
+    # changes between installs, so a non-root user cannot open it (EACCES, which the screen
+    # relay reports as "couldn't reach the screen"). Socket access is already equivalent to
+    # host root, so the group workaround buys nothing; run as root and say so. Without the
+    # socket, the image still defaults to its non-root user.
+    user: "0:0"
     command: ["node", "dist/supervisor.js"]
     init: true
     restart: unless-stopped

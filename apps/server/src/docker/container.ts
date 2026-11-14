@@ -3,6 +3,7 @@ import { env } from '../env.js';
 import { docker } from './client.js';
 import { COMPUTER_IMAGE, ensureComputerImage } from './image.js';
 import { cdpBridgePort, screenPorts } from './screen.js';
+import { botNetworkName, extraNetworksFor, serverPlacement } from './reach.js';
 
 /**
  * One container per managed bot. Each is a small Linux desktop (Xvfb + x11vnc + a browser) whose
@@ -16,6 +17,19 @@ export interface ContainerSpec {
   displayIndex: number;
   timezone?: string;
   language?: string;
+  /**
+   * Docker network the container joins. A containerized server passes its own network so it can
+   * dial the screen (see reach.ts); otherwise this is COMPUTER_NETWORK/bridge.
+   */
+  network?: string;
+  /** Further networks to join, on top of `network` (a pinned COMPUTER_NETWORK plus the server's own). */
+  extraNetworks?: string[];
+  /**
+   * Publish the VNC/DevTools ports on 127.0.0.1. A server running in a container dials the bot over
+   * the shared Docker network instead, and publishing there only invites host-port collisions
+   * between stacks.
+   */
+  publishPorts?: boolean;
 }
 
 function sanitize(id: string): string {
@@ -49,10 +63,22 @@ export function containerCreateOptions(spec: ContainerSpec): Docker.ContainerCre
     [`${ports.vncPort}/tcp`]: {},
     [`${cdpBridgePort(spec.displayIndex)}/tcp`]: {},
   };
-  const bindings = {
-    [`${ports.vncPort}/tcp`]: [{ HostIp: '127.0.0.1', HostPort: String(ports.vncPort) }],
-    [`${cdpBridgePort(spec.displayIndex)}/tcp`]: [{ HostIp: '127.0.0.1', HostPort: String(ports.cdpPort) }],
-  };
+  // Loopback only, always: the screen is reachable from this machine and never from the LAN.
+  //
+  // A server that itself runs in a container does not need the host ports at all — it dials the bot
+  // on the Docker network both share (see docker/reach.ts). Publishing them there would also mean a
+  // second stack (or an older bot) holding "its" host port, and the container then refuses to start
+  // with "Bind for 127.0.0.1:<port> failed: port is already allocated".
+  const bindings = spec.publishPorts === false
+    ? undefined
+    : {
+        [`${ports.vncPort}/tcp`]: [{ HostIp: '127.0.0.1', HostPort: String(ports.vncPort) }],
+        [`${cdpBridgePort(spec.displayIndex)}/tcp`]: [{ HostIp: '127.0.0.1', HostPort: String(ports.cdpPort) }],
+      };
+  const network = spec.network ?? env.computerNetwork;
+  const extraNetworks = (spec.extraNetworks ?? []).filter((n) => n && n !== network);
+  const endpoints: Record<string, object> = { [network]: {} };
+  for (const n of extraNetworks) endpoints[n] = {};
   return {
     Image: COMPUTER_IMAGE,
     name: containerNameFor(spec.botId),
@@ -73,9 +99,12 @@ export function containerCreateOptions(spec: ContainerSpec): Docker.ContainerCre
       'NO_AT_BRIDGE=1',
     ],
     ExposedPorts: exposed,
+    // Joining more than one network has to go through EndpointsConfig; NetworkMode alone only
+    // names the first.
+    ...(extraNetworks.length ? { NetworkingConfig: { EndpointsConfig: endpoints } } : {}),
     HostConfig: {
       Binds: [`${spec.homePath}:/home/bot`],
-      PortBindings: bindings,
+      ...(bindings ? { PortBindings: bindings } : {}),
       ShmSize: 512 * 1024 * 1024,
       CapDrop: ['ALL'],
       SecurityOpt: ['no-new-privileges:true'],
@@ -84,7 +113,7 @@ export function containerCreateOptions(spec: ContainerSpec): Docker.ContainerCre
       NanoCpus: Math.floor(env.computerCpuLimit * 1e9),
       PidsLimit: 2048,
       AutoRemove: false,
-      NetworkMode: env.computerNetwork,
+      NetworkMode: network,
       RestartPolicy: { Name: 'no' },
     },
   };
@@ -95,7 +124,15 @@ export async function createBotContainer(spec: ContainerSpec): Promise<string> {
   await ensureComputerImage();
   const existing = await findBotContainer(spec.botId);
   if (existing) return existing.id;
-  const c = await docker().createContainer(containerCreateOptions(spec));
+  // A server inside a container has to be able to dial the screen, so the bot joins the server's
+  // network (and any pinned COMPUTER_NETWORK) rather than the default bridge.
+  const placement = await serverPlacement();
+  const network = spec.network ?? botNetworkName(placement);
+  const extraNetworks = spec.extraNetworks ?? extraNetworksFor(placement, network);
+  const c = await docker().createContainer(
+    containerCreateOptions({ ...spec, network, extraNetworks, publishPorts: !placement.inContainer }),
+  );
+  console.log(`[docker] ${spec.botId} joins network ${[network, ...extraNetworks].join(', ')}`);
   await c.start();
   return c.id;
 }

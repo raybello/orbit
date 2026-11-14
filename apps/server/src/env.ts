@@ -49,6 +49,11 @@ export const env = {
   // ---- Hermes engine ----
   /** The `hermes` CLI used to start a gateway for each extra bot. */
   hermesBin: process.env.HERMES_BIN ?? 'hermes',
+  /**
+   * HERMES_BIN exactly as given, '' when unset. engine.ts resolves this to a real executable with
+   * hermes-bin.ts; the field above stays as the display default other callers quote into a shell.
+   */
+  hermesBinConfigured: (process.env.HERMES_BIN ?? '').trim(),
   /** The primary bot's Hermes home and API server (an agent that already runs; never restarted by us). */
   hermesHome,
   hermesUrl: (process.env.HERMES_URL ?? 'http://127.0.0.1:8642').replace(/\/+$/, ''),
@@ -100,7 +105,9 @@ export const env = {
    */
   computerKind: (process.env.COMPUTER_KIND ?? 'auto').trim().toLowerCase() as 'orgo' | 'docker' | 'auto',
   /** Image for bot containers. Unqualified names are built locally from server/docker/computer. */
-  computerImage: process.env.COMPUTER_IMAGE ?? 'orbit/computer:local',
+    /** Image for bot containers. Unqualified names are built locally from server/docker/computer.
+   *  An empty value (common in a copied .env) means the default, not the empty string. */
+  computerImage: (process.env.COMPUTER_IMAGE ?? '').trim() || 'orbit/computer:local',
   /** Minutes without a viewer (or bot work) before a bot's container is suspended. */
   computerIdleTimeoutMin: Number(process.env.COMPUTER_IDLE_TIMEOUT_MIN ?? 30),
   computerCpuLimit: Number(process.env.COMPUTER_CPU_LIMIT ?? 2),

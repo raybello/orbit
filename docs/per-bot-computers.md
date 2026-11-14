@@ -86,3 +86,32 @@ Managed Bots start on `DEFAULT_BOT_MODEL` / `DEFAULT_BOT_PROVIDER` (default: `de
 - One screen per container. A second screen would need a new container (ports are fixed at create).
 - The Library (`save_file`, `show_file`) still writes to the server's own files folder, not to the
   Bot's container.
+
+## When the server itself runs in a container
+
+The desktop app ships the server as a Docker image, so the server is not on the host; it is a
+sibling of the bot containers. Three things follow from that, and each one was a real outage:
+
+- **The relay dials the bot, not the host.** A bot's VNC (5901) and DevTools (9300+display) ports
+  are only published on the host's loopback for a host-run server. Inside a container,
+  `127.0.0.1` is the server itself, so the screen resolver (`docker/reach.ts`) joins the bot's
+  container to the network the server is on and dials its container address. Bot containers are
+  therefore created **without host port bindings** when the server is containerized — publishing
+  them only invites `Bind for 127.0.0.1:<port> failed: port is already allocated` when a second
+  stack (or an older bot) already holds that port.
+- **The api container runs as root.** The mounted Docker socket is `root:docker` inside Docker
+  Desktop's VM and its group id changes between installs, so a non-root user gets `EACCES` on
+  every Docker call — which the app reports as "couldn't reach the screen". Access to that socket
+  is already equivalent to host root; the compose files say `user: "0:0"` and explain it.
+  Because of that, `HERMES_ALLOW_ROOT_GATEWAY=1` is passed to the bundled gateway (it refuses root
+  otherwise), and `HERMES_ALLOW_ROOT_GATEWAY` is the one Hermes variable forwarded to a spawned
+  gateway.
+- **`COMPUTER_IMAGE` must never be empty.** An empty value used to reach the Docker client as an
+  empty reference, which it mangled into a request for a host named `images`
+  (`EAI_AGAIN images`, or an HTTP 301) and aborted the boot path. The compose files default it to
+  `orbit/computer:local`, `env.ts` treats an empty value as unset, and `docker/image.ts` refuses
+  an empty reference with a clear message.
+
+`POST /api/computer/ensure` follows the same split: it wakes the Orgo machine when there is one,
+and otherwise creates/starts the bot containers. It previously asked Orgo unconditionally, which
+returned 500 in a Docker stack and left the viewer's Retry button broken.

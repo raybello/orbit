@@ -16,6 +16,12 @@ services:
       context: ../..
       dockerfile: apps/server/Dockerfile
     image: orbit/app:dev
+    # The mounted Docker socket is root:docker inside Docker Desktop's VM and its group id
+    # changes between installs, so a non-root user cannot open it (EACCES, which the screen
+    # relay reports as "couldn't reach the screen"). Socket access is already equivalent to
+    # host root, so the group workaround buys nothing; run as root and say so. Without the
+    # socket, the image still defaults to its non-root user.
+    user: "0:0"
     init: true
     restart: unless-stopped
     env_file:
@@ -25,6 +31,10 @@ services:
         required: false
     environment:
       PORT: "8787"
+      # The bundled gateway refuses to run as root unless this is set. It is set because this
+      # container is root for the Docker socket (see `user:` above) and its only Hermes home is
+      # the root-owned data volume — nothing else ever writes there.
+      HERMES_ALLOW_ROOT_GATEWAY: "1"
       # Everything the server writes lives on the volume, so `up --build` and image upgrades keep it.
       DB_PATH: /data/orbit.db
       ENGINES_DIR: /data/engines
@@ -36,6 +46,16 @@ services:
       SERVER_URL: ${SERVER_URL:-http://127.0.0.1:8787}
       MCP_BASE_URL: ${MCP_BASE_URL:-http://host.docker.internal:8787}
       HERMES_URL: ${HERMES_URL:-http://host.docker.internal:8642}
+      # Managed Bots run inside this stack, so they need the CLI the image installs — not the host's.
+      # A repo .env that still says HERMES_BIN=hermes (or a macOS path) is fine: the server resolves
+      # it, falls back to the known install locations, and this is the one that exists here.
+      HERMES_BIN: ${HERMES_BIN:-/opt/hermes/.venv/bin/hermes}
+      # An empty COMPUTER_IMAGE from a copied .env used to reach the Docker client as "",
+      # which it turned into a request for a host named "images" and crashed the boot path.
+      COMPUTER_IMAGE: ${COMPUTER_IMAGE:-orbit/computer:local}
+      # Where the primary agent's home would be inside the container; on the volume, so it survives
+      # `up --build`. The live primary agent is the host one, reached over HERMES_URL.
+      HERMES_HOME_PRIMARY: ${HERMES_HOME_PRIMARY:-/data/hermes}
     ports:
       - "127.0.0.1:${ORBIT_WEB_PORT:-8787}:8787"
     volumes:
@@ -66,6 +86,12 @@ services:
       context: ../..
       dockerfile: apps/server/Dockerfile
     image: orbit/app:dev
+    # The mounted Docker socket is root:docker inside Docker Desktop's VM and its group id
+    # changes between installs, so a non-root user cannot open it (EACCES, which the screen
+    # relay reports as "couldn't reach the screen"). Socket access is already equivalent to
+    # host root, so the group workaround buys nothing; run as root and say so. Without the
+    # socket, the image still defaults to its non-root user.
+    user: "0:0"
     command: ["node", "dist/supervisor.js"]
     init: true
     restart: unless-stopped

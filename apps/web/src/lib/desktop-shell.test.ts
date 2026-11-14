@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
-import { hasNativeWindowControls } from './desktop-shell.ts';
+import { hasNativeWindowControls } from './desktop-shell.js';
 
 // The three states that matter: a real browser (draw the dots), the desktop app (the OS
 // draws them, so we must not), and a page that marked itself explicitly.

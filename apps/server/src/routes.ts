@@ -484,8 +484,22 @@ api.delete('/memories/:id', (c) => {
 
 api.get('/computer', async (c) => c.json({ computer: await refreshComputer(c.get('user').id) }));
 
-api.post('/computer/ensure', (c) => {
+api.post('/computer/ensure', async (c) => {
   const userId = c.get('user').id;
+  // Two kinds of computer behind one button. With an Orgo machine, wake it. Without one, every
+  // bot's desktop is its own container, so "wake" means create/start the containers — asking Orgo
+  // here (which has no id) is what made the viewer's Retry fail with a 500 instead of a screen.
+  if (!env.orgoComputerId && env.computerKind !== 'orgo') {
+    const bots = db
+      .prepare("SELECT id FROM bots WHERE user_id=? AND COALESCE(kind,'agent')<>'room' AND COALESCE(hidden,0)=0")
+      .all(userId) as { id: string }[];
+    await Promise.all(
+      bots
+        .filter((b) => computerKindFor(b.id) === 'docker')
+        .map((b) => providerFor(b.id).ensureComputer(b.id).catch((e: Error) => console.warn(`[computer] ${b.id} did not start: ${e.message}`))),
+    );
+    return c.json({ computer: computerState(userId) });
+  }
   ensureComputer(userId).catch((e) => console.warn('[computer] ensure failed', e.message));
   return c.json({ computer: computerState(userId) });
 });

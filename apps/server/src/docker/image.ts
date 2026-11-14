@@ -21,6 +21,9 @@ export function isRegistryImage(image: string): boolean {
 }
 
 async function exists(image: string): Promise<boolean> {
+  // Docker mangles an empty reference into a request for a host called "images", which surfaces
+  // as `EAI_AGAIN images` or an HTTP 301 and aborts the boot path. Fail clearly instead.
+  if (!image.trim()) throw new Error('no computer image configured (COMPUTER_IMAGE is empty)');
   try {
     await docker().getImage(image).inspect();
     return true;
