@@ -1,0 +1,319 @@
+// The shared API contract between the Orbit server, the web app, the desktop app and mobile.
+// Everything here is type-only or plain constants: no runtime dependencies.
+
+export type AvatarShape =
+  | 'blob' | 'pebble' | 'bean' | 'egg' | 'squircle' | 'tablet' | 'capsule' | 'cylinder' | 'hex'
+  | 'gem' | 'crystal' | 'wedge' | 'shield' | 'dome' | 'arch' | 'cloud' | 'teardrop' | 'leaf'
+  | 'square' | 'sparkle' | 'clover' | 'flower' | 'heart' | 'house' | 'star';
+
+export type AvatarColor =
+  | 'black' | 'brown' | 'red' | 'orange' | 'yellow' | 'green' | 'cyan' | 'blue' | 'violet' | 'magenta' | 'gray';
+
+export interface User { id: string; email: string; name: string; avatarUrl: string | null }
+
+export interface Bot {
+  id: string;
+  name: string;
+  label: string;
+  description: string;
+  instructions: string;
+  avatarShape: AvatarShape;
+  avatarColor: AvatarColor;
+  mode: 'personal' | 'teammate';
+  isPrimary: boolean;
+  /** 'room' = group chat (members answer instead of the bot itself). */
+  kind?: 'agent' | 'room';
+  pinned: boolean;
+  effort: 'low' | 'medium' | 'high' | 'xhigh';
+  /** Voice chat settings: xAI voice id, speed multiplier (0.7–1.5), BCP-47 language or 'auto'. */
+  voice: string;
+  voiceSpeed: number;
+  voiceLanguage: string;
+  /** Hermes engine: model id and provider for this bot; null = the engine's default. */
+  model: string | null;
+  provider: string | null;
+  generation: number;
+  unread: number;
+  lastPreview: string | null;
+  lastActivityAt: number;
+  createdAt: number;
+}
+
+/** A transcript row. `seq` orders rows; `updatedSeq` is a per-bot revision counter (rows are rewritten while streaming). */
+export interface Row {
+  botId: string;
+  generation: number;
+  seq: number;
+  updatedSeq: number;
+  kind: RowKind;
+  body: RowBody;
+  createdAt: number;
+}
+
+export type RowKind = 'message' | 'tool-call' | 'card' | 'event' | 'notice';
+
+export type RowBody =
+  | MessageBody
+  | ToolCallBody
+  | CardBody
+  | EventBody
+  | NoticeBody;
+
+export interface MessageFile {
+  /** Path relative to the bot's library root (e.g. "images/photo.jpg"). */
+  path: string;
+  filename: string;
+  /** MIME type, e.g. "image/jpeg". */
+  mediaType: string;
+}
+
+export interface MessageBody {
+  type: 'message';
+  role: 'user' | 'assistant';
+  text: string;
+  streaming?: boolean;
+  /** Set when a message came from another bot, a routine or a voice call rather than the user typing. */
+  from?: { kind: 'bot' | 'routine' | 'voice'; id: string; name: string };
+  citations?: { url: string; title?: string }[];
+  /** Files the agent attached to this message (images, downloads). */
+  files?: MessageFile[];
+}
+
+export interface ToolCallBody {
+  type: 'tool-call';
+  callId: string;
+  name: string;
+  /** Human phrase, e.g. "Clicking on screen". */
+  label: string;
+  status: 'running' | 'done' | 'error' | 'awaiting-approval' | 'denied';
+  args?: unknown;
+  summary?: string;
+  /** Data URL thumbnail for computer actions. */
+  screenshot?: string;
+}
+
+export type CardBody =
+  | {
+      type: 'card';
+      card: 'approval';
+      approvalId: string;
+      title: string;
+      detail: string;
+      tool: string;
+      toolkit?: string;
+      toolkitName?: string;
+      logo?: string;
+      args: unknown;
+      status: 'pending' | 'allowed' | 'always' | 'denied' | 'expired';
+    }
+  | {
+      type: 'card';
+      card: 'question';
+      question: string;
+      options: string[];
+      status: 'pending' | 'answered' | 'dismissed';
+      answer?: string;
+    }
+  | {
+      type: 'card';
+      card: 'connect';
+      toolkit: string;
+      toolkitName: string;
+      logo?: string;
+      reason: string;
+      status: 'pending' | 'connected' | 'skipped';
+    }
+  | {
+      type: 'card';
+      card: 'draft';
+      channel: 'email' | 'slack' | 'message';
+      to: string;
+      subject?: string;
+      text: string;
+      approvalId: string;
+      status: 'pending' | 'sent' | 'discarded';
+    };
+
+export interface EventBody {
+  type: 'event';
+  event: 'routine-created' | 'routine-updated' | 'routine-run' | 'task-changed' | 'bot-message' | 'conversation-cleared' | 'computer' | 'voice-call';
+  text: string;
+  ref?: string;
+  /** voice-call only: the call record (set on the end-of-call row). */
+  call?: VoiceCallRecord;
+}
+
+export interface VoiceCallRecord {
+  id: string;
+  phase: 'started' | 'ended';
+  durationMs?: number;
+  summary?: string;
+  transcript?: { role: 'user' | 'assistant'; text: string }[];
+  tasks?: string[];
+}
+
+export interface VoiceOption { id: string; name: string; gender?: string }
+
+export interface NoticeBody { type: 'notice'; text: string; tone?: 'info' | 'warn' | 'error' }
+
+export type ActivityKind =
+  | 'thinking' | 'working' | 'searching_web' | 'reading_web' | 'browsing_web' | 'on_its_computer'
+  | 'running_commands' | 'waiting_on_command' | 'messaging_named' | 'connecting_service'
+  | 'waiting_for_you' | 'drafting_file' | 'remembering';
+
+export interface LiveState {
+  botId: string;
+  isRunning: boolean;
+  activity: { kind: ActivityKind; detail?: string; since: number } | null;
+  awaiting: { reason: string; since: number } | null;
+  startedAt: number | null;
+  /** Short line from the model's live reasoning, shown next to "Thinking". */
+  caption?: string | null;
+  /** Tool calls made so far in the current turn. */
+  steps?: number;
+}
+
+export interface Routine {
+  id: string; botId: string; name: string; prompt: string; schedule: string; timezone: string;
+  enabled: boolean; nextRunAt: number | null; lastRunAt: number | null; description: string;
+}
+
+export interface Task { id: string; botId: string; title: string; state: 'working' | 'needs_input' | 'done'; note: string; updatedAt: number }
+
+export interface Memory { id: string; botId: string; text: string; createdAt: number; source?: 'chat' | 'learned' }
+
+export interface Skill { id: string; botId: string; name: string; description: string; body: string; createdAt: number; updatedAt: number }
+
+export interface LibraryFile { name: string; size: number; modifiedAt: number; isDir: boolean }
+
+export interface ComputerState {
+  status: 'absent' | 'creating' | 'starting' | 'running' | 'suspending' | 'suspended' | 'resuming' | 'error' | 'stopped';
+  orgoId: string | null;
+  error: string | null;
+  /** One screen per bot on the shared computer. width/height are the screen's pixel size. */
+  screens: { botId: string; screenId: string; width?: number; height?: number }[];
+  /** How many bots can have their own screen at once. */
+  maxScreens?: number;
+}
+
+/** A model provider Hermes can use (subscription sign-in or API key). */
+export interface EngineProvider {
+  id: string;
+  name: string;
+  kind: 'subscription' | 'api_key';
+  connected: boolean;
+  /** Suggested model ids for this provider. */
+  models: string[];
+}
+
+/** The Hermes agent that runs one bot. */
+export interface EngineInfo {
+  botId: string;
+  /** Hermes profile name ('default' for the primary bot). */
+  profile: string;
+  status: 'ready' | 'starting' | 'stopped' | 'error';
+  error: string | null;
+  model: string | null;
+  provider: string | null;
+  version: string | null;
+  providers: EngineProvider[];
+  /** Hermes is running a private screen of its own for this agent, so its computer work is not on the screen the app shows. */
+  ownScreen: boolean;
+}
+
+export interface Toolkit {
+  slug: string; name: string; logo?: string; description?: string; categories: string[];
+  managedAuth: boolean; noAuth: boolean; connected: boolean;
+}
+
+/** Server-sent events on GET /api/events */
+export type ServerEvent =
+  /** `seq` is the server's authoritative event cursor for this user, for `GET /api/events?since=`. */
+  | { type: 'hello'; serverTime: number; seq?: number }
+  | { type: 'rows'; botId: string; generation: number; rows: Row[] }
+  | { type: 'cleared'; botId: string; generation: number }
+  | { type: 'live'; state: LiveState }
+  | { type: 'roster' }
+  | { type: 'bot'; bot: Bot }
+  | { type: 'computer'; state: ComputerState }
+  | { type: 'routines'; botId: string }
+  | { type: 'tasks'; botId: string }
+  | { type: 'memories'; botId: string }
+  | { type: 'connections' }
+  | { type: 'ping' };
+
+// ------------------------------------------------------------------ aliases
+// The implementation plan names some of these differently (BotRow / MessageRow /
+// RoutineRow / TaskRow / EventPayload). Keep both spellings so clients can pick.
+
+/** Alias of {@link ServerEvent}, for clients that call the union `EventPayload`. */
+export type EventPayload = ServerEvent;
+/** A transcript row, as the mobile client names it. */
+export type MessageRow = Row;
+export type RoutineRow = Routine;
+export type TaskRow = Task;
+export type BotRow = Bot;
+
+// ------------------------------------------------------------------ API shapes
+
+export interface ErrorResponse { error: string }
+
+export interface AuthMeResponse { user: User | null; devLogin: boolean }
+
+/** POST /api/auth/sign-in — a bearer session token for the mobile and desktop clients. */
+export interface SignInRequest { email: string; name?: string; ownerKey?: string }
+export interface SignInResponse { ok: true; token: string; user: User; expiresAt: number }
+
+export interface BotsResponse { bots: Bot[]; live: LiveState[] }
+export interface RowsResponse { generation: number; rows: Row[] }
+export interface SendMessageRequest { message?: string; text?: string }
+export interface SendMessageResponse { row: Row }
+
+/** GET /api/health */
+export interface HealthResponse {
+  ok: boolean;
+  version?: string;
+  engine?: 'hermes';
+  /** 'verified' when a valid x-orbit-stack-token header was sent with the probe. */
+  stackToken?: 'verified';
+  uptimeMs?: number;
+}
+
+/** GET /api/desktop/probe — authenticated with the stack token only. */
+export interface DesktopProbeResponse {
+  ok: boolean;
+  imageTag: string;
+  hermesConnected: boolean;
+  version?: string;
+}
+
+/** GET /api/desktop/config — the desktop client's feature flags. */
+export interface DesktopConfigResponse {
+  updateCheckUrl: string;
+  features: { voice: boolean; pushNotifications: boolean };
+  maxBots: number;
+  version?: string;
+}
+
+export type PushPlatform = 'ios' | 'android';
+
+export interface PushRegisterRequest { token: string; platform: PushPlatform }
+
+/** The body sent to the Expo Push API. */
+export interface PushPayload {
+  title: string;
+  body: string;
+  data?: Record<string, unknown>;
+  sound?: 'default' | null;
+}
+
+/** Headers the desktop client and the local stack controller use. */
+export const ORBIT_HEADERS = {
+  /** Marks a request as coming from the Orbit desktop app. */
+  desktop: 'x-orbit-desktop',
+  /** Shared secret the desktop app's local stack controller uses to probe its own stack. */
+  stackToken: 'x-orbit-stack-token',
+} as const;
+
+/** Env var that overrides the server the desktop app opens. */
+export const ORBIT_WEB_URL_ENV = 'ORBIT_WEB_URL';

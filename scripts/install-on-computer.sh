@@ -7,6 +7,7 @@
 # Optional: PORT (8787), PRIMARY_CDP_URL (DevTools URL of the main agent's own Chrome, if it has one),
 # DEV_LOGIN=1 (test machines only), KEYS_FILE (lines XAI_API_KEY=, COMPOSIO_API_KEY=, ORGO_API_KEY=).
 # ORGO_API_KEY may be left out of KEYS_FILE when Hermes' own .env already has one.
+# DRY_RUN=1 prints every step and changes nothing: no unpack, no install, no .env, no restart.
 #
 # It never restarts Hermes and never touches its config: adding the app's tools to the main agent is a
 # separate, printed step (see the end of the output).
@@ -14,23 +15,50 @@ set -euo pipefail
 tgz="${1:?usage: install-on-computer.sh <hq-app.tgz>}"
 APP=/opt/hq/app; DATA=/opt/hq/data; NODE_DIR=/opt/hq/node; NODE_V=v22.21.1
 PORT="${PORT:-8787}"; HERMES_HOME_DIR="${HERMES_HOME_PRIMARY:-/root/.hermes}"
+DRY="${DRY_RUN:-0}"
+dry() { [ "$DRY" = "1" ]; }
 umask 077
+if dry; then echo "(dry run) nothing will be written to $APP, $DATA, $NODE_DIR or /var/log/hq"; else
 mkdir -p "$APP" "$DATA" "$NODE_DIR" /var/log/hq
+fi
 
-# 1. A private Node (the system one may be too old, and we leave it alone).
-if ! "$NODE_DIR/bin/node" -v 2>/dev/null | grep -q '^v22\.'; then
+# 1. A private Node (the system one may be too old, and we leave it alone). It ships corepack, which
+#    is what supplies the pnpm version the workspace's package.json pins.
+if dry; then
+  echo "(dry run) would install Node $NODE_V into $NODE_DIR when it is missing"
+elif ! "$NODE_DIR/bin/node" -v 2>/dev/null | grep -q '^v22\.'; then
   curl -fsSL "https://nodejs.org/dist/$NODE_V/node-$NODE_V-linux-x64.tar.gz" | tar -xz -C "$NODE_DIR" --strip-components=1
 fi
 export PATH="$NODE_DIR/bin:$PATH"
 
 # 2. The app. Data lives outside it, so an upgrade only replaces code.
-rm -rf "$APP/server/dist" "$APP/web/dist"
+if dry; then
+  echo "(dry run) would unpack $tgz into $APP and install production dependencies with pnpm"
+else
+rm -rf "$APP/apps/server/dist" "$APP/apps/web/dist" "$APP"/packages/*/dist
 tar -xzf "$tgz" -C "$APP"
-# --ignore-scripts: the SQLite package ships ready-made binaries; without this npm tries to compile it.
-(cd "$APP" && npm ci --omit=dev -w server --ignore-scripts --no-audit --no-fund >/var/log/hq/npm.log 2>&1) || { tail -20 /var/log/hq/npm.log; exit 1; }
+# pnpm, not npm: this is a pnpm workspace, and the server's workspace dependencies (@orbit/contracts,
+# @orbit/logger) are workspace: links that only resolve under pnpm. --filter keeps the install to the
+# server's own graph (apps/web's devDependencies, and turbo at the root, are not needed to run it).
+# --ignore-scripts: the SQLite package ships ready-made binaries and this computer has no compilers —
+# without it pnpm tries to compile better-sqlite3.
+export COREPACK_ENABLE_DOWNLOAD_PROMPT=0
+corepack enable --install-directory "$NODE_DIR/bin" >/dev/null 2>&1 || corepack enable >/dev/null 2>&1 || true
+log=/var/log/hq/pnpm.log
+if ! (cd "$APP" && pnpm install --prod --frozen-lockfile --ignore-scripts \
+      --filter "@orbit/server..." --reporter=append-only >"$log" 2>&1); then
+  # The pack's lockfile can name a workspace project that is not in the pack (another app was added
+  # since the pack was built). Resolve instead of failing the install.
+  echo "frozen install failed (see $log); retrying without --frozen-lockfile"
+  (cd "$APP" && pnpm install --prod --ignore-scripts --filter "@orbit/server..." \
+    --reporter=append-only >>"$log" 2>&1) || { tail -20 "$log"; exit 1; }
+fi
+fi
 
 # 3. Settings, written once. Later runs keep the file (and so the session secret and every bot's token).
-if [ ! -f "$APP/.env" ]; then
+if dry; then
+  echo "(dry run) would write $APP/.env on first install (SESSION_SECRET generated there)"
+elif [ ! -f "$APP/.env" ]; then
   : "${PUBLIC_URL:?PUBLIC_URL is required on first install}" "${ORGO_COMPUTER_ID:?ORGO_COMPUTER_ID is required on first install}"
   # A key that is not in the file is simply empty (grep finding nothing must not stop the script).
   key() { { grep -E "^$1=" "$2" 2>/dev/null || true; } | tail -1 | cut -d= -f2- | sed -e 's/^["'\'']//' -e 's/["'\'']$//'; }
@@ -62,12 +90,15 @@ if [ ! -f "$APP/.env" ]; then
   } > "$APP/.env"
   chmod 600 "$APP/.env"
 fi
-[ -z "${KEYS_FILE:-}" ] || rm -f "$KEYS_FILE"
+[ "$DRY" = "1" ] || [ -z "${KEYS_FILE:-}" ] || rm -f "$KEYS_FILE"
 
 # 4. Keep it running. Only this one program is added or restarted; nothing else under supervisor is touched.
+if dry; then
+  echo "(dry run) would write /etc/supervisor/conf.d/hq-app.conf and (re)start hq-app"
+else
 cat > /etc/supervisor/conf.d/hq-app.conf <<EOF
 [program:hq-app]
-command=$NODE_DIR/bin/node --env-file=$APP/.env $APP/server/dist/index.js
+command=$NODE_DIR/bin/node --env-file=$APP/.env $APP/apps/server/dist/index.js
 directory=$APP
 autostart=true
 autorestart=true
@@ -88,8 +119,12 @@ else
 fi
 for _ in $(seq 1 30); do curl -fsS "http://127.0.0.1:$PORT/api/health" >/dev/null 2>&1 && break; sleep 1; done
 curl -fsS "http://127.0.0.1:$PORT/api/health" && echo
+fi
 
 # 5. What to add to the main agent's Hermes config so it gets the app's tools (never done here).
+if dry; then
+  echo "(dry run) would write $DATA/hermes-mcp-hq.yaml (the main agent's MCP entry)"
+else
 secret="$(grep -E '^SESSION_SECRET=' "$APP/.env" | cut -d= -f2-)"
 tok="$(printf 'mcp:primary' | openssl dgst -sha256 -hmac "$secret" -r | cut -d' ' -f1)"
 umask 077
@@ -103,3 +138,4 @@ cat > "$DATA/hermes-mcp-hq.yaml" <<EOF
     connect_timeout: 30
 EOF
 echo "installed. main agent's MCP entry: $DATA/hermes-mcp-hq.yaml"
+fi

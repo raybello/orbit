@@ -1,0 +1,89 @@
+# Source-based stack: builds the API out of this checkout. For development, and for anyone who
+# wants to run Orbit's server without installing Node on the host.
+#
+#   cp infra/compose/.env.example ../../.env      # once, at the repo root; fill in SESSION_SECRET
+#   docker compose -f infra/compose/docker-compose.yml up --build
+#   open http://127.0.0.1:8787
+#
+# Interpolation variables (`${VAR:-default}`) are read from the shell and from the env file passed
+# with --env-file (infra/compose/.env.example works as-is). Container env comes from the repo .env.
+name: orbit
+
+services:
+  api:
+    build:
+      # The context is the workspace root: the image needs pnpm-lock.yaml, packages/* and both apps.
+      context: ../..
+      dockerfile: apps/server/Dockerfile
+    image: orbit/app:dev
+    init: true
+    restart: unless-stopped
+    env_file:
+      # The same .env the `pnpm dev` path uses. Missing on a fresh clone; the defaults below keep
+      # the container startable (SESSION_SECRET still has to come from .env — see .env.example).
+      - path: ../../.env
+        required: false
+    environment:
+      PORT: "8787"
+      # Everything the server writes lives on the volume, so `up --build` and image upgrades keep it.
+      DB_PATH: /data/orbit.db
+      ENGINES_DIR: /data/engines
+      COMPUTER_HOME_DIR: ${COMPUTER_HOME_DIR:-/data/computers}
+      DOCKER_SOCKET: /var/run/docker.sock
+      LOG_LEVEL: ${LOG_LEVEL:-info}
+      # The browser reaches the API on the published port; the Hermes agents run on the host.
+      APP_URL: ${APP_URL:-http://127.0.0.1:8787}
+      SERVER_URL: ${SERVER_URL:-http://127.0.0.1:8787}
+      MCP_BASE_URL: ${MCP_BASE_URL:-http://host.docker.internal:8787}
+      HERMES_URL: ${HERMES_URL:-http://host.docker.internal:8642}
+    ports:
+      - "127.0.0.1:${ORBIT_WEB_PORT:-8787}:8787"
+    volumes:
+      - orbit-data:/data
+      # One bot = one container: the API has to reach the daemon to start them.
+      - /var/run/docker.sock:/var/run/docker.sock
+      # Per-bot computers are host folders bind-mounted into bot containers, so the path has to be
+      # the same on the host and in this container. Set ORBIT_HOST_DATA (e.g. $HOME/.orbit/data)
+      # and COMPUTER_HOME_DIR=$ORBIT_HOST_DATA/computers, then uncomment:
+      # - ${ORBIT_HOST_DATA}:${ORBIT_HOST_DATA}
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    healthcheck:
+      test:
+        - CMD
+        - node
+        - -e
+        - "fetch('http://127.0.0.1:8787/api/health').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))"
+      interval: 15s
+      timeout: 5s
+      retries: 5
+      start_period: 25s
+
+  sandbox-supervisor:
+    # The same image, a different entrypoint: it serves nothing, it only suspends idle bot
+    # containers — including when the API is down. No ports.
+    build:
+      context: ../..
+      dockerfile: apps/server/Dockerfile
+    image: orbit/app:dev
+    command: ["node", "dist/supervisor.js"]
+    init: true
+    restart: unless-stopped
+    env_file:
+      - path: ../../.env
+        required: false
+    environment:
+      # Has to match the api service: same database, same Docker daemon, same host folders.
+      DB_PATH: /data/orbit.db
+      ENGINES_DIR: /data/engines
+      COMPUTER_HOME_DIR: ${COMPUTER_HOME_DIR:-/data/computers}
+      DOCKER_SOCKET: /var/run/docker.sock
+      SANDBOX_SUPERVISOR_TOKEN: ${SANDBOX_SUPERVISOR_TOKEN:?SANDBOX_SUPERVISOR_TOKEN is required; the desktop app generates it (openssl rand -hex 32)}
+      LOG_LEVEL: ${LOG_LEVEL:-info}
+    volumes:
+      - orbit-data:/data
+      - /var/run/docker.sock:/var/run/docker.sock
+      # - ${ORBIT_HOST_DATA}:${ORBIT_HOST_DATA}
+
+volumes:
+  orbit-data:

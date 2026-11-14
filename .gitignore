@@ -15,4 +15,13 @@ docs/INTERNAL-*.md
 docs/SPEC.md
 web/screenshots/
 tests/out/
-third_party/*
+third_party/
+third-party/
+
+# turbo cache and build scratch
+.turbo/
+**/.turbo/
+apps/desktop/out/
+apps/desktop/dist/
+apps/mobile/.expo/
+apps/mobile/dist/

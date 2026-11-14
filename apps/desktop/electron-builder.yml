@@ -1,0 +1,84 @@
+# electron-builder configuration for the Orbit desktop app.
+#
+# Paths are relative to apps/desktop. The two extraResources entries outside this package
+# are produced by other packages: apps/web (the renderer, built by Vite) and infra/compose
+# (the stack the app starts). `scripts/check-resources.mjs` runs before pack/release and
+# names whichever one is missing.
+appId: dev.orbit.desktop
+productName: Orbit
+copyright: Copyright © 2026 Orbit
+
+directories:
+  output: out
+  buildResources: assets
+
+files:
+  - dist/**/*
+  - package.json
+  - '!**/*.map'
+
+# Where the app looks for these at runtime:
+#   process.resourcesPath/web                     -> the server serves this when the stack runs
+#   process.resourcesPath/stack/docker-compose.yml -> copied into userData/stack on first run
+#   process.resourcesPath/stack/.env.example       -> ditto, then secrets are filled in
+extraResources:
+  - from: ../web/dist
+    to: web
+  # The image-based stack: the app pulls ghcr.io/raybello/orbit/app:<tag> instead of building.
+  # The files are renamed on the way in so the controller always finds the same two names.
+  - from: ../../infra/compose/docker-compose.images.yml
+    to: stack/docker-compose.yml
+  - from: ../../infra/compose/.env.images.example
+    to: stack/.env.example
+  # The native (Docker-free) stack's manifest: `process.resourcesPath/server-bundle.json`.
+  # Only release builds have it — the build-server-bundle job in
+  # .github/workflows/desktop-release.yml downloads it into resources/ before packaging. A
+  # local checkout has no such file, which electron-builder tolerates (it logs
+  # "file source doesn't exist" and carries on), so `pnpm pack` still works; the app then
+  # simply reports the native stack as unavailable.
+  - from: resources/server-bundle.json
+    to: server-bundle.json
+
+asar: true
+# No native modules in main: everything but electron/electron-updater is bundled by esbuild.
+npmRebuild: false
+
+mac:
+  category: public.app-category.productivity
+  target:
+    - target: dmg
+      arch: [arm64, x64]
+    - target: zip
+      arch: [arm64, x64]
+  hardenedRuntime: true
+  gatekeeperAssess: false
+  entitlements: assets/entitlements.mac.plist
+  entitlementsInherit: assets/entitlements.mac.plist
+  # Notarization needs an Apple developer identity. The YAML keeps it off so an unsigned
+  # local `pack` works; .github/workflows/desktop-release.yml turns it on with
+  # `--config.mac.notarize=true` when APPLE_TEAM_ID and friends are present.
+  notarize: false
+
+win:
+  target:
+    - target: nsis
+      arch: [x64]
+  artifactName: ${productName}-Setup-${version}.${ext}
+
+nsis:
+  oneClick: false
+  perMachine: false
+  allowToChangeInstallationDirectory: true
+  createDesktopShortcut: true
+
+linux:
+  category: Utility
+  target:
+    - target: AppImage
+      arch: [x64]
+
+publish:
+  provider: github
+  owner: raybello
+  repo: orbit
+  releaseType: release

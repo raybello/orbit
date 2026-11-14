@@ -1,0 +1,126 @@
+# Builds and publishes Orbit's two images to GHCR:
+#
+#   ghcr.io/raybello/orbit/app       the API + web client + sandbox supervisor (one image, two
+#                                    entrypoints: `node dist/index.js`, `node dist/supervisor.js`)
+#   ghcr.io/raybello/orbit/computer  the per-bot desktop sandbox (apps/server/docker/computer)
+#
+# Tags: `edge` on every push to main, `v<x.y.z>` and `latest` on a v* tag, plus the commit sha.
+# Multi-arch on purpose: the desktop app ships on Apple Silicon and Windows/Linux x64, and
+# `docker compose` pulls the platform it runs on.
+name: publish-images
+
+on:
+  push:
+    branches: [main]
+    tags: ["v*"]
+  workflow_dispatch:
+
+concurrency:
+  group: publish-images-${{ github.ref }}
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+  packages: write
+  id-token: write # provenance attestation
+
+env:
+  REGISTRY: ghcr.io
+  NAMESPACE: ghcr.io/raybello/orbit
+  PLATFORMS: linux/amd64,linux/arm64
+
+jobs:
+  app:
+    name: app image
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      # arm64 is built on the amd64 runner through QEMU: the Dockerfile only runs tsc/vite, no
+      # native compilation of its own, so this stays affordable.
+      - uses: docker/setup-qemu-action@v3
+      - uses: docker/setup-buildx-action@v3
+
+      - name: Log in to GHCR
+        uses: docker/login-action@v3
+        with:
+          registry: ${{ env.REGISTRY }}
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Tags and labels
+        id: meta
+        uses: docker/metadata-action@v5
+        with:
+          images: ${{ env.NAMESPACE }}/app
+          tags: |
+            type=edge,branch=main
+            type=semver,pattern=v{{version}}
+            type=raw,value=latest,enable=${{ startsWith(github.ref, 'refs/tags/v') }}
+            type=sha,format=short
+          labels: |
+            org.opencontainers.image.title=Orbit
+            org.opencontainers.image.description=Orbit server: API, web client and sandbox supervisor
+            org.opencontainers.image.source=https://github.com/raybello/orbit
+            org.opencontainers.image.licenses=MIT
+
+      # Context is the repository root: the image builds the pnpm workspace, not just apps/server.
+      - name: Build and push
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: apps/server/Dockerfile
+          platforms: ${{ env.PLATFORMS }}
+          push: true
+          tags: ${{ steps.meta.outputs.tags }}
+          labels: ${{ steps.meta.outputs.labels }}
+          provenance: true
+          sbom: false
+          cache-from: type=gha,scope=app
+          cache-to: type=gha,mode=max,scope=app
+
+  computer:
+    name: computer image
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: docker/setup-qemu-action@v3
+      - uses: docker/setup-buildx-action@v3
+
+      - name: Log in to GHCR
+        uses: docker/login-action@v3
+        with:
+          registry: ${{ env.REGISTRY }}
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Tags and labels
+        id: meta
+        uses: docker/metadata-action@v5
+        with:
+          images: ${{ env.NAMESPACE }}/computer
+          tags: |
+            type=edge,branch=main
+            type=semver,pattern=v{{version}}
+            type=raw,value=latest,enable=${{ startsWith(github.ref, 'refs/tags/v') }}
+            type=sha,format=short
+          labels: |
+            org.opencontainers.image.title=Orbit computer
+            org.opencontainers.image.description=The desktop sandbox one Orbit bot gets
+            org.opencontainers.image.source=https://github.com/raybello/orbit
+            org.opencontainers.image.licenses=MIT
+
+      - name: Build and push
+        uses: docker/build-push-action@v6
+        with:
+          context: apps/server/docker/computer
+          file: apps/server/docker/computer/Dockerfile
+          platforms: ${{ env.PLATFORMS }}
+          push: true
+          tags: ${{ steps.meta.outputs.tags }}
+          labels: ${{ steps.meta.outputs.labels }}
+          provenance: true
+          sbom: false
+          cache-from: type=gha,scope=computer
+          cache-to: type=gha,mode=max,scope=computer
