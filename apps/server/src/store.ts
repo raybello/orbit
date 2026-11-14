@@ -31,6 +31,8 @@ export function toBot(r: any): Bot {
     voice: r.voice ?? 'luna',
     voiceSpeed: r.voice_speed ?? 1,
     voiceLanguage: r.voice_language ?? 'auto',
+    voiceProvider: r.voice_provider === 'local' ? 'local' : 'cloud',
+    voiceModel: r.voice_model ?? 'piper-lessac-medium',
     model: r.model ?? null,
     provider: r.provider ?? null,
     generation: r.generation,

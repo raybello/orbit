@@ -29,6 +29,10 @@ export interface Bot {
   voice: string;
   voiceSpeed: number;
   voiceLanguage: string;
+  /** Which pipeline a call uses: the xAI realtime path, or the on-device sherpa-onnx one. */
+  voiceProvider: VoiceProvider;
+  /** On-device voice model id (see GET /api/voice/local/models); unused on the cloud path. */
+  voiceModel: string;
   /** Hermes engine: model id and provider for this bot; null = the engine's default. */
   model: string | null;
   provider: string | null;
@@ -153,6 +157,26 @@ export interface VoiceCallRecord {
 }
 
 export interface VoiceOption { id: string; name: string; gender?: string }
+
+/** Who runs a voice call: the cloud provider, or the on-device sherpa-onnx stack in this server. */
+export type VoiceProvider = 'cloud' | 'local';
+
+export type VoiceModelStateValue = 'missing' | 'downloading' | 'ready' | 'error';
+
+export interface VoiceModelState { stt: VoiceModelStateValue; tts: VoiceModelStateValue; vad: VoiceModelStateValue }
+
+/**
+ * `GET /api/voice/local/status`. `provider` is always 'cpu': the sherpa-onnx npm package ships no
+ * CUDA execution provider and CoreML segfaults the VITS model, so `available` never depends on a GPU.
+ */
+export interface VoiceLocalStatus {
+  available: boolean;
+  reason?: string;
+  runtime: { platform: string; arch: string; provider: 'cpu'; addon: boolean };
+  models: VoiceModelState;
+  bytes: { total: number; have: number };
+  download: { active: boolean; pct: number; name: string | null };
+}
 
 export interface NoticeBody { type: 'notice'; text: string; tone?: 'info' | 'warn' | 'error' }
 

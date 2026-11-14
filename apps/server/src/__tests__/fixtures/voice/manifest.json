@@ -1,0 +1,25 @@
+{
+  "note": "16 kHz mono PCM16. Thresholds are word-overlap similarity (2*LCS/(len_a+len_b)) after lowercasing and stripping punctuation, measured with 0.3 s leading + 1.0 s trailing silence padding.",
+  "measured": { "en-hello.wav": 1.0, "en-command.wav": 1.0, "en-librispeech-long.wav": 0.957 },
+  "files": [
+    {
+      "file": "en-hello.wav",
+      "audioMs": 3920,
+      "transcript": "Hello, this is a test of the local speech recognition pipeline.",
+      "minSimilarity": 0.9
+    },
+    {
+      "file": "en-command.wav",
+      "audioMs": 2383,
+      "transcript": "Switch on the kitchen lights and tell me the weather.",
+      "minSimilarity": 0.9
+    },
+    {
+      "file": "en-librispeech-long.wav",
+      "audioMs": 16715,
+      "transcript": "As a direct consequence of the sin which man thus punished, had given her a lovely child, whose place was on that same dishonored bosom, to connect her parent for ever with the race and descent of mortals, and to be finally a blessed soul in heaven.",
+      "minSimilarity": 0.9
+    }
+  ],
+  "silence": { "file": "en-silence.wav", "audioMs": 1000 }
+}

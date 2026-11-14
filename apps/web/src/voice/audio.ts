@@ -49,9 +49,9 @@ async function ensureWorklet(ctx: AudioContext) {
 }
 
 /** Create (and resume) an AudioContext. Call this synchronously inside a click handler so autoplay rules allow it. */
-export function createAudioContext(): AudioContext {
+export function createAudioContext(sampleRate?: number): AudioContext {
   const Ctx: typeof AudioContext = window.AudioContext ?? (window as unknown as { webkitAudioContext: typeof AudioContext }).webkitAudioContext;
-  const ctx = new Ctx({ latencyHint: 'interactive' });
+  const ctx = new Ctx(sampleRate ? { sampleRate, latencyHint: 'interactive' } : { latencyHint: 'interactive' });
   void ctx.resume().catch(() => {});
   return ctx;
 }
@@ -65,10 +65,15 @@ export function micErrorMessage(e: unknown): string {
   return (e as Error)?.message || 'Could not open the microphone.';
 }
 
-export async function openMic(): Promise<MediaStream> {
+export async function openMic(opts: { sampleRate?: number } = {}): Promise<MediaStream> {
   if (!navigator.mediaDevices?.getUserMedia) throw Object.assign(new Error('no mediaDevices'), { name: 'NotSupportedError' });
   return navigator.mediaDevices.getUserMedia({
-    audio: { echoCancellation: true, noiseSuppression: true, autoGainControl: true, channelCount: 1 },
+    audio: {
+      echoCancellation: true, noiseSuppression: true, autoGainControl: true, channelCount: 1,
+      // The on-device path wants 16 kHz; asking the device for it lets the browser do one
+      // high-quality resample instead of our linear one on top of the worklet's.
+      ...(opts.sampleRate ? { sampleRate: { ideal: opts.sampleRate } } : {}),
+    },
   });
 }
 
@@ -78,12 +83,12 @@ export class MicCapture {
   private sink: GainNode | null = null;
   level = 0;
 
-  constructor(private ctx: AudioContext, private stream: MediaStream, private onFrame: (pcm: Int16Array) => void) {}
+  constructor(private ctx: AudioContext, private stream: MediaStream, private onFrame: (pcm: Int16Array) => void, private rate = RATE) {}
 
   async start() {
     await ensureWorklet(this.ctx);
     this.source = this.ctx.createMediaStreamSource(this.stream);
-    this.node = new AudioWorkletNode(this.ctx, 'pcm16-capture', { processorOptions: { rate: RATE }, numberOfInputs: 1, numberOfOutputs: 1, channelCount: 1, channelCountMode: 'explicit' });
+    this.node = new AudioWorkletNode(this.ctx, 'pcm16-capture', { processorOptions: { rate: this.rate }, numberOfInputs: 1, numberOfOutputs: 1, channelCount: 1, channelCountMode: 'explicit' });
     this.node.port.onmessage = (e: MessageEvent<{ pcm: ArrayBuffer; level: number }>) => {
       this.level = this.level * 0.6 + e.data.level * 0.4;
       this.onFrame(new Int16Array(e.data.pcm));

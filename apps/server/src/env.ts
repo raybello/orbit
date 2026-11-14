@@ -45,6 +45,11 @@ export const env = {
   dbPath: process.env.DB_PATH ?? new URL('../../../data/grokbot.db', import.meta.url).pathname,
   /** Local directory for bot files and Chrome profiles. Replaces /root/grokbot on non-root dev machines. */
   botDataDir: process.env.BOT_DATA_DIR ?? path.join(os.homedir(), '.local', 'share', 'bot-hq'),
+  /**
+   * Model cache for the on-device STT/TTS/VAD engines (layout in docs/voice-local-conventions.md).
+   * Tests and the desktop app point VOICE_MODELS_DIR at a prepopulated cache.
+   */
+  voiceModelsDir: process.env.VOICE_MODELS_DIR ?? path.join(process.env.DATA_DIR ?? './data', 'voice-models'),
 
   // ---- Hermes engine ----
   /** The `hermes` CLI used to start a gateway for each extra bot. */

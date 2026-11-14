@@ -6,6 +6,7 @@ import type { Row } from '@orbit/contracts';
 import { sortedRows, useStore } from '../store';
 import { voiceApi, type VoiceSession } from './api';
 import { MicCapture, PcmPlayer, base64ToPcm, createAudioContext, micErrorMessage, openMic, pcmToBase64 } from './audio';
+import { endLocalCall, isLocalCallActive, localLevels, setLocalMuted, startLocalCall } from './local-call';
 
 export interface Caption { id: string; role: 'user' | 'assistant'; text: string; final: boolean }
 
@@ -38,22 +39,108 @@ const setV = (p: Partial<VoiceState>) => useVoice.setState(p);
 
 let current: VoiceCall | null = null;
 
-/** Start a call with a bot. Must be called from a user gesture (click) so audio can start. */
-export function startCall(botId: string) {
-  if (current && !current.ended) {
-    if (current.botId === botId) return;
-    current.end();
+/**
+ * `null` until asked: whether this server can run a call on-device. Read from the same cached
+ * `/local/status` the settings panel polls, so it costs one request per page and never throws.
+ */
+let localSupport: boolean | null = null;
+/** Why the probe said no, so the fallback message can be actionable instead of vague. */
+let localReason: string | undefined;
+let localCheckedAt = 0;
+
+interface LocalProbe { available: boolean; reason?: string }
+
+async function probeLocal(refresh = false): Promise<LocalProbe> {
+  if (!refresh && localSupport !== null) return { available: localSupport, reason: localReason };
+  try {
+    const s = await voiceApi.localStatus(refresh);
+    localSupport = s.available;
+    localReason = s.reason;
+  } catch {
+    localSupport = false; // no local endpoints (older server, offline): cloud only
+    localReason = 'unreachable';
   }
+  localCheckedAt = Date.now();
+  return { available: localSupport, reason: localReason };
+}
+
+const NO_LOCAL_VOICE: Record<string, string> = {
+  'unsupported-runtime': 'this build of the server can’t load the speech engine',
+  'models-missing': 'the on-device models aren’t downloaded yet',
+  unreachable: 'the server didn’t answer',
+};
+
+/** What the caller is told when the bot asked for on-device and the call had to go to the cloud. */
+function localFallbackNote(reason?: string): string {
+  const why = reason ? (NO_LOCAL_VOICE[reason] ?? reason) : 'it isn’t available on this server';
+  const fix = reason === 'models-missing' ? ' Download them under Voice settings to switch back.' : '';
+  return `On-device voice isn’t available — ${why}. This call is using the cloud voice.${fix}`;
+}
+
+/**
+ * Models can finish downloading mid-page; re-probe (throttled) so the next call goes on-device
+ * instead of staying on the cloud answer cached before the download.
+ */
+function reconsiderLocal() {
+  if (localSupport !== false || Date.now() - localCheckedAt < 15_000) return;
+  void probeLocal(true);
+}
+
+function startCloud(botId: string) {
   current = new VoiceCall(botId);
   void current.start();
 }
 
-export function endCall() { current?.end(); }
-export function toggleMute() { current?.setMuted(!useVoice.getState().muted); }
-export function callLevels(): { out: number; mic: number } {
-  return current && !current.ended ? { out: current.player.level(), mic: current.micLevel() } : { out: 0, mic: 0 };
+/**
+ * The bot's own `voiceProvider` decides. A call it wants on-device still degrades to the cloud when
+ * this server can't do it — but it says so in the store instead of silently sounding like someone else.
+ */
+function startCloudFallback(botId: string, reason: string | undefined) {
+  startCloud(botId);
+  // VoiceCall.start() clears `error` synchronously before it awaits the mic, so setting it after
+  // the call is constructed is what the call bar and the next render read. The next call clears it.
+  setV({ error: localFallbackNote(reason) });
+  reconsiderLocal();
 }
-export const isCallActive = (s: VoiceState = useVoice.getState()) => s.status === 'connecting' || s.status === 'live';
+
+/** Start a call with a bot. Must be called from a user gesture (click) so audio can start. */
+export function startCall(botId: string) {
+  if ((current && !current.ended) || isLocalCallActive()) {
+    if ((current?.botId ?? useVoice.getState().botId) === botId) return;
+    endCall();
+  }
+  const wantsLocal = useStore.getState().bots.find((b) => b.id === botId)?.voiceProvider === 'local';
+  // 'cloud', or a bot row from before the field existed: exactly today's path, no probing at all.
+  if (!wantsLocal) { startCloud(botId); return; }
+  if (localSupport === true) { startLocalCall(botId); return; }
+  if (localSupport === false) { startCloudFallback(botId, localReason); return; }
+  // First call in this page: the status probe decides. It is cached from here on, so every later
+  // click dispatches synchronously and keeps the click's user activation for the AudioContext.
+  void probeLocal().then((probe) => {
+    if ((current && !current.ended) || isLocalCallActive()) return; // a call already took over
+    if (probe.available) startLocalCall(botId);
+    else startCloudFallback(botId, probe.reason);
+  });
+}
+
+export function endCall() {
+  current?.end();
+  endLocalCall();
+}
+
+export function toggleMute() {
+  const on = !useVoice.getState().muted;
+  if (current && !current.ended) current.setMuted(on);
+  else setLocalMuted(on);
+}
+
+export function callLevels(): { out: number; mic: number } {
+  if (!current || current.ended) return localLevels();
+  return { out: current.player.level(), mic: current.micLevel() };
+}
+
+export const isCallActive = (s: VoiceState = useVoice.getState()) =>
+  s.status === 'connecting' || s.status === 'live' || isLocalCallActive();
 
 type Json = Record<string, any>;
 
