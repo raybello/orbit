@@ -493,11 +493,15 @@ api.post('/computer/ensure', async (c) => {
     const bots = db
       .prepare("SELECT id FROM bots WHERE user_id=? AND COALESCE(kind,'agent')<>'room' AND COALESCE(hidden,0)=0")
       .all(userId) as { id: string }[];
-    await Promise.all(
-      bots
-        .filter((b) => computerKindFor(b.id) === 'docker')
-        .map((b) => providerFor(b.id).ensureComputer(b.id).catch((e: Error) => console.warn(`[computer] ${b.id} did not start: ${e.message}`))),
-    );
+    // Booting a container (and, the first time, building the computer image) takes far longer than a
+    // request should. Answer at once with the current state; the viewer follows the computer's state
+    // over SSE and the screen opens when it is ready.
+    for (const b of bots) {
+      if (computerKindFor(b.id) !== 'docker') continue;
+      void providerFor(b.id)
+        .ensureComputer(b.id)
+        .catch((e: Error) => console.warn(`[computer] ${b.id} did not start: ${e.message}`));
+    }
     return c.json({ computer: computerState(userId) });
   }
   ensureComputer(userId).catch((e) => console.warn('[computer] ensure failed', e.message));
