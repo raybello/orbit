@@ -39,6 +39,10 @@ export function assertValidSetup(setup: DesktopSetup): void {
   if (setup.mode === 'existing' && !normalizeServerUrl(setup.serverUrl)) {
     throw new Error('setup-store: an existing-instance setup needs a valid serverUrl');
   }
+  // The email becomes an account on the stack; an empty one would sign in as nobody.
+  if (setup.email !== undefined && !/^[^@\s]+@[^@\s]+$/.test(String(setup.email))) {
+    throw new Error('setup-store: email must look like an email address');
+  }
 }
 
 export function readSetup(dir?: string): DesktopSetup | null {

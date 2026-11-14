@@ -32,7 +32,13 @@ export interface DesktopManifest {
 }
 
 export interface CreateAppWindowOptions {
+  /** The app's origin: what the window is allowed to stay on, and what it falls back to. */
   url: string;
+  /**
+   * The first document to load, when it is not the origin itself — a one-time sign-in link
+   * (same origin) that sets the session cookie and redirects. Anything off-origin is ignored.
+   */
+  initialUrl?: string;
   preload?: string;
   show?: boolean;
   onClosed?: () => void;
@@ -125,16 +131,41 @@ export async function createAppWindow(options: CreateAppWindowOptions): Promise<
   });
 
   // A link to somewhere else opens in the user's real browser, never inside the app: the
-  // renderer is a server's UI and must not be able to become a general browser.
-  window.webContents.on('will-navigate', (event, target) => {
-    if (sameOrigin(target, origin) || target.startsWith('file://')) return;
+  // renderer is a server's UI and must not be able to become a general browser. The preload
+  // bridge is attached to whatever this window loads, so both ways of leaving the origin —
+  // a link (`will-navigate`) and a server redirect (`will-redirect`) — are filtered, and
+  // `file://` gets no special case: it would put an arbitrary local file in a frame that can
+  // call `installHermes`.
+  const leaveOrigin = (event: { preventDefault: () => void }, target: string): void => {
+    if (sameOrigin(target, origin)) return;
     event.preventDefault();
+    log.info(`blocked navigation to ${target}; opening it in the system browser`);
     void openExternalSafely(target);
-  });
+  };
+
+  window.webContents.on('will-navigate', (event, target) => leaveOrigin(event, target));
+  window.webContents.on('will-redirect', (event, target) => leaveOrigin(event, target));
 
   window.webContents.setWindowOpenHandler(({ url }) => {
     if (!sameOrigin(url, origin)) void openExternalSafely(url);
     return { action: 'deny' };
+  });
+
+  // `will-navigate`/`will-redirect` cover the navigations that announce themselves; a
+  // 302 chain or a script-driven `location` change can still finish somewhere else. If the
+  // window ends up off-origin, put it back — the app is that origin or it is nothing.
+  let bouncingBack = false;
+  window.webContents.on('did-finish-load', () => {
+    const loaded = window.webContents.getURL();
+    if (sameOrigin(loaded, origin) || bouncingBack) return;
+    log.warn(`window finished loading ${loaded}, which is not ${origin}; returning to the app`);
+    bouncingBack = true;
+    void window
+      .loadURL(origin)
+      .catch((err) => log.warn('could not return the window to the app origin', err))
+      .finally(() => {
+        bouncingBack = false;
+      });
   });
 
   window.webContents.on('render-process-gone', (_event, details) => {
@@ -143,7 +174,11 @@ export async function createAppWindow(options: CreateAppWindowOptions): Promise<
 
   window.on('closed', () => options.onClosed?.());
 
-  await window.loadURL(origin);
+  // Only a same-origin document may stand in for the first load; a caller that handed us an
+  // off-origin URL gets the app origin instead of a window we would have to police.
+  const initialUrl =
+    options.initialUrl && sameOrigin(options.initialUrl, origin) ? options.initialUrl : origin;
+  await window.loadURL(initialUrl);
   const manifest = await fetchDesktopManifest(ses, origin);
   return { window, session: ses, manifest, partition };
 }

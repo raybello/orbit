@@ -18,6 +18,9 @@ export const REQUIRED_SECRETS: SecretSpec[] = [
   { key: 'SESSION_SECRET', bytes: 32 },
   { key: 'DB_ENCRYPTION_KEY', bytes: 32 },
   { key: 'STACK_TOKEN', bytes: 32 },
+  // The images compose file requires it (`${VAR:?}`), and the desktop app is the only thing
+  // that generates a stack's secrets: without it here, `docker compose up` refuses to start.
+  { key: 'SANDBOX_SUPERVISOR_TOKEN', bytes: 32 },
 ];
 
 /**

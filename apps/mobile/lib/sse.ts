@@ -3,11 +3,25 @@ import type { ServerEvent } from '@orbit/contracts';
 
 export type SseStatus = 'connecting' | 'open' | 'retrying' | 'closed';
 
+/**
+ * The hub's event cursor, kept across reconnects and for the life of the app.
+ *
+ * It is not a row seq. The server numbers every event it emits per user and replays from that
+ * number, and `hello.seq` is the only authoritative value for it — so that is the only thing
+ * written here. A reconnect then resumes from the last position the server confirmed, and the
+ * store's row dedupe absorbs anything replayed twice. Sending a row seq instead would put the
+ * client ahead of the buffer, where nothing can be replayed at all.
+ */
+let hubCursor: number | null = null;
+
+/** Forget the cursor when the session ends: another user must not resume from this number. */
+export function resetSseCursor(): void {
+  hubCursor = null;
+}
+
 export interface SseOptions {
   apiBase: string;
   token: string;
-  /** Highest row seq the app already has; the server replays the last five minutes from here. */
-  since?: number;
   onEvent: (event: ServerEvent) => void;
   onStatus?: (status: SseStatus) => void;
 }
@@ -18,15 +32,14 @@ const MAX_RETRY_MS = 30_000;
 /**
  * The live feed. React Native has no EventSource, and the browser one cannot send an Authorization
  * header anyway, so this uses the react-native-sse polyfill and reconnects on its own schedule:
- * 1s, 2s, 4s … 30s, resuming from the last row it saw so nothing is lost across a tunnel or a
- * flaky connection.
+ * 1s, 2s, 4s … 30s, resuming from the hub cursor so everything the server's buffer still holds
+ * survives a tunnel or a flaky connection.
  */
-export function connectSSE({ apiBase, token, since = 0, onEvent, onStatus }: SseOptions): () => void {
+export function connectSSE({ apiBase, token, onEvent, onStatus }: SseOptions): () => void {
   let closed = false;
   let source: EventSource | null = null;
   let retryTimer: ReturnType<typeof setTimeout> | null = null;
   let attempt = 0;
-  let lastSeq = since;
 
   const emit = (status: SseStatus) => onStatus?.(status);
 
@@ -48,9 +61,10 @@ export function connectSSE({ apiBase, token, since = 0, onEvent, onStatus }: Sse
     } catch {
       return;
     }
-    if (event.type === 'rows') {
-      for (const row of event.rows) if (row.seq > lastSeq) lastSeq = row.seq;
-    }
+    // Row seqs stay the store's business: they dedupe frames, they are not a hub cursor.
+    // A server without the seq field leaves us with no cursor at all, which means no `?since`;
+    // inventing one from row seqs is what put the client ahead of the buffer in the first place.
+    if (event.type === 'hello') hubCursor = typeof event.seq === 'number' ? event.seq : null;
     onEvent(event);
   };
 
@@ -59,7 +73,7 @@ export function connectSSE({ apiBase, token, since = 0, onEvent, onStatus }: Sse
     teardown();
     emit(attempt === 0 ? 'connecting' : 'retrying');
 
-    const query = lastSeq > 0 ? `?since=${lastSeq}` : '';
+    const query = hubCursor !== null && hubCursor > 0 ? `?since=${hubCursor}` : '';
     const url = `${apiBase}/api/events${query}`;
     const es = new EventSource(url, {
       headers: { authorization: `Bearer ${token}`, accept: 'text/event-stream' },

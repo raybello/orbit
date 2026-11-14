@@ -3,7 +3,8 @@ import { ActivityIndicator, Pressable, Text, View } from 'react-native';
 import { useQueryClient } from '@tanstack/react-query';
 import { router } from 'expo-router';
 import { currentApiBase } from '../lib/api-server';
-import { unregisterPushNotifications } from '../lib/push';
+import { registeredPushToken, unregisterPushNotifications } from '../lib/push';
+import { resetSseCursor } from '../lib/sse';
 import { clearSessionToken } from '../lib/session';
 import { useOrbitStore } from '../lib/store';
 import { useMobileTokens } from '../lib/native';
@@ -18,10 +19,13 @@ export default function SignOutScreen() {
     setBusy(true);
     try {
       const apiBase = await currentApiBase();
-      await unregisterPushNotifications(apiBase);
+      // Name this device's token: the same account on another phone must keep its notifications.
+      const pushToken = await registeredPushToken();
+      await unregisterPushNotifications(apiBase, pushToken);
     } catch {
       /* the token is dropped locally either way */
     }
+    resetSseCursor();
     await clearSessionToken();
     queryClient.clear();
     useOrbitStore.getState().reset();

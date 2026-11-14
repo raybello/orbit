@@ -29,6 +29,9 @@ function platform(): PushPlatform | null {
   return null;
 }
 
+/** The token this install last registered, so signing out can name just this device. */
+let registeredToken: string | null = null;
+
 /**
  * Ask for permission, get the Expo push token, hand it to the server. Called once after sign-in:
  * the token is per install, and the server dedupes by token, so calling it again is harmless.
@@ -47,6 +50,7 @@ export async function registerPushNotifications(apiBase: string): Promise<PushRe
     if (!id) return 'no-project-id';
 
     const token = await Notifications.getExpoPushTokenAsync({ projectId: id });
+    registeredToken = token.data;
     const body: PushRegisterRequest = { token: token.data, platform: target };
     await orbitPost<{ ok: boolean }>(apiBase, '/api/push/register', body);
     return 'registered';
@@ -55,9 +59,33 @@ export async function registerPushNotifications(apiBase: string): Promise<PushRe
   }
 }
 
-export async function unregisterPushNotifications(apiBase: string): Promise<void> {
+/**
+ * The token to unregister, resolved without ever prompting: a sign-out is no place to ask for a new
+ * permission, and without one the token simply cannot be read back.
+ */
+export async function registeredPushToken(): Promise<string | null> {
+  if (registeredToken) return registeredToken;
   try {
-    await orbitDelete<{ ok: boolean }>(apiBase, '/api/push/register');
+    const permission = await Notifications.getPermissionsAsync();
+    if (!permission.granted) return null;
+    const id = projectId();
+    if (!id) return null;
+    const token = await Notifications.getExpoPushTokenAsync({ projectId: id });
+    registeredToken = token.data;
+    return registeredToken;
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * Signing out forgets this device's token only — the same account on another phone keeps its push.
+ * With no token to name, the request says nothing and the server clears the account, as before.
+ */
+export async function unregisterPushNotifications(apiBase: string, token: string | null): Promise<void> {
+  try {
+    const path = token ? `/api/push/register?token=${encodeURIComponent(token)}` : '/api/push/register';
+    await orbitDelete<{ ok: boolean }>(apiBase, path);
   } catch {
     /* the server forgets stale tokens on its own */
   }

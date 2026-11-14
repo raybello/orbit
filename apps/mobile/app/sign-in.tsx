@@ -46,8 +46,7 @@ export default function SignInScreen() {
     setBusy(true);
     setError(null);
     try {
-      // The contracts spell out email/name; the server also accepts the owner key in the same body.
-      const body: SignInRequest & { ownerKey?: string } = { email: email.trim().toLowerCase() };
+      const body: SignInRequest = { email: email.trim().toLowerCase() };
       if (ownerKey.trim()) body.ownerKey = ownerKey.trim();
 
       const response = await orbitPost<SignInResponse>(apiBase, '/api/auth/sign-in', body, {

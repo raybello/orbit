@@ -43,4 +43,22 @@ if (missing.length) {
   process.exit(1);
 }
 
+// Not required: `server-bundle.json` only exists in release builds, where the
+// build-server-bundle job downloads it first. electron-builder warns and skips an absent
+// extraResources source, and without the manifest the app stays on the Docker stack.
+const optional = [
+  {
+    path: path.join(appRoot, 'resources', 'server-bundle.json'),
+    produces: 'the build-server-bundle job in .github/workflows/desktop-release.yml',
+  },
+];
+for (const entry of optional) {
+  if (!fs.existsSync(entry.path)) {
+    console.log(
+      `[desktop] note: ${path.relative(appRoot, entry.path)} is absent — this build will not offer ` +
+        `the native Mac stack (produced by: ${entry.produces})`,
+    );
+  }
+}
+
 console.log(`[desktop] packaging inputs present (${required.length} checked)`);

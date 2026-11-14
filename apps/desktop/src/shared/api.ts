@@ -15,6 +15,11 @@ export interface DesktopSetup {
   mode: SetupMode;
   /** Always present for `existing`; optional (and advisory) for `new`. */
   serverUrl?: string;
+  /**
+   * The identity Orbit signs in to its own local stack as (`new` mode only), written on the
+   * first launch so the account — and its bots — stay the same from then on.
+   */
+  email?: string;
   /** Extra headers the server may require in front of it (a proxy, a VPN gateway). */
   customHeaders?: Record<string, string>;
   /** When the setup was written, epoch ms. */
@@ -31,7 +36,13 @@ export type DockerFailureKind =
   | 'compose-missing'
   | 'other';
 
-/** The phases of the local stack state machine, in the order they normally happen. */
+/** The phases of the local stack state machine, in the order they normally happen.
+ *
+ * The Docker stack walks the `docker-*` / `pulling` / `waiting-healthy` / `ready` path; the
+ * native stack (`native-stack.ts`) uses `starting` -> `waiting-healthy` -> `running` ->
+ * `stopping` -> `stopped`. Both share this type so the setup window, the menu and the IPC
+ * broadcast never need to know which controller is behind them.
+ */
 export type StackPhase =
   | 'idle'
   | 'checking-docker'
@@ -42,6 +53,9 @@ export type StackPhase =
   | 'starting'
   | 'waiting-healthy'
   | 'ready'
+  | 'running'
+  | 'stopping'
+  | 'stopped'
   | 'failed';
 
 export interface DesktopLocalStackState {

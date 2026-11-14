@@ -30,6 +30,14 @@ extraResources:
     to: stack/docker-compose.yml
   - from: ../../infra/compose/.env.images.example
     to: stack/.env.example
+  # The native (Docker-free) stack's manifest: `process.resourcesPath/server-bundle.json`.
+  # Only release builds have it — the build-server-bundle job in
+  # .github/workflows/desktop-release.yml downloads it into resources/ before packaging. A
+  # local checkout has no such file, which electron-builder tolerates (it logs
+  # "file source doesn't exist" and carries on), so `pnpm pack` still works; the app then
+  # simply reports the native stack as unavailable.
+  - from: resources/server-bundle.json
+    to: server-bundle.json
 
 asar: true
 # No native modules in main: everything but electron/electron-updater is bundled by esbuild.

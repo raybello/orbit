@@ -228,7 +228,8 @@ export interface Toolkit {
 
 /** Server-sent events on GET /api/events */
 export type ServerEvent =
-  | { type: 'hello'; serverTime: number }
+  /** `seq` is the server's authoritative event cursor for this user, for `GET /api/events?since=`. */
+  | { type: 'hello'; serverTime: number; seq?: number }
   | { type: 'rows'; botId: string; generation: number; rows: Row[] }
   | { type: 'cleared'; botId: string; generation: number }
   | { type: 'live'; state: LiveState }
@@ -260,7 +261,7 @@ export interface ErrorResponse { error: string }
 export interface AuthMeResponse { user: User | null; devLogin: boolean }
 
 /** POST /api/auth/sign-in — a bearer session token for the mobile and desktop clients. */
-export interface SignInRequest { email: string; name?: string }
+export interface SignInRequest { email: string; name?: string; ownerKey?: string }
 export interface SignInResponse { ok: true; token: string; user: User; expiresAt: number }
 
 export interface BotsResponse { bots: Bot[]; live: LiveState[] }

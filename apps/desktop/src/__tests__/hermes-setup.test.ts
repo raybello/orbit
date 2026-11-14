@@ -1,13 +1,18 @@
 import { test, describe } from 'node:test';
 import assert from 'node:assert/strict';
+import fs from 'node:fs';
+import os from 'node:os';
 import path from 'node:path';
 import {
   detectHermes,
   ensureHermesApiKey,
+  extractionCommand,
   hermesCandidates,
   hermesHome,
+  installHermes,
   pickReleaseAsset,
   pickSha256,
+  safeAssetName,
   sha256Hex,
   wireHermesMcp,
   type HermesDeps,
@@ -243,5 +248,114 @@ describe('release helpers', () => {
   test('pickReleaseAsset maps arm64 to aarch64 names', () => {
     const assets = [{ name: 'hermes-linux-aarch64.tar.gz', browser_download_url: 'a' }];
     assert.equal(pickReleaseAsset(assets, 'linux', 'arm64')?.archive.browser_download_url, 'a');
+  });
+});
+
+// ------------------------------------------------------------------ asset names
+
+describe('safeAssetName', () => {
+  test('accepts a plain release file name', () => {
+    assert.equal(safeAssetName('hermes-darwin-arm64.tar.gz'), 'hermes-darwin-arm64.tar.gz');
+    assert.equal(safeAssetName('hermes_windows_x64.zip'), 'hermes_windows_x64.zip');
+  });
+
+  test('refuses a traversal name', () => {
+    assert.throws(() => safeAssetName('../../evil.sh'), /unsafe release asset name/);
+    assert.throws(() => safeAssetName('../evil.tar.gz'), /unsafe release asset name/);
+    assert.throws(() => safeAssetName('..\\evil.zip'), /unsafe release asset name/);
+    assert.throws(() => safeAssetName('/etc/passwd'), /unsafe release asset name/);
+  });
+
+  test('refuses a name that would be shell syntax', () => {
+    assert.throws(() => safeAssetName('x; rm -rf /'), /unsafe release asset name/);
+    assert.throws(() => safeAssetName("it's; rm -rf ~.zip"), /unsafe release asset name/);
+    assert.throws(() => safeAssetName('a$(whoami).zip'), /unsafe release asset name/);
+    assert.throws(() => safeAssetName('name with spaces.zip'), /unsafe release asset name/);
+  });
+
+  test('refuses empty, dot and dotdot', () => {
+    for (const name of ['', '.', '..']) {
+      assert.throws(() => safeAssetName(name), /unsafe release asset name/);
+    }
+  });
+});
+
+describe('extractionCommand', () => {
+  test('never puts a path into the Windows command text', () => {
+    const archive = 'C:\\Temp\\orbit\\hermes-windows-x64.zip';
+    const { command, args, env } = extractionCommand(archive, 'C:\\Users\\me\\hermes', 'win32');
+    assert.equal(command, 'powershell.exe');
+    assert.ok(args.includes('-NonInteractive'));
+    const script = args[args.length - 1];
+    assert.match(script, /Expand-Archive/);
+    assert.ok(!script.includes(archive), 'the archive path must not be spliced into the command');
+    assert.ok(!script.includes('Users'), 'the destination must not be spliced into the command');
+    assert.equal(env?.ORBIT_HERMES_ZIP, archive);
+    assert.equal(env?.ORBIT_HERMES_DEST, 'C:\\Users\\me\\hermes');
+  });
+
+  test('uses tar for a tarball and unzip elsewhere', () => {
+    assert.deepEqual(extractionCommand('/tmp/h.tar.gz', '/tmp/out', 'darwin').args, [
+      '-xzf',
+      '/tmp/h.tar.gz',
+      '-C',
+      '/tmp/out',
+    ]);
+    assert.deepEqual(extractionCommand('/tmp/h.zip', '/tmp/out', 'linux').args, ['-o', '-q', '/tmp/h.zip', '-d', '/tmp/out']);
+  });
+});
+
+describe('installHermes asset handling', () => {
+  const tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'orbit-hermes-asset-'));
+  process.on('exit', () => fs.rmSync(tmp, { recursive: true, force: true }));
+
+  /** A release whose archive name is hostile, and a fetch that would serve it. */
+  function hostileRelease(name: string) {
+    const asked: string[] = [];
+    const deps: HermesDeps = {
+      platform: 'darwin',
+      arch: 'arm64',
+      env: {},
+      home: path.join(tmp, 'home'),
+      tmpDir: tmp,
+      exists: () => false,
+      readFile: () => '',
+      writeFile: () => {},
+      mkdirp: () => {},
+      exec: async () => ({ code: 0, stdout: '', stderr: '' }),
+      log: () => {},
+      fetchImpl: (async (input: string | URL | Request) => {
+        asked.push(String(input));
+        if (String(input).includes('releases/latest')) {
+          return new Response(
+            JSON.stringify({ tag_name: 'v1', assets: [{ name, browser_download_url: 'https://example.invalid/x' }] }),
+            { status: 200, headers: { 'content-type': 'application/json' } },
+          );
+        }
+        return new Response('archive-bytes', { status: 200 });
+      }) as typeof fetch,
+    };
+    return { deps, asked };
+  }
+
+  test('refuses a traversal name before downloading anything', async () => {
+    const { deps, asked } = hostileRelease('hermes-darwin-arm64/../../../evil.tar.gz');
+    await assert.rejects(() => installHermes(() => {}, deps), /unsafe release asset name/);
+    // Only the release lookup happened; the archive was never fetched.
+    assert.equal(asked.length, 1);
+  });
+
+  test('refuses a shell-injection name', async () => {
+    const { deps } = hostileRelease('hermes-darwin-arm64; rm -rf ~.tar.gz');
+    await assert.rejects(() => installHermes(() => {}, deps), /unsafe release asset name/);
+  });
+
+  test('accepts a normal name and writes it inside its own work dir', async () => {
+    const { deps } = hostileRelease('hermes-darwin-arm64.tar.gz');
+    // No checksum is published, so the install refuses unless the override is set.
+    await assert.rejects(
+      () => installHermes(() => {}, deps),
+      /publishes no \.sha256 checksum/,
+    );
   });
 });

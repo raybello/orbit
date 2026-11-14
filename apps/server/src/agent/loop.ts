@@ -195,8 +195,9 @@ export async function requestApproval(
   hub.emit(userId, { type: 'tasks', botId });
   emitBot(botId);
   // Nothing moves until someone answers, so this one is pushed even when a screen is open.
+  // A deleted bot leaves no row to name, and this runs outside push.ts's own guard.
   void sendPushNotification(userId, {
-    title: `${getBotRow(botId).name} needs your input`,
+    title: `${getBotRow(botId)?.name ?? 'A bot'} needs your input`,
     body: card.body.type === 'card' && card.body.card === 'approval' ? card.body.title.slice(0, 80) : 'A tool needs your approval.',
     data: { botId },
   });
@@ -613,7 +614,7 @@ async function runTurn(botId: string, trigger: Trigger) {
     // anyone watching the app in a browser already sees the message arrive.
     const finished = lastMessageText.trim();
     if (finished && !failed && !turn.silent && hub.connections(userId) === 0) {
-      void sendPushNotification(userId, { title: `${bot.name} finished`, body: finished.slice(0, 80), data: { botId } });
+      void sendPushNotification(userId, { title: `${getBotRow(botId)?.name ?? 'A bot'} finished`, body: finished.slice(0, 80), data: { botId } });
     }
   }
 }

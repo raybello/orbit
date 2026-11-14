@@ -68,7 +68,7 @@ services:
       ENGINES_DIR: /data/engines
       COMPUTER_HOME_DIR: ${COMPUTER_HOME_DIR:-/data/computers}
       DOCKER_SOCKET: /var/run/docker.sock
-      SANDBOX_SUPERVISOR_TOKEN: ${SANDBOX_SUPERVISOR_TOKEN:-}
+      SANDBOX_SUPERVISOR_TOKEN: ${SANDBOX_SUPERVISOR_TOKEN:?SANDBOX_SUPERVISOR_TOKEN is required; the desktop app generates it (openssl rand -hex 32)}
       LOG_LEVEL: ${LOG_LEVEL:-info}
     volumes:
       - orbit-data:/data

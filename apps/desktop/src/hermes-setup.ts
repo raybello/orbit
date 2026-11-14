@@ -185,6 +185,60 @@ export function sha256Hex(data: Uint8Array | string): string {
   return createHash('sha256').update(data).digest('hex');
 }
 
+/**
+ * A release asset name we are willing to turn into a path.
+ *
+ * The name comes from a GitHub API response, and it is used both as a file name inside a temp
+ * directory and in a shell command line. `../../evil.sh` would write outside that directory
+ * and `x; rm -rf /` would be command injection if it were interpolated, so anything that is
+ * not a bare, safe-looking file name is refused outright rather than sanitised silently.
+ */
+export function safeAssetName(name: string): string {
+  const raw = String(name ?? '').trim();
+  const base = path.posix.basename(raw.replace(/\\/g, '/'));
+  const safe = /^[A-Za-z0-9._-]+$/.test(base) && base !== '.' && base !== '..';
+  if (!raw || base !== raw || !safe) {
+    throw new Error(
+      `refusing an unsafe release asset name (${JSON.stringify(raw)}): ` +
+        'expected a plain file name of letters, digits, dot, dash or underscore',
+    );
+  }
+  return base;
+}
+
+/** The env var the Windows extractor reads its two paths from, never the command text. */
+export const WINDOWS_EXTRACT_ENV = { archive: 'ORBIT_HERMES_ZIP', destination: 'ORBIT_HERMES_DEST' } as const;
+
+/** `Expand-Archive` with the paths in the environment, so no name is ever spliced into code. */
+export const WINDOWS_EXTRACT_SCRIPT =
+  `Expand-Archive -LiteralPath $env:${WINDOWS_EXTRACT_ENV.archive} ` +
+  `-DestinationPath $env:${WINDOWS_EXTRACT_ENV.destination} -Force`;
+
+/**
+ * How to unpack an archive on this platform.
+ *
+ * Windows has no `unzip`, so it goes through PowerShell — but the invocation is an argv array
+ * plus environment, not a `-Command` string built by concatenation: a name with a quote or a
+ * semicolon in it is data here, and can only ever be data.
+ */
+export function extractionCommand(
+  archivePath: string,
+  destination: string,
+  platform: NodeJS.Platform,
+): { command: string; args: string[]; env?: NodeJS.ProcessEnv } {
+  if (/\.[jt]ar\.gz$|\.tgz$/i.test(archivePath)) {
+    return { command: 'tar', args: ['-xzf', archivePath, '-C', destination] };
+  }
+  if (platform === 'win32') {
+    return {
+      command: 'powershell.exe',
+      args: ['-NoProfile', '-NonInteractive', '-Command', WINDOWS_EXTRACT_SCRIPT],
+      env: { ...process.env, [WINDOWS_EXTRACT_ENV.archive]: archivePath, [WINDOWS_EXTRACT_ENV.destination]: destination },
+    };
+  }
+  return { command: 'unzip', args: ['-o', '-q', archivePath, '-d', destination] };
+}
+
 interface ReleaseAsset {
   name: string;
   browser_download_url: string;
@@ -261,7 +315,9 @@ export async function installHermes(
   if (!picked) {
     throw new Error(`No Hermes release archive published for ${platform}-${resolved.arch}`);
   }
-  say(`Downloading ${picked.archive.name}${release.tag_name ? ` (${release.tag_name})` : ''}…`);
+  // Refuse a hostile name before anything is downloaded or written.
+  const assetName = safeAssetName(picked.archive.name);
+  say(`Downloading ${assetName}${release.tag_name ? ` (${release.tag_name})` : ''}…`);
 
   const archiveRes = await resolved.fetchImpl(picked.archive.browser_download_url, {
     headers: { 'user-agent': 'orbit-desktop' },
@@ -297,14 +353,14 @@ export async function installHermes(
 
   const workDir = path.join(options.tmpDir ?? resolved.tmpDir, `orbit-hermes-${process.pid}-${Date.now()}`);
   resolved.mkdirp(workDir);
-  const archivePath = path.join(workDir, picked.archive.name);
+  const archivePath = path.join(workDir, assetName);
   fs.writeFileSync(archivePath, bytes, { mode: 0o600 });
 
   resolved.mkdirp(home);
   say(`Extracting into ${home}…`);
   const unpack = await extractArchive(archivePath, home, resolved);
   if (unpack.code !== 0) {
-    throw new Error(`Extracting ${picked.archive.name} failed: ${unpack.stderr.split('\n')[0] || unpack.code}`);
+    throw new Error(`Extracting ${assetName} failed: ${unpack.stderr.split('\n')[0] || unpack.code}`);
   }
   try {
     fs.rmSync(workDir, { recursive: true, force: true });
@@ -358,17 +414,8 @@ function findBinary(root: string, name: string, depth: number): string | null {
 }
 
 async function extractArchive(archivePath: string, destination: string, deps: ResolvedDeps): Promise<ExecResult> {
-  if (/\.zip$/i.test(archivePath)) {
-    if (deps.platform === 'win32') {
-      return deps.exec(
-        'powershell.exe',
-        ['-NoProfile', '-Command', `Expand-Archive -LiteralPath '${archivePath}' -DestinationPath '${destination}' -Force`],
-        { timeoutMs: 300_000 },
-      );
-    }
-    return deps.exec('unzip', ['-o', '-q', archivePath, '-d', destination], { timeoutMs: 300_000 });
-  }
-  return deps.exec('tar', ['-xzf', archivePath, '-C', destination], { timeoutMs: 300_000 });
+  const { command, args, env } = extractionCommand(archivePath, destination, deps.platform);
+  return deps.exec(command, args, { timeoutMs: 300_000, ...(env ? { env } : {}) });
 }
 
 /** Append our bin dir to the profile the user's shell actually reads, once. */

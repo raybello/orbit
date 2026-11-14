@@ -8,13 +8,20 @@
 
 import { Menu, app, type MenuItemConstructorOptions } from 'electron';
 import type { StackPhase } from './shared/api';
+import type { StackChoice } from './docker-move';
+import type { StackKind } from './stack-controller';
 
 export interface MenuContext {
   /** The phase of the local stack, for the status line and Stop's enabled state. */
   stackPhase: () => StackPhase;
+  /** `docker` unless this launch picked the native stack. */
+  stackKind: () => StackKind;
+  /** Eligible Mac *and* a `server-bundle.json` in the app: the switch items' gate. */
+  nativeAvailable: () => boolean;
   isLocalServer: () => boolean;
   onChangeServer: () => void;
   onStopStack: () => void;
+  onSwitchStack: (choice: StackChoice) => void;
   onCheckForUpdates: () => void;
   onOpenSettings: () => void;
   onOpenDocs: () => void;
@@ -25,8 +32,14 @@ function statusLabel(phase: StackPhase): string {
   switch (phase) {
     case 'ready':
       return 'Stack: running';
+    case 'running':
+      return 'Stack: running (native)';
     case 'idle':
       return 'Stack: stopped';
+    case 'stopped':
+      return 'Stack: stopped';
+    case 'stopping':
+      return 'Stack: stopping…';
     case 'failed':
       return 'Stack: failed';
     case 'docker-missing':
@@ -42,7 +55,9 @@ export function buildAppMenu(ctx: MenuContext): Menu {
   const isMac = process.platform === 'darwin';
   const stackPhase = ctx.stackPhase();
   const local = ctx.isLocalServer();
-  const stackActive = stackPhase !== 'idle' && stackPhase !== 'failed';
+  const stackActive = stackPhase !== 'idle' && stackPhase !== 'failed' && stackPhase !== 'stopped';
+  const native = ctx.nativeAvailable();
+  const kind = ctx.stackKind();
 
   const appMenu: MenuItemConstructorOptions[] = isMac
     ? [
@@ -86,6 +101,28 @@ export function buildAppMenu(ctx: MenuContext): Menu {
     ...(local
       ? []
       : [{ label: 'This app is using a remote server', enabled: false } as MenuItemConstructorOptions]),
+    // Only on an eligible Mac that shipped a bundle: everywhere else there is no second
+    // stack to switch to, and the items would be a dead end.
+    ...(native
+      ? [
+          {
+            label: `Stack: ${kind === 'native' ? 'Native (Docker-free)' : 'Docker'}`,
+            enabled: false,
+          } as MenuItemConstructorOptions,
+          {
+            label: 'Switch to Docker…',
+            // The current stack's item is inert rather than hidden: the greyed status line
+            // above says which one that is, and a stable menu is easier to learn.
+            enabled: kind !== 'docker',
+            click: () => ctx.onSwitchStack('docker'),
+          } as MenuItemConstructorOptions,
+          {
+            label: 'Switch to Native…',
+            enabled: kind !== 'native',
+            click: () => ctx.onSwitchStack('native'),
+          } as MenuItemConstructorOptions,
+        ]
+      : []),
     { type: 'separator' },
     ...(isMac
       ? []

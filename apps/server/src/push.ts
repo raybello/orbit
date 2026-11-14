@@ -26,7 +26,12 @@ export function registerPushToken(userId: string, token: string, platform: PushP
   ).run(newId('push'), userId, token, platform, now());
 }
 
-/** Signing out on a phone forgets every device that user registered. */
+/** Signing a phone out forgets that device; other phones keep their notifications. */
+export function removePushToken(userId: string, token: string) {
+  db.prepare('DELETE FROM push_tokens WHERE user_id=? AND token=?').run(userId, token);
+}
+
+/** Fallback for a client that cannot say which token it held: forget every device of this user. */
 export function removePushTokens(userId: string) {
   db.prepare('DELETE FROM push_tokens WHERE user_id=?').run(userId);
 }

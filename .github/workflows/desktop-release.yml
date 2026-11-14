@@ -1,8 +1,13 @@
 # Builds and publishes the Orbit desktop app on a `v*` tag.
 #
-# One job per OS because electron-builder cross-builds poorly: macOS needs the signing
-# identity, Windows needs NSIS, Linux needs AppImage tooling. All three upload to the same
-# GitHub Release (electron-builder creates it on first publish; the rest append).
+# Two kinds of artifact leave this workflow:
+#
+#  1. the desktop app itself (one job per OS, because electron-builder cross-builds poorly:
+#     macOS needs the signing identity, Windows needs NSIS, Linux needs AppImage tooling)
+#  2. the **server bundle** — the tarball of `apps/server` + `apps/web` that an eligible
+#     Apple Silicon Mac runs natively instead of Docker. It is built once, on Linux, and
+#     published next to the installers; `server-bundle.json` (the manifest naming its URL,
+#     sha256 and size) is both embedded in the `.app` and uploaded to the release.
 #
 # Signing material (all optional — without it the builds are unsigned and the macOS one is
 # not notarized):
@@ -35,9 +40,130 @@ concurrency:
   cancel-in-progress: false
 
 jobs:
+  # The native stack's download target. Built first because the desktop packaging needs its
+  # manifest: `extraResources` embeds `Resources/server-bundle.json`, and the app refuses to
+  # offer the native stack without it.
+  build-server-bundle:
+    name: Server bundle
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    outputs:
+      version: ${{ steps.pack.outputs.version }}
+      tarball: ${{ steps.pack.outputs.tarball }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 12.8.1
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+
+      - name: Install
+        run: pnpm install --frozen-lockfile
+
+      - name: Build the shared packages
+        run: pnpm run build:packages
+
+      - name: Build the server
+        run: pnpm --filter @orbit/server run build
+
+      - name: Build the web renderer
+        run: pnpm --filter @orbit/web run build
+
+      - name: Pack the bundle
+        id: pack
+        shell: bash
+        run: |
+          set -euo pipefail
+          VERSION=$(node -p "require('./apps/server/package.json').version")
+          TARBALL="orbit-server-${VERSION}.tar.xz"
+          STAGE=$(mktemp -d)
+          echo "version=$VERSION" >> "$GITHUB_OUTPUT"
+          echo "tarball=$TARBALL" >> "$GITHUB_OUTPUT"
+          echo "staging in $STAGE"
+
+          # `pnpm deploy` materialises this package plus its production dependencies into one
+          # directory: dist/, package.json, and a node_modules with better-sqlite3 in it.
+          # Copying dist/ alone would leave the server unable to import hono or sqlite.
+          pnpm --filter @orbit/server deploy --prod "$STAGE"
+
+          # Trim what the deployed tree inherited from the package directory and what the
+          # native stack will never use: a local database, source maps, tests, and the
+          # prebuilt SQLite binaries for platforms the native stack does not run on.
+          rm -rf "$STAGE/dist/__tests__" "$STAGE/scripts" "$STAGE/docker" "$STAGE/box" "$STAGE/Dockerfile"
+          rm -f "$STAGE/orbit.db" "$STAGE/orbit.db-wal" "$STAGE/orbit.db-shm" "$STAGE/pnpm-lock.yaml" "$STAGE/pnpm-workspace.yaml"
+          find "$STAGE/dist" -name '*.map' -delete
+          find "$STAGE/node_modules" -path '*/better-sqlite3/prebuilds/*' \
+            ! -name 'darwin-arm64.node' ! -name 'darwin-x64.node' -delete
+
+          # better-sqlite3 13 loads a NAPI prebuild at runtime, so the darwin-arm64 binary
+          # that ships inside the npm package is what makes a Linux-built bundle runnable on
+          # a Mac. If a future version stops shipping it, fail here rather than on a user's
+          # first launch.
+          test -f "$STAGE/node_modules/better-sqlite3/prebuilds/darwin-arm64.node"
+
+          # The renderer. The API serves it, so it has to travel with the server.
+          mkdir -p "$STAGE/web"
+          cp -R apps/web/dist/. "$STAGE/web/"
+
+          # The bundle describes itself too, so an unpacked copy is self-explanatory.
+          VERSION="$VERSION" node -e 'const fs=require("fs");const v=process.env.VERSION;fs.writeFileSync(process.argv[1]+"/bundle-manifest.json", JSON.stringify({version:v,entrypoints:{api:"dist/index.js"}}, null, 2)+"\n")' "$STAGE"
+
+          tar -cJf "$TARBALL" -C "$STAGE" .
+          ls -lh "$TARBALL"
+
+          # The manifest the desktop app embeds: where to download, and how to verify it.
+          # Written outside the tarball, and only after the tarball exists — its sha256 and
+          # size are the point of it.
+          if command -v sha256sum >/dev/null 2>&1; then
+            SHA=$(sha256sum "$TARBALL" | awk '{print $1}')
+          else
+            SHA=$(shasum -a 256 "$TARBALL" | awk '{print $1}')
+          fi
+          SIZE=$(wc -c < "$TARBALL" | tr -d ' ')
+          echo "sha256=$SHA size=$SIZE"
+
+          VERSION="$VERSION" SHA256="$SHA" SIZE="$SIZE" REPO="$GITHUB_REPOSITORY" TARBALL="$TARBALL" \
+            node -e 'const fs=require("fs");const {VERSION,SHA256,SIZE,REPO,TARBALL}=process.env;const manifest={version:VERSION,download:{url:`https://github.com/${REPO}/releases/download/v${VERSION}/${TARBALL}`,sha256:SHA256,size:Number(SIZE)},entrypoints:{api:"dist/index.js"}};fs.writeFileSync("server-bundle.json", JSON.stringify(manifest,null,2)+"\n")'
+          cat server-bundle.json
+
+      - name: Keep the manifest as an artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: orbit-server-manifest
+          path: server-bundle.json
+          if-no-files-found: error
+          retention-days: 14
+
+      - name: Keep the bundle as an artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: orbit-server-bundle
+          path: orbit-server-*.tar.xz
+          if-no-files-found: error
+          retention-days: 14
+
+      # The app downloads the tarball from the release at first launch, so this is the step
+      # that makes the native stack installable for users. Tag builds only: a manual run
+      # publishes nothing.
+      - name: Publish the bundle to the release
+        if: startsWith(github.ref, 'refs/tags/')
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: v${{ steps.pack.outputs.version }}
+          files: |
+            ${{ steps.pack.outputs.tarball }}
+            server-bundle.json
+          fail_on_unmatched_files: true
+
   build:
     name: ${{ matrix.name }}
     runs-on: ${{ matrix.os }}
+    needs: build-server-bundle
     timeout-minutes: 45
     strategy:
       fail-fast: false
@@ -105,6 +231,15 @@ jobs:
 
       - name: Build the desktop bundle
         run: pnpm --filter @orbit/desktop run build
+
+      # Lands as apps/desktop/resources/server-bundle.json, which electron-builder copies to
+      # the app's Resources/ as extraResources so the app knows where to get the bundle
+      # without a network round-trip at startup.
+      - name: Fetch the server bundle manifest
+        uses: actions/download-artifact@v4
+        with:
+          name: orbit-server-manifest
+          path: apps/desktop/resources
 
       - name: Check packaging inputs
         run: pnpm --filter @orbit/desktop run check-resources

@@ -9,7 +9,7 @@ import { hub } from './lib/hub.js';
 import { createSession, destroySession, isOwnerKey, issueSessionToken, requireUser, userFromAuthorizationHeader, userFromCookieHeader, userFromToken, type AuthVars } from './lib/auth.js';
 import { stackTokenMatches } from './lib/stack.js';
 import { hermesConnected } from './lib/hermes-probe.js';
-import { registerPushToken, removePushTokens } from './push.js';
+import { registerPushToken, removePushToken, removePushTokens } from './push.js';
 import { allLive, appendRow, clearConversation, emitBot, getBot, getBotRow, getRow, listBots, listRoutines, listRows, listTasks, toRoutine, updateRow } from './store.js';
 import { enqueue, interrupt, resolveApproval } from './agent/loop.js';
 import { computerState, ensureComputer, forgetBotFiles, readyScreen, refreshComputer, releaseScreen, suspendComputer } from './computer.js';
@@ -196,11 +196,13 @@ api.get('/events', (c) => {
     let wake: (() => void) | null = null;
     const unsub = hub.subscribe(user.id, (ev) => { queue.push(JSON.stringify(ev)); wake?.(); });
     stream.onAbort(() => { unsub(); wake?.(); });
-    // Subscribe before replaying, so nothing emitted during the replay is lost. A reconnecting
-    // client sends the seq of the last event it saw; when it does, `hello` carries that cursor back
-    // and each replayed frame below advances it, so the client stays in step with us.
+    // Subscribe before replaying, so nothing emitted during the replay is lost. `hello` always
+    // carries the server's own current cursor — never the client's `since` — because that number is
+    // the only one a client can safely resume from: echoing `since` back would leave a client whose
+    // `since` is ahead of the buffer permanently ahead of it.
+    const cursor = hub.seq(user.id);
     const resuming = sinceSeq !== null && Number.isFinite(sinceSeq);
-    await stream.writeSSE({ data: JSON.stringify({ type: 'hello', serverTime: now(), seq: resuming ? sinceSeq : hub.seq(user.id) }) });
+    await stream.writeSSE({ data: JSON.stringify({ type: 'hello', serverTime: now(), seq: cursor }) });
     if (resuming) {
       for (const ev of hub.since(user.id, sinceSeq).events) await stream.writeSSE({ data: JSON.stringify(ev) });
     }
@@ -258,8 +260,15 @@ api.post('/push/register', async (c) => {
   return c.json({ ok: true });
 });
 
-api.delete('/push/register', (c) => {
-  removePushTokens(c.get('user').id);
+/**
+ * Forgets one device's token when the body or query names it, so signing out on a phone does not
+ * silence the others. A client that cannot say which token is its own still clears the account.
+ */
+api.delete('/push/register', async (c) => {
+  const body = await c.req.json<{ token?: string }>().catch(() => null);
+  const token = c.req.query('token') ?? (typeof body?.token === 'string' ? body.token : '');
+  if (token) removePushToken(c.get('user').id, token);
+  else removePushTokens(c.get('user').id);
   return c.json({ ok: true });
 });
 
