@@ -34,6 +34,10 @@ services:
       # The container's paths, not the host's: the app must not be able to override these.
       DB_PATH: /data/orbit.db
       ENGINES_DIR: /data/engines
+      # The on-device voice models (263 MB) live on the data volume, not in the container's
+      # writable layer: a `--force-recreate` would otherwise throw them away and the next
+      # /api/voice/local/status would silently re-download them.
+      VOICE_MODELS_DIR: /data/voice-models
       COMPUTER_HOME_DIR: ${COMPUTER_HOME_DIR:-/data/computers}
       DOCKER_SOCKET: /var/run/docker.sock
       APP_URL: ${APP_URL:-http://127.0.0.1:8787}
