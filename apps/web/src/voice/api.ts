@@ -27,6 +27,57 @@ async function post<T>(path: string, body: unknown): Promise<T> {
   return res.json() as Promise<T>;
 }
 
+// ---------- on-device voice (docs/voice-local-conventions.md) ----------
+// Types are duplicated from the contract on purpose: the web app must not hard-depend on the
+// parent-owned contracts file adding these in the same change.
+
+export type LocalModelState = 'missing' | 'downloading' | 'ready' | 'error';
+
+export interface LocalVoiceStatus {
+  available: boolean;
+  reason?: string;
+  runtime: { platform: string; arch: string; provider: 'cpu'; addon: boolean };
+  models: { stt: LocalModelState; tts: LocalModelState; vad: LocalModelState };
+  bytes: { total: number; have: number };
+  download: { active: boolean; pct: number; name: string | null };
+}
+
+export interface LocalPreview { pcm: Int16Array; rate: number }
+
+/** Piper lessac-medium speaks at 22 050 Hz; the server reports the real rate in `X-Audio-Rate`. */
+export const LOCAL_TTS_RATE = 22050;
+
+/**
+ * Parse `POST /api/voice/local/preview`: the body is raw PCM16 LE mono and the sample rate rides in
+ * the `X-Audio-Rate` header. Pure, so it is unit-tested without a browser.
+ */
+export function parseLocalPreviewResponse(headers: Pick<Headers, 'get'>, body: ArrayBuffer): LocalPreview {
+  const rate = Number(headers.get('X-Audio-Rate'));
+  return {
+    pcm: new Int16Array(body, 0, body.byteLength >> 1),
+    rate: Number.isFinite(rate) && rate > 0 ? Math.round(rate) : LOCAL_TTS_RATE,
+  };
+}
+
+let statusPromise: Promise<LocalVoiceStatus> | null = null;
+
+/** Cached: the status is polled by the UI and read on every dictation start. Pass `refresh` to bypass. */
+function localStatus(refresh = false): Promise<LocalVoiceStatus> {
+  if (refresh) statusPromise = null;
+  return (statusPromise ??= fetch('/api/voice/local/status', { credentials: 'include' })
+    .then(async (r) => {
+      if (!r.ok) throw new Error(`HTTP ${r.status}`);
+      return (await r.json()) as LocalVoiceStatus;
+    })
+    .catch((e) => { statusPromise = null; throw e; }));
+}
+
+/** `POST /api/voice/local/models/download` is idempotent and runs in the background; poll status for progress. */
+function downloadLocalModels(kind?: 'stt' | 'tts' | 'vad'): Promise<{ started: boolean; state: LocalVoiceStatus['models'] }> {
+  statusPromise = null; // the next status read must not be a pre-download snapshot
+  return post<{ started: boolean; state: LocalVoiceStatus['models'] }>('/local/models/download', kind ? { kind } : {});
+}
+
 let optionsPromise: Promise<VoiceOptions> | null = null;
 
 export const voiceApi = {
@@ -53,6 +104,41 @@ export const voiceApi = {
     const ext = blob.type.includes('ogg') ? 'ogg' : blob.type.includes('mp4') ? 'm4a' : 'webm';
     fd.append('file', blob, `dictation.${ext}`);
     const res = await fetch('/api/voice/stt', { method: 'POST', credentials: 'include', body: fd });
+    if (!res.ok) {
+      let msg = 'Transcription failed';
+      try { msg = ((await res.json()) as { error?: string }).error ?? msg; } catch { /* not json */ }
+      throw new Error(msg);
+    }
+    return ((await res.json()) as { text: string }).text;
+  },
+
+  localStatus,
+  downloadLocalModels,
+
+  /** On-device Piper preview: raw PCM16 plus the rate the server actually produced (22 050 Hz). */
+  async localPreview(p: { text: string; speed?: number }): Promise<LocalPreview> {
+    const res = await fetch('/api/voice/local/preview', {
+      method: 'POST', credentials: 'include', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(p),
+    });
+    if (!res.ok) {
+      let msg = 'Preview unavailable';
+      try { msg = ((await res.json()) as { error?: string }).error ?? msg; } catch { /* not json */ }
+      throw new Error(msg);
+    }
+    return parseLocalPreviewResponse(res.headers, await res.arrayBuffer());
+  },
+
+  /** On-device STT: raw PCM16 LE mono, with the capture rate so sherpa can resample internally. */
+  async transcribeLocal(pcm: Int16Array, rate: number): Promise<string> {
+    // Copy through a plain ArrayBuffer so the body is a valid BufferSource regardless of the view's offset.
+    const body = new Uint8Array(pcm.byteLength);
+    body.set(new Uint8Array(pcm.buffer, pcm.byteOffset, pcm.byteLength));
+    const res = await fetch('/api/voice/local/stt', {
+      method: 'POST', credentials: 'include',
+      headers: { 'Content-Type': 'application/octet-stream', 'X-Audio-Rate': String(Math.round(rate)) },
+      body,
+    });
     if (!res.ok) {
       let msg = 'Transcription failed';
       try { msg = ((await res.json()) as { error?: string }).error ?? msg; } catch { /* not json */ }

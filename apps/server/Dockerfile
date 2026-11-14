@@ -130,11 +130,14 @@ RUN chmod -R a+rX,go-w /opt/hermes \
 # ---------------------------------------------------------------- runtime
 FROM node:22-alpine AS runtime
 
+# sherpa-onnx-node ships glibc-linked prebuilt binaries; alpine is musl, so gcompat (plus libstdc++,
+# which those binaries link against) is what makes `require('sherpa-onnx-node')` load. Without it
+# the addon dies with "Error loading shared library ld-linux-aarch64.so.1".
 # python3 runs the Hermes venv (its interpreter is this image's /usr/bin/python3.14); bash and git
 # are what Hermes' own tools shell out to. A non-root user, and /data owned by it so a named volume
 # created from this image is writable: SQLite needs orbit.db, and the engines/Hermes homes live
 # there too.
-RUN apk add --no-cache python3 bash git ca-certificates \
+RUN apk add --no-cache python3 bash git ca-certificates gcompat libstdc++ \
  && addgroup -S orbit \
  && adduser -S -G orbit -h /app orbit \
  && mkdir -p /data/hermes /app/apps/web/src/avatar \
