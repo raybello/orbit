@@ -644,12 +644,27 @@ function registerIpc(): void {
       setupWindow = null;
       win.destroy();
     }
-    void boot().catch((err) => {
-      log.error('boot after setup failed', err);
-      void dialog.showMessageBox({ message: 'Orbit could not start', detail: String(err), buttons: ['Quit'] }).then(
-        () => app.quit(),
-      );
-    });
+    void boot()
+      .then(() => {
+        // The setup window is gone; if boot produced nothing, the person is looking at an app with
+        // no window (which is how a first run can appear to "just quit"). Put the setup window back
+        // with the reason instead of leaving a blank desktop.
+        if (!mainWindow && !setupWindow) {
+          log.warn('setup finished but no window opened; reopening setup');
+          openSetupWindow();
+        }
+      })
+      .catch((err) => {
+        log.error('boot after setup failed', err);
+        void dialog
+          .showMessageBox({
+            type: 'error',
+            message: 'Orbit could not start',
+            detail: String(err instanceof Error ? err.message : err),
+            buttons: ['Back to setup'],
+          })
+          .then(() => openSetupWindow());
+      });
   });
 
   ipcMain.handle(IPC.hermesStatus, () => detectHermes(process.env));
