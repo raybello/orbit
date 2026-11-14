@@ -19,9 +19,14 @@ not, and what a reviewer should look at first.
 | Docker | image built; `require('sherpa-onnx-node')` succeeds inside it (`gcompat` + `libstdc++`); types report `addon:true` |
 | Regression suite | server 148/148, stable over three consecutive runs; web 22 `tsx --test` + 59 vitest |
 
-Measured latency (2 threads, this Mac, warm): STT first partial 25–36 ms, STT 17–24× real-time, TTS
-first audio 183–252 ms after the transcript, TTS 10–17× real-time, VAD 325× real-time, endpoint ~0.9 s
-after speech stops (500 ms backstop + VAD's 350 ms).
+Measured latency (2 threads, this Mac): STT first partial 25–53 ms, STT 17–24× real-time once warm,
+TTS first audio 183–252 ms after the transcript, TTS 10–17× real-time, VAD 325× real-time, endpoint
+~0.9 s after speech stops (500 ms backstop + VAD's 350 ms).
+
+**Cold start is slower**: the first decode after the engine loads runs at ~7.5× real-time (520 ms for
+3.9 s of audio) instead of ~20×, because ONNX Runtime has not warmed its kernels. Absolute latency is
+still fine, but the first utterance after a fresh server boot is roughly twice as slow as the numbers
+above; a warm-up decode in `getRecognizer()` would remove it if it ever matters.
 
 ## Built but not exercised here
 
