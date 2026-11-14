@@ -50,3 +50,8 @@ test('the env example does not ship an empty COMPUTER_IMAGE without a default in
   const example = fs.readFileSync(path.join(composeDir, '.env.images.example'), 'utf8');
   assert.match(example, /^COMPUTER_IMAGE=/m, 'the example still documents the key');
 });
+
+test('the supervisor opts out of the image healthcheck (it binds no port)', () => {
+  const text = fs.readFileSync(path.join(composeDir, 'docker-compose.images.yml'), 'utf8');
+  assert.match(serviceBlock(text, 'sandbox-supervisor'), /healthcheck:\n\s+test: \["NONE"\]/);
+});
