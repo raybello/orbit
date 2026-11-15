@@ -3,7 +3,8 @@ import { newId } from '../lib/ids.js';
 import { hub } from '../lib/hub.js';
 import { box } from '../box.js';
 import { env } from '../env.js';
-import { appendRow, getBotRow, listRoutines, toRoutine, describeCron } from '../store.js';
+import { appendRow, getBotRow, listRoutines, toRoutine, describeCron, type RoutineRow } from '../store.js';
+import type { Trigger } from './loop.js';
 import { executeComposio, innerToolSlugs, isReadOnlySlug, toolkitInfo } from '../composio.js';
 import { scheduleRoutine, unscheduleRoutine } from '../routines.js';
 import { createEventRoutine, deleteEventTrigger, describeEvent, listTriggerTypes } from '../triggers.js';
@@ -13,13 +14,23 @@ import type { ActivityKind } from '../types.js';
 import { Cron } from 'croner';
 import { COMPUTER_TOOLS } from '../computer-tools.js';
 
+/** Tool arguments as the model sent them: a JSON object, read field by field. */
+type ToolArgs = Record<string, unknown>;
+
+/** A JSON object from a third party, or null for anything else. */
+const asRecord = (v: unknown): Record<string, unknown> | null =>
+  v && typeof v === 'object' && !Array.isArray(v) ? (v as Record<string, unknown>) : null;
+
+/** Message off a caught value, which may be an Error or anything a dependency threw. */
+const messageOf = (e: unknown): string => String((e as { message?: unknown } | null)?.message ?? e);
+
 export interface ToolCtx {
   userId: string;
   botId: string;
   enqueueBotMessage: (fromBotId: string, toBotId: string, text: string, depth: number) => void;
   depth: number;
   /** The agent loop's per-bot queue, so post_to_group can dispatch @mentioned group members. */
-  enqueue?: (botId: string, turn: any) => void;
+  enqueue?: (botId: string, turn: Trigger) => void;
   /** The group-chat chain depth of this turn (the dispatcher's `_groupDepth`), 0 outside a group. */
   groupDepth?: number;
 }
@@ -32,7 +43,7 @@ export interface ToolResult {
   endTurn?: boolean;
 }
 
-type Impl = (args: any, ctx: ToolCtx) => Promise<ToolResult>;
+type Impl = (args: ToolArgs, ctx: ToolCtx) => Promise<ToolResult>;
 
 interface ToolDef {
   name: string;
@@ -48,11 +59,12 @@ interface ToolDef {
 const obj = (properties: Record<string, unknown>, required: string[] = []) => ({ type: 'object', properties, required, additionalProperties: false });
 
 function botByName(userId: string, name: string) {
-  return db.prepare('SELECT * FROM bots WHERE user_id=? AND lower(name)=lower(?)').get(userId, name.trim()) as any;
+  return db.prepare('SELECT * FROM bots WHERE user_id=? AND lower(name)=lower(?)').get(userId, name.trim()) as
+    { id: string; name: string; kind: string | null } | undefined;
 }
 
 /** Live X research through xAI's search tool. Returns the answer text followed by the posts it cites. */
-async function xSearch(a: any): Promise<string> {
+async function xSearch(a: ToolArgs): Promise<string> {
   const clean = (v: unknown) => (Array.isArray(v) ? v.map((h) => String(h).replace(/^@/, '').trim()).filter(Boolean).slice(0, 10) : []);
   const tool: Record<string, unknown> = { type: 'x_search' };
   const only = clean(a.handles);
@@ -77,17 +89,22 @@ async function xSearch(a: any): Promise<string> {
     }),
   });
   if (!res.ok) throw new Error(`X search failed (${res.status}): ${(await res.text()).slice(0, 300)}`);
-  const data: any = await res.json();
+  const data = asRecord(await res.json());
   const parts: string[] = [];
   const links = new Set<string>();
-  for (const item of data.output ?? []) {
-    if (item?.type !== 'message') continue;
-    for (const c of item.content ?? []) {
-      if (typeof c?.text === 'string') parts.push(c.text);
-      for (const an of c?.annotations ?? []) if (an?.url) links.add(String(an.url));
+  for (const item of Array.isArray(data?.output) ? data.output : []) {
+    const message = asRecord(item);
+    if (message?.type !== 'message') continue;
+    for (const c of Array.isArray(message.content) ? message.content : []) {
+      const chunk = asRecord(c);
+      if (typeof chunk?.text === 'string') parts.push(chunk.text);
+      for (const an of Array.isArray(chunk?.annotations) ? chunk.annotations : []) {
+        const annotation = asRecord(an);
+        if (annotation?.url) links.add(String(annotation.url));
+      }
     }
   }
-  for (const u of data.citations ?? []) if (typeof u === 'string') links.add(u);
+  for (const u of Array.isArray(data?.citations) ? data.citations : []) if (typeof u === 'string') links.add(u);
   const text = parts.join('\n\n').trim() || 'No answer came back.';
   const sources = [...links].slice(0, 40);
   return (sources.length ? `${text}\n\nSources:\n${sources.map((u) => `- ${u}`).join('\n')}` : text).slice(0, 60000);
@@ -123,9 +140,7 @@ export const TOOLS: ToolDef[] = [
       const rawName = String(a.filename || 'file').replace(/[^a-zA-Z0-9._-]/g, '_').slice(0, 120);
       const relPath = `images/${rawName}`;
       const dest = `${LIBRARY_ROOT}/${ctx.botId}/${relPath}`;
-      // Ensure the images subfolder exists.
       await box.bash(`mkdir -p "${LIBRARY_ROOT}/${ctx.botId}/images"`, 10);
-      // Download to disk.
       const res = await fetch(String(a.url), { signal: AbortSignal.timeout(30_000) });
       if (!res.ok) return { output: `Download failed: HTTP ${res.status}` };
       const buf = Buffer.from(await res.arrayBuffer());
@@ -162,14 +177,14 @@ export const TOOLS: ToolDef[] = [
     activity: 'working',
     label: 'Setting up a routine',
     impl: async (a, ctx) => {
-      try { new Cron(a.schedule, { paused: true, timezone: a.timezone || 'UTC' }); } catch (e: any) { return { output: `Invalid schedule: ${e.message}` }; }
+      try { new Cron(a.schedule as string, { paused: true, timezone: (a.timezone as string) || 'UTC' }); } catch (e) { return { output: `Invalid schedule: ${(e as Error).message}` }; }
       const id = newId('rt');
-      db.prepare('INSERT INTO routines(id,bot_id,name,prompt,schedule,timezone,enabled,created_at) VALUES (?,?,?,?,?,?,1,?)').run(id, ctx.botId, a.name, a.prompt, a.schedule, a.timezone || 'UTC', now());
-      const r = toRoutine(db.prepare('SELECT * FROM routines WHERE id=?').get(id));
+      db.prepare('INSERT INTO routines(id,bot_id,name,prompt,schedule,timezone,enabled,created_at) VALUES (?,?,?,?,?,?,1,?)').run(id, ctx.botId, a.name, a.prompt, a.schedule, (a.timezone as string) || 'UTC', now());
+      const r = toRoutine(db.prepare('SELECT * FROM routines WHERE id=?').get(id) as RoutineRow);
       scheduleRoutine(r);
-      appendRow(ctx.botId, 'event', { type: 'event', event: 'routine-created', text: `Routine created: ${a.name} · ${describeCron(a.schedule)}`, ref: id });
+      appendRow(ctx.botId, 'event', { type: 'event', event: 'routine-created', text: `Routine created: ${String(a.name)} · ${describeCron(a.schedule as string)}`, ref: id });
       hub.emit(ctx.userId, { type: 'routines', botId: ctx.botId });
-      return { output: JSON.stringify({ ok: true, routine: r }), summary: `Created routine ${a.name}` };
+      return { output: JSON.stringify({ ok: true, routine: r }), summary: `Created routine ${String(a.name)}` };
     },
   },
   {
@@ -188,14 +203,14 @@ export const TOOLS: ToolDef[] = [
     label: 'Setting up a routine',
     impl: async (a, ctx) => {
       let config: Record<string, unknown> = {};
-      try { config = a.config_json ? JSON.parse(a.config_json) : {}; } catch { return { output: 'config_json must be a JSON object string.' }; }
+      try { config = a.config_json ? (JSON.parse(String(a.config_json)) as Record<string, unknown>) : {}; } catch { return { output: 'config_json must be a JSON object string.' }; }
       try {
-        const r = await createEventRoutine(ctx.userId, ctx.botId, { name: a.name, prompt: a.prompt, trigger_slug: a.trigger_slug, config });
-        appendRow(ctx.botId, 'event', { type: 'event', event: 'routine-created', text: `Routine created: ${a.name} · ${describeEvent(`event:${String(a.trigger_slug).toUpperCase()}`)}`, ref: r.id });
+        const r = await createEventRoutine(ctx.userId, ctx.botId, { name: a.name as string, prompt: a.prompt as string, trigger_slug: a.trigger_slug as string, config });
+        appendRow(ctx.botId, 'event', { type: 'event', event: 'routine-created', text: `Routine created: ${String(a.name)} · ${describeEvent(`event:${String(a.trigger_slug).toUpperCase()}`)}`, ref: r.id });
         hub.emit(ctx.userId, { type: 'routines', botId: ctx.botId });
-        return { output: JSON.stringify({ ok: true, routine_id: r.id }), summary: `Created event routine ${a.name}` };
-      } catch (e: any) {
-        return { output: `Could not create the trigger: ${e?.message ?? e}. If the app isn't connected, call request_app_connection first.` };
+        return { output: JSON.stringify({ ok: true, routine_id: r.id }), summary: `Created event routine ${String(a.name)}` };
+      } catch (e) {
+        return { output: `Could not create the trigger: ${messageOf(e)}. If the app isn't connected, call request_app_connection first.` };
       }
     },
   },
@@ -215,10 +230,10 @@ export const TOOLS: ToolDef[] = [
     label: 'Updating check-ins',
     impl: async (a, ctx) => {
       try {
-        const r = setCheckins(ctx.userId, { enabled: !!a.enabled, times: a.times, timezone: a.timezone });
+        const r = setCheckins(ctx.userId, { enabled: !!a.enabled, times: a.times as string[] | undefined, timezone: a.timezone as string | undefined });
         return { output: JSON.stringify({ ok: true, ...r }), summary: r.enabled ? `Check-ins at ${r.times.join(', ')} ${r.timezone}` : 'Check-ins off' };
-      } catch (e: any) {
-        return { output: `Could not update check-ins: ${e?.message ?? e}` };
+      } catch (e) {
+        return { output: `Could not update check-ins: ${messageOf(e)}` };
       }
     },
   },
@@ -237,12 +252,12 @@ export const TOOLS: ToolDef[] = [
     activity: 'working',
     label: 'Updating a routine',
     impl: async (a, ctx) => {
-      const cur = db.prepare('SELECT * FROM routines WHERE id=? AND bot_id=?').get(a.routine_id, ctx.botId) as any;
+      const cur = db.prepare('SELECT * FROM routines WHERE id=? AND bot_id=?').get(a.routine_id, ctx.botId) as RoutineRow | undefined;
       if (!cur) return { output: 'No such routine.' };
-      const next = { ...cur, name: a.name ?? cur.name, prompt: a.prompt ?? cur.prompt, schedule: a.schedule ?? cur.schedule, timezone: a.timezone ?? cur.timezone, enabled: a.enabled === undefined ? cur.enabled : a.enabled ? 1 : 0 };
-      try { new Cron(next.schedule, { paused: true, timezone: next.timezone }); } catch (e: any) { return { output: `Invalid schedule: ${e.message}` }; }
+      const next = { ...cur, name: (a.name as string | undefined) ?? cur.name, prompt: (a.prompt as string | undefined) ?? cur.prompt, schedule: (a.schedule as string | undefined) ?? cur.schedule, timezone: (a.timezone as string | undefined) ?? cur.timezone, enabled: a.enabled === undefined ? cur.enabled : a.enabled ? 1 : 0 };
+      try { new Cron(next.schedule, { paused: true, timezone: next.timezone }); } catch (e) { return { output: `Invalid schedule: ${(e as Error).message}` }; }
       db.prepare('UPDATE routines SET name=?,prompt=?,schedule=?,timezone=?,enabled=? WHERE id=?').run(next.name, next.prompt, next.schedule, next.timezone, next.enabled, cur.id);
-      const r = toRoutine(db.prepare('SELECT * FROM routines WHERE id=?').get(cur.id));
+      const r = toRoutine(db.prepare('SELECT * FROM routines WHERE id=?').get(cur.id) as RoutineRow);
       r.enabled ? scheduleRoutine(r) : unscheduleRoutine(r.id);
       appendRow(ctx.botId, 'event', { type: 'event', event: 'routine-updated', text: `Routine updated: ${r.name} · ${r.enabled ? r.description : 'Paused'}`, ref: r.id });
       hub.emit(ctx.userId, { type: 'routines', botId: ctx.botId });
@@ -256,8 +271,8 @@ export const TOOLS: ToolDef[] = [
     activity: 'working',
     label: 'Removing a routine',
     impl: async (a, ctx) => {
-      unscheduleRoutine(a.routine_id);
-      await deleteEventTrigger(a.routine_id);
+      unscheduleRoutine(String(a.routine_id));
+      await deleteEventTrigger(String(a.routine_id));
       db.prepare('DELETE FROM routines WHERE id=? AND bot_id=?').run(a.routine_id, ctx.botId);
       hub.emit(ctx.userId, { type: 'routines', botId: ctx.botId });
       return { output: 'Deleted.' };
@@ -295,8 +310,8 @@ export const TOOLS: ToolDef[] = [
     activity: 'messaging_named',
     label: 'Messaging a Bot',
     impl: async (a, ctx) => {
-      const target = botByName(ctx.userId, a.bot_name);
-      if (!target) return { output: `No bot named "${a.bot_name}". Team: ${(db.prepare('SELECT name FROM bots WHERE user_id=?').all(ctx.userId) as any[]).map((b) => b.name).join(', ')}` };
+      const target = botByName(ctx.userId, String(a.bot_name));
+      if (!target) return { output: `No bot named "${String(a.bot_name)}". Team: ${(db.prepare('SELECT name FROM bots WHERE user_id=?').all(ctx.userId) as { name: string }[]).map((b) => b.name).join(', ')}` };
       if (target.id === ctx.botId) return { output: 'That is you.' };
       if (target.kind === 'room') return { output: `"${target.name}" is a group chat; use post_to_group instead.` };
       if (ctx.depth >= 3) return { output: 'Too many hops between bots; answer the user directly instead.' };
@@ -320,7 +335,7 @@ export const TOOLS: ToolDef[] = [
       if (ids.length < 2) return { output: `A group needs at least 2 Bots. Not found: ${missing.join(', ') || 'none'}.` };
       const id = createRoom(ctx.userId, String(a.name), [...new Set(ids)]);
       appendRow(id, 'event', { type: 'event', event: 'bot-message', text: `Group created with ${(a.bot_names as string[]).filter((n) => !missing.includes(n)).join(', ')}` });
-      return { output: JSON.stringify({ ok: true, group_id: id, missing }), summary: `Created group ${a.name}` };
+      return { output: JSON.stringify({ ok: true, group_id: id, missing }), summary: `Created group ${String(a.name)}` };
     },
   },
   {
@@ -332,7 +347,7 @@ export const TOOLS: ToolDef[] = [
     impl: async (a, ctx) => {
       // The turn's chain depth keeps a bot-to-bot @mention chain inside the group's depth limit.
       const out = postToRoom(ctx.botId, String(a.group_name), String(a.text), ctx.groupDepth ?? 0, ctx.enqueue);
-      return { output: out, summary: `Posted to ${a.group_name}`, endTurn: out === 'Posted to the group.' };
+      return { output: out, summary: `Posted to ${String(a.group_name)}`, endTurn: out === 'Posted to the group.' };
     },
   },
   {
@@ -342,7 +357,7 @@ export const TOOLS: ToolDef[] = [
     activity: 'waiting_for_you',
     label: 'Waiting on you',
     impl: async (a, ctx) => {
-      appendRow(ctx.botId, 'card', { type: 'card', card: 'question', question: a.question, options: (a.options ?? []).slice(0, 6), status: 'pending' });
+      appendRow(ctx.botId, 'card', { type: 'card', card: 'question', question: a.question as string, options: ((a.options as string[] | undefined) ?? []).slice(0, 6), status: 'pending' });
       return { output: 'Question shown to the user. Stop here and wait for their answer.', endTurn: true };
     },
   },
@@ -354,8 +369,8 @@ export const TOOLS: ToolDef[] = [
     label: 'Using a connected app',
     impl: async (a, ctx) => {
       const info = await toolkitInfo(String(a.toolkit).toLowerCase());
-      if (!info) return { output: `Unknown toolkit "${a.toolkit}". Use COMPOSIO_SEARCH_TOOLS to find the right toolkit slug.` };
-      appendRow(ctx.botId, 'card', { type: 'card', card: 'connect', toolkit: info.slug, toolkitName: info.name, logo: info.logo, reason: a.reason, status: 'pending' });
+      if (!info) return { output: `Unknown toolkit "${String(a.toolkit)}". Use COMPOSIO_SEARCH_TOOLS to find the right toolkit slug.` };
+      appendRow(ctx.botId, 'card', { type: 'card', card: 'connect', toolkit: info.slug, toolkitName: info.name, logo: info.logo, reason: a.reason as string, status: 'pending' });
       return { output: `Asked the user to connect ${info.name}. Stop here; you'll be told when it's connected.`, endTurn: true };
     },
   },
@@ -367,16 +382,14 @@ export const TOOLS: ToolDef[] = [
 
 export const toolMap = new Map(TOOLS.map((t) => [t.name, t]));
 
-// ---------- approvals policy ----------
-
 export type Decision = 'allow' | 'ask' | 'block';
 
-export function policyFor(userId: string, toolName: string, args: any): { decision: Decision; key: string; toolkit?: string; title: string } {
+export function policyFor(userId: string, toolName: string, args: ToolArgs): { decision: Decision; key: string; toolkit?: string; title: string } {
   const ownTool = toolMap.get(toolName);
   if (ownTool) {
     if (ownTool.policy !== 'needs_approval') return { decision: 'allow', key: toolName, title: toolName };
     // Owned tool that requires approval — check the policy table (supports always_allow / blocked overrides).
-    const p = db.prepare('SELECT mode FROM policies WHERE user_id=? AND tool=?').get(userId, toolName) as any;
+    const p = db.prepare('SELECT mode FROM policies WHERE user_id=? AND tool=?').get(userId, toolName) as { mode: string } | undefined;
     const mode = p?.mode ?? 'needs_approval';
     return { decision: mode === 'blocked' ? 'block' : mode === 'always_allow' ? 'allow' : 'ask', key: toolName, title: ownTool.label };
   }
@@ -385,7 +398,7 @@ export function policyFor(userId: string, toolName: string, args: any): { decisi
     // Composio's sandbox can run app actions from code, which would slip past the per-action
     // approvals below. Code that reaches for them is treated like a write to an app.
     if (/^COMPOSIO_REMOTE_(WORKBENCH|BASH_TOOL)$/.test(toolName) && /run_composio_tool|proxy_execute|execute_tool|composio/i.test(JSON.stringify(args ?? {}))) {
-      const p = db.prepare('SELECT mode FROM policies WHERE user_id=? AND tool=?').get(userId, toolName) as any;
+      const p = db.prepare('SELECT mode FROM policies WHERE user_id=? AND tool=?').get(userId, toolName) as { mode: string } | undefined;
       const mode = p?.mode ?? 'needs_approval';
       return { decision: mode === 'blocked' ? 'block' : mode === 'always_allow' ? 'allow' : 'ask', key: toolName, title: 'Run code that uses your connected apps' };
     }
@@ -394,7 +407,7 @@ export function policyFor(userId: string, toolName: string, args: any): { decisi
   let decision: Decision = 'allow';
   let key = slugs[0];
   for (const slug of slugs) {
-    const p = db.prepare('SELECT mode FROM policies WHERE user_id=? AND tool=?').get(userId, slug) as any;
+    const p = db.prepare('SELECT mode FROM policies WHERE user_id=? AND tool=?').get(userId, slug) as { mode: string } | undefined;
     const mode = p?.mode ?? (isReadOnlySlug(slug) ? 'always_allow' : 'needs_approval');
     if (mode === 'blocked') return { decision: 'block', key: slug, title: humanizeSlug(slug) };
     if (mode === 'needs_approval') { decision = 'ask'; key = slug; }
@@ -408,7 +421,7 @@ export function humanizeSlug(slug: string) {
   return `${app.charAt(0) + app.slice(1).toLowerCase()}: ${parts.join(' ').toLowerCase()}`;
 }
 
-export async function runComposioTool(ctx: ToolCtx, name: string, args: any): Promise<ToolResult> {
+export async function runComposioTool(ctx: ToolCtx, name: string, args: ToolArgs): Promise<ToolResult> {
   const r = await executeComposio(ctx.userId, name, args);
   const ok = r.resultType ? r.resultType === 'completed' : !r.error;
   const payload = ok ? r.data : { error: r.error, logId: r.logId };

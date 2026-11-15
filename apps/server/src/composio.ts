@@ -21,11 +21,10 @@ export const composio: ReturnType<typeof makeComposio> = new Proxy({} as ReturnT
   },
 });
 
-/** True when a Composio API key is configured and long enough to be valid. */
 export const composioEnabled = () => env.composioKey.length >= 10;
 
 const REST = 'https://backend.composio.dev/api/v3.1';
-async function rest<T = any>(path: string): Promise<T> {
+async function rest<T>(path: string): Promise<T> {
   if (!composioEnabled()) throw new Error('COMPOSIO_API_KEY is not configured');
   const res = await fetch(`${REST}${path}`, { headers: { 'x-api-key': env.composioKey } });
   if (!res.ok) throw new Error(`Composio ${path}: ${res.status} ${await res.text()}`);
@@ -37,20 +36,34 @@ async function rest<T = any>(path: string): Promise<T> {
 type CatalogItem = Omit<Toolkit, 'connected'>;
 let catalogCache: { at: number; items: CatalogItem[] } | null = null;
 
+/** The fields of a v3 `/toolkits` entry this module reads. */
+interface ToolkitEntry {
+  slug: string;
+  name: string;
+  meta?: { logo?: string; description?: string; categories?: { name?: string; id?: string }[] };
+  composio_managed_auth_schemes?: unknown[];
+  no_auth?: boolean;
+}
+
+interface ToolkitPage {
+  items?: ToolkitEntry[];
+  next_cursor?: string;
+}
+
 export async function catalog(): Promise<CatalogItem[]> {
   if (!composioEnabled()) return [];
   if (catalogCache && Date.now() - catalogCache.at < 3600_000) return catalogCache.items;
   const items: CatalogItem[] = [];
   let cursor: string | undefined;
   for (let page = 0; page < 3; page++) {
-    const r = await rest<any>(`/toolkits?sort_by=usage&limit=500${cursor ? `&cursor=${encodeURIComponent(cursor)}` : ''}`);
+    const r = await rest<ToolkitPage>(`/toolkits?sort_by=usage&limit=500${cursor ? `&cursor=${encodeURIComponent(cursor)}` : ''}`);
     for (const t of r.items ?? []) {
       items.push({
         slug: t.slug,
         name: t.name,
         logo: t.meta?.logo,
         description: t.meta?.description,
-        categories: (t.meta?.categories ?? []).map((c: any) => c.name ?? c.id),
+        categories: (t.meta?.categories ?? []).map((c) => (c.name ?? c.id) as string),
         managedAuth: (t.composio_managed_auth_schemes ?? []).length > 0,
         noAuth: !!t.no_auth,
       });
@@ -68,17 +81,29 @@ export async function toolkitInfo(slug: string): Promise<CatalogItem | undefined
 
 // ---------- per-user connections ----------
 
+/** A v3 connected-account entry, in the fields this module reads. */
+interface ConnectedAccountEntry {
+  id: string;
+  status?: string;
+  toolkit?: { slug?: string };
+  toolkitSlug?: string;
+}
+
+interface ConnectedAccountPage {
+  items?: ConnectedAccountEntry[];
+}
+
 export async function connectedToolkits(userId: string): Promise<Set<string>> {
   if (!composioEnabled()) return new Set();
-  const r = await composio.connectedAccounts.list({ userIds: [userId], statuses: ['ACTIVE'] } as any);
-  const items: any[] = (r as any).items ?? [];
-  return new Set(items.map((i) => i.toolkit?.slug ?? i.toolkitSlug).filter(Boolean));
+  const r = (await composio.connectedAccounts.list({ userIds: [userId], statuses: ['ACTIVE'] })) as unknown as ConnectedAccountPage;
+  const items = r.items ?? [];
+  return new Set(items.map((i) => i.toolkit?.slug ?? i.toolkitSlug).filter((s): s is string => Boolean(s)));
 }
 
 export async function connectionsDetail(userId: string) {
   if (!composioEnabled()) return [];
-  const r = await composio.connectedAccounts.list({ userIds: [userId] } as any);
-  return ((r as any).items ?? []).map((i: any) => ({ id: i.id, toolkit: i.toolkit?.slug ?? i.toolkitSlug, status: i.status }));
+  const r = (await composio.connectedAccounts.list({ userIds: [userId] })) as unknown as ConnectedAccountPage;
+  return (r.items ?? []).map((i) => ({ id: i.id, toolkit: i.toolkit?.slug ?? i.toolkitSlug, status: i.status }));
 }
 
 export async function disconnect(userId: string, toolkit: string) {
@@ -90,18 +115,33 @@ export async function disconnect(userId: string, toolkit: string) {
 
 // ---------- sessions (tool router) ----------
 
-const sessionCache = new Map<string, any>();
+/** The slice of a Composio session this server calls; the SDK does not export its session type, so
+ *  every value crossing that boundary is cast to this shape once. */
+interface ComposioSession {
+  sessionId: string;
+  tools(): Promise<unknown[]>;
+  execute(name: string, args: Record<string, unknown>): Promise<unknown>;
+  authorize(toolkit: string, opts: { callbackUrl: string }): Promise<{ redirectUrl: string; id?: string }>;
+}
 
-export async function sessionFor(userId: string): Promise<any> {
+const sessionCache = new Map<string, ComposioSession>();
+
+export async function sessionFor(userId: string): Promise<ComposioSession> {
   const cached = sessionCache.get(userId);
   if (cached) return cached;
-  const row = db.prepare('SELECT session_id FROM composio_sessions WHERE user_id=?').get(userId) as any;
-  let session: any;
+  const row = db.prepare('SELECT session_id FROM composio_sessions WHERE user_id=?').get(userId) as
+    | { session_id: string }
+    | undefined;
+  let session: ComposioSession | null = null;
   if (row) {
-    try { session = await composio.use(row.session_id); } catch { session = null; }
+    try {
+      session = (await composio.use(row.session_id)) as unknown as ComposioSession;
+    } catch {
+      session = null;
+    }
   }
   if (!session) {
-    session = await composio.create(userId, { manageConnections: false } as any);
+    session = (await composio.create(userId, { manageConnections: false })) as unknown as ComposioSession;
     db.prepare('INSERT OR REPLACE INTO composio_sessions(user_id, session_id) VALUES (?,?)').run(userId, session.sessionId);
   }
   sessionCache.set(userId, session);
@@ -117,7 +157,7 @@ export async function startConnect(userId: string, toolkit: string, callbackUrl:
 }
 
 /** OpenAI-Responses-format function tools for this user's Composio session (meta tools). */
-export async function composioTools(userId: string): Promise<any[]> {
+export async function composioTools(userId: string): Promise<unknown[]> {
   if (!composioEnabled()) return [];
   try {
     const session = await sessionFor(userId);
@@ -136,10 +176,16 @@ export async function executeComposio(userId: string, name: string, args: Record
 }
 
 /** Which inner tool slugs a Composio meta-tool call would run (for approval checks). */
-export function innerToolSlugs(name: string, args: any): string[] {
+export function innerToolSlugs(name: string, args: unknown): string[] {
   if (name === 'COMPOSIO_MULTI_EXECUTE_TOOL') {
-    const list = args?.tools ?? args?.tool_calls ?? args?.actions ?? [];
-    return (Array.isArray(list) ? list : []).map((t: any) => String(t.tool_slug ?? t.slug ?? t.name ?? t.tool ?? '')).filter(Boolean);
+    const a = (args ?? {}) as { tools?: unknown; tool_calls?: unknown; actions?: unknown };
+    const list = a.tools ?? a.tool_calls ?? a.actions ?? [];
+    return (Array.isArray(list) ? list : [])
+      .map((t) => {
+        const o = t as { tool_slug?: unknown; slug?: unknown; name?: unknown; tool?: unknown };
+        return String(o.tool_slug ?? o.slug ?? o.name ?? o.tool ?? '');
+      })
+      .filter(Boolean);
   }
   if (name.startsWith('COMPOSIO_')) return [];
   return [name];
@@ -152,18 +198,24 @@ export const isReadOnlySlug = (slug: string) => READ_RE.test(slug.toUpperCase())
 
 export async function startGoogleLogin(provisionalUserId: string, callbackUrl: string) {
   if (!composioEnabled()) throw new Error('Google sign-in via Composio is not available (COMPOSIO_API_KEY missing). Use the dev login instead.');
-  const session = await composio.create(provisionalUserId, { manageConnections: false } as any);
-  const req = await (session as any).authorize('gmail', { callbackUrl });
-  return { redirectUrl: req.redirectUrl as string, connectedAccountId: req.id as string | undefined };
+  const session = (await composio.create(provisionalUserId, { manageConnections: false })) as unknown as ComposioSession;
+  const req = await session.authorize('gmail', { callbackUrl });
+  return { redirectUrl: req.redirectUrl, connectedAccountId: req.id };
+}
+
+/** The Gmail profile fields read out of a proxied Google API response. */
+interface GoogleProfileBody {
+  emailAddress?: string;
+  email?: string;
 }
 
 export async function googleProfile(connectedAccountId: string): Promise<{ email: string; name?: string }> {
-  const r: any = await composio.tools.proxyExecute({
+  const r = (await composio.tools.proxyExecute({
     endpoint: 'https://gmail.googleapis.com/gmail/v1/users/me/profile',
     method: 'GET',
     connectedAccountId,
-  } as any);
-  const data = r?.data ?? r;
+  } as unknown as Parameters<typeof composio.tools.proxyExecute>[0])) as unknown as { data?: GoogleProfileBody } | GoogleProfileBody | undefined;
+  const data = (r as { data?: GoogleProfileBody })?.data ?? (r as GoogleProfileBody | undefined);
   const email = data?.emailAddress ?? data?.email;
   if (!email) throw new Error(`Could not read Google profile: ${JSON.stringify(r).slice(0, 300)}`);
   return { email, name: undefined };

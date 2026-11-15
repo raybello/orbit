@@ -16,19 +16,20 @@ import { engineKind, managedHome, readYaml, writePrivate } from './engine.js';
 /** The MCP server the app injects into every Hermes config so the agent can reach Orbit's tools. */
 const APP_SERVER = 'hq';
 
-const asMap = (v: unknown): Record<string, any> =>
-  v && typeof v === 'object' && !Array.isArray(v) ? (v as Record<string, any>) : {};
+const asMap = (v: unknown): Record<string, unknown> =>
+  v && typeof v === 'object' && !Array.isArray(v) ? (v as Record<string, unknown>) : {};
 
 /** A bot's `mcp_servers` map: {} when the file or the key is missing. */
-export function readMcpServers(configPath: string): Record<string, any> {
+export function readMcpServers(configPath: string): Record<string, unknown> {
   return asMap(readYaml(configPath)?.mcp_servers);
 }
 
 /** How Hermes would reach a server: an HTTP endpoint, a local process, or something we can't tell. */
-export function mcpServerType(entry: any): 'http' | 'stdio' | 'unknown' {
+export function mcpServerType(entry: unknown): 'http' | 'stdio' | 'unknown' {
   if (!entry || typeof entry !== 'object') return 'unknown';
-  if (typeof entry.url === 'string' && entry.url.trim()) return 'http';
-  if (typeof entry.command === 'string' && entry.command.trim()) return 'stdio';
+  const e = entry as Record<string, unknown>;
+  if (typeof e.url === 'string' && e.url.trim()) return 'http';
+  if (typeof e.command === 'string' && e.command.trim()) return 'stdio';
   return 'unknown';
 }
 
@@ -53,12 +54,12 @@ export function getSkillEntries(userId: string): SkillEntry[] {
       "SELECT id, name, engine FROM bots WHERE user_id=? AND engine IN ('primary','managed') " +
         "ORDER BY CASE WHEN engine='primary' THEN 1 ELSE 0 END DESC, created_at ASC",
     )
-    .all(userId) as any[];
+    .all(userId) as { id: string; name: string; engine: string | null }[];
 
   const primary = readMcpServers(primaryConfigPath());
   const names = Object.keys(primary).filter((n) => n !== APP_SERVER);
 
-  const configs = new Map<string, Record<string, any>>();
+  const configs = new Map<string, Record<string, unknown>>();
   for (const b of bots) {
     const file = botConfigPath(b.id);
     configs.set(b.id, b.engine === 'primary' ? primary : file ? readMcpServers(file) : {});

@@ -67,18 +67,32 @@ export type GoogleTokenRow = {
   updated_at: number;
 };
 
+/** The pending PKCE row created by generateAuthUrl. */
+interface GoogleStateRow {
+  user_id: string;
+  code_verifier: string;
+  created_at: number;
+}
+
+/** The token endpoint's response, in the fields this module reads. */
+interface GoogleTokenResponse {
+  access_token?: string;
+  refresh_token?: string;
+  expires_in?: number;
+  scope?: string;
+  id_token?: string;
+}
+
 function getRow(userId: string): GoogleTokenRow | null {
   return (db.prepare('SELECT * FROM google_tokens WHERE user_id=?').get(userId) as GoogleTokenRow) ?? null;
 }
 
 // ---------- public API ----------
 
-/** True when the user has valid Google credentials stored. */
 export function hasGoogleAccess(userId: string): boolean {
   return getRow(userId) !== null;
 }
 
-/** Returns the email of the connected Google account, or null. */
 export function googleEmail(userId: string): string | null {
   return getRow(userId)?.email ?? null;
 }
@@ -119,7 +133,7 @@ export function generateAuthUrl(userId: string, callbackUrl: string): string {
 /** Exchange the authorization code for tokens and persist them encrypted. */
 export async function exchangeCode(state: string, code: string, callbackUrl: string): Promise<void> {
   if (!env.googleClientId || !env.googleClientSecret) throw new Error('Google credentials not configured');
-  const stateRow = db.prepare('SELECT * FROM google_oauth_states WHERE state=?').get(state) as any;
+  const stateRow = db.prepare('SELECT * FROM google_oauth_states WHERE state=?').get(state) as GoogleStateRow | undefined;
   if (!stateRow) throw new Error('Unknown or expired OAuth state');
   db.prepare('DELETE FROM google_oauth_states WHERE state=?').run(state);
   if (stateRow.created_at < now() - 10 * 60_000) throw new Error('OAuth state expired');
@@ -140,7 +154,7 @@ export async function exchangeCode(state: string, code: string, callbackUrl: str
     const body = await res.text();
     throw new Error(`Google token exchange failed (${res.status}): ${body.slice(0, 300)}`);
   }
-  const data: any = await res.json();
+  const data = (await res.json()) as GoogleTokenResponse;
   if (!data.access_token) throw new Error('Google returned no access_token');
 
   // Decode id_token to get email (without verifying signature — we trust Google's response over HTTPS).
@@ -199,7 +213,7 @@ export async function getToken(userId: string): Promise<string> {
     }
     throw new Error(`Google token refresh failed (${res.status}): ${body.slice(0, 300)}`);
   }
-  const data: any = await res.json();
+  const data = (await res.json()) as GoogleTokenResponse;
   if (!data.access_token) throw new Error('Google token refresh returned no access_token');
 
   const expiresAt = now() + (data.expires_in ?? 3600) * 1000 - 60_000;
@@ -210,7 +224,7 @@ export async function getToken(userId: string): Promise<string> {
 }
 
 /** Call a Google API endpoint with automatic token refresh. */
-export async function googleFetch(userId: string, path: string, options: RequestInit = {}): Promise<any> {
+export async function googleFetch<T = unknown>(userId: string, path: string, options: RequestInit = {}): Promise<T> {
   const token = await getToken(userId);
   const baseUrl = path.startsWith('http') ? path : `https://www.googleapis.com${path}`;
   const res = await fetch(baseUrl, {
@@ -226,11 +240,10 @@ export async function googleFetch(userId: string, path: string, options: Request
     const body = await res.text().catch(() => '');
     throw new Error(`Google API error ${res.status}: ${body.slice(0, 300)}`);
   }
-  if (res.status === 204) return {};
-  return res.json();
+  if (res.status === 204) return {} as T;
+  return res.json() as Promise<T>;
 }
 
-/** Revoke and remove the user's Google tokens. */
 export async function revokeGoogle(userId: string): Promise<void> {
   const row = getRow(userId);
   if (!row) return;

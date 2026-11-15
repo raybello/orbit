@@ -49,7 +49,6 @@ const FRAME_SAMPLES = Math.round((CALL_TTS_SAMPLE_RATE * FRAME_MS) / 1000); // 2
 const MAX_SENTENCE_CHARS = 240;
 /** An unclaimed call id (POST /session without a socket ever connecting) expires. */
 const UNCLAIMED_TTL_MS = 5 * 60_000;
-/** The default relay waits this long for the bot's answer. */
 const RELAY_TIMEOUT_MS = 120_000;
 const RELAY_POLL_MS = 150;
 
@@ -68,7 +67,6 @@ const TIMEOUT_TEXT = "That's taking too long — I'll message you the answer.";
 /** The filler waits this long for the answer first: a reply faster than this never hears it, so a
  * quick turn is not slowed down by a needless synthesise-and-play. */
 const FILLER_DELAY_MS = 400;
-/** One nudge, this long after the transcript. */
 const PROGRESS_MS = 20_000;
 /** Hard deadline for the agent, this long after the transcript. The default relay's own 120 s poll
  * is the backstop behind it for the process, not for the caller. */
@@ -86,11 +84,8 @@ export interface LocalCallOptions {
    * Default 0.006: above a quiet room's floor (~0.002–0.004) and below the fixture's /s/ fricative
    * (0.009–0.019), which is the quietest part of real speech here. */
   speechRms?: number;
-  /** How long the agent gets before the filler is spoken. Default 400 ms. */
   fillerDelayMs?: number;
-  /** How long the agent gets before the one progress nudge. Default 20 s. */
   progressMs?: number;
-  /** How long the agent gets in total before the apology and done. Default 90 s. */
   relayTimeoutMs?: number;
 }
 
@@ -133,7 +128,7 @@ interface Transport {
 const binders = new WeakMap<LocalCallSession, (t: Transport | null) => void>();
 const created = new WeakMap<LocalCallSession, number>();
 
-/** Wire a socket to a session. Internal: called by attachLocalCallRelay only. */
+/** Wire a socket to a session; the relay is the only caller. */
 function bindTransport(session: LocalCallSession, transport: Transport | null) {
   binders.get(session)?.(transport);
 }
@@ -146,7 +141,6 @@ interface Utterance {
   lastPartialText: string;
 }
 
-/** How a turn's wait for the agent ended. */
 type RelayOutcome =
   | { kind: 'reply'; reply: string }
   | { kind: 'failed'; error: unknown }
@@ -160,7 +154,7 @@ function toFloat(pcm: Int16Array): Float32Array {
 }
 
 function errText(e: unknown): string {
-  return String((e as any)?.message ?? e).slice(0, 300);
+  return String((e as { message?: string })?.message ?? e).slice(0, 300);
 }
 
 /** RMS of float samples in [-1, 1]; a block of digital silence is exactly 0. */
@@ -177,7 +171,6 @@ function rmsOf(samples: Float32Array, from = 0, count = samples.length - from): 
 /** Where the utterance starts in the preroll ring: the first 32 ms window above the speech floor,
  * then the first 10 ms block above it inside that window. */
 interface Onset {
-  /** Index into the ring of the window holding the onset. */
   window: number;
   /** Samples to skip at the start of that window (the quiet tail of it). */
   skip: number;
@@ -571,7 +564,6 @@ export class LocalCallSession {
     });
   }
 
-  /** The filler: spoken only if the agent is still working after the grace delay. */
   private async filler(gen: number): Promise<void> {
     await this.turnSleep(this.options.fillerDelayMs);
     if (this.turnSettled || this.closed || gen !== this.turnGen) return;
@@ -769,14 +761,10 @@ export class LocalCallSession {
     const frame = new Int16Array(pcm);
     try {
       this.deps.onAudio?.(frame, sampleRate);
-    } catch {
-      /* ignore */
-    }
+    } catch {}
     try {
       this.transport?.audio(frame, sampleRate);
-    } catch {
-      /* ignore */
-    }
+    } catch {}
   }
 
   private fail(e: unknown): void {
@@ -845,6 +833,14 @@ export function pendingLocalCalls(): number {
 
 // ---------- the default relay ----------
 
+/** The `rows` body the relay reads: a finished assistant message. */
+interface AssistantMessageBody {
+  type?: string;
+  role?: string;
+  streaming?: boolean;
+  text?: string;
+}
+
 const wait = (ms: number) => new Promise<void>((resolve) => setTimeout(resolve, ms));
 
 /**
@@ -875,7 +871,7 @@ async function defaultRelay(botId: string, callId: string, text: string): Promis
     from: { kind: 'voice', id: callId, name: 'Voice call' },
   });
 
-  const firstName = String((db.prepare('SELECT name FROM users WHERE id=?').get(bot.user_id) as any)?.name ?? 'the user').split(/\s+/)[0] || 'the user';
+  const firstName = String((db.prepare('SELECT name FROM users WHERE id=?').get(bot.user_id) as { name?: string } | undefined)?.name ?? 'the user').split(/\s+/)[0] || 'the user';
   enqueue(botId, {
     type: 'user',
     text: `[Voice call: ${firstName} asked for this on a live voice call with you. Do the work, then reply in plain, short text with the outcome. Your reply is read aloud on the call, so lead with the answer and skip markdown, links and IDs unless asked.]\n${text}`,
@@ -890,9 +886,9 @@ async function defaultRelay(botId: string, callId: string, text: string): Promis
       .prepare("SELECT body FROM rows WHERE bot_id=? AND generation=? AND seq>? AND kind='message' ORDER BY seq ASC LIMIT 50")
       .all(botId, generation, row.seq) as { body: string }[];
     for (const r of rows) {
-      let body: any;
+      let body: AssistantMessageBody;
       try {
-        body = JSON.parse(r.body);
+        body = JSON.parse(r.body) as AssistantMessageBody;
       } catch {
         continue;
       }
@@ -976,9 +972,9 @@ function runCall(client: WebSocket, session: LocalCallSession): void {
       session.accept(pcm16From(buf));
       return;
     }
-    let msg: any;
+    let msg: { type?: string; on?: boolean };
     try {
-      msg = JSON.parse(buf.toString('utf8'));
+      msg = JSON.parse(buf.toString('utf8')) as { type?: string; on?: boolean };
     } catch {
       return; // a malformed control frame is ignored, never fatal
     }

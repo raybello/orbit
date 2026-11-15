@@ -5,7 +5,6 @@ import { useStore } from '../../store';
 import { Icon } from '../Icon';
 import { Modal } from './Modal';
 
-/** One line under a Bot's name in the picker: what it is, and which model answers. */
 function engineLabel(bot: { label: string; model: string | null; provider: string | null }) {
   const engine = `${bot.model ?? 'Engine default'}${bot.provider ? ` · ${bot.provider}` : ''}`;
   return bot.label ? `${bot.label} · ${engine}` : engine;

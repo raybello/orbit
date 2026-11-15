@@ -194,8 +194,6 @@ export class PcmPlayer {
   }
 }
 
-// ---------- base64 <-> PCM16 ----------
-
 export function pcmToBase64(pcm: Int16Array): string {
   const bytes = new Uint8Array(pcm.buffer, pcm.byteOffset, pcm.byteLength);
   let s = '';

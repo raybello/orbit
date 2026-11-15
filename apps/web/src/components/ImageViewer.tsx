@@ -10,12 +10,6 @@ interface Props {
 const MIN = 0.2;
 const MAX = 8;
 
-/**
- * Full-screen image viewer with zoom.
- *
- * Wheel zooms towards the pointer, drag pans while zoomed, double-click toggles fit/actual size.
- * Esc or a click on the backdrop closes it; the download link is always available.
- */
 export function ImageViewer({ url, name, onClose }: Props) {
   const [zoom, setZoom] = useState(1);
   const [offset, setOffset] = useState({ x: 0, y: 0 });

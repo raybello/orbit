@@ -3,7 +3,7 @@ import { env } from '../env.js';
 import { newId } from '../lib/ids.js';
 import { hub } from '../lib/hub.js';
 import { appendRow, emitBot, getBotRow, getLive, getRow, setLive, updateRow } from '../store.js';
-import type { ActivityKind, MessageBody, MessageFile, ToolCallBody } from '../types.js';
+import type { ActivityKind, CardBody, MessageBody, MessageFile, ToolCallBody } from '../types.js';
 import { toolkitInfo } from '../composio.js';
 import { screenForWork } from '../computer.js';
 import { computerKindFor } from '../computer-provider-registry.js';
@@ -32,7 +32,12 @@ export type Trigger =
   /** `_groupDepth` is set by the group-chat dispatcher (agent/rooms.ts): how many bot-to-bot hops into one group conversation this turn is. */
   | { type: 'system'; text: string; _groupDepth?: number };
 
-// ---------- pending files from tool calls ----------
+/** A JSON object from a third party, or null for anything else. */
+const asRecord = (v: unknown): Record<string, unknown> | null =>
+  v && typeof v === 'object' && !Array.isArray(v) ? (v as Record<string, unknown>) : null;
+
+/** Message off a caught value, which may be an Error or anything a dependency threw. */
+const messageOf = (e: unknown): string => String((e as { message?: unknown } | null)?.message ?? e);
 
 /** Files collected from show_file tool calls; keyed by botId. Drained into the next assistant message. */
 const pendingFilesByBot = new Map<string, MessageFile[]>();
@@ -53,8 +58,6 @@ export function addPendingFiles(botId: string, files: MessageFile[]) {
   const existing = pendingFilesByBot.get(botId) ?? [];
   pendingFilesByBot.set(botId, uniqueFiles([...existing, ...files]));
 }
-
-// ---------- per-bot serial queue ----------
 
 const queues = new Map<string, Promise<void>>();
 const aborts = new Map<string, AbortController>();
@@ -99,8 +102,6 @@ function triggerText(t: Trigger): string {
     case 'system': return `[System notice] ${t.text}`;
   }
 }
-
-// ---------- the running turn, as the app's tools see it ----------
 
 interface ToolRef { seq: number; callId: string; name: string; claimed: boolean; done: boolean }
 interface Outcome { status?: ToolCallBody['status']; summary?: string }
@@ -162,8 +163,6 @@ function patchToolRow(botId: string, seq: number, patch: Partial<ToolCallBody>) 
   if (row && row.body.type === 'tool-call') updateRow(botId, seq, { ...row.body, ...patch });
 }
 
-// ---------- approvals ----------
-
 export type ApprovalDecision = 'allow' | 'deny' | 'expired';
 
 /** Longest a tool call waits for the user. Kept under the engines' 30 minute tool timeout. */
@@ -171,20 +170,30 @@ const APPROVAL_WAIT_MS = 25 * 60_000;
 
 const waiters = new Map<string, { botId: string; resolve: (d: ApprovalDecision) => void }>();
 
+/** An `approvals` row; `user_id` is joined in by resolveApproval. */
+interface ApprovalRow {
+  id: string;
+  bot_id: string;
+  row_seq: number;
+  tool: string;
+  status: string;
+  user_id?: string;
+}
+
 function setApprovalCard(botId: string, rowSeq: number, approvalId: string, status: string) {
   const card = getRow(botId, rowSeq);
   if (card && card.body.type === 'card' && card.body.card === 'approval' && card.body.approvalId === approvalId) {
-    updateRow(botId, rowSeq, { ...card.body, status } as any);
+    updateRow(botId, rowSeq, { ...card.body, status } as CardBody);
   }
 }
 
-const pendingApprovals = (botId: string) => db.prepare("SELECT * FROM approvals WHERE bot_id=? AND status='pending'").all(botId) as any[];
+const pendingApprovals = (botId: string) => db.prepare("SELECT * FROM approvals WHERE bot_id=? AND status='pending'").all(botId) as ApprovalRow[];
 
 /** Put an approval card in the conversation and wait for the user's answer. */
 export async function requestApproval(
   who: { userId: string; botId: string },
   pol: { key: string; toolkit?: string; title: string },
-  args: any,
+  args: unknown,
   rowSeq: number | null,
 ): Promise<ApprovalDecision> {
   const { userId, botId } = who;
@@ -229,7 +238,7 @@ export async function requestApproval(
 }
 
 function expireApproval(approvalId: string) {
-  const ap = db.prepare('SELECT * FROM approvals WHERE id=?').get(approvalId) as any;
+  const ap = db.prepare('SELECT * FROM approvals WHERE id=?').get(approvalId) as ApprovalRow | undefined;
   if (ap?.status === 'pending') {
     db.prepare("UPDATE approvals SET status='expired', resolved_at=? WHERE id=?").run(now(), approvalId);
     setApprovalCard(ap.bot_id, ap.row_seq, approvalId, 'expired');
@@ -243,12 +252,12 @@ export function expireApprovals(botId: string) {
 
 /** After a restart nothing is waiting on old approval cards any more. */
 export function expireStaleApprovals() {
-  for (const ap of db.prepare("SELECT id FROM approvals WHERE status='pending'").all() as any[]) expireApproval(ap.id);
+  for (const ap of db.prepare("SELECT id FROM approvals WHERE status='pending'").all() as { id: string }[]) expireApproval(ap.id);
 }
 
 /** Resolve an approval card from the UI. */
 export function resolveApproval(userId: string, approvalId: string, decision: 'allow' | 'always' | 'deny') {
-  const ap = db.prepare('SELECT a.*, b.user_id FROM approvals a JOIN bots b ON b.id=a.bot_id WHERE a.id=?').get(approvalId) as any;
+  const ap = db.prepare('SELECT a.*, b.user_id FROM approvals a JOIN bots b ON b.id=a.bot_id WHERE a.id=?').get(approvalId) as ApprovalRow | undefined;
   if (!ap || ap.user_id !== userId) throw new Error('not found');
   if (ap.status !== 'pending') return;
   const waiter = waiters.get(approvalId);
@@ -260,21 +269,22 @@ export function resolveApproval(userId: string, approvalId: string, decision: 'a
   waiter.resolve(decision === 'deny' ? 'deny' : 'allow');
 }
 
-function describeArgs(args: any): string {
+function describeArgs(args: unknown): string {
   if (!args || typeof args !== 'object') return '';
-  const inner = Array.isArray(args.tools) ? args.tools.map((t: any) => t.arguments ?? t.args ?? t) : [args];
-  const flat = inner.map((a: any) => Object.entries(a ?? {}).filter(([, v]) => typeof v !== 'object' || v === null).slice(0, 6).map(([k, v]) => `${k}: ${String(v).slice(0, 160)}`).join('\n'));
+  const record = args as Record<string, unknown>;
+  const inner = Array.isArray(record.tools)
+    ? record.tools.map((t) => (t as Record<string, unknown> | null)?.arguments ?? (t as Record<string, unknown> | null)?.args ?? t)
+    : [args];
+  const flat = inner.map((a) => Object.entries((a ?? {}) as Record<string, unknown>).filter(([, v]) => typeof v !== 'object' || v === null).slice(0, 6).map(([k, v]) => `${k}: ${String(v).slice(0, 160)}`).join('\n'));
   return flat.join('\n\n').slice(0, 1200);
 }
 
-// ---------- the engine's event stream ----------
-
-interface StreamEvent { type: string; data: any }
+interface StreamEvent { type: string; data: unknown }
 
 async function* sseEvents(body: ReadableStream<Uint8Array>): AsyncGenerator<StreamEvent> {
   const dec = new TextDecoder();
   let buf = '';
-  for await (const chunk of body as any as AsyncIterable<Uint8Array>) {
+  for await (const chunk of body as unknown as AsyncIterable<Uint8Array>) {
     buf = (buf + dec.decode(chunk, { stream: true })).replace(/\r\n/g, '\n');
     let end: number;
     while ((end = buf.indexOf('\n\n')) >= 0) {
@@ -309,11 +319,14 @@ async function failureText(res: Response): Promise<string> {
 }
 
 /** What a tool's raw result says about how it went. */
-function readOutcome(item: any): Outcome {
-  const text = Array.isArray(item?.output) ? item.output.map((p: any) => p?.text ?? '').join('') : String(item?.output ?? '');
+function readOutcome(raw: unknown): Outcome {
+  const item = asRecord(raw);
+  const output = item?.output;
+  const text = Array.isArray(output) ? output.map((p) => String(asRecord(p)?.text ?? '')).join('') : String(output ?? '');
   try {
-    const j = JSON.parse(text);
-    if (j && typeof j === 'object') {
+    const parsed = JSON.parse(text) as unknown;
+    const j = parsed && typeof parsed === 'object' ? (parsed as Record<string, unknown>) : null;
+    if (j) {
       if (j.error) return { status: 'error', summary: String(typeof j.error === 'string' ? j.error : JSON.stringify(j.error)).slice(0, 200) };
       if (typeof j.exit_code === 'number' && j.exit_code !== 0) return { status: 'error', summary: `Exit code ${j.exit_code}` };
       if (j.success === false) return { status: 'error', summary: String(j.message ?? 'Failed').slice(0, 200) };
@@ -333,8 +346,6 @@ function captionFrom(reasoning: string): string | null {
   if (sentence.length < 4) return null;
   return sentence.length > 84 ? `${sentence.slice(0, 81).trimEnd()}…` : sentence;
 }
-
-// ---------- the turn ----------
 
 /** Hermes' own tool lookup (it loads rarely used tools on demand). */
 const TOOLBOX = new Set(['tool_search', 'tool_describe']);
@@ -363,7 +374,6 @@ async function runTurn(botId: string, trigger: Trigger) {
   turns.set(botId, turn);
   setLive(botId, { isRunning: true, activity: { kind: 'thinking', since: now() }, awaiting: null, startedAt: now(), caption: null, steps: 0 });
 
-  // The assistant message being written right now.
   let msgSeq: number | null = null;
   let text = '';
   /** Text of the last assistant message this turn wrote, for the push notification at the end. */
@@ -424,7 +434,6 @@ async function runTurn(botId: string, trigger: Trigger) {
     if (turn.silent && !hasPendingFiles()) return;
     closeMessage();
     if (!t.trim() && !hasPendingFiles()) return;
-    // Drain module-level files into local for this standalone message.
     const fromMcp = pendingFilesByBot.get(botId);
     if (fromMcp?.length) { pendingFiles.push(...fromMcp); pendingFilesByBot.delete(botId); }
     const { text: cleanText, files: markerFiles } = extractFiles(t.trim());
@@ -490,12 +499,13 @@ async function runTurn(botId: string, trigger: Trigger) {
     if (!res.ok || !res.body) throw new Error(await failureText(res));
 
     for await (const ev of sseEvents(res.body)) {
-      const d = ev.data;
+      const d = asRecord(ev.data);
       switch (ev.type) {
         case 'response.output_text.delta': {
-          if (turn.silent || typeof d.delta !== 'string') break;
+          const delta = d?.delta;
+          if (turn.silent || typeof delta !== 'string') break;
           // Models often open with blank lines; a message never starts with them.
-          const piece = text ? d.delta : d.delta.trimStart();
+          const piece = text ? delta : delta.trimStart();
           if (!piece) break;
           text += piece;
           wroteText = true;
@@ -506,20 +516,22 @@ async function runTurn(botId: string, trigger: Trigger) {
 
         case 'response.reasoning_summary_text.delta':
         case 'response.reasoning_text.delta': {
-          if (typeof d.delta === 'string') {
-            reasoning = (reasoning + d.delta).slice(-4000);
+          const delta = d?.delta;
+          if (typeof delta === 'string') {
+            reasoning = (reasoning + delta).slice(-4000);
             caption(captionFrom(reasoning));
           }
           break;
         }
 
         case 'hermes.status': {
-          if (typeof d?.text === 'string' && d.text.trim()) caption(d.text.trim().slice(0, 84), true);
+          const status = d?.text;
+          if (typeof status === 'string' && status.trim()) caption(status.trim().slice(0, 84), true);
           break;
         }
 
         case 'response.output_item.added': {
-          const item = d.item;
+          const item = asRecord(d?.item);
           if (item?.type === 'reasoning') {
             reasoning = '';
             if (getLive(botId).activity?.kind !== 'thinking') setLive(botId, { activity: { kind: 'thinking', since: now() } });
@@ -534,19 +546,19 @@ async function runTurn(botId: string, trigger: Trigger) {
               break;
             }
             const act = activityFor(String(item.name ?? ''));
-            let args: any;
+            let args: unknown;
             try { args = typeof item.arguments === 'string' ? JSON.parse(item.arguments) : item.arguments; } catch { args = undefined; }
             const row = appendRow(botId, 'tool-call', { type: 'tool-call', callId: String(item.call_id ?? item.id ?? ''), name, label: act.label, status: 'running', args } satisfies ToolCallBody);
             turn.tools.push({ seq: row.seq, callId: String(item.call_id ?? item.id ?? ''), name, claimed: false, done: false });
             steps++;
             const kind: ActivityKind = name === 'send_to_bot' ? 'messaging_named' : act.kind;
-            const detail = name === 'send_to_bot' ? String(args?.bot_name ?? '') || undefined : act.detail;
+            const detail = name === 'send_to_bot' ? String(asRecord(args)?.bot_name ?? '') || undefined : act.detail;
             // A call that is waiting for the user keeps its "waiting for you" state.
             if (!getLive(botId).awaiting) setLive(botId, { isRunning: true, activity: { kind, detail, since: now() }, steps, caption: null });
             else setLive(botId, { steps });
             reasoning = '';
             if (ours && name.startsWith('COMPOSIO_')) {
-              const tk = policyFor(userId, name, args ?? {}).toolkit;
+              const tk = policyFor(userId, name, asRecord(args) ?? {}).toolkit;
               if (tk) {
                 void toolkitInfo(tk).then((info) => {
                   const live = getLive(botId);
@@ -559,9 +571,9 @@ async function runTurn(botId: string, trigger: Trigger) {
         }
 
         case 'response.output_item.done': {
-          const item = d.item;
+          const item = asRecord(d?.item);
           if (item?.type === 'message') {
-            const full = (item.content ?? []).map((c: any) => c?.text ?? '').join('');
+            const full = (Array.isArray(item.content) ? item.content : []).map((c) => String(asRecord(c)?.text ?? '')).join('');
             if (item.phase === 'commentary') say(full);
             else if (msgSeq !== null) closeMessage();
             else if (!wroteText) say(full);
@@ -570,19 +582,23 @@ async function runTurn(botId: string, trigger: Trigger) {
         }
 
         case 'response.failed':
-        case 'error':
-          throw new Error(d?.response?.error?.message ?? d?.error?.message ?? d?.message ?? 'the agent run failed');
+        case 'error': {
+          const nested = asRecord(asRecord(d?.response)?.error);
+          const message = nested?.message ?? asRecord(d?.error)?.message ?? d?.message ?? 'the agent run failed';
+          throw new Error(String(message));
+        }
       }
 
       // A tool result arrives as an item of its own (announced twice: added and done).
-      const item = d?.item;
-      if (item?.type === 'function_call_output' && item.call_id && !outputsSeen.has(item.call_id)) {
-        outputsSeen.add(item.call_id);
-        const ref = turn.tools.find((r) => r.callId === item.call_id);
+      const resultItem = asRecord(d?.item);
+      const callId = typeof resultItem?.call_id === 'string' ? resultItem.call_id : '';
+      if (resultItem?.type === 'function_call_output' && callId && !outputsSeen.has(callId)) {
+        outputsSeen.add(callId);
+        const ref = turn.tools.find((r) => r.callId === callId);
         if (ref) {
           ref.done = true;
           const told = turn.outcomes.get(ref.seq);
-          const guess = readOutcome(item);
+          const guess = readOutcome(resultItem);
           patchToolRow(botId, ref.seq, told?.status && told.status !== 'running' ? told : { status: guess.status, summary: told?.summary ?? guess.summary });
           if (!getLive(botId).awaiting) setLive(botId, { activity: { kind: 'thinking', since: now() } });
 
@@ -593,7 +609,6 @@ async function runTurn(botId: string, trigger: Trigger) {
               const args = (row.body as ToolCallBody).args as Record<string, unknown> | undefined;
               const cmd = String(args?.command ?? '');
               const libBot = `${LIBRARY_ROOT}/${botId}/`;
-              // Match curl -o <path> or curl --output <path>
               const pathMatch = cmd.match(/curl\s+.*?(?:-o|--output)\s+"?([^\s"']+)"?/s);
               if (pathMatch) {
                 const absPath = pathMatch[1].replace(/^'|'$/g, '');
@@ -613,11 +628,11 @@ async function runTurn(botId: string, trigger: Trigger) {
         }
       }
     }
-  } catch (e: any) {
+  } catch (e) {
     failed = true;
     const stopped = ctrl.signal.aborted;
     closeMessage(true);
-    appendRow(botId, 'notice', { type: 'notice', text: stopped ? 'Stopped.' : `Something went wrong: ${e?.message ?? e}`, tone: stopped ? 'info' : 'error' });
+    appendRow(botId, 'notice', { type: 'notice', text: stopped ? 'Stopped.' : `Something went wrong: ${messageOf(e)}`, tone: stopped ? 'info' : 'error' });
     if (!stopped) console.error('[agent]', botId, e);
   } finally {
     closeMessage(true);

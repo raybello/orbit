@@ -1,14 +1,50 @@
 import { db, now } from './db.js';
 import { hub } from './lib/hub.js';
 import type { Bot, LiveState, Row, RowBody, RowKind, Routine, Task } from './types.js';
+import type { BotRow } from './infra/bot-repository.js';
 import { Cron } from 'croner';
 
-// ---------- bots ----------
+/** A `rows` table row, before its JSON body is parsed. */
+interface RowRecord {
+  bot_id: string;
+  generation: number;
+  seq: number;
+  updated_seq: number;
+  kind: RowKind;
+  body: string;
+  created_at: number;
+}
 
-export function toBot(r: any): Bot {
+/** A `routines` table row; `event_type` and the calendar columns come from db.ts's addColumn calls. */
+export interface RoutineRow {
+  id: string;
+  bot_id: string;
+  name: string;
+  prompt: string;
+  schedule: string;
+  timezone: string;
+  enabled: number;
+  last_run_at: number | null;
+  calendar_title: string | null;
+  event_type: string;
+  event_date: string | null;
+  assigned_bot_id: string | null;
+  completed_at: string | null;
+}
+
+export interface TaskRow {
+  id: string;
+  bot_id: string;
+  title: string;
+  state: Task['state'];
+  note: string;
+  updated_at: number;
+}
+
+export function toBot(r: BotRow): Bot {
   const last = db
     .prepare("SELECT body, created_at FROM rows WHERE bot_id=? AND generation=? AND kind IN ('message','card','event') ORDER BY seq DESC LIMIT 1")
-    .get(r.id, r.generation) as any;
+    .get(r.id, r.generation) as { body: string; created_at: number } | undefined;
   let lastPreview: string | null = null;
   if (last) {
     const b = JSON.parse(last.body) as RowBody;
@@ -27,7 +63,7 @@ export function toBot(r: any): Bot {
     isPrimary: !!r.is_primary,
     kind: r.kind === 'room' ? 'room' : 'agent',
     pinned: !!r.pinned,
-    effort: r.effort,
+    effort: r.effort as Bot['effort'],
     voice: r.voice ?? 'luna',
     voiceSpeed: r.voice_speed ?? 1,
     voiceLanguage: r.voice_language ?? 'auto',
@@ -43,40 +79,39 @@ export function toBot(r: any): Bot {
   };
 }
 
-export const getBotRow = (id: string) => db.prepare('SELECT * FROM bots WHERE id=?').get(id) as any;
+// Typed non-nullable because every caller dereferences the row: a missing bot is a crash either way,
+// and voice.ts reads `.generation` off the result without a guard.
+export const getBotRow = (id: string) => db.prepare('SELECT * FROM bots WHERE id=?').get(id) as BotRow;
 export const getBot = (id: string) => {
   const r = getBotRow(id);
   return r ? toBot(r) : null;
 };
 export const listBots = (userId: string) =>
-  (db.prepare('SELECT * FROM bots WHERE user_id=? AND COALESCE(hidden,0)=0 ORDER BY is_primary DESC, created_at ASC').all(userId) as any[]).map(toBot);
+  (db.prepare('SELECT * FROM bots WHERE user_id=? AND COALESCE(hidden,0)=0 ORDER BY is_primary DESC, created_at ASC').all(userId) as BotRow[]).map(toBot);
 
 export function emitBot(botId: string) {
   const r = getBotRow(botId);
   if (r) hub.emit(r.user_id, { type: 'bot', bot: toBot(r) });
 }
 
-// ---------- rows ----------
-
-function toRow(r: any): Row {
-  return { botId: r.bot_id, generation: r.generation, seq: r.seq, updatedSeq: r.updated_seq, kind: r.kind, body: JSON.parse(r.body), createdAt: r.created_at };
+function toRow(r: RowRecord): Row {
+  return { botId: r.bot_id, generation: r.generation, seq: r.seq, updatedSeq: r.updated_seq, kind: r.kind, body: JSON.parse(r.body) as RowBody, createdAt: r.created_at };
 }
 
 function bumpRev(botId: string): number {
   db.prepare('UPDATE bots SET rev = rev + 1, updated_at=? WHERE id=?').run(now(), botId);
-  return (db.prepare('SELECT rev FROM bots WHERE id=?').get(botId) as any).rev;
+  return (db.prepare('SELECT rev FROM bots WHERE id=?').get(botId) as { rev: number }).rev;
 }
 
-/** Append a new row. Returns its seq. */
 export function appendRow(botId: string, kind: RowKind, body: RowBody): Row {
   const tx = db.transaction(() => {
-    const b = db.prepare('SELECT user_id, generation, next_seq FROM bots WHERE id=?').get(botId) as any;
+    const b = db.prepare('SELECT user_id, generation, next_seq FROM bots WHERE id=?').get(botId) as Pick<BotRow, 'user_id' | 'generation' | 'next_seq'>;
     const seq = b.next_seq;
     db.prepare('UPDATE bots SET next_seq = next_seq + 1 WHERE id=?').run(botId);
     const rev = bumpRev(botId);
     const t = now();
     db.prepare('INSERT INTO rows(bot_id,generation,seq,updated_seq,kind,body,created_at) VALUES (?,?,?,?,?,?,?)').run(botId, b.generation, seq, rev, kind, JSON.stringify(body), t);
-    return { userId: b.user_id as string, row: { botId, generation: b.generation, seq, updatedSeq: rev, kind, body, createdAt: t } as Row };
+    return { userId: b.user_id, row: { botId, generation: b.generation, seq, updatedSeq: rev, kind, body, createdAt: t } as Row };
   });
   const { userId, row } = tx();
   hub.emit(userId, { type: 'rows', botId, generation: row.generation, rows: [row] });
@@ -86,12 +121,12 @@ export function appendRow(botId: string, kind: RowKind, body: RowBody): Row {
 /** Rewrite an existing row's body (e.g. streaming text, card status). */
 export function updateRow(botId: string, seq: number, body: RowBody): Row | null {
   const tx = db.transaction(() => {
-    const b = db.prepare('SELECT user_id, generation FROM bots WHERE id=?').get(botId) as any;
-    const existing = db.prepare('SELECT * FROM rows WHERE bot_id=? AND generation=? AND seq=?').get(botId, b.generation, seq) as any;
+    const b = db.prepare('SELECT user_id, generation FROM bots WHERE id=?').get(botId) as Pick<BotRow, 'user_id' | 'generation'>;
+    const existing = db.prepare('SELECT * FROM rows WHERE bot_id=? AND generation=? AND seq=?').get(botId, b.generation, seq) as RowRecord | undefined;
     if (!existing) return null;
     const rev = bumpRev(botId);
     db.prepare('UPDATE rows SET body=?, updated_seq=? WHERE bot_id=? AND generation=? AND seq=?').run(JSON.stringify(body), rev, botId, b.generation, seq);
-    return { userId: b.user_id as string, row: { ...toRow(existing), body, updatedSeq: rev } as Row };
+    return { userId: b.user_id, row: { ...toRow(existing), body, updatedSeq: rev } as Row };
   });
   const res = tx();
   if (!res) return null;
@@ -101,7 +136,7 @@ export function updateRow(botId: string, seq: number, body: RowBody): Row | null
 
 export function getRow(botId: string, seq: number): Row | null {
   const b = getBotRow(botId);
-  const r = db.prepare('SELECT * FROM rows WHERE bot_id=? AND generation=? AND seq=?').get(botId, b.generation, seq);
+  const r = db.prepare('SELECT * FROM rows WHERE bot_id=? AND generation=? AND seq=?').get(botId, b.generation, seq) as RowRecord | undefined;
   return r ? toRow(r) : null;
 }
 
@@ -109,12 +144,12 @@ export function listRows(botId: string, opts: { beforeSeq?: number; limit?: numb
   const b = getBotRow(botId);
   if (!b) return [];
   if (opts.afterRev !== undefined) {
-    return (db.prepare('SELECT * FROM rows WHERE bot_id=? AND generation=? AND updated_seq>? ORDER BY seq ASC').all(botId, b.generation, opts.afterRev) as any[]).map(toRow);
+    return (db.prepare('SELECT * FROM rows WHERE bot_id=? AND generation=? AND updated_seq>? ORDER BY seq ASC').all(botId, b.generation, opts.afterRev) as RowRecord[]).map(toRow);
   }
   const limit = Math.min(opts.limit ?? 200, 500);
   const rows = (opts.beforeSeq
     ? db.prepare('SELECT * FROM rows WHERE bot_id=? AND generation=? AND seq<? ORDER BY seq DESC LIMIT ?').all(botId, b.generation, opts.beforeSeq, limit)
-    : db.prepare('SELECT * FROM rows WHERE bot_id=? AND generation=? ORDER BY seq DESC LIMIT ?').all(botId, b.generation, limit)) as any[];
+    : db.prepare('SELECT * FROM rows WHERE bot_id=? AND generation=? ORDER BY seq DESC LIMIT ?').all(botId, b.generation, limit)) as RowRecord[];
   return rows.reverse().map(toRow);
 }
 
@@ -127,20 +162,18 @@ export function clearConversation(botId: string) {
 
 // ---------- LLM history (Responses API input items) ----------
 
-export function loadHistory(botId: string): any[] {
+export function loadHistory(botId: string): unknown[] {
   const b = getBotRow(botId);
-  return (db.prepare('SELECT item FROM llm_items WHERE bot_id=? AND generation=? ORDER BY idx ASC').all(botId, b.generation) as any[]).map((r) => JSON.parse(r.item));
+  return (db.prepare('SELECT item FROM llm_items WHERE bot_id=? AND generation=? ORDER BY idx ASC').all(botId, b.generation) as { item: string }[]).map((r) => JSON.parse(r.item));
 }
 
-export function appendHistory(botId: string, items: any[]) {
+export function appendHistory(botId: string, items: unknown[]) {
   if (!items.length) return;
   const b = getBotRow(botId);
-  const start = ((db.prepare('SELECT MAX(idx) m FROM llm_items WHERE bot_id=? AND generation=?').get(botId, b.generation) as any).m ?? -1) + 1;
+  const start = ((db.prepare('SELECT MAX(idx) m FROM llm_items WHERE bot_id=? AND generation=?').get(botId, b.generation) as { m: number | null }).m ?? -1) + 1;
   const ins = db.prepare('INSERT INTO llm_items(bot_id,generation,idx,item) VALUES (?,?,?,?)');
   db.transaction(() => items.forEach((it, i) => ins.run(botId, b.generation, start + i, JSON.stringify(it))))();
 }
-
-// ---------- live state ----------
 
 const live = new Map<string, LiveState>();
 
@@ -156,8 +189,6 @@ export function setLive(botId: string, patch: Partial<LiveState>) {
 }
 
 export const allLive = (userId: string) => listBots(userId).map((b) => getLive(b.id));
-
-// ---------- routines / tasks ----------
 
 export function describeCron(expr: string): string {
   const p = expr.trim().split(/\s+/);
@@ -179,7 +210,7 @@ function describeEventSlug(schedule: string) {
   return `When ${app.charAt(0) + app.slice(1).toLowerCase()}: ${words.join(' ').toLowerCase()}`;
 }
 
-export function toRoutine(r: any): Routine {
+export function toRoutine(r: RoutineRow): Routine {
   let nextRunAt: number | null = null;
   try {
     nextRunAt = r.enabled ? new Cron(r.schedule, { timezone: r.timezone, paused: true }).nextRun()?.getTime() ?? null : null;
@@ -195,7 +226,7 @@ export function toRoutine(r: any): Routine {
   };
 }
 
-export const listRoutines = (botId: string) => (db.prepare('SELECT * FROM routines WHERE bot_id=? ORDER BY created_at').all(botId) as any[]).map(toRoutine);
+export const listRoutines = (botId: string) => (db.prepare('SELECT * FROM routines WHERE bot_id=? ORDER BY created_at').all(botId) as RoutineRow[]).map(toRoutine);
 
-export const toTask = (r: any): Task => ({ id: r.id, botId: r.bot_id, title: r.title, state: r.state, note: r.note, updatedAt: r.updated_at });
-export const listTasks = (botId: string) => (db.prepare('SELECT * FROM tasks WHERE bot_id=? ORDER BY updated_at DESC').all(botId) as any[]).map(toTask);
+export const toTask = (r: TaskRow): Task => ({ id: r.id, botId: r.bot_id, title: r.title, state: r.state, note: r.note, updatedAt: r.updated_at });
+export const listTasks = (botId: string) => (db.prepare('SELECT * FROM tasks WHERE bot_id=? ORDER BY updated_at DESC').all(botId) as TaskRow[]).map(toTask);

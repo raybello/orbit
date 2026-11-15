@@ -1,22 +1,11 @@
 /**
  * The native stack: Orbit's server as supervised Node processes, no Docker.
  *
- * `NativeStackController` is a drop-in for `LocalStackController` — same `start`, `stop`,
- * `state`, `webUrl`, `matchesDesiredStack` — so the setup window, the app window and the
- * menu need no idea which one they are talking to. The difference is underneath: instead
- * of `docker compose up`, we unpack a server bundle and run its entrypoints with
- * `ELECTRON_RUN_AS_NODE=1 <electron binary> …`, which means the packaged app needs no
- * separate Node runtime.
- *
- * Two things make this safe to run a product on:
- *
- *  - every child is supervised: logs go to a file, and a crash restarts it with capped
- *    exponential backoff instead of leaving the user with a white window
- *  - ports are persisted (`userData/stack/.native-ports`) so the web origin — and with it
- *    the renderer's cookie jar — stays the same across launches
- *
- * State machine: idle -> starting -> waiting-healthy -> running -> stopping -> stopped,
- * with `failed` reachable from any step of `start()`.
+ * Instead of `docker compose up`, this unpacks a server bundle and runs its entrypoints with
+ * `ELECTRON_RUN_AS_NODE=1 <electron binary> …`, so the packaged app needs no separate Node
+ * runtime. Two things make it safe to ship: every child is supervised (a crash restarts it
+ * with capped backoff instead of leaving a white window, logs go to a file), and ports are
+ * persisted so the web origin — and with it the renderer's cookie jar — survives a relaunch.
  */
 
 import fs from 'node:fs';
@@ -31,6 +20,7 @@ import { DEFAULT_LOCAL_WEB_URL, normalizeServerUrl } from './setup-config';
 import { allocateLoopbackPort, bindLoopback, type BindFn } from './loopback-port';
 import { envValue } from './env-file';
 import { nativePortsFile } from './docker-move';
+import type { NativeStack } from './stack-controller';
 import {
   installServerBundle,
   type InstalledBundle,
@@ -102,12 +92,9 @@ export interface ServiceDeps {
 }
 
 /**
- * One supervised child process.
- *
- * `start()` resolves once the process has been alive for `startedAfterMs` — long enough
- * that "spawn succeeded" and "the server actually runs" are the same statement. An exit
- * before that rejects, so the controller can report a real error instead of polling a
- * health endpoint for a process that is already gone.
+ * One supervised child process. `start()` resolves once the process has been alive for
+ * `startedAfterMs`, so "spawned" and "runs" are one statement; an exit before that rejects and
+ * the controller reports a real error instead of polling health for a process already gone.
  */
 export class Service {
   readonly name: string;
@@ -392,7 +379,6 @@ export function writeNativePorts(file: string, ports: NativePorts): void {
 // ------------------------------------------------------------------ controller
 
 export interface NativeStackOptions {
-  /** `app.getPath('userData')`. */
   userDataDir: string;
   manifest: ServerManifest;
   /** `app.getPath('userData')/server-bundles` unless overridden. */
@@ -425,7 +411,7 @@ export interface NativeStackOptions {
 
 const STARTING_PHASES: StackPhase[] = ['starting', 'waiting-healthy'];
 
-export class NativeStackController {
+export class NativeStackController implements NativeStack {
   readonly kind = 'native' as const;
   readonly stackDir: string;
   readonly bundleDir: string;
@@ -461,7 +447,6 @@ export class NativeStackController {
     return this.current;
   }
 
-  /** Persisted once the stack has started; before that there is no native URL to report. */
   webUrl(): string {
     if (this.current.webUrl) return this.current.webUrl;
     const ports = readNativePorts(this.portsFile, this.range);
@@ -488,6 +473,28 @@ export class NativeStackController {
     }
   }
 
+  /**
+   * The file `HERMES_KEY` is mirrored into before `start()` spawns the API process.
+   *
+   * Native keeps its own secrets in `secrets.json`, but the MCP bearer the server reads comes
+   * from `stack/.env` — the same file the Docker stack uses, and the one `hermesKey()` reads
+   * back when it builds the child's environment. There is no `.env.example` here: the file
+   * itself is created by that write, so preparing the folder is what this has to do.
+   */
+  prepareEnvFile(): string | null {
+    try {
+      fs.mkdirSync(this.stackDir, { recursive: true, mode: 0o700 });
+    } catch (err) {
+      log.warn(`could not create ${this.stackDir} for the stack .env`, err);
+      return null;
+    }
+    return path.join(this.stackDir, '.env');
+  }
+
+  /**
+   * Is the stack at `desiredUrl` the one this controller runs? Answered from this controller's
+   * own state, so it needs no probe — and no await (see `StackBase`).
+   */
   matchesDesiredStack(desiredUrl?: string): boolean {
     if (this.current.phase !== 'running') return false;
     const desired = normalizeServerUrl(desiredUrl ?? this.webUrl());
@@ -629,7 +636,6 @@ export class NativeStackController {
 
   // ---------------------------------------------------------------- steps
 
-  /** Install the version the manifest names, unless it is already on disk. */
   private async ensureBundle(signal: AbortSignal): Promise<InstalledBundle> {
     const exists = this.opts.exists ?? ((file: string) => fs.existsSync(file));
     const targetDir = path.join(this.bundleDir, `orbit-server-${this.opts.manifest.version}`);
@@ -651,9 +657,9 @@ export class NativeStackController {
   }
 
   /**
-   * The persisted pair, when both ports are still free; otherwise a fresh pair, written
-   * back. Stable ports matter beyond convenience: the renderer's session partition is
-   * derived from the origin, so a moving port would log the user out on every launch.
+   * The persisted pair when both ports are still free, otherwise a fresh pair written back.
+   * Stable ports matter: the session partition derives from the origin, so a moving port would
+   * log the user out on every launch.
    */
   private async ensurePorts(signal: AbortSignal): Promise<NativePorts> {
     const isFree = this.opts.isPortFree ?? ((port: number) => this.defaultIsPortFree(port));
@@ -837,7 +843,6 @@ export class NativeStackController {
   }
 }
 
-/** Exported for the setup window's "what is running" line. */
 export function describeNativeState(state: DesktopLocalStackState): string {
   switch (state.phase) {
     case 'running':

@@ -5,7 +5,8 @@ import { hub } from './lib/hub.js';
 import { requireUser, type AuthVars } from './lib/auth.js';
 import { createRoutine } from './routines.js';
 import { isEventSchedule } from './triggers.js';
-import type { CalendarEvent, CreateRoutineRequest } from './types.js';
+import { requireBody, CreateRoutineSchema, type CreateRoutineBody } from './api/schemas.js';
+import type { CalendarEvent } from './types.js';
 
 /** /api/calendar and the calendar's POST /api/routines. */
 export const calendarApi = new Hono<AuthVars>();
@@ -142,18 +143,17 @@ calendarApi.get('/calendar', (c) => {
 calendarApi.post('/routines', async (c) => {
   const user = c.get('user');
 
-  let body: CreateRoutineRequest;
+  let body: CreateRoutineBody;
   try {
-    body = await c.req.json<CreateRoutineRequest>();
+    body = await requireBody(c, CreateRoutineSchema);
   } catch {
     return c.json({ error: 'Expected a JSON body.' }, 400);
   }
-  if (!body || typeof body !== 'object') return c.json({ error: 'Expected a JSON body.' }, 400);
 
-  const botId = typeof body.botId === 'string' ? body.botId : '';
+  const botId = body.botId ?? '';
   if (!botId) return c.json({ error: 'botId is required.' }, 400);
 
-  const bot = db.prepare('SELECT id FROM bots WHERE id=? AND user_id=?').get(botId, user.id) as any;
+  const bot = db.prepare('SELECT id FROM bots WHERE id=? AND user_id=?').get(botId, user.id) as { id: string } | undefined;
   if (!bot) return c.json({ error: 'botId must be one of your Bots.' }, 404);
 
   if (typeof body.prompt !== 'string' || !body.prompt.trim()) return c.json({ error: 'prompt is required.' }, 400);

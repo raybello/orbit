@@ -201,7 +201,6 @@ export function dismissUpdateBar(): void {
   bar = null;
 }
 
-/** `quitAndInstall` is what the Restart button and the IPC handler both call. */
 export function restartAndInstall(): void {
   const autoUpdater = loadUpdater();
   if (!autoUpdater) {

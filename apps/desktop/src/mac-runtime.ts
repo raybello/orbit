@@ -2,14 +2,10 @@
  * The native Mac stack's runtime: eligibility, the signed server bundle, and the optional
  * Apple container runtime for bot VMs.
  *
- * Orbit's server is Node + SQLite, so "running natively" means one downloaded tarball of
- * `apps/server/dist` + `apps/web/dist` and no database service to boot. Everything here is
- * about getting that tarball onto disk safely: the download is hashed while it streams, the
- * manifest that describes it ships inside the `.app`, and extraction goes through `tar`
- * rather than a Node library so we add no dependency.
- *
- * Every side effect that reaches the network, a subprocess or the filesystem is injectable.
- * The unit tests drive this module with an local http server and a fake `tar`.
+ * Orbit's server is Node + SQLite, so "running natively" is one downloaded tarball and no
+ * database service to boot. The download is hashed while it streams, the manifest ships inside
+ * the `.app`, and extraction goes through `tar` so the app adds no dependency. Every side
+ * effect is injectable, so the tests drive this with a local http server and a fake `tar`.
  */
 
 import fs from 'node:fs';
@@ -32,8 +28,8 @@ export interface RuntimeInfo {
 }
 
 /**
- * macOS 26 is Darwin 25. The native path needs macOS 26's container/VM tooling and the
- * process supervision it enables; below that, Docker Compose is the supported stack.
+ * macOS 26 is Darwin 25. Below that the container/VM tooling the native path needs is absent,
+ * and Docker Compose is the supported stack.
  */
 export const MIN_DARWIN_MAJOR = 25;
 
@@ -47,7 +43,6 @@ export function nativeStackEligible(runtime: Partial<RuntimeInfo> = {}): boolean
   return Number.isFinite(major) && major >= MIN_DARWIN_MAJOR;
 }
 
-/** Why the native stack is unavailable, for the menu and the logs. */
 export function ineligibilityReason(runtime: Partial<RuntimeInfo> = {}): string | null {
   if (nativeStackEligible(runtime)) return null;
   const platform = runtime.platform ?? process.platform;
@@ -62,9 +57,9 @@ export function ineligibilityReason(runtime: Partial<RuntimeInfo> = {}): string 
 /**
  * `Resources/server-bundle.json`, embedded in the `.app`.
  *
- * `migrate` is optional: a bundle whose server creates its schema on boot (Orbit's does,
- * with `CREATE TABLE IF NOT EXISTS`) ships none. When it *is* declared, the file has to be
- * there — a missing one is a broken bundle, not a version difference.
+ * `migrate` is optional: Orbit's server creates its schema on boot (`CREATE TABLE IF NOT
+ * EXISTS`), so a bundle without it is complete. When it *is* declared, a missing file is a
+ * broken bundle, not a version difference.
  */
 export interface ServerManifest {
   version: string;
@@ -81,7 +76,6 @@ export interface ServerManifest {
 
 export const SERVER_BUNDLE_FILE = 'server-bundle.json';
 
-/** Parse and validate a manifest; `null` when the file is absent or unusable. */
 export function readServerManifest(file: string): ServerManifest | null {
   let text: string;
   try {
@@ -308,10 +302,9 @@ export class BundleInstallError extends Error {
 }
 
 /**
- * Download, verify and unpack `manifest` into `destDir`.
- *
- * Idempotent: if the version's `dist/index.js` is already there, this only refreshes the
- * `current` symlink and prunes. Callers can therefore call it on every launch.
+ * Download, verify and unpack `manifest` into `destDir`. Idempotent: if the version's
+ * `dist/index.js` is already there, this only refreshes the `current` symlink and prunes, so
+ * callers can run it on every launch.
  */
 export async function installServerBundle(
   manifest: ServerManifest,
@@ -650,7 +643,6 @@ function removeFile(file: string): void {
   }
 }
 
-/** The one directory inside `dir`, when that is all there is. */
 function singleDirectory(dir: string): string | null {
   let entries: fs.Dirent[];
   try {

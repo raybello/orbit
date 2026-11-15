@@ -1,21 +1,22 @@
 import { Cron } from 'croner';
 import { db, now } from './db.js';
-import { appendRow, toRoutine } from './store.js';
+import { appendRow, toRoutine, type RoutineRow } from './store.js';
 import { newId } from './lib/ids.js';
 import type { Routine } from './types.js';
+import type { Trigger } from './agent/loop.js';
 import { isEventSchedule, setEventRoutineEnabled } from './triggers.js';
 
 const jobs = new Map<string, Cron>();
-let enqueueFn: ((botId: string, t: any) => void) | null = null;
+let enqueueFn: ((botId: string, t: Trigger) => void) | null = null;
 
 /** Wire the queue a routine run lands in. Also used by tests, which do not want live timers. */
-export function setRoutineEnqueue(enqueue: (botId: string, t: any) => void) {
+export function setRoutineEnqueue(enqueue: (botId: string, t: Trigger) => void) {
   enqueueFn = enqueue;
 }
 
-export function initRoutines(enqueue: (botId: string, t: any) => void) {
+export function initRoutines(enqueue: (botId: string, t: Trigger) => void) {
   setRoutineEnqueue(enqueue);
-  const all = db.prepare("SELECT * FROM routines WHERE enabled=1 AND schedule NOT LIKE 'event:%'").all() as any[];
+  const all = db.prepare("SELECT * FROM routines WHERE enabled=1 AND schedule NOT LIKE 'event:%'").all() as RoutineRow[];
   for (const r of all) scheduleRoutine({ id: r.id, botId: r.bot_id, name: r.name, prompt: r.prompt, schedule: r.schedule, timezone: r.timezone } as Routine);
   console.log(`[routines] scheduled ${jobs.size}`);
 }
@@ -32,14 +33,14 @@ export function scheduleRoutine(r: Pick<Routine, 'id' | 'botId' | 'name' | 'prom
 }
 
 export function unscheduleRoutine(id: string) {
-  const row = db.prepare('SELECT schedule FROM routines WHERE id=?').get(id) as any;
+  const row = db.prepare('SELECT schedule FROM routines WHERE id=?').get(id) as { schedule: string } | undefined;
   if (row && isEventSchedule(row.schedule)) void setEventRoutineEnabled(id, false);
   jobs.get(id)?.stop();
   jobs.delete(id);
 }
 
 export function runRoutine(id: string) {
-  const r = db.prepare('SELECT * FROM routines WHERE id=?').get(id) as any;
+  const r = db.prepare('SELECT * FROM routines WHERE id=?').get(id) as RoutineRow | undefined;
   if (!r || !enqueueFn) return;
   db.prepare('UPDATE routines SET last_run_at=? WHERE id=?').run(now(), id);
   appendRow(r.bot_id, 'event', { type: 'event', event: 'routine-run', text: `Running routine: ${r.name}`, ref: id });
@@ -52,8 +53,6 @@ export function runRoutine(id: string) {
     unscheduleRoutine(id);
   }
 }
-
-// ---------- calendar events ----------
 
 export interface CreateRoutineInput {
   botId: string;
@@ -119,7 +118,7 @@ export function createRoutine(input: CreateRoutineInput): Routine {
      VALUES (?,?,?,?,?,?,1,?,?,?,?,NULL,NULL)`,
   ).run(id, input.botId, title, prompt, schedule, timezone, now(), title, eventType, eventDate);
 
-  const routine = toRoutine(db.prepare('SELECT * FROM routines WHERE id=?').get(id));
+  const routine = toRoutine(db.prepare('SELECT * FROM routines WHERE id=?').get(id) as RoutineRow);
   scheduleRoutine(routine);
   return routine;
 }

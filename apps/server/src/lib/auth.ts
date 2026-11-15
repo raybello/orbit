@@ -34,7 +34,7 @@ export function userFromToken(t: string | undefined): User | null {
   if (!t) return null;
   const r = db
     .prepare('SELECT u.* FROM auth_sessions s JOIN users u ON u.id=s.user_id WHERE s.token=? AND s.expires_at>?')
-    .get(t, now()) as any;
+    .get(t, now()) as { id: string; email: string; name: string; avatar_url: string | null } | undefined;
   return r ? { id: r.id, email: r.email, name: r.name, avatarUrl: r.avatar_url } : null;
 }
 

@@ -4,7 +4,8 @@ import { BotAvatarFor } from '../avatar/BotAvatar';
 import { api, openPopup } from '../lib/api';
 import { botVars } from '../lib/colors';
 import { computerStatusText } from '../lib/computer';
-import { displayName, useSelectedBot, useStore } from '../store';
+import { useSelectedBot, useStore } from '../store';
+import { displayName } from '../domain/transcript-utils';
 import { Icon } from './Icon';
 import { ToolkitLogo } from './ToolkitLogo';
 import { VoiceSettings } from './VoiceSettings';
@@ -78,7 +79,6 @@ export function DetailsPanel() {
     try { const { redirectUrl } = await api.connect('slack'); if (popup) popup.location.href = redirectUrl; } catch { popup?.close(); }
   };
 
-  // Arrow keys move between tabs, as a tablist should.
   const onTabKeyDown = (e: ReactKeyboardEvent<HTMLDivElement>) => {
     const ids = tabs.map((t) => t.id);
     const at = ids.indexOf(shown);

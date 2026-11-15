@@ -1,6 +1,6 @@
 import fs from 'node:fs';
 import os from 'node:os';
-import { docker } from './client.js';
+import { docker, type DockerError } from './client.js';
 import { cdpBridgePort, screenPorts } from './screen.js';
 
 /**
@@ -29,11 +29,9 @@ export interface BotNetworkState {
 }
 
 export interface ServerPlacement {
-  /** The server itself runs in a container. */
   inContainer: boolean;
   /** The Docker network that container is on; bot containers must share it to be dialable. */
   network: string | null;
-  /** Our own container id, when Docker confirms it. */
   containerId: string | null;
 }
 
@@ -53,7 +51,6 @@ export interface ScreenEndpoint {
   transport: ScreenTransport;
 }
 
-/** The bot's container is not on any network the server can dial it on. */
 export class ScreenUnreachableError extends Error {
   constructor(message: string) {
     super(message);
@@ -93,15 +90,13 @@ export function screenHostPort(kind: ScreenKind, index: number): number {
 
 /**
  * The address to dial for one screen. Pure, so the choice can be tested against real inspect output
- * (a bot on the server's network, a bot stuck on the default bridge, a server on the host, a
- * server that publishes a non-default host port).
+ * (a bot on the server's network, a bot stuck on the default bridge, a server on the host).
  */
 export function resolveScreenEndpoint(opts: {
   placement: ServerPlacement;
   bot: BotNetworkState;
   index: number;
   kind: ScreenKind;
-  /** COMPUTER_NETWORK, when an operator pinned a specific network for bot containers. */
   preferredNetwork?: string | null;
 }): ScreenEndpoint {
   const { placement, bot, index, kind } = opts;
@@ -131,7 +126,7 @@ export function resolveScreenEndpoint(opts: {
   };
 }
 
-/** COMPUTER_NETWORK, when it is set at all (the pin is only meaningful if somebody wrote it). */
+/** COMPUTER_NETWORK, when it is set at all (the pin only means something if somebody wrote it). */
 export function explicitNetwork(): string | null {
   const raw = (process.env.COMPUTER_NETWORK ?? '').trim();
   return raw || null;
@@ -148,13 +143,11 @@ export function botNetworkName(placement: ServerPlacement, explicit = explicitNe
   return 'bridge';
 }
 
-/** Further networks a new bot container joins so the server can reach it. */
 export function extraNetworksFor(placement: ServerPlacement, primary: string): string[] {
   if (!placement.inContainer || !placement.network) return [];
   return placement.network === primary ? [] : [placement.network];
 }
 
-/** True when the process looks like it is inside a container rather than on the host. */
 export function looksContainerized(hostname = process.env.HOSTNAME || os.hostname()): boolean {
   try {
     if (fs.existsSync('/.dockerenv')) return true;
@@ -176,7 +169,6 @@ export async function serverPlacement(): Promise<ServerPlacement> {
   return placement;
 }
 
-/** Forget the detection (a stack restart changes nothing, but tests and `reset` paths may). */
 export function resetServerPlacement(): void {
   placement = null;
 }
@@ -187,19 +179,18 @@ async function detectPlacement(): Promise<ServerPlacement> {
   try {
     const info = await docker().getContainer(hostname).inspect();
     return placementFromInspect(hostname, info);
-  } catch (e: any) {
-    console.warn(`[docker] looks containerized but its own container was not found (${e?.message ?? e}); ` +
+  } catch (e) {
+    console.warn(`[docker] looks containerized but its own container was not found (${(e as DockerError)?.message ?? e}); ` +
       'screens will use published host ports');
     return ON_HOST;
   }
 }
 
-/** The bot container's networks and published ports, as Docker reports them. */
 export async function botNetworkState(containerId: string): Promise<BotNetworkState> {
   const info = await docker().getContainer(containerId).inspect();
   return {
-    networks: (info.NetworkSettings as any)?.Networks ?? {},
-    ports: (info.NetworkSettings as any)?.Ports ?? {},
+    networks: (info.NetworkSettings?.Networks ?? {}) as ContainerNetworks,
+    ports: (info.NetworkSettings?.Ports ?? {}) as BotNetworkState['ports'],
   };
 }
 
@@ -214,11 +205,11 @@ export async function ensureBotOnNetwork(containerId: string, network: string): 
   try {
     await docker().getNetwork(network).connect({ Container: containerId });
     return true;
-  } catch (e: any) {
-    const message = String(e?.message ?? e);
+  } catch (e) {
+    const message = String((e as DockerError)?.message ?? e);
     // Another caller (or a concurrent boot) got there first.
     if (/already exists|already attached/i.test(message)) return false;
-    if (e?.statusCode === 404) {
+    if ((e as DockerError)?.statusCode === 404) {
       throw new ScreenUnreachableError(`Docker network "${network}" does not exist, so a bot's screen cannot be reached on it`);
     }
     throw new ScreenUnreachableError(`could not attach the bot's container to network "${network}": ${message}`);
@@ -252,7 +243,6 @@ export async function screenEndpointFor(containerId: string, index: number, kind
   return resolveScreenEndpoint({ placement: place, bot, index, kind, preferredNetwork: explicitNetwork() });
 }
 
-/** A one-line description of the route, for logs and the screen's details panel. */
 export function describeEndpoint(e: ScreenEndpoint): string {
   return `${e.host}:${e.port} (${e.transport})`;
 }

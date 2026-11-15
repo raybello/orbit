@@ -51,6 +51,8 @@ export function Icon({ name, size = 16, opacity, className, style, color }: Prop
     );
   }
   const url = `url(/assets/icons/${name}.svg)`;
+  // Two sources only: INLINE/OUTLINE above, or a mask file here. A name missing from both renders an
+  // empty box with no error, so a new icon needs its SVG under public/assets/icons as well.
   return (
     <span
       aria-hidden

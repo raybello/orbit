@@ -19,7 +19,6 @@ export function Field({ label, hint, children, htmlFor }: { label: string; hint?
   );
 }
 
-/** A small segmented control with optional per-option hints. */
 export function Segmented<T extends string>({ value, options, onChange, label }: { value: T; options: { value: T; label: string }[]; onChange: (v: T) => void; label: string }) {
   return (
     <div className="cfg-seg" role="radiogroup" aria-label={label}>

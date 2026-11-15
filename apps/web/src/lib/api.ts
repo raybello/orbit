@@ -75,11 +75,9 @@ export const api = {
   setRoomMembers: (id: string, botIds: string[]) => req<{ ok: true; members: string[] }>('PUT', `/rooms/${id}/members`, { botIds }),
   createRoom: (name: string, botIds: string[]) => req<{ id: string }>('POST', '/rooms', { name, botIds }),
 
-  // ---------- calendar ----------
   calendar: (from: string, to: string) => req<CalendarResponse>('GET', `/calendar?from=${encodeURIComponent(from)}&to=${encodeURIComponent(to)}`),
   createRoutine: (r: CreateRoutineRequest) => req<{ routine: Routine }>('POST', '/routines', r),
 
-  // ---------- files ----------
   files: (opts: { botId?: string; type?: string; search?: string; page?: number; pageSize?: number } = {}) => {
     const q = new URLSearchParams();
     if (opts.botId) q.set('botId', opts.botId);
@@ -93,16 +91,13 @@ export const api = {
   /** URL a browser can open/download directly; the file id is already URL-safe. */
   fileUrl: (file: Pick<FileEntry, 'id'> | string) => `/api/files/${typeof file === 'string' ? file : file.id}/download`,
 
-  // ---------- computers ----------
   computers: () => req<ComputersResponse>('GET', '/computers'),
 
-  // ---------- skills (MCP servers) ----------
   skills: () => req<SkillsResponse>('GET', '/skills'),
   setSkillEnabled: (botId: string, skillName: string, enabled: boolean) =>
     req<{ skill: SkillEntry }>('PUT', `/skills/${encodeURIComponent(botId)}/${encodeURIComponent(skillName)}`, { enabled }),
 };
 
-/** Open a Composio redirect in a centered popup. */
 export function openPopup(url: string) {
   const w = 520, h = 680;
   const left = window.screenX + (window.outerWidth - w) / 2;

@@ -22,8 +22,20 @@ import type { BashResult, ComputerProvider, ComputerRef, ScreenShot, VncStream }
 
 const REFRESH_SCREEN_MS = 120_000;
 
+/** The bot columns the desk and the key buffer need. */
+interface BotDeskRow {
+  id: string;
+  user_id: string;
+  name: string;
+  label: string | null;
+  avatar_shape: string;
+  avatar_color: string;
+}
+
 function deskBot(botId: string): (DeskBot & { userId: string }) | null {
-  const b = db.prepare('SELECT id, user_id, name, label, avatar_shape, avatar_color FROM bots WHERE id=?').get(botId) as any;
+  const b = db.prepare('SELECT id, user_id, name, label, avatar_shape, avatar_color FROM bots WHERE id=?').get(botId) as
+    | BotDeskRow
+    | undefined;
   return b
     ? { id: b.id, userId: b.user_id, name: b.name, label: b.label ?? '', avatarShape: b.avatar_shape, avatarColor: b.avatar_color }
     : null;
@@ -116,8 +128,8 @@ export class DockerComputerProvider implements ComputerProvider {
       setComputerState(botId, 'running', { containerId, error: null, homePath });
       console.log(`[docker] ${botId} is running in ${containerId.slice(0, 12)} on display ${fresh.display_index}`);
       return { computerId: botId, kind: 'docker' };
-    } catch (e: any) {
-      const message = String(e?.message ?? e);
+    } catch (e) {
+      const message = String((e as Error)?.message ?? e);
       setComputerState(botId, 'error', { error: message });
       throw new Error(message);
     }
@@ -152,8 +164,8 @@ export class DockerComputerProvider implements ComputerProvider {
       if (await ensureBotOnNetwork(containerId, placement.network)) {
         console.log(`[docker] ${botId} joined ${placement.network} so its screen is reachable from the server's container`);
       }
-    } catch (e: any) {
-      console.warn(`[docker] could not put ${botId}'s container on ${placement.network}: ${String(e?.message ?? e)}`);
+    } catch (e) {
+      console.warn(`[docker] could not put ${botId}'s container on ${placement.network}: ${String((e as Error)?.message ?? e)}`);
     }
   }
 
@@ -177,8 +189,8 @@ export class DockerComputerProvider implements ComputerProvider {
     if (!screen.ensured_at || Date.now() - screen.ensured_at > REFRESH_SCREEN_MS) {
       try {
         await ensureScreen(containerId, screen.display_index, screen.view_token ?? randomUUID());
-      } catch (e: any) {
-        setComputerState(botId, 'error', { error: String(e?.message ?? e) });
+      } catch (e) {
+        setComputerState(botId, 'error', { error: String((e as Error)?.message ?? e) });
         throw e;
       }
       touchScreen(botId, screen.screen_id, { ensuredAt: Date.now() });
@@ -349,7 +361,7 @@ export class DockerComputerProvider implements ComputerProvider {
     if (pending) lines.push(`xdotool type --clearmodifiers --delay 0 -- ${q(pending)}`);
     const r = await dockerBox(row.container_id)
       .bash(`set -e; ${lines.join('; ')}`, 20, buf.screenId)
-      .catch((e) => ({ exit_code: -1, output: String((e as any)?.message ?? e) }));
+      .catch((e) => ({ exit_code: -1, output: String((e as Error)?.message ?? e) }));
     if (r.exit_code !== 0) console.warn(`[vnc] keys failed: ${String(r.output).slice(0, 200)}`);
   }
 
@@ -364,8 +376,8 @@ export class DockerComputerProvider implements ComputerProvider {
       if (screen) saveScreen({ ...screen, ensured_at: null });
       setComputerState(botId, 'suspended', { containerId: row.container_id, error: null });
       this.dressing.delete(botId);
-    } catch (e: any) {
-      setComputerState(botId, 'error', { error: String(e?.message ?? e) });
+    } catch (e) {
+      setComputerState(botId, 'error', { error: String((e as Error)?.message ?? e) });
       throw e;
     }
   }
@@ -391,7 +403,7 @@ async function resetScreenRuntime(containerId: string): Promise<void> {
 }
 
 function userIdFor(botId: string): string {
-  return (db.prepare('SELECT user_id FROM bots WHERE id=?').get(botId) as any)?.user_id ?? '';
+  return (db.prepare('SELECT user_id FROM bots WHERE id=?').get(botId) as { user_id?: string } | undefined)?.user_id ?? '';
 }
 
 /**

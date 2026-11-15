@@ -1,10 +1,10 @@
 import { create } from 'zustand';
-import type { ActivityItem, Bot, CardBody, ComputerState, LiveState, Routine, Row, ServerEvent, User } from '@orbit/contracts';
+import type { ActivityItem, Bot, ComputerState, LiveState, Routine, Row, ServerEvent, User } from '@orbit/contracts';
 import { api } from './lib/api';
+import { activityFromRow, activityPreview, botNameFor, mergeActivity, pruneSeen } from './domain/activity-feed';
+import type { Transcript } from './domain/transcript-utils';
 
 export type ModalKind = 'create' | 'search' | 'apps' | 'group' | null;
-
-interface Transcript { generation: number; bySeq: Record<number, Row>; loaded: boolean }
 
 interface State {
   user: User | null;
@@ -50,72 +50,10 @@ interface State {
 
 const LS_SELECTED = 'grokbot.selectedBot';
 const LS_DETAILS = 'grokbot.detailsOpen';
+// Storage is blocked in private mode and in sandboxed frames: a failed read counts as unset and a
+// failed write is dropped, so the store still works for the session.
 const lsGet = (k: string) => { try { return localStorage.getItem(k); } catch { return null; } };
 const lsSet = (k: string, v: string) => { try { localStorage.setItem(k, v); } catch { /* ignore */ } };
-
-// ---------- cross-bot activity feed ----------
-
-/** How many feed entries we keep, and how long a preview line is. */
-const ACTIVITY_LIMIT = 200;
-const PREVIEW_CHARS = 110;
-/** `activitySeen` is pruned past this many keys so it cannot grow without bound. */
-const SEEN_LIMIT = 1000;
-
-/** One line of preview text: whitespace collapsed, cut at ~110 characters. */
-export function activityPreview(text: string, max = PREVIEW_CHARS): string {
-  const flat = text.replace(/\s+/g, ' ').trim();
-  return flat.length > max ? `${flat.slice(0, max).trimEnd()}…` : flat;
-}
-
-/** What a pending card says in the feed, or null when it no longer needs anyone. */
-export function cardPreview(body: CardBody): string | null {
-  if (body.status !== 'pending') return null;
-  switch (body.card) {
-    case 'approval': return body.title;
-    case 'question': return body.question;
-    case 'connect': return `Connect ${body.toolkitName}`;
-    case 'draft': return body.subject || `Draft ${body.channel} message to ${body.to}`;
-  }
-}
-
-const botNameFor = (bots: Bot[], botId: string) => bots.find((b) => b.id === botId)?.name ?? botId;
-
-/** Feed identity: one entry per row, one per turn status change. */
-export const activityKey = (item: ActivityItem): string =>
-  item.seq === undefined ? `live:${item.botId}:${item.kind}:${item.at}` : `row:${item.botId}:${item.seq}`;
-
-/** Newest first, deduped against what is already there, capped at ACTIVITY_LIMIT. */
-export function mergeActivity(prev: ActivityItem[], incoming: ActivityItem[], max = ACTIVITY_LIMIT): ActivityItem[] {
-  if (incoming.length === 0) return prev;
-  const keys = new Set(incoming.map(activityKey));
-  return [...incoming, ...prev.filter((p) => !keys.has(activityKey(p)))]
-    .sort((a, b) => b.at - a.at || (b.seq ?? 0) - (a.seq ?? 0))
-    .slice(0, max);
-}
-
-function pruneSeen(seen: Record<string, number>): Record<string, number> {
-  const keys = Object.keys(seen);
-  if (keys.length <= SEEN_LIMIT) return seen;
-  const kept: Record<string, number> = {};
-  for (const k of keys.slice(-Math.floor(SEEN_LIMIT / 2))) kept[k] = seen[k];
-  return kept;
-}
-
-/** An assistant message that finished streaming, or a pending card — everything else stays out of the feed. */
-function activityFromRow(row: Row, botName: string): ActivityItem | null {
-  let preview: string | null = null;
-  let kind: ActivityItem['kind'] | null = null;
-  if (row.body.type === 'message') {
-    if (row.body.role !== 'assistant' || row.body.streaming) return null;
-    preview = activityPreview(row.body.text);
-    kind = 'message';
-  } else if (row.body.type === 'card') {
-    const card = cardPreview(row.body);
-    if (card) { preview = activityPreview(card); kind = 'card'; }
-  }
-  if (!preview || !kind) return null;
-  return { botId: row.botId, botName, kind, preview, at: row.createdAt, seq: row.seq };
-}
 
 export const useStore = create<State>((set, get) => ({
   user: null,
@@ -309,14 +247,6 @@ export const useStore = create<State>((set, get) => ({
     set(p);
   },
 }));
-
-/** Rows for a bot, ordered by seq. */
-export function sortedRows(t: Transcript | undefined): Row[] {
-  if (!t) return [];
-  return Object.values(t.bySeq).sort((a, b) => a.seq - b.seq);
-}
-
-export const displayName = (b: Pick<Bot, 'name' | 'label'>) => (b.label ? `${b.name} · ${b.label}` : b.name);
 
 export function useSelectedBot(): Bot | undefined {
   return useStore((s) => s.bots.find((b) => b.id === s.selectedBotId));

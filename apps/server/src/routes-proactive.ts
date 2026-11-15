@@ -1,6 +1,7 @@
 import { Hono } from 'hono';
 import { requireUser, type AuthVars } from './lib/auth.js';
 import { fireCheckin, getCheckins, setCheckins } from './proactive.js';
+import { requireBody, CheckinSettingsSchema } from './api/schemas.js';
 
 /** /api/checkins: proactive check-in settings for the primary bot. */
 export const checkinsApi = new Hono<AuthVars>();
@@ -9,11 +10,11 @@ checkinsApi.use('*', requireUser);
 checkinsApi.get('/', (c) => c.json(getCheckins(c.get('user').id)));
 
 checkinsApi.put('/', async (c) => {
-  const body = await c.req.json<{ enabled?: boolean; times?: string[]; timezone?: string }>();
+  const body = await requireBody(c, CheckinSettingsSchema);
   try {
     return c.json(setCheckins(c.get('user').id, body));
-  } catch (e: any) {
-    return c.json({ error: e?.message ?? String(e) }, 400);
+  } catch (e) {
+    return c.json({ error: e instanceof Error ? e.message : String(e) }, 400);
   }
 });
 

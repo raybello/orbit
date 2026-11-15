@@ -66,7 +66,6 @@ const STATUS: Record<ActivityKind, string> = {
   remembering: 'Remembering',
 };
 
-/** True when the bot has stopped to wait for the person (approval, question, connect). */
 export function isWaitingForYou(live: LiveState | undefined): boolean {
   return !!live && (!!live.awaiting || live.activity?.kind === 'waiting_for_you');
 }

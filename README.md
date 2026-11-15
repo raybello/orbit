@@ -3,106 +3,237 @@
 </p>
 
 <p align="center">
-  A team of AI agents you chat with, each with its own screen on one cloud computer.<br>
-  <a href="https://github.com/NousResearch/hermes-agent">Hermes Agent</a> runs the bots, <a href="https://orgo.ai">Orgo</a> gives them screens, <a href="https://composio.dev">Composio</a> connects their apps, and <a href="https://x.ai">xAI</a> gives them a voice and research on X.
+  A team of AI agents you chat with, each with its own screen on its own computer.<br>
+  <a href="https://github.com/NousResearch/hermes-agent">Hermes Agent</a> runs the bots, a Docker desktop gives each one a screen, <a href="https://composio.dev">Composio</a> connects their apps, and local STT/TTS or xAI gives them a voice.
 </p>
 
 <p align="center">
   <a href="#what-you-get">What you get</a> ·
   <a href="#how-it-fits-together">How it works</a> ·
-  <a href="#install-on-the-computer">Install</a> ·
-  <a href="#run-it-locally">Run locally</a> ·
-  <a href="docs/ARCHITECTURE.md">Architecture</a> ·
+  <a href="#build-and-run">Build and run</a> ·
+  <a href="#build-per-target">Build per target</a> ·
+  <a href="#run-the-docker-stack">Docker</a> ·
   <a href="#status-and-limits">Limits</a>
 </p>
 
 <p align="center">
   <img alt="Node 22 or newer" src="https://img.shields.io/badge/node-%E2%89%A522-3c873a">
+  <img alt="pnpm 12" src="https://img.shields.io/badge/pnpm-12-f69220">
   <img alt="MIT license" src="https://img.shields.io/badge/license-MIT-1c1c1c">
   <img alt="Status: experimental" src="https://img.shields.io/badge/status-experimental-fd690f">
 </p>
 
 <p align="center">
-  <picture>
-    <source media="(prefers-color-scheme: dark)" srcset="assets/screenshots/chat-dark.png">
-    <img src="assets/screenshots/chat-light.png" alt="A chat with a bot. The bot's steps are listed while it works, its screen is live in the side panel, and the Engine panel shows its model." width="100%">
-  </picture>
+  <img src="docs/screenshots/refactor/06-screen-viewer.png" alt="Iris's own Linux desktop, live in Orbit's viewer, showing her home screen and Chrome." width="100%">
 </p>
 
----
-
-Give a bot a job, connect the apps it needs, and follow its work in chat. Each bot has a name, a look, its own memory, and a screen you can watch or take over. Bots can message each other, run recurring tasks, and talk with you over voice.
+Give a bot a job, connect the apps it needs, and follow its work in chat. Each bot has a name, a look, its own memory, a Hermes engine, and a Docker desktop you can watch or take over. Bots can message each other in groups, run one-time and recurring calendar events, and talk with you over voice.
 
 The interface is modeled on Grok Bot. Underneath, every bot is a Hermes agent, so it can run on the model subscriptions you already pay for (Claude, ChatGPT, Grok and others) or on API keys.
+
+All screenshots below were captured from this branch while the flows were exercised against a live server. The desktop app hosts the same renderer as the web app; the mobile shots are from an iPhone 17 Pro simulator.
 
 ## What you get
 
 | | |
 |---|---|
-| **Chat that shows the work** | While a bot works you see what it is doing right now, how long it has been at it, and each step it took. Finished turns fold into a "Worked for 2m 10s · 7 steps" chip you can open. |
-| **A screen per bot** | Every bot has its own desktop on the shared computer. Watch it live in the side panel, open it full size, or take control with your own mouse and keyboard. |
-| **Your existing Hermes agent, kept as it is** | The first bot is the Hermes agent already running on the computer. Its messaging channels, skills and memory keep working; the app only calls its API. |
-| **Connected apps with approvals** | Bots ask for the app they need and you connect it through Composio. Actions that write (send, post, delete) wait for your OK on a card in the chat. |
+| **Chat that shows the work** | While a bot works you see what it is doing right now, how long it has been at it, and each step it took. Finished turns fold into a "Worked for 1m 14s · 2 steps" chip you can open. |
+| **A screen per bot** | Every bot gets its own Docker desktop with Xvfb, Chrome and a VNC relay. Watch it live, open it full size, or take control with your own mouse and keyboard. |
+| **Create a bot in one dialog** | Name it, pick a shape and colour, choose personal or teammate. The bot gets a Hermes home, an engine, a screen and its own memory. |
+| **Group chats with bot handoffs** | A group is a room with members. A message dispatches the bots it @mentions, or the whole room (capped at three). A bot can @mention a peer and Orbit dispatches that peer one hop deeper. |
+| **Calendar events, once or recurring** | Create a one-time event at a date and time, or a recurring event on a cron preset (daily, weekdays, weekly) or a custom expression. The assigned bot runs the prompt when it fires. |
+| **Voice calls** | Talk to a bot from the composer. Orbit prefers on-device STT/TTS when the model cache is present, degrades to the cloud voice when it is not, and puts the spoken turn into the bot's normal transcript. |
 | **Model and subscription per bot** | Pick the provider and model in the bot's Engine panel, or sign in to a subscription on the bot's own screen. |
-| **Voice** | Talk to a bot with xAI's realtime voice modes. Real work is handed to the same bot, with the same memory and tools. |
-| **Research on X** | Every bot has an `x_search` tool, backed by xAI. |
+| **Connected apps with approvals** | Bots ask for the app they need and you connect it through Composio. Actions that write (send, post, delete) wait for your OK on a card in the chat. |
 | **Routines, tasks and a Library** | Recurring jobs on a schedule, a task list per bot, and a place where bots save the files they make. |
+| **Mobile app** | An Expo client for iOS and Android: chats, threads, calendar, files, computers and a live VNC viewer. Point it at any Orbit server, or bake the URL into a build. |
 
 <table>
   <tr>
-    <td width="50%"><img src="assets/screenshots/viewer.png" alt="The full-size viewer showing a bot's Chrome window, live."></td>
-    <td width="50%"><img src="assets/screenshots/home-screen.jpg" alt="A bot's home screen: clock, the bot's name and role, and its apps."></td>
+    <td width="50%"><img src="docs/screenshots/refactor/16-chat.png" alt="A chat with Iris: the reply in progress and the finished answer."></td>
+    <td width="50%"><img src="docs/screenshots/refactor/05-bot-screens.png" alt="The Screens view: one Docker computer per bot, Iris and Milo awake with a screen ready."></td>
   </tr>
   <tr>
-    <td align="center"><sub>Watching a bot's screen live</sub></td>
-    <td align="center"><sub>Each screen is dressed as that bot's own computer</sub></td>
+    <td align="center"><sub>Chat: the bot answers in its own transcript</sub></td>
+    <td align="center"><sub>Screens: one desktop per bot</sub></td>
   </tr>
 </table>
 
-<sub>The chat screenshot at the top uses the sample data built into the dev server (add <code>?fixtures</code> to the URL). The two above are from a running install.</sub>
+### Creating, grouping and handing off
+
+<table>
+  <tr>
+    <td width="50%"><img src="docs/screenshots/refactor/01-bot-creation.png" alt="The Create New Bot dialog: name, avatar shape, colour, and personal or teammate mode."></td>
+    <td width="50%"><img src="docs/screenshots/refactor/03-group-chat.png" alt="A group chat where Iris and Milo each answer in one line."></td>
+  </tr>
+  <tr>
+    <td align="center"><sub>Creating a bot: name, avatar, mode</sub></td>
+    <td align="center"><sub>Group chat: both bots answer the room</sub></td>
+  </tr>
+  <tr>
+    <td><img src="docs/screenshots/refactor/04-inter-bot.png" alt="Iris @mentions Milo in a group; Milo answers with his top launch risk."></td>
+    <td><img src="docs/screenshots/refactor/07-voice-call.png" alt="A local voice call with Iris: the spoken prompt is transcribed, Iris answers, and the call bar shows Speaking."></td>
+  </tr>
+  <tr>
+    <td align="center"><sub>Inter-bot handoff: Iris asks Milo, Milo replies</sub></td>
+    <td align="center"><sub>Voice call: speech in, transcript and reply out</sub></td>
+  </tr>
+</table>
+
+### Calendar
+
+<table>
+  <tr>
+    <td width="50%"><img src="docs/screenshots/refactor/08-calendar-one-time.png" alt="A one-time Launch retro event on November 14."></td>
+    <td width="50%"><img src="docs/screenshots/refactor/11-calendar-both.png" alt="A daily recurring check-in on every day plus the one-time Launch retro."></td>
+  </tr>
+  <tr>
+    <td align="center"><sub>One-time event</sub></td>
+    <td align="center"><sub>Recurring daily event, plus the one-time event</sub></td>
+  </tr>
+</table>
+
+### On mobile
+
+<table>
+  <tr>
+    <td width="25%"><img src="docs/screenshots/refactor/12-mobile-bots.png" alt="Orbit on iPhone: the Chats list with Iris, Milo, Launch Room and Doug."></td>
+    <td width="25%"><img src="docs/screenshots/refactor/13-mobile-thread.png" alt="Orbit on iPhone: a thread with Iris, including a voice-call turn."></td>
+    <td width="25%"><img src="docs/screenshots/refactor/14-mobile-calendar.png" alt="Orbit on iPhone: the calendar with the daily check-in and the Launch Retro."></td>
+    <td width="25%"><img src="docs/screenshots/refactor/15-mobile-computers.png" alt="Orbit on iPhone: the Computers tab listing each bot's Docker desktop."></td>
+  </tr>
+  <tr>
+    <td align="center"><sub>Chats</sub></td>
+    <td align="center"><sub>Thread</sub></td>
+    <td align="center"><sub>Calendar</sub></td>
+    <td align="center"><sub>Computers</sub></td>
+  </tr>
+</table>
 
 ## How it fits together
 
 ```mermaid
 flowchart LR
-  B["Browser<br/>chat · viewer · voice"] -- "HTTP + SSE" --> S["Orbit server<br/>Node · Hono · SQLite"]
+  B["Desktop app<br/>or browser"] -- "HTTP + SSE" --> S["Orbit server<br/>Node · Hono · SQLite"]
+  M["Mobile app<br/>Expo"] -- "HTTP + SSE" --> S
   B -- "WebSocket (VNC)" --> S
-  S -- "POST /v1/responses" --> H1["Hermes gateway<br/>first bot (already running)"]
+  M -- "WebSocket (VNC)" --> S
+  S -- "POST /v1/responses" --> H1["Hermes gateway<br/>primary bot"]
   S -- "POST /v1/responses" --> H2["Hermes gateway<br/>one per extra bot"]
   H1 -- "MCP /mcp/primary" --> S
   H2 -- "MCP /mcp/&lt;bot&gt;" --> S
-  S --> O["Orgo computer<br/>one screen per bot"]
-  S --> C["Composio<br/>connected apps"]
-  S --> X["xAI<br/>voice · X search"]
+  S -- "Docker API" --> C1["Bot desktop<br/>Xvfb · Chrome · VNC"]
+  S -- "Composio" --> A["Connected apps"]
+  S -- "on-device STT/TTS" --> V["Voice"]
 ```
 
-- **One computer, one screen per bot.** All bots live on a single Orgo Linux computer. The first bot uses the computer's main screen; each further bot gets an Orgo screen of its own. Orgo allows four screens per computer, so four bots.
-- **The first bot is the Hermes agent that already runs on that computer.** The app talks to its gateway and never restarts it or rewrites its settings.
-- **Every other bot gets its own Hermes home and gateway**, started by the app. Each has its own model, sign-in, memory, browser profile and files.
-- **The app's tools reach Hermes over MCP.** The server exposes `/mcp/<bot>`. Each agent gets connected apps, `x_search`, tasks, routines, the Library, and messages to other bots.
-- **Screens are dressed to look like the bot's own computer**: a light desktop with a dock, and a home screen with the bot's name and apps as Chrome's new tab page.
+- **One bot, one Hermes home.** The first bot is the Hermes agent already running on the machine. Each further bot gets `ENGINES_DIR/<botId>` and its own `hermes gateway run`.
+- **One bot, one desktop.** With `COMPUTER_KIND=docker` (the default) each bot gets a Linux container running Xvfb, fluxbox, Chrome and `x0vncserver`. The server relays VNC over a WebSocket, so the browser and the phone see the same screen. `COMPUTER_KIND=orgo` uses Orgo screens instead.
+- **The app's tools reach Hermes over MCP.** The server exposes `/mcp/<bot>`. Each agent gets connected apps, tasks, routines, the Library, computer tools and messages to other bots.
+- **Groups are rooms, not agents.** A room row has `kind='room'` and a member list. The server dispatches turns; the bots reply with `post_to_group`, and an @mention triggers the next hop.
+- **The server owns the transcript.** Chat rows, cards, routines and screens live in SQLite. SSE fans changes out to every connected client, desktop and mobile.
 
-More detail is in the [architecture guide](docs/ARCHITECTURE.md).
+More detail is in the [architecture guide](docs/ARCHITECTURE.md) and [per-bot computers](docs/per-bot-computers.md).
 
 ### How this relates to Hermes Bot Mode
 
 Hermes Desktop has its own Bot Mode. Orbit uses the same Hermes engine but does **not** use Bot Mode: it has its own bot layer on top of the gateway's HTTP API.
 
-|| | Orbit | Hermes Bot Mode |
+| | Orbit | Hermes Bot Mode |
 |---|---|---|
 | A bot is | A separate Hermes home (the first bot is the default profile) | A Hermes profile |
 | Gateways | One per extra bot | One, serving every profile |
 | Transport | HTTP, `/v1/responses` | JSON-RPC over WebSocket |
 | Routines | The app's own scheduler | Hermes cron jobs |
-| Bot to bot | The app's `send_to_bot` tool | Hermes' `message_agent` tool |
+| Bot to bot | Group rooms and `send_to_bot` | Hermes' `message_agent` tool |
 
 So bots made here do not show up in Hermes Desktop's Bots tab, and bots made there do not show up here.
 
-## Install on the computer
+## Build and run
 
-The app is meant to run on the same Orgo computer as Hermes.
+Requirements: **Node.js 22 or newer**, **pnpm 12** (the repo pins `packageManager`), Docker for the default desktop and per-bot computers, and Xcode or Android Studio only if you build the mobile app natively.
 
-1. On your machine: `npm ci && scripts/pack.sh hq-app.tgz`. Copy `hq-app.tgz` and `scripts/install-on-computer.sh` to the computer.
+```bash
+git clone https://github.com/raybello/orbit.git
+cd orbit
+pnpm install
+cp .env.example .env       # fill in the keys; comments in the file explain each one
+pnpm build                 # packages, web, server, desktop shell
+pnpm test                  # server, web and desktop suites
+pnpm typecheck             # all seven packages
+```
+
+`pnpm dev` runs the package dev tasks through turbo. For day-to-day work run the pieces you need:
+
+```bash
+pnpm --filter @orbit/server dev     # API on :8787, tsx watch
+pnpm --filter @orbit/web dev        # Vite on :5173, proxies /api to GROKBOT_API or :8787
+pnpm --filter @orbit/desktop dev    # build the Electron shell and launch it
+pnpm --filter @orbit/mobile start   # Metro for the Expo client
+```
+
+The server serves `apps/web/dist` when it exists, so `pnpm --filter @orbit/web build` plus a server start gives you the production UI on the API port. The server needs a `SESSION_SECRET`; `DEV_LOGIN=1` enables the email-only sign-in form and must never be set on a public address.
+
+Keys:
+
+| Key | Used for |
+|---|---|
+| `SESSION_SECRET` | Sign-in sessions and the tokens agents use to reach `/mcp` |
+| `DEEPSEEK_API_KEY` or another provider key | The default model for managed bots, inherited from the primary Hermes home |
+| `COMPOSIO_API_KEY` | Connected apps |
+| `XAI_API_KEY` | Cloud voice and `x_search` (optional when local voice models are installed) |
+| `ORGO_API_KEY`, `ORGO_COMPUTER_ID` | Orgo screens when `COMPUTER_KIND=orgo` |
+
+A first run without `COMPOSIO_API_KEY` or `XAI_API_KEY` boots: both clients are lazy. Those features answer "not configured" until keys are present.
+
+## Build per target
+
+| Target | Dev | Production build | Output |
+|---|---|---|---|
+| **Web** | `pnpm --filter @orbit/web dev` | `pnpm --filter @orbit/web build` | `apps/web/dist` (static assets, served by the server or any static host) |
+| **Server** | `pnpm --filter @orbit/server dev` | `pnpm --filter @orbit/server build` | `apps/server/dist`, started with `node --env-file=../../.env dist/index.js` from `apps/server` |
+| **Desktop** | `pnpm --filter @orbit/desktop dev` | `pnpm --filter @orbit/desktop pack` | `apps/desktop/dist` (main, preload, setup) and electron-builder installers |
+| **Mobile** | `pnpm --filter @orbit/mobile start` | `expo run:ios` / `expo run:android`, or an EAS build | Native app, or an `expo export` bundle |
+
+**Web.** React 18, Vite and Zustand. Vite proxies `/api` to `GROKBOT_API` when set, otherwise `http://localhost:8787`. A build is a plain static bundle: no SSR, no server-side env. The API base is the origin that served the page, so a static host needs to proxy `/api` and `/api/events` to the server.
+
+**Server.** TypeScript compiled with `tsc` to ESM in `apps/server/dist`. It owns the SQLite schema (created and upgraded in code, no migration runner), the Hono routers, the Hermes adapters, the SSE hub, MCP endpoints, VNC relays, the scheduler and the Docker provider. Signals are handled: `SIGTERM` stops relays and background work. `apps/server/Dockerfile` builds the API and the web bundle into one image; the same image runs `node dist/supervisor.js` as the second `sandbox-supervisor` service.
+
+**Desktop.** An Electron 36 shell around the web renderer, built with esbuild (no hashing, source maps kept). `dev` builds the shell then launches Electron; `pack` builds the web app, the shell, checks bundled resources and runs electron-builder for the host platform. The shell starts or attaches to a local stack: Docker Compose by default, or a native server bundle on Apple Silicon macOS when the release ships one. `scripts/dev-rebuild-loop.sh` is the fast loop for server or web changes: it rebuilds the app image from this tree, recreates the compose stack and relaunches Electron. `scripts/dev-vite.sh` runs Vite against the running stack when only the UI changed.
+
+**Mobile.** Expo SDK 53 and React Native 0.79, with expo-router file-based routes. Metro is the dev server; a native dev build is produced by `expo run:ios` or `expo run:android`, and release builds by the `eas.json` profiles. The API base is read from `EXPO_PUBLIC_API_URL` (baked into `extra.apiUrl` at build time) and can be changed at runtime on the server screen, where the token is stored in `expo-secure-store`. A release build must use `https`; the config throws rather than ship a cleartext public URL.
+
+CI (`.github/workflows/ci.yml`) runs `pnpm install --frozen-lockfile`, typecheck, build, tests and the server smoke script on every push and pull request. `desktop-release.yml` publishes installers and the native server bundle on `v*` tags; `publish-images.yml` pushes the app and computer images for amd64 and arm64 on `main` and tags.
+
+## Run the Docker stack
+
+`infra/compose` has two stacks. Both run `api` (port 8787, the API and the built web client) and `sandbox-supervisor` (no port; it suspends idle bot containers so they do not hold RAM after the API stops). State lives on the `orbit-data` volume: `DB_PATH=/data/orbit.db`, `ENGINES_DIR=/data/engines`, `COMPUTER_HOME_DIR=/data/computers`.
+
+Source-based stack, builds the image from this checkout:
+
+```bash
+cp .env.example .env       # once, at the repo root; SESSION_SECRET is required
+docker compose -f infra/compose/docker-compose.yml up --build
+open http://127.0.0.1:8787
+```
+
+Image-based stack, what the desktop app bundles (`ghcr.io/raybello/orbit/app:<tag>`, `edge` tracks `main`):
+
+```bash
+cd infra/compose
+cp .env.images.example .env    # fill in SESSION_SECRET (openssl rand -hex 32)
+docker compose -f docker-compose.images.yml --env-file .env up -d
+```
+
+The build context for the server image is the repository root, not `apps/server`: the image installs the pnpm workspace. `docker build -f apps/server/Dockerfile -t ghcr.io/raybello/orbit/app:edge .` from the root builds the same thing.
+
+Per-bot Docker computers need the host folder in `COMPUTER_HOME_DIR` to exist at the same absolute path inside the `api` container (the bot home is a host bind mount). Set `ORBIT_HOST_DATA` and mount it at the same path, or use `COMPUTER_KIND=orgo`.
+
+## Install on a remote computer
+
+The app can run on the same computer as Hermes.
+
+1. On your machine: `pnpm install && pnpm build` and package the server bundle, or use the release bundle. Copy the archive and `scripts/install-on-computer.sh` to the computer.
 2. In Orgo, create a public URL for port `8787` on that computer.
 3. On the computer, as root:
 
@@ -112,125 +243,43 @@ The app is meant to run on the same Orgo computer as Hermes.
      bash install-on-computer.sh hq-app.tgz
    ```
 
-   `KEYS_FILE` holds `XAI_API_KEY=` and `COMPOSIO_API_KEY=` lines (and `ORGO_API_KEY=` if Hermes' own `.env` has none); it is deleted after the first install. `PRIMARY_CDP_URL` is only for a main agent that already has its own Chrome. The script installs to `/opt/hq`, adds one supervisor program (`hq-app`), and leaves Hermes alone. Running it again with a newer `hq-app.tgz` upgrades the app and keeps its settings and data.
+   `KEYS_FILE` holds `XAI_API_KEY=` and `COMPOSIO_API_KEY=` lines (and `ORGO_API_KEY=` if Hermes' own `.env` has none); it is deleted after the first install. The script installs to `/opt/hq`, adds one supervisor program (`hq-app`), and leaves Hermes alone. Running it again with a newer archive upgrades the app and keeps its settings and data.
 4. Give the main agent the app's tools: `python3 /opt/hq/app/scripts/add-hq-to-hermes.py`. It adds one `mcp_servers.hq` entry to Hermes' `config.yaml`, keeps a dated copy of the file, and Hermes picks the change up without a restart. `--remove` takes it out again.
 5. Open the public URL and sign in with Google. If Google sign-in is not set up yet, `bash /opt/hq/app/scripts/sign-in-link.sh you@example.com` on the computer prints a one-time sign-in link.
-
-<details>
-<summary><b>Remove everything</b></summary>
-
-On the computer:
-
-```bash
-python3 /opt/hq/hq-screen.py undress 99                      # main screen back to how it was (99 = its X display)
-python3 /opt/hq/app/scripts/add-hq-to-hermes.py --remove     # take the tools out of Hermes
-supervisorctl stop hq-app && supervisorctl remove hq-app
-rm -rf /etc/supervisor/conf.d/hq-app.conf /opt/hq /var/log/hq /root/grokbot /etc/opt/chrome/policies/managed/hq.json
-```
-
-Then delete the public URL in Orgo. Screens of the other bots are released when you delete those bots in the app.
-
-</details>
-
-## Run it locally
-
-You need **Node.js 22 or newer** and a Hermes gateway with its API server on (`API_SERVER_KEY` in `~/.hermes/.env`).
-
-```bash
-git clone https://github.com/nickvasilescu/orbit.git
-cd orbit
-npm ci
-cp .env.example .env      # fill in the keys; comments in the file explain each one
-npm run dev -w server     # API on :8787
-npm run dev -w web        # app on :5173
-```
-
-With `HQ_LOCAL=0` the server reaches the computer through the Orgo API instead of running commands on it, which is enough for development. `DEV_LOGIN=1` enables the email-only sign-in form; never set it on a public address.
-
-`npm run build && npm start` serves the built app from the API port.
-
-The keys you need:
-
-| Key | Used for |
-|---|---|
-| `ORGO_API_KEY`, `ORGO_COMPUTER_ID` | The computer and its screens |
-| `COMPOSIO_API_KEY` | Connected apps |
-| `XAI_API_KEY` | Voice and `x_search` |
-| `SESSION_SECRET` | Sign-in sessions and the tokens agents use to reach `/mcp` |
 
 ## Models and subscriptions
 
 Open a bot's details panel, **Engine**. Pick a provider and model there. **Sign in to a subscription** opens a terminal on the bot's screen running Hermes' own sign-in for that provider (for example Claude Pro/Max), so you finish it in the viewer and the bot uses that subscription from then on. Check your provider's terms before running an agent on a consumer subscription.
 
-## Development
+A new managed bot inherits the primary agent's provider choice and API keys. Subscription tokens are inherited as access tokens, never as a copied refresh token; a Codex subscription needs its own sign-in because Hermes refuses a token store without a refresh token.
 
-```bash
-npm run typecheck       # server and web
-npm run build
-node tests/e2e.mjs https://<your-url>    # needs DEV_LOGIN=1, or E2E_SESSION=<session cookie>
-```
+## Verification
 
-The e2e suite creates a temporary bot (with its own Hermes gateway and screen), exercises chat, the browser on its screen, the live viewer, connected apps, voice sessions and settings, then deletes it. It calls real providers.
+The flows in the screenshots were run against a live stack on this branch:
 
-```text
-server/src/         API, Hermes adapter (agent/loop.ts), engines (engine.ts), MCP endpoint (mcp.ts), screens (computer.ts)
-server/box/         what runs on the computer to dress a screen (desktop, dock, home screen, Chrome)
-web/src/            chat, bot settings, app connections, computer viewer, voice
-scripts/            pack, install, Hermes config helper, sign-in link
-tests/              Playwright end-to-end test
-docs/               architecture; the Orgo and xAI/Composio guides predate the Hermes engine
-```
+| Flow | Evidence |
+|---|---|
+| Bot creation | `01-bot-creation.png`, `POST /api/bots`, `bot-service.test.ts`, `api-integration.test.ts` |
+| New bot chatting | `13-mobile-thread.png`, the Iris thread in `07-voice-call.png`, `bot-lifecycle.test.ts` |
+| New bot screens | `05-bot-screens.png`, `06-screen-viewer.png`, `computer-model.test.ts`, `computer-store-claim.test.ts` |
+| Voice calling | `07-voice-call.png`, `voice-local-session.test.ts`, `voice-local.test.ts` |
+| Group messages | `03-group-chat.png`, `rooms-cascade.test.ts` |
+| Inter-bot communication | `04-inter-bot.png`, `rooms-cascade.test.ts` (mention dispatch, chain depth) |
+| One-time and recurring events | `08-calendar-one-time.png`, `11-calendar-both.png`, `routines-calendar.test.ts` |
+| Mobile | `12-mobile-bots.png`, `13-mobile-thread.png`, `14-mobile-calendar.png`, `15-mobile-computers.png` |
+
+The voice screenshot is a real local call: a 16 kHz WAV prompt was fed through the browser's microphone input, the server transcribed it, Iris answered, and the call bar switched to Speaking. The mobile shots are an iPhone 17 Pro simulator running the Expo client against the same server.
 
 ## Status and limits
 
-- Experimental, no security audit. Bots share one computer and can reach each other's files there.
+- Experimental, no security audit. Bots share a Docker host and can reach each other's files through their containers.
 - Approval cards cover Composio write actions. What a bot does through its browser or shell is not gated, and Hermes' own "risky command" prompts are not shown in the app yet.
-- Four bots at most, because of Orgo's four-screen limit.
-- The app still calls itself "Orbit" in places (page title, package names, the database file).
+- The default ceiling is four bots (`MAX_BOTS=4`) because each Docker desktop takes a screen, a browser and roughly 1 to 2 GB of RAM. Raise it only on a host with the memory to match.
+- A bot cannot use a Claude or ChatGPT subscription that the primary agent signed in to unless the provider allows token inheritance; Codex subscriptions always need their own sign-in.
 - The screen look is an original implementation inspired by OrgoAI/bops; no code or assets from that repository are used.
 
 ## License and credits
 
 Project code is available under the [MIT license](LICENSE). The bot artwork and some icons come from Grok Bot's design and remain the property of their owners, as do third-party app logos; the MIT license does not cover them. See [third-party notices](THIRD_PARTY_NOTICES.md).
 
-Continued from [orbit-clone](https://github.com/nickvasilescu/orbit-clone). Built with [Hermes Agent](https://github.com/NousResearch/hermes-agent), [Orgo](https://orgo.ai), [Composio](https://composio.dev), and [xAI](https://x.ai). This is an independent project, unaffiliated with xAI, Cursor/Anysphere or Nous Research.
-
-## Docker
-
-`infra/compose` has two stacks. Both run the same two services: `api` (port 8787 — the API *and* the
-built web client) and `sandbox-supervisor` (no port at all; it only suspends idle bot containers, so
-containers from a stopped API do not sit there holding memory). State lives on the `orbit-data`
-volume: `DB_PATH=/data/orbit.db`, `ENGINES_DIR=/data/engines`, `COMPUTER_HOME_DIR=/data/computers`.
-
-Source-based stack — builds the image from this checkout:
-
-```bash
-cp .env.example .env       # once, at the repo root; SESSION_SECRET is required
-docker compose -f infra/compose/docker-compose.yml up --build
-open http://127.0.0.1:8787
-```
-
-Image-based stack — what the desktop app bundles (`ghcr.io/raybello/orbit/app:<tag>`, `edge` tracks
-`main`). The app writes `.env` beside the compose file; to run it by hand:
-
-```bash
-cd infra/compose
-cp .env.images.example .env    # fill in SESSION_SECRET (openssl rand -hex 32)
-docker compose -f docker-compose.images.yml --env-file .env up -d
-```
-
-The build context for the server image is the repository root, not `apps/server`: the image installs
-the pnpm workspace. `docker build -f apps/server/Dockerfile -t orbit/app:dev .` from the root builds
-the same thing. `ORBIT_IMAGE_TAG` selects a published build; `.github/workflows/publish-images.yml`
-pushes `app` and `computer` for `linux/amd64` and `linux/arm64` on every push to `main` (`edge`) and
-on `v*` tags (`v<version>`, `latest`).
-
-One caveat for per-bot Docker computers (`COMPUTER_KIND=docker`, the default for every bot but the
-primary one): a bot's home is a **host** bind mount, so the folder in `COMPUTER_HOME_DIR` must exist
-at the same absolute path on the host and inside the `api` container. With `COMPUTER_KIND=orgo` (or
-by setting `ORBIT_HOST_DATA` and mounting it at the same path — see the comments in the compose file)
-no such mapping is needed.
-
-Also note that today the server exits at start-up if `COMPOSIO_API_KEY` or `XAI_API_KEY` is empty: both
-SDKs validate their key in the constructor. A placeholder boots it; the desktop setup window is where
-real keys come from.
+Built with [Hermes Agent](https://github.com/NousResearch/hermes-agent), [Composio](https://composio.dev), and optional [Orgo](https://orgo.ai) screens and [xAI](https://x.ai) voice. This is an independent project, unaffiliated with xAI, Cursor/Anysphere or Nous Research.

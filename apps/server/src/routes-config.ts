@@ -15,10 +15,12 @@ import { computerKindFor, providerFor } from './computer-provider-registry.js';
 import { box } from './box.js';
 import { orgo } from './orgo.js';
 import { openTerminal } from './desk.js';
-import { engineHome, engineInfo, engineKind, forgetEngineOptions, managedHome, readDotenv, readYaml, restartEngine, stopOwnScreen, syncAllManagedAuth, writePrivate, SHARED_ENV } from './engine.js';
+import { asBlock, engineHome, engineInfo, engineKind, forgetEngineOptions, managedHome, readDotenv, readYaml, restartEngine, stopOwnScreen, syncAllManagedAuth, writePrivate, SHARED_ENV } from './engine.js';
 import { listMemories } from './engine-memory.js';
 import { idleConfig, viewerCount } from './idle.js';
+import { optionalBody, SkillBodySchema, EngineChoiceSchema, EngineLoginSchema, FileDownloadSchema } from './api/schemas.js';
 import type { BotEngineAuthRow, LibraryFile, Skill } from './types.js';
+import type { BotRow } from './infra/bot-repository.js';
 import YAML from 'yaml';
 
 /**
@@ -34,13 +36,25 @@ const ownBot = (userId: string, id: string) => {
   return b && b.user_id === userId ? b : null;
 };
 
+/** Message off a caught value, which may be an Error or anything a dependency threw. */
+const messageOf = (e: unknown): string => String((e as { message?: unknown } | null)?.message ?? e);
+
 /** A provider/model value from a settings request: trimmed and capped, or null for "the agent's default". */
 const engineField = (v: unknown): string | null => (typeof v === 'string' && v.trim() ? v.trim().slice(0, 120) : null);
 
-const toSkill = (s: any): Skill => ({ id: s.id, botId: s.bot_id, name: s.name, description: s.description ?? '', body: s.body, createdAt: s.created_at, updatedAt: s.updated_at ?? s.created_at });
-const listSkills = (botId: string) => (db.prepare('SELECT * FROM skills WHERE bot_id=? ORDER BY created_at ASC').all(botId) as any[]).map(toSkill);
+/** A `skills` row: the table's first three columns, plus the ones db.ts adds later. */
+interface SkillRow {
+  id: string;
+  bot_id: string;
+  name: string;
+  description: string | null;
+  body: string;
+  created_at: number;
+  updated_at: number | null;
+}
 
-// ---------- settings bundle ----------
+const toSkill = (s: SkillRow): Skill => ({ id: s.id, botId: s.bot_id, name: s.name, description: s.description ?? '', body: s.body, createdAt: s.created_at, updatedAt: s.updated_at ?? s.created_at });
+const listSkills = (botId: string) => (db.prepare('SELECT * FROM skills WHERE bot_id=? ORDER BY created_at ASC').all(botId) as SkillRow[]).map(toSkill);
 
 configApi.get('/bots/:id/settings', (c) => {
   const b = ownBot(c.get('user').id, c.req.param('id'));
@@ -55,9 +69,7 @@ configApi.get('/bots/:id/settings', (c) => {
   });
 });
 
-// ---------- skills ----------
-
-function cleanSkill(p: any, partial = false): { name?: string; description?: string; body?: string } | string {
+function cleanSkill(p: Record<string, unknown>, partial = false): { name?: string; description?: string; body?: string } | string {
   const out: { name?: string; description?: string; body?: string } = {};
   if (p.name !== undefined || !partial) {
     const name = String(p.name ?? '').trim();
@@ -81,23 +93,23 @@ configApi.get('/bots/:id/skills', (c) => {
 configApi.post('/bots/:id/skills', async (c) => {
   const b = ownBot(c.get('user').id, c.req.param('id'));
   if (!b) return c.json({ error: 'not found' }, 404);
-  const s = cleanSkill(await c.req.json().catch(() => ({})));
+  const s = cleanSkill(await optionalBody(c, SkillBodySchema, {}));
   if (typeof s === 'string') return c.json({ error: s }, 400);
   const id = newId('skl');
   db.prepare('INSERT INTO skills(id,bot_id,name,body,description,created_at,updated_at) VALUES (?,?,?,?,?,?,?)').run(id, b.id, s.name, s.body, s.description ?? '', now(), now());
-  return c.json({ skill: toSkill(db.prepare('SELECT * FROM skills WHERE id=?').get(id)) });
+  return c.json({ skill: toSkill(db.prepare('SELECT * FROM skills WHERE id=?').get(id) as SkillRow) });
 });
 
 const ownSkill = (userId: string, id: string) =>
-  db.prepare('SELECT s.* FROM skills s JOIN bots b ON b.id=s.bot_id WHERE s.id=? AND b.user_id=?').get(id, userId) as any;
+  db.prepare('SELECT s.* FROM skills s JOIN bots b ON b.id=s.bot_id WHERE s.id=? AND b.user_id=?').get(id, userId) as SkillRow | undefined;
 
 configApi.patch('/skills/:id', async (c) => {
   const cur = ownSkill(c.get('user').id, c.req.param('id'));
   if (!cur) return c.json({ error: 'not found' }, 404);
-  const s = cleanSkill(await c.req.json().catch(() => ({})), true);
+  const s = cleanSkill(await optionalBody(c, SkillBodySchema, {}), true);
   if (typeof s === 'string') return c.json({ error: s }, 400);
   db.prepare('UPDATE skills SET name=?, body=?, description=?, updated_at=? WHERE id=?').run(s.name ?? cur.name, s.body ?? cur.body, s.description ?? cur.description ?? '', now(), cur.id);
-  return c.json({ skill: toSkill(db.prepare('SELECT * FROM skills WHERE id=?').get(cur.id)) });
+  return c.json({ skill: toSkill(db.prepare('SELECT * FROM skills WHERE id=?').get(cur.id) as SkillRow) });
 });
 
 configApi.delete('/skills/:id', (c) => {
@@ -121,8 +133,6 @@ configApi.post('/bots/:id/compact', (c) => {
   return c.json({ itemsBefore: 0, itemsAfter: 0, compacted: false });
 });
 
-// ---------- the agent behind a bot: model, sign-in, restart ----------
-
 configApi.get('/bots/:id/engine', async (c) => {
   const b = ownBot(c.get('user').id, c.req.param('id'));
   if (!b) return c.json({ error: 'not found' }, 404);
@@ -133,7 +143,7 @@ configApi.get('/bots/:id/engine', async (c) => {
 configApi.patch('/bots/:id/engine', async (c) => {
   const b = ownBot(c.get('user').id, c.req.param('id'));
   if (!b) return c.json({ error: 'not found' }, 404);
-  const p = await c.req.json<{ provider?: string | null; model?: string | null }>().catch(() => ({} as { provider?: string | null; model?: string | null }));
+  const p = await optionalBody(c, EngineChoiceSchema, {});
   if (p.provider !== undefined) db.prepare('UPDATE bots SET provider=?, updated_at=? WHERE id=?').run(engineField(p.provider), now(), b.id);
   if (p.model !== undefined) db.prepare('UPDATE bots SET model=?, updated_at=? WHERE id=?').run(engineField(p.model), now(), b.id);
   emitBot(b.id);
@@ -156,7 +166,7 @@ configApi.post('/bots/:id/engine/login', async (c) => {
     return c.json({ error: 'Sign-in opens a terminal on the computer where the agent lives, and this Bot has a computer of its own. Use the model settings instead.' }, 409);
   }
   if (!box.local) return c.json({ error: 'Sign-in opens a terminal on the computer. It works once the app runs on that computer.' }, 409);
-  const { provider } = await c.req.json<{ provider?: string }>().catch(() => ({} as { provider?: string }));
+  const { provider } = await optionalBody(c, EngineLoginSchema, {});
   if (provider !== undefined && !/^[a-z0-9][a-z0-9._-]{0,40}$/.test(provider)) return c.json({ error: 'bad provider' }, 400);
   const hermes = `HERMES_HOME=${box.quote(home)} ${box.quote(env.hermesBin)}`;
   // Claude subscriptions sign in with OAuth; without the flag Hermes asks for an API key.
@@ -166,8 +176,8 @@ configApi.post('/bots/:id/engine/login', async (c) => {
     await openTerminal(s.screenId, cmd, provider ? `Sign in: ${provider}` : 'Choose a model');
     forgetEngineOptions(b.id);
     return c.json({ ok: true });
-  } catch (e: any) {
-    return c.json({ error: String(e?.message ?? e).slice(0, 300) }, 502);
+  } catch (e) {
+    return c.json({ error: messageOf(e).slice(0, 300) }, 502);
   }
 });
 
@@ -180,8 +190,8 @@ configApi.post('/bots/:id/engine/restart', async (c) => {
     await restartEngine(b.id);
     forgetEngineOptions(b.id);
     return c.json({ engine: await engineInfo(b.id) });
-  } catch (e: any) {
-    return c.json({ error: String(e?.message ?? e).slice(0, 300) }, 502);
+  } catch (e) {
+    return c.json({ error: messageOf(e).slice(0, 300) }, 502);
   }
 });
 
@@ -192,8 +202,8 @@ configApi.post('/bots/:id/engine/screen/stop', async (c) => {
   try {
     await stopOwnScreen(b.id);
     return c.json({ engine: await engineInfo(b.id) });
-  } catch (e: any) {
-    return c.json({ error: String(e?.message ?? e).slice(0, 300) }, 409);
+  } catch (e) {
+    return c.json({ error: messageOf(e).slice(0, 300) }, 409);
   }
 });
 
@@ -205,8 +215,6 @@ configApi.post('/bots/:id/handback', (c) => {
   return c.json({ ok: true });
 });
 
-// ---------- App Settings → Engine Auth: the credentials behind each bot ----------
-
 /** Which SHARED_ENV keys a bot's .env has non-empty. Never the values themselves. */
 function keysPresentFor(botId: string, engine: 'primary' | 'managed'): string[] {
   const file = engine === 'primary' ? path.join(env.hermesHome, '.env') : path.join(managedHome(botId), '.env');
@@ -215,7 +223,7 @@ function keysPresentFor(botId: string, engine: 'primary' | 'managed'): string[] 
 }
 
 /** One row of the table. A bot whose agent does not answer still gets a row, with status 'unknown'. */
-async function engineAuthRow(b: any): Promise<BotEngineAuthRow | null> {
+async function engineAuthRow(b: BotRow): Promise<BotEngineAuthRow | null> {
   const engine = engineKind(b.id);
   if (!engine) return null;
   let status: BotEngineAuthRow['status'] = 'unknown';
@@ -227,9 +235,9 @@ async function engineAuthRow(b: any): Promise<BotEngineAuthRow | null> {
   if (engine === 'managed' && (!model || String(model).trim().toLowerCase() === 'default')) {
     try {
       const block = readYaml(path.join(managedHome(b.id), 'config.yaml')).model;
-      const name = typeof block === 'string' ? block : block?.default;
+      const name = typeof block === 'string' ? block : asBlock(block).default;
       if (typeof name === 'string' && name.trim()) model = name.trim();
-      const fromCfg = typeof block === 'object' ? block?.provider : undefined;
+      const fromCfg = asBlock(block).provider;
       if (!provider && typeof fromCfg === 'string' && fromCfg.trim()) provider = fromCfg.trim();
     } catch { /* no config yet */ }
   }
@@ -247,7 +255,7 @@ async function engineAuthRow(b: any): Promise<BotEngineAuthRow | null> {
 configApi.get('/config/engine-auth', async (c) => {
   // SELECT * and filter in JS: `kind` and `hidden` are added to the bots table lazily (initRooms,
   // initSubagents), so naming them in the SQL would fail wherever those have not run.
-  const bots = (db.prepare("SELECT * FROM bots WHERE user_id=? AND engine IN ('primary','managed') ORDER BY is_primary DESC, created_at ASC").all(c.get('user').id) as any[])
+  const bots = (db.prepare("SELECT * FROM bots WHERE user_id=? AND engine IN ('primary','managed') ORDER BY is_primary DESC, created_at ASC").all(c.get('user').id) as BotRow[])
     .filter((r) => !r.hidden && r.kind !== 'room');
   const rows = await Promise.all(bots.map(engineAuthRow));
   return c.json({ bots: rows.filter((r): r is BotEngineAuthRow => r !== null) });
@@ -258,7 +266,7 @@ configApi.put('/config/engine-auth/:botId', async (c) => {
   if (!b) return c.json({ error: 'not found' }, 404);
   const engine = engineKind(b.id);
   if (!engine) return c.json({ error: 'This bot has no agent.' }, 409);
-  const p = await c.req.json<{ provider?: string | null; model?: string | null }>().catch(() => ({} as { provider?: string | null; model?: string | null }));
+  const p = await optionalBody(c, EngineChoiceSchema, {});
   const provider = p.provider === undefined ? undefined : engineField(p.provider);
   // The settings panel shows the word Default when nothing is chosen; saving it back would pin a
   // model id no provider knows and quietly stop the bot answering. It means "no choice".
@@ -269,7 +277,7 @@ configApi.put('/config/engine-auth/:botId', async (c) => {
   if (engine === 'managed' && (provider !== undefined || model !== undefined)) {
     const cfgFile = path.join(managedHome(b.id), 'config.yaml');
     const cfg = readYaml(cfgFile);
-    const m = cfg.model && typeof cfg.model === 'object' && !Array.isArray(cfg.model) ? { ...cfg.model } : {};
+    const m = { ...asBlock(cfg.model) };
     if (provider !== undefined) { if (provider) m.provider = provider; else delete m.provider; }
     if (model !== undefined) { if (model) m.default = model; else delete m.default; }
     cfg.model = m;
@@ -288,15 +296,12 @@ configApi.post('/config/engine-auth/sync', async (c) => {
   // A restart is what makes a newly copied key take effect: the gateway read its .env at start.
   const synced = await syncAllManagedAuth({ restart: true });
   // The web app keeps an engine row per bot; a sync can change what each one reports.
-  for (const b of db.prepare("SELECT id FROM bots WHERE user_id=? AND engine='managed'").all(c.get('user').id) as any[]) emitBot(b.id);
+  for (const b of db.prepare("SELECT id FROM bots WHERE user_id=? AND engine='managed'").all(c.get('user').id) as { id: string }[]) emitBot(b.id);
   return c.json({ synced });
 });
 
-// ---------- library: files under /root/grokbot/files/<botId> on the bot's computer ----------
-
 const LIB_ROOT = `${env.botDataDir}/files`;
 
-/** Media types served from a bot's private Library. Unknown files stay downloads. */
 function safeRel(p: string | undefined): string | null {
   const rel = (p ?? '').replace(/^\/+|\/+$/g, '');
   if (!rel) return '';
@@ -350,8 +355,8 @@ configApi.get('/bots/:id/files', async (c) => {
     const r = await box.bash(`mkdir -p ${shq(`${LIB_ROOT}/${b.id}`)} && ls -la --time-style=+%s ${shq(dir)} 2>&1`, 30);
     if (r.exit_code !== 0) return c.json({ status: 'error', path: rel, files: [], error: (r.output ?? '').slice(0, 300) });
     return c.json({ status: 'ok', path: rel, files: parseLs(r.output ?? '') });
-  } catch (e: any) {
-    return c.json({ status: 'error', path: rel, files: [], error: String(e?.message ?? e).slice(0, 300) });
+  } catch (e) {
+    return c.json({ status: 'error', path: rel, files: [], error: messageOf(e).slice(0, 300) });
   }
 });
 
@@ -359,19 +364,22 @@ configApi.post('/bots/:id/files/download', async (c) => {
   const user = c.get('user');
   const b = ownBot(user.id, c.req.param('id'));
   if (!b) return c.json({ error: 'not found' }, 404);
-  const { path } = await c.req.json<{ path: string }>().catch(() => ({ path: '' }));
+  const { path } = await optionalBody(c, FileDownloadSchema, {});
   const rel = safeRel(path);
   if (!rel) return c.json({ error: 'bad path' }, 400);
   // On the computer itself the file is on our own disk: serve it directly.
   if (box.local) return c.json({ url: `/api/bots/${b.id}/files/raw?path=${encodeURIComponent(rel)}` });
   try {
     if (!env.orgoComputerId) return c.json({ error: 'computer unavailable' }, 409);
-    const r: any = await orgo.exportFile(env.orgoComputerId, `${LIB_ROOT}/${b.id}/${rel}`);
+    const r = (await orgo.exportFile(env.orgoComputerId, `${LIB_ROOT}/${b.id}/${rel}`)) as
+      | { url?: string; file?: { url?: string }; download_url?: string }
+      | null
+      | undefined;
     const url = r?.url ?? r?.file?.url ?? r?.download_url;
     if (!url) return c.json({ error: 'export returned no link' }, 502);
     return c.json({ url });
-  } catch (e: any) {
-    return c.json({ error: String(e?.message ?? e).slice(0, 300) }, 502);
+  } catch (e) {
+    return c.json({ error: messageOf(e).slice(0, 300) }, 502);
   }
 });
 
@@ -402,11 +410,9 @@ configApi.get('/bots/:id/files/raw', (c) => {
   });
 });
 
-// ---------- computer: screens, reset, hibernation ----------
-
 configApi.get('/computer/details', (c) => {
   const userId = c.get('user').id;
-  const leases = db.prepare('SELECT bot_id, screen_id, last_used_at FROM screens WHERE user_id=? ORDER BY last_used_at DESC').all(userId) as any[];
+  const leases = db.prepare('SELECT bot_id, screen_id, last_used_at FROM screens WHERE user_id=? ORDER BY last_used_at DESC').all(userId) as { bot_id: string; screen_id: string; last_used_at: number }[];
   return c.json({
     computer: computerState(userId),
     screens: leases.map((l) => ({ botId: l.bot_id, screenId: l.screen_id, lastUsedAt: l.last_used_at })),
@@ -423,7 +429,7 @@ configApi.post('/bots/:id/screen/reset', async (c) => {
     await providerFor(b.id).resetScreen(user.id, b.id);
     hub.emit(user.id, { type: 'computer', state: computerState(user.id) });
     return c.json({ ok: true });
-  } catch (e: any) {
-    return c.json({ error: String(e?.message ?? e).slice(0, 300) }, 502);
+  } catch (e) {
+    return c.json({ error: messageOf(e).slice(0, 300) }, 502);
   }
 });

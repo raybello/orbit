@@ -3,6 +3,7 @@ import { db } from './db.js';
 import { requireUser, type AuthVars } from './lib/auth.js';
 import { engineKind } from './engine.js';
 import { getSkillEntries, getSkillEntry, setMcpServerEnabled } from './skills-config.js';
+import { requireBody, SkillToggleSchema } from './api/schemas.js';
 
 /** /api/skills: the primary agent's MCP servers, and which bots have each one. */
 export const skillsApi = new Hono<AuthVars>();
@@ -22,22 +23,23 @@ skillsApi.put('/skills/:botId/:skillName', async (c) => {
   const bot = db.prepare('SELECT id FROM bots WHERE id=? AND user_id=?').get(botId, user.id);
   if (!bot) return c.json({ error: 'not found' }, 404);
 
-  let body: any;
+  let body: { enabled?: unknown };
   try {
-    body = await c.req.json();
+    body = await requireBody(c, SkillToggleSchema);
   } catch {
     return c.json({ error: 'Expected a JSON body: { "enabled": true | false }.' }, 400);
   }
-  if (typeof body?.enabled !== 'boolean') return c.json({ error: '"enabled" must be true or false.' }, 400);
+  const enabled = body.enabled;
+  if (typeof enabled !== 'boolean') return c.json({ error: '"enabled" must be true or false.' }, 400);
 
   if (engineKind(botId) === 'primary') {
     return c.json({ error: "The primary agent's skills are read-only. They come from its own Hermes config." }, 409);
   }
 
   try {
-    setMcpServerEnabled(botId, skillName, body.enabled);
-  } catch (e: any) {
-    return c.json({ error: String(e?.message ?? e) }, 400);
+    setMcpServerEnabled(botId, skillName, enabled);
+  } catch (e) {
+    return c.json({ error: String((e as { message?: unknown } | null)?.message ?? e) }, 400);
   }
 
   const skill = getSkillEntry(user.id, skillName);

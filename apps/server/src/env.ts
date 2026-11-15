@@ -19,10 +19,8 @@ function secret(name: string): string {
 
 const hermesHome = process.env.HERMES_HOME_PRIMARY ?? path.join(os.homedir(), '.hermes');
 
-/**
- * Our own version, read from package.json at startup. dist/env.js sits one level under the package
- * root, so the same relative path works for source and build.
- */
+/** Our own version, read from package.json at startup. dist/env.js sits one level under the package
+ * root, so the same relative path works for source and build. */
 function packageVersion(): string {
   try {
     return String(JSON.parse(fs.readFileSync(new URL('../package.json', import.meta.url), 'utf8')).version ?? '0.0.0');
@@ -94,9 +92,7 @@ export const env = {
   stackToken: process.env.STACK_TOKEN ?? '',
   /** Docker image tag this server was built into; what the desktop compares against its desired stack. */
   imageTag: process.env.ORBIT_IMAGE_TAG ?? 'dev',
-  /** Where the desktop app looks for a newer release. */
   updateCheckUrl: process.env.ORBIT_UPDATE_URL ?? 'https://api.github.com/repos/raybello/orbit/releases/latest',
-  /** This server's own version, from package.json. */
   version: packageVersion(),
 
   /** Comma-separated emails allowed to sign in; empty = anyone who can reach the app. */
@@ -109,8 +105,7 @@ export const env = {
    * the Orgo/local path: it is somebody's live desktop.
    */
   computerKind: (process.env.COMPUTER_KIND ?? 'auto').trim().toLowerCase() as 'orgo' | 'docker' | 'auto',
-  /** Image for bot containers. Unqualified names are built locally from server/docker/computer. */
-    /** Image for bot containers. Unqualified names are built locally from server/docker/computer.
+  /** Image for bot containers. Unqualified names are built locally from server/docker/computer.
    *  An empty value (common in a copied .env) means the default, not the empty string. */
   computerImage: (process.env.COMPUTER_IMAGE ?? '').trim() || 'orbit/computer:local',
   /** Minutes without a viewer (or bot work) before a bot's container is suspended. */
@@ -131,7 +126,6 @@ export const env = {
   defaultBotProvider: process.env.DEFAULT_BOT_PROVIDER ?? 'deepseek',
   /** Host directory holding each bot's home folder and workspace checkpoints. */
   computerHomeDir: process.env.COMPUTER_HOME_DIR ?? new URL('../../../data/computers', import.meta.url).pathname,
-
 
   // ---- Google OAuth2 (direct, no third-party service required) ----
   /** OAuth2 client ID from your Google Cloud Console project. */

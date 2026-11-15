@@ -47,7 +47,6 @@ export function LibraryTab({ bot }: { bot: Bot }) {
     finally { setBusyFile(null); }
   };
 
-  /** Images open in the zoomable viewer; everything else keeps downloading as before. */
   const open = async (f: LibraryFile) => {
     if (!isImage(f)) return download(f);
     setOpening(f.name); setError(null);

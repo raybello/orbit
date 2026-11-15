@@ -84,8 +84,6 @@ export function BotSettingsModal() {
   );
 }
 
-// ---------------------------------------------------------------------------
-
 type Draft = Pick<Bot, 'name' | 'label' | 'description' | 'instructions' | 'avatarShape' | 'avatarColor' | 'effort' | 'mode'>;
 const draftOf = (b: Bot): Draft => ({ name: b.name, label: b.label, description: b.description, instructions: b.instructions, avatarShape: b.avatarShape, avatarColor: b.avatarColor, effort: b.effort, mode: b.mode });
 
@@ -269,8 +267,6 @@ function LookPicker({ shape, color, onShape, onColor }: { shape: AvatarShape; co
   );
 }
 
-// ---------------------------------------------------------------------------
-
 function SkillsTab({ bot, skills, onChange }: { bot: Bot; skills: Skill[] | undefined; onChange: () => void }) {
   const [editing, setEditing] = useState<string | 'new' | null>(null);
   return (
@@ -340,8 +336,6 @@ function SkillEditor({ botId, skill, onDone }: { botId: string; skill?: Skill; o
   );
 }
 
-// ---------------------------------------------------------------------------
-
 function MemoriesTab({ bot, data, onChange }: { bot: Bot; data: BotSettingsBundle | null; onChange: () => void }) {
   const [q, setQ] = useState('');
   const [hidden, setHidden] = useState<Set<string>>(new Set());
@@ -395,8 +389,6 @@ function MemoriesTab({ bot, data, onChange }: { bot: Bot; data: BotSettingsBundl
     </div>
   );
 }
-
-// ---------------------------------------------------------------------------
 
 function RoutinesTab({ bot, routines }: { bot: Bot; routines: Routine[] | undefined }) {
   const [flash, setFlash] = useState<string | null>(null);

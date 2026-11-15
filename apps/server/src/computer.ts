@@ -20,16 +20,36 @@ export const MAX_SCREENS = 4;
 
 export interface BotScreen { computerId: string; screenId: string; width?: number; height?: number }
 
+/** A `computers` row: one shared Orgo machine per user. */
+interface ComputerRow {
+  user_id: string;
+  orgo_id: string | null;
+  status: ComputerState['status'];
+  error: string | null;
+}
+
+/** A `screens` row: one screen per bot on the shared computer. */
+interface ScreenRow {
+  bot_id: string;
+  user_id: string;
+  screen_id: string;
+  width: number | null;
+  height: number | null;
+}
+
+/** Message off a caught value, which may be an Error, an OrgoError or anything thrown. */
+const messageOf = (e: unknown): string => String((e as { message?: unknown } | null)?.message ?? e);
+
 function computerId(): string {
   if (!env.orgoComputerId) throw new Error('ORGO_COMPUTER_ID is not set, so there is no computer for the bots to use.');
   return env.orgoComputerId;
 }
 
-function rowFor(userId: string) {
-  let r = db.prepare('SELECT * FROM computers WHERE user_id=?').get(userId) as any;
+function rowFor(userId: string): ComputerRow {
+  let r = db.prepare('SELECT * FROM computers WHERE user_id=?').get(userId) as ComputerRow | undefined;
   if (!r) {
     db.prepare("INSERT INTO computers(user_id,orgo_id,status,updated_at) VALUES (?, ?, 'starting', ?)").run(userId, env.orgoComputerId || null, now());
-    r = db.prepare('SELECT * FROM computers WHERE user_id=?').get(userId);
+    r = db.prepare('SELECT * FROM computers WHERE user_id=?').get(userId) as ComputerRow;
   }
   return r;
 }
@@ -42,10 +62,10 @@ function setStatus(userId: string, status: ComputerState['status'], error: strin
 
 export function computerState(userId: string): ComputerState {
   const r = rowFor(userId);
-  const screens = (db.prepare('SELECT bot_id, screen_id, width, height FROM screens WHERE user_id=?').all(userId) as any[]).map((s) => ({
-    botId: s.bot_id as string,
-    screenId: s.screen_id as string,
-    ...(s.width && s.height ? { width: s.width as number, height: s.height as number } : {}),
+  const screens = (db.prepare('SELECT bot_id, screen_id, width, height FROM screens WHERE user_id=?').all(userId) as { bot_id: string; screen_id: string; width: number | null; height: number | null }[]).map((s) => ({
+    botId: s.bot_id,
+    screenId: s.screen_id,
+    ...(s.width && s.height ? { width: s.width, height: s.height } : {}),
   }));
   // Bots with a computer of their own (Docker) have screens too, and those start on demand rather
   // than waiting for one shared machine to wake.
@@ -84,7 +104,6 @@ async function waitRunning(id: string, timeoutMs = 240_000) {
 let checkedAt = 0;
 let inflight: Promise<string> | null = null;
 
-/** Make sure the shared computer is awake. Returns its Orgo id. */
 export function ensureComputer(userId: string): Promise<string> {
   const id = computerId();
   if (Date.now() - checkedAt < 30_000) return Promise.resolve(id);
@@ -113,8 +132,8 @@ export function ensureComputer(userId: string): Promise<string> {
       }
       checkedAt = Date.now();
       return id;
-    } catch (e: any) {
-      const msg = e instanceof OrgoError && e.status === 404 ? 'The computer set in ORGO_COMPUTER_ID was not found with this Orgo key.' : String(e?.message ?? e);
+    } catch (e) {
+      const msg = e instanceof OrgoError && e.status === 404 ? 'The computer set in ORGO_COMPUTER_ID was not found with this Orgo key.' : messageOf(e);
       setStatus(userId, 'error', msg);
       throw new Error(msg);
     } finally {
@@ -125,11 +144,13 @@ export function ensureComputer(userId: string): Promise<string> {
 }
 
 function deskBot(botId: string): DeskBot | null {
-  const b = db.prepare('SELECT id, name, label, avatar_shape, avatar_color FROM bots WHERE id=?').get(botId) as any;
+  const b = db.prepare('SELECT id, name, label, avatar_shape, avatar_color FROM bots WHERE id=?').get(botId) as
+    | { id: string; name: string; label: string | null; avatar_shape: DeskBot['avatarShape']; avatar_color: DeskBot['avatarColor'] }
+    | undefined;
   return b ? { id: b.id, name: b.name, label: b.label ?? '', avatarShape: b.avatar_shape, avatarColor: b.avatar_color } : null;
 }
 
-const isPrimaryEngine = (botId: string) => (db.prepare('SELECT engine FROM bots WHERE id=?').get(botId) as any)?.engine === 'primary';
+const isPrimaryEngine = (botId: string) => (db.prepare('SELECT engine FROM bots WHERE id=?').get(botId) as { engine: string | null } | undefined)?.engine === 'primary';
 
 /** The primary bot's own Chrome (when PRIMARY_CDP_URL names one) is never started or stopped by us. */
 const managesChrome = (botId: string) => !(isPrimaryEngine(botId) && env.primaryCdpUrl);
@@ -142,7 +163,6 @@ function saveSize(botId: string, s: OrgoScreen | undefined) {
   if (s?.width && s?.height) db.prepare('UPDATE screens SET width=?, height=? WHERE bot_id=?').run(s.width, s.height, botId);
 }
 
-/** This bot's screen on the shared computer; leases one the first time. */
 export function screenFor(userId: string, botId: string): Promise<BotScreen> {
   const running = leasing.get(botId);
   if (running) return running;
@@ -153,7 +173,7 @@ export function screenFor(userId: string, botId: string): Promise<BotScreen> {
 
 async function lease(userId: string, botId: string): Promise<BotScreen> {
   const id = await ensureComputer(userId);
-  const mine = db.prepare('SELECT screen_id, width, height FROM screens WHERE bot_id=?').get(botId) as any;
+  const mine = db.prepare('SELECT screen_id, width, height FROM screens WHERE bot_id=?').get(botId) as Pick<ScreenRow, 'screen_id' | 'width' | 'height'> | undefined;
   if (mine) {
     const fresh = Date.now() - (verified.get(botId) ?? 0) < 120_000;
     if (fresh || mine.screen_id === 'default') {
@@ -173,7 +193,7 @@ async function lease(userId: string, botId: string): Promise<BotScreen> {
     }
   }
 
-  const taken = new Set((db.prepare('SELECT screen_id FROM screens').all() as any[]).map((r) => r.screen_id as string));
+  const taken = new Set((db.prepare('SELECT screen_id FROM screens').all() as { screen_id: string }[]).map((r) => r.screen_id));
   const existing = await orgo.listScreens(id);
   let screen: OrgoScreen | undefined;
   if (isPrimaryEngine(botId)) {
@@ -246,13 +266,13 @@ export async function resetBotScreen(userId: string, botId: string): Promise<voi
 
 /** The bot is gone: stop what we ran on its screen and free the screen for the next bot. */
 export async function releaseScreen(botId: string): Promise<void> {
-  const mine = db.prepare('SELECT screen_id, user_id FROM screens WHERE bot_id=?').get(botId) as any;
+  const mine = db.prepare('SELECT screen_id, user_id FROM screens WHERE bot_id=?').get(botId) as Pick<ScreenRow, 'screen_id' | 'user_id'> | undefined;
   if (!mine) return;
   db.prepare('DELETE FROM screens WHERE bot_id=?').run(botId);
   dressing.delete(botId);
   verified.delete(botId);
   if (mine.screen_id !== 'default') {
-    try { await undressScreen(botId, mine.screen_id); } catch (e: any) { console.warn(`[computer] undress failed: ${e?.message ?? e}`); }
+    try { await undressScreen(botId, mine.screen_id); } catch (e) { console.warn(`[computer] undress failed: ${messageOf(e)}`); }
   }
   hub.emit(mine.user_id, { type: 'computer', state: computerState(mine.user_id) });
 }
@@ -285,21 +305,19 @@ export async function refreshComputer(userId: string): Promise<ComputerState> {
     if (s === 'running') {
       const screens = await orgo.listScreens(env.orgoComputerId);
       const byId = new Map(screens.map((x) => [x.default ? 'default' : x.id, x]));
-      for (const row of db.prepare('SELECT bot_id, screen_id FROM screens WHERE user_id=?').all(userId) as any[]) saveSize(row.bot_id, byId.get(row.screen_id));
+      for (const row of db.prepare('SELECT bot_id, screen_id FROM screens WHERE user_id=?').all(userId) as { bot_id: string; screen_id: string }[]) saveSize(row.bot_id, byId.get(row.screen_id));
     }
-  } catch (e: any) {
-    setStatus(userId, 'error', e instanceof OrgoError && e.status === 404 ? 'The computer was not found with this Orgo key.' : String(e?.message ?? e));
+  } catch (e) {
+    setStatus(userId, 'error', e instanceof OrgoError && e.status === 404 ? 'The computer was not found with this Orgo key.' : messageOf(e));
   }
   return computerState(userId);
 }
 
-// ---------------------------------------------------------------- the provider
-
 /** The user who owns a bot (the Orgo functions are per-user; the provider interface is per-bot). */
 function userIdFor(botId: string): string {
-  const row = db.prepare('SELECT user_id, engine FROM bots WHERE id=?').get(botId) as any;
+  const row = db.prepare('SELECT user_id, engine FROM bots WHERE id=?').get(botId) as { user_id: string; engine: string | null } | undefined;
   if (!row) throw new Error(`No bot ${botId}`);
-  return row.user_id as string;
+  return row.user_id;
 }
 
 /**
@@ -315,8 +333,8 @@ export class OrgoComputerProvider implements ComputerProvider {
   }
 
   screenIdFor(botId: string): string | null {
-    const row = db.prepare('SELECT screen_id FROM screens WHERE bot_id=?').get(botId) as any;
-    return (row?.screen_id as string) ?? null;
+    const row = db.prepare('SELECT screen_id FROM screens WHERE bot_id=?').get(botId) as { screen_id: string } | undefined;
+    return row?.screen_id ?? null;
   }
 
   async screenFor(userId: string, botId: string): Promise<{ computerId: string; screenId: string }> {

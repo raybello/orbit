@@ -1,6 +1,7 @@
 import { useMemo, useState } from 'react';
 import { botVars } from '../lib/colors';
-import { sortedRows, useSelectedBot, useStore } from '../store';
+import { useSelectedBot, useStore } from '../store';
+import { sortedRows } from '../domain/transcript-utils';
 import { Composer } from './Composer';
 import { ConvHeader } from './ConvHeader';
 import { FilesView } from './FilesView';

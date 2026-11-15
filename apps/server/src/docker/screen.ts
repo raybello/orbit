@@ -95,7 +95,6 @@ echo RESET_OK
   if (r.code !== 0) throw new Error(`could not reset the screens: ${(r.stderr || r.stdout).trim().slice(-300)}`);
 }
 
-/** Stop the VNC server and display for one screen. */
 export async function teardownScreen(containerId: string, index: number, screenKey?: string): Promise<void> {
   const s = screenPorts(index);
   const script = `
@@ -112,7 +111,6 @@ echo TEARDOWN_OK
   if (r.code !== 0) throw new Error(`could not stop screen ${s.display}: ${(r.stderr || r.stdout).trim().slice(-300)}`);
 }
 
-/** Whether the screen's VNC port answers inside the container. */
 export async function screenAlive(containerId: string, index: number): Promise<boolean> {
   const s = screenPorts(index);
   const r = await execInContainer(containerId, ['bash', '-c', `(echo >/dev/tcp/127.0.0.1/${s.vncPort}) >/dev/null 2>&1 && echo YES || echo NO`], {}, 10_000);

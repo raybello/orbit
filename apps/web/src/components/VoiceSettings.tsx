@@ -75,7 +75,6 @@ function NativeSelect<T extends string | number>({ label, value, options, onChan
   );
 }
 
-/** "Voice chat" section of the details panel: voice, speed, language (saved per bot), preview, start a call. */
 export function VoiceSettings({ bot }: { bot: Bot }) {
   const [opts, setOpts] = useState<VoiceOptions>(FALLBACK);
   const [previewing, setPreviewing] = useState(false);
@@ -83,9 +82,7 @@ export function VoiceSettings({ bot }: { bot: Bot }) {
   const [local, setLocal] = useState<LocalVoiceStatus | null>(null);
   const [localPhase, setLocalPhase] = useState<'loading' | 'ok' | 'gone'>('loading');
   const [downloading, setDownloading] = useState(false);
-  /** The model menu (`GET /api/voice/local/models`): every voice, whether it is installed and its size. */
   const [menu, setMenu] = useState<LocalModels | null>(null);
-  /** Model id whose download is being polled until its own state is `ready`. */
   const [watching, setWatching] = useState<string | null>(null);
   const inCall = useVoice((s) => isCallActive(s) && s.botId === bot.id);
   /**
@@ -110,7 +107,6 @@ export function VoiceSettings({ bot }: { bot: Bot }) {
   useEffect(() => loadLocal(true), [loadLocal]);
 
   // The menu is a separate call from the status: it carries per-model size, rate and state.
-  // Refreshed on open (`true`), like the status above: the panel is the only reader of the menu.
   useEffect(() => {
     let alive = true;
     voiceApi.localModels(true)
@@ -254,7 +250,6 @@ export function VoiceSettings({ bot }: { bot: Bot }) {
     }
   };
 
-  /** Download one voice (the optional Kokoro tier) and watch its own state until it is ready. */
   const downloadVoice = async (id: string) => {
     if (watching === id) return;
     setError(null);

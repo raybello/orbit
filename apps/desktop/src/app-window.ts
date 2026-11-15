@@ -1,10 +1,9 @@
 /**
  * The main window: Orbit's web app, loaded from whatever server the user chose.
  *
- * The renderer is the server's own web build — there is no separate desktop UI — so this
- * module's job is to make a browser window behave like an app: one origin, no stray
- * popups, a per-server cookie jar, and a header that tells the server it is being used
- * from the desktop client.
+ * The renderer is the server's own web build, so this module's job is to make a browser window
+ * behave like an app: one origin, no stray popups, a per-server cookie jar, and a header that
+ * tells the server it is being used from the desktop client.
  */
 
 import path from 'node:path';
@@ -60,7 +59,6 @@ export function sessionForServerUrl(url: string): { ses: Session; partition: str
   return { ses, partition };
 }
 
-/** True when `target` is the same origin as `origin` (or a sub-path of it). */
 function sameOrigin(target: string, origin: string): boolean {
   try {
     return new URL(target).origin === origin;

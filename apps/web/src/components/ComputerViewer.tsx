@@ -29,9 +29,8 @@ interface ScreenProps {
 }
 
 /**
- * A bot's screen on the shared computer: noVNC over our relay inside a rounded frame that keeps the
- * screen's aspect ratio. Watching is view-only. Taking control reconnects with mode=control and shows
- * a chin under the frame with the way back.
+ * A bot's screen on the shared computer: noVNC over our relay in a frame that keeps the screen's
+ * aspect ratio. Watching is view-only; control reconnects with mode=control and adds a chin.
  */
 export function ComputerScreen({ bot, variant, initialMode = 'watch', hint, paused = false, onExpand, onModeChange }: ScreenProps) {
   const computer = useStore((s) => s.computer);
@@ -305,7 +304,6 @@ export function ComputerScreen({ bot, variant, initialMode = 'watch', hint, paus
   );
 }
 
-/** The large computer view: the bot's screen on a dimmed stage, opened from the chat menu or the details panel. */
 export function ComputerViewer() {
   const bot = useSelectedBot();
   const computer = useStore((s) => s.computer);

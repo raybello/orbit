@@ -45,7 +45,6 @@ export type VoiceEngineKind = 'zipformer' | 'silero' | 'vits' | 'kokoro';
 export interface VoiceModelSpec {
   id: VoiceModelId;
   kind: VoiceKind;
-  /** Menu label. */
   name: string;
   engine: VoiceEngineKind;
   /**
@@ -123,7 +122,6 @@ export function isVoiceModelId(id: unknown): id is VoiceModelId {
   return typeof id === 'string' && MODEL_BY_ID.has(id);
 }
 
-/** A TTS model id, or undefined when the id is unknown or not a voice. */
 export function ttsModel(id: string): VoiceModelSpec | undefined {
   const spec = MODEL_BY_ID.get(id);
   return spec?.kind === 'tts' ? spec : undefined;
@@ -146,7 +144,6 @@ export function filesForKind(kind: VoiceKind): VoiceModelFile[] {
   return filesForModel(REQUIRED_MODEL_FOR[kind]);
 }
 
-/** Bytes of one model, or of the required set when no id is given. */
 export function modelSize(id?: string): number {
   if (id === undefined) return REQUIRED_BYTES;
   return filesForModel(id).reduce((n, f) => n + f.size, 0);
@@ -157,7 +154,6 @@ const KIND_DIR: Record<VoiceModelFile['kind'], VoiceKind> = { stt: 'stt', tts: '
 export interface VoiceDownloadProgress {
   /** Bytes of the requested set already on disk (verified or written this run). */
   done: number;
-  /** Bytes of the requested set in total. */
   total: number;
   pct: number;
   /** `<model>/<path>` of the file currently being written, or null between files. */
@@ -196,7 +192,6 @@ export function destFor(file: VoiceModelFile, root = modelsRoot()): string {
   return path.join(root, KIND_DIR[file.kind], file.model, file.path);
 }
 
-/** Absolute path of one file of a model, by its path inside the model directory. */
 export function modelFilePath(id: string, relPath: string, root = modelsRoot()): string {
   const file = filesForModel(id).find((f) => f.path === relPath);
   if (!file) throw new Error(`${id} has no file ${relPath}`);
@@ -225,8 +220,8 @@ function writeState(next: StateFile, root = modelsRoot()): void {
     fs.mkdirSync(root, { recursive: true });
     fs.writeFileSync(statePath(root), `${JSON.stringify(next, null, 1)}\n`);
     stateCache = { at: Date.now(), path: statePath(root), value: next };
-  } catch (e: any) {
-    console.warn('[voice-models] could not write .state.json:', e?.message);
+  } catch (e) {
+    console.warn('[voice-models] could not write .state.json:', (e as { message?: string })?.message);
   }
 }
 
@@ -247,11 +242,9 @@ function clearError(model: string): void {
 
 export interface MigrationReport {
   root: string;
-  /** Files renamed from the flat phase-1/2 layout into `<kind>/<model>/`. */
   moved: number;
   /** Bytes those files account for (they were NOT downloaded again). */
   bytes: number;
-  /** Models whose files moved. */
   models: string[];
   /** Legacy paths left behind as relative symlinks so an older reader keeps working. */
   links: number;
@@ -322,8 +315,8 @@ export function migrateLayout(root = modelsRoot(), files: VoiceModelFile[] = VOI
       } catch {
         // A pre-existing dangling name, or a filesystem without symlinks: not worth failing over.
       }
-    } catch (e: any) {
-      console.warn(`[voice-models] could not migrate ${legacy}: ${e?.message}`);
+    } catch (e) {
+      console.warn(`[voice-models] could not migrate ${legacy}: ${(e as { message?: string })?.message}`);
     }
   }
   report.models = [...models];
@@ -338,7 +331,6 @@ export function migrateLayout(root = modelsRoot(), files: VoiceModelFile[] = VOI
   return report;
 }
 
-/** The migration that ran for this root, if it has run. */
 export function migrationReport(root = modelsRoot()): MigrationReport | null {
   return migrationByRoot.get(root) ?? null;
 }
@@ -348,8 +340,8 @@ function ensureMigrated(root: string): void {
   migrated.add(root); // set first: a throw below must not retry on every /status
   try {
     migrateLayout(root);
-  } catch (e: any) {
-    console.warn('[voice-models] layout migration failed:', e?.message);
+  } catch (e) {
+    console.warn('[voice-models] layout migration failed:', (e as { message?: string })?.message);
   }
 }
 
@@ -479,7 +471,6 @@ export function modelsReady(): boolean {
   return REQUIRED_MODELS.every((m) => s.byModel[m.id].present);
 }
 
-/** Whether one model is complete on disk. */
 export function modelReady(id: string): boolean {
   return scan().byModel[id]?.present === true;
 }
@@ -495,9 +486,7 @@ export interface VoiceModelItem {
   name: string;
   /** Engine rate: input for stt/vad, output for tts. */
   rate: number;
-  /** Bytes of this model's files. */
   size: number;
-  /** Bytes already on disk. */
   have: number;
   files: number;
   state: VoiceModelStateValue;
@@ -544,11 +533,9 @@ async function sha256File(file: string): Promise<string> {
 }
 
 export interface VoiceDownloadOptions {
-  /** Root of the model cache to write into. */
   dir: string;
   /** The file list to satisfy (injectable so tests can serve tiny fakes). */
   files: VoiceModelFile[];
-  /** Where each file comes from. Defaults to defaultUrlFor(). */
   urlFor?: (file: VoiceModelFile) => string;
   onProgress?: (progress: VoiceDownloadProgress) => void;
   /** Parallel file downloads. 4 saturates a home connection without tripping HF rate limits. */
@@ -680,8 +667,8 @@ export async function downloadVoiceFiles(opts: VoiceDownloadOptions): Promise<Vo
       if (i >= todo.length) return;
       try {
         await fetchOne(todo[i]);
-      } catch (e: any) {
-        const message = String(e?.message ?? e);
+      } catch (e) {
+        const message = String((e as { message?: string })?.message ?? e);
         failure ??= message;
         log(`[voice-models] download failed: ${message}`);
         // Keep the .part file: the next attempt resumes from it.
@@ -712,7 +699,6 @@ export function downloadProgress(): { active: boolean; pct: number; name: string
   return { active: busyModels.size > 0, pct: busyModels.size ? live.pct : 0, name: busyModels.size ? live.name : null };
 }
 
-/** Models queued or in flight, for diagnostics. */
 export function downloading(): string[] {
   return [...busyModels];
 }
@@ -732,7 +718,6 @@ export interface EnsureOptions {
  */
 let testUrlFor: ((file: VoiceModelFile) => string) | null = null;
 
-/** TEST-ONLY: install (or with `null`, remove) the URL builder the routes' downloads use. */
 export function __setDownloadUrlForTests(urlFor: ((file: VoiceModelFile) => string) | null): void {
   testUrlFor = urlFor;
 }
@@ -787,8 +772,8 @@ export function ensureModels(kindOrModel?: VoiceKind | string, opts: EnsureOptio
           });
           if (result.ok) clearError(model.id);
           else recordError(model.id, result.error ?? 'download failed');
-        } catch (e: any) {
-          recordError(model.id, String(e?.message ?? e));
+        } catch (e) {
+          recordError(model.id, String((e as { message?: string })?.message ?? e));
         } finally {
           scan(modelsRoot(), true);
           busyModels.delete(model.id);

@@ -25,3 +25,6 @@ apps/desktop/out/
 apps/desktop/dist/
 apps/mobile/.expo/
 apps/mobile/dist/
+
+# local agent scratch and decision logs
+.hermes/

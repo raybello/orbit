@@ -68,11 +68,11 @@ export async function sendPushNotification(userId: string, payload: PushPayload)
         continue;
       }
       // A ticket can still carry an error per message (bad or expired token); those are worth a line.
-      const body = (await res.json().catch(() => null)) as any;
-      const failed = (Array.isArray(body?.data) ? body.data : []).filter((t: any) => t?.status === 'error');
-      if (failed.length) log.warn('expo push rejected', failed.length, 'message(s):', failed[0]?.message ?? 'unknown');
+      const body = (await res.json().catch(() => null)) as { data?: unknown } | null;
+      const failed = (Array.isArray(body?.data) ? body.data : []).filter((t) => (t as { status?: unknown } | null)?.status === 'error');
+      if (failed.length) log.warn('expo push rejected', failed.length, 'message(s):', (failed[0] as { message?: unknown } | null)?.message ?? 'unknown');
     }
-  } catch (e: any) {
-    log.warn('push failed', e?.message ?? e);
+  } catch (e) {
+    log.warn('push failed', (e as { message?: unknown } | null)?.message ?? e);
   }
 }

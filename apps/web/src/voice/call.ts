@@ -3,7 +3,8 @@
 // back through the normal transcript stream and are injected into the call as [work_landed] notes.
 import { create } from 'zustand';
 import type { Row } from '@orbit/contracts';
-import { sortedRows, useStore } from '../store';
+import { useStore } from '../store';
+import { sortedRows } from '../domain/transcript-utils';
 import { voiceApi, type VoiceSession } from './api';
 import { MicCapture, PcmPlayer, base64ToPcm, createAudioContext, micErrorMessage, openMic, pcmToBase64 } from './audio';
 import { endLocalCall, isLocalCallActive, localLevels, setLocalMuted, startLocalCall } from './local-call';
@@ -142,7 +143,33 @@ export function callLevels(): { out: number; mic: number } {
 export const isCallActive = (s: VoiceState = useVoice.getState()) =>
   s.status === 'connecting' || s.status === 'live' || isLocalCallActive();
 
-type Json = Record<string, any>;
+type Json = Record<string, unknown>;
+
+/** A realtime item or event from the socket; only the fields this client reads are named. */
+interface RealtimeItem extends Json {
+  id?: string;
+  type?: string;
+  role?: string;
+  content?: { type?: string; transcript?: string }[];
+  call_id?: string;
+  name?: string;
+  arguments?: string;
+}
+
+interface RealtimeEvent extends Json {
+  type?: string;
+  item_id?: string;
+  item?: RealtimeItem;
+  response?: { id?: string; output?: RealtimeItem[] };
+  delta?: string;
+  transcript?: string;
+  response_id?: string;
+  call_id?: string;
+  name?: string;
+  arguments?: string;
+  code?: string;
+  error?: { code?: string; message?: string };
+}
 
 interface PendingTask { seq: number; request: string; since: number; startedBusy: boolean; sawRunning: boolean; awaitingNoted: boolean; doneSince: number | null }
 
@@ -210,7 +237,7 @@ class VoiceCall {
     ws.onopen = () => this.send({ type: 'session.update', session: sess.session });
     ws.onmessage = (m) => {
       if (typeof m.data !== 'string') return;
-      try { this.handle(JSON.parse(m.data)); } catch (e) { console.warn('[voice] bad event', e); }
+      try { this.handle(JSON.parse(m.data) as RealtimeEvent); } catch (e) { console.warn('[voice] bad event', e); }
     };
     ws.onclose = (e) => {
       if (this.ended) return;
@@ -233,9 +260,7 @@ class VoiceCall {
     setV({ muted: m, listening: m ? false : useVoice.getState().listening });
   }
 
-  // ---------- realtime events ----------
-
-  private handle(ev: Json) {
+  private handle(ev: RealtimeEvent) {
     switch (ev.type) {
       case 'session.updated':
         if (!this.ready) {
@@ -267,8 +292,8 @@ class VoiceCall {
       case 'conversation.item.added':
       case 'conversation.item.created': {
         const item = ev.item ?? {};
-        if (item.role === 'user' && Array.isArray(item.content) && item.content.some((c: Json) => c?.type === 'input_audio')) {
-          const t = item.content.find((c: Json) => c?.transcript)?.transcript;
+        if (item.role === 'user' && Array.isArray(item.content) && item.content.some((c) => c.type === 'input_audio')) {
+          const t = item.content.find((c) => c.transcript)?.transcript;
           this.caption(item.id, 'user', t ?? '', !!t, 'set');
         }
         return;
@@ -318,7 +343,7 @@ class VoiceCall {
       case 'response.done': {
         this.responseActive = false;
         setV({ thinking: false });
-        for (const o of (ev.response?.output ?? []) as Json[]) if (o?.type === 'function_call') this.startTool(o.call_id, o.name, o.arguments);
+        for (const o of ev.response?.output ?? []) if (o.type === 'function_call') this.startTool(o.call_id, o.name, o.arguments);
         if (this.inflight.size) void this.finishTools(this.responseSpoke);
         else this.flushNotes();
         return;
@@ -352,8 +377,6 @@ class VoiceCall {
   transcript() {
     return useVoice.getState().captions.filter((c) => c.text.trim()).map((c) => ({ role: c.role, text: c.text.trim() }));
   }
-
-  // ---------- relay tools ----------
 
   private startTool(callId: string | undefined, name: string | undefined, rawArgs: string | undefined) {
     if (!callId || !name || this.handledCalls.has(callId)) return;
@@ -402,8 +425,6 @@ class VoiceCall {
       if (!this.ended && !this.responseActive && !this.inflight.size) this.send({ type: 'response.create' });
     } else this.flushNotes();
   }
-
-  // ---------- work_landed: watch the text agent finish what was asked by voice ----------
 
   private addTask(seq: number, request: string) {
     const live = useStore.getState().live[this.botId];
@@ -489,8 +510,6 @@ class VoiceCall {
     this.send({ type: 'conversation.item.create', item: { type: 'message', role: 'user', content: [{ type: 'input_text', text: `${text}\n\n(Automatic note from your text agent, not spoken by ${this.firstName()}. Tell them the outcome now, briefly.)` }] } });
     this.send({ type: 'response.create' });
   }
-
-  // ---------- teardown ----------
 
   end(error?: string) {
     if (this.ended) return;

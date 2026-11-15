@@ -1,6 +1,5 @@
 import { useState } from 'react';
 
-/** App logo tile (40px in Connect Apps) with a first-letter fallback. */
 export function ToolkitLogo({ name, logo, size = 40, radius = 8 }: { name: string; logo?: string; size?: number; radius?: number }) {
   const [broken, setBroken] = useState(false);
   const letter = (name.trim()[0] ?? '?').toUpperCase();

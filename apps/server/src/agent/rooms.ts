@@ -24,7 +24,7 @@ export const MAX_BOT_CHAIN_DEPTH = 3;
 const GROUP_HISTORY = 20;
 
 /** What a group dispatch needs from the agent loop: its per-bot serial queue. */
-export type GroupEnqueue = (botId: string, turn: any) => void;
+export type GroupEnqueue = (botId: string, turn: GroupTurn) => void;
 
 /** Stands in when a caller has no queue to hand (checks, dry runs): dispatch does nothing. */
 const noEnqueue: GroupEnqueue = () => {};
@@ -54,12 +54,12 @@ export function initRooms() {
   }
 }
 
-export const isRoom = (botId: string) => (db.prepare('SELECT kind FROM bots WHERE id=?').get(botId) as any)?.kind === 'room';
+export const isRoom = (botId: string) => (db.prepare('SELECT kind FROM bots WHERE id=?').get(botId) as { kind: string | null } | undefined)?.kind === 'room';
 
 export function roomMembers(roomId: string): GroupMember[] {
-  const r = db.prepare('SELECT members FROM bots WHERE id=?').get(roomId) as any;
-  const ids: string[] = r?.members ? JSON.parse(r.members) : [];
-  return ids.map((id) => db.prepare('SELECT id, name FROM bots WHERE id=?').get(id) as any).filter(Boolean);
+  const r = db.prepare('SELECT members FROM bots WHERE id=?').get(roomId) as { members: string | null } | undefined;
+  const ids: string[] = r?.members ? (JSON.parse(r.members) as string[]) : [];
+  return ids.map((id) => db.prepare('SELECT id, name FROM bots WHERE id=?').get(id) as GroupMember | undefined).filter((m): m is GroupMember => Boolean(m));
 }
 
 export function createRoom(userId: string, name: string, memberIds: string[]) {
@@ -99,10 +99,10 @@ export function mentionedMembers(text: string, candidates: GroupMember[]): Group
 
 /** The last `limit` messages of the room, one "User: …" / "Name: …" line each. */
 function recentMessages(roomId: string, generation: number, limit = GROUP_HISTORY): string {
-  return (db.prepare("SELECT body FROM rows WHERE bot_id=? AND generation=? AND kind='message' ORDER BY seq DESC LIMIT ?").all(roomId, generation, limit) as any[])
+  return (db.prepare("SELECT body FROM rows WHERE bot_id=? AND generation=? AND kind='message' ORDER BY seq DESC LIMIT ?").all(roomId, generation, limit) as { body: string }[])
     .reverse()
     .map((r) => {
-      const b = JSON.parse(r.body);
+      const b = JSON.parse(r.body) as { from?: { name?: string }; role?: string; text?: unknown };
       return `${b.from?.name ?? (b.role === 'user' ? 'User' : 'Bot')}: ${String(b.text).slice(0, 600)}`;
     })
     .join('\n');
@@ -114,7 +114,7 @@ function recentMessages(roomId: string, generation: number, limit = GROUP_HISTOR
  * near-limit note differ.
  */
 export function buildGroupTurn(roomId: string, depth: number, opts: GroupTurnOpts = {}): GroupTurn {
-  const room = db.prepare('SELECT * FROM bots WHERE id=?').get(roomId) as any;
+  const room = db.prepare('SELECT * FROM bots WHERE id=?').get(roomId) as { name: string; generation: number } | undefined;
   const name = room?.name ?? 'Group';
   const members = roomMembers(roomId);
   const recent = recentMessages(roomId, room?.generation ?? 1);
@@ -165,7 +165,7 @@ export function dispatchBotMentions(
   enqueue: GroupEnqueue = noEnqueue,
 ): string[] {
   if (depth >= MAX_BOT_CHAIN_DEPTH) return [];
-  const from = db.prepare('SELECT name FROM bots WHERE id=?').get(fromBotId) as any;
+  const from = db.prepare('SELECT name FROM bots WHERE id=?').get(fromBotId) as { name: string } | undefined;
   const peers = roomMembers(roomId).filter((m) => m.id !== fromBotId);
   if (!peers.length) return [];
   const hits = mentionedMembers(text, peers);
@@ -184,10 +184,10 @@ export function postToRoom(
   depth = 0,
   enqueue: GroupEnqueue = noEnqueue,
 ) {
-  const from = db.prepare('SELECT id, user_id, name FROM bots WHERE id=?').get(fromBotId) as any;
-  const room = db.prepare("SELECT * FROM bots WHERE user_id=? AND kind='room' AND lower(name)=lower(?)").get(from.user_id, roomName.trim()) as any;
+  const from = db.prepare('SELECT id, user_id, name FROM bots WHERE id=?').get(fromBotId) as { id: string; user_id: string; name: string };
+  const room = db.prepare("SELECT * FROM bots WHERE user_id=? AND kind='room' AND lower(name)=lower(?)").get(from.user_id, roomName.trim()) as { id: string; name: string; members: string | null } | undefined;
   if (!room) return `No group named "${roomName}".`;
-  const members: string[] = room.members ? JSON.parse(room.members) : [];
+  const members: string[] = room.members ? (JSON.parse(room.members) as string[]) : [];
   if (!members.includes(fromBotId)) return `You're not a member of "${room.name}".`;
   appendRow(room.id, 'message', { type: 'message', role: 'assistant', text, from: { kind: 'bot', id: from.id, name: from.name } });
   db.prepare('UPDATE bots SET unread = unread + 1 WHERE id=?').run(room.id);

@@ -1,6 +1,8 @@
 // The shared API contract between the Orbit server, the web app, the desktop app and mobile.
 // Everything here is type-only or plain constants: no runtime dependencies.
 
+export * from './branded-types.js';
+
 export type AvatarShape =
   | 'blob' | 'pebble' | 'bean' | 'egg' | 'squircle' | 'tablet' | 'capsule' | 'cylinder' | 'hex'
   | 'gem' | 'crystal' | 'wedge' | 'shield' | 'dome' | 'arch' | 'cloud' | 'teardrop' | 'leaf'

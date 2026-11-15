@@ -26,7 +26,6 @@ export const COLOR_ORDER: AvatarColor[] = ['black', 'brown', 'red', 'orange', 'y
 
 export const palette = (c: AvatarColor | string | undefined): BotPalette => BOT_COLORS[(c as AvatarColor) ?? 'black'] ?? BOT_COLORS.black;
 
-/** CSS custom properties that theme a subtree with a bot's color. */
 export function botVars(c: AvatarColor | string | undefined): React.CSSProperties {
   const p = palette(c);
   return {

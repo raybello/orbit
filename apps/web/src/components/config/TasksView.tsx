@@ -52,7 +52,6 @@ function sortTasks(list: Task[]) {
   return [...list].sort((a, b) => rank[a.state] - rank[b.state] || b.updatedAt - a.updatedAt);
 }
 
-/** Full Tasks view in the main column (sidebar → Tasks). */
 export function TasksView() {
   const bots = useStore((s) => s.bots);
   const tasks = useTasks();
@@ -88,7 +87,6 @@ export function TasksView() {
   );
 }
 
-/** Sidebar entry for the Tasks view, with a count of tasks waiting on the user. */
 export function TasksIsland() {
   const view = useConfigUI((s) => s.view);
   const tasks = useTasks();
@@ -102,7 +100,6 @@ export function TasksIsland() {
   );
 }
 
-/** Tasks for one bot (details panel → Tasks tab). */
 export function BotTasks({ bot }: { bot: Bot }) {
   const tasks = useTasks(bot.id);
   const sorted = useMemo(() => sortTasks(tasks ?? []), [tasks]);

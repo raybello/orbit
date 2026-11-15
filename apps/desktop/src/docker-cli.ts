@@ -1,9 +1,8 @@
 /**
  * The Docker CLI, as much of it as the local stack needs.
  *
- * Everything here is dependency-injectable (`exists`, `spawn`) so the state machine can be
- * tested on a machine without Docker, and so failures can be classified instead of being
- * shown to the user as a wall of stderr.
+ * Dependency-injectable (`exists`, `spawn`) so the state machine is testable without Docker and
+ * failures are classified instead of shown to the user as a wall of stderr.
  */
 
 import { spawn as nodeSpawn, type ChildProcess } from 'node:child_process';
@@ -62,10 +61,8 @@ export function dockerCandidates(platform: NodeJS.Platform, env: NodeJS.ProcessE
 }
 
 /**
- * Resolve the docker binary.
- *
- * `exists` is injected; when it is the real `fs.existsSync`, a bare `docker` candidate is
- * resolved through PATH (which the caller's `exec` will do anyway) rather than rejected.
+ * Resolve the docker binary. `exists` is injected; a bare `docker` candidate is left to PATH,
+ * which the caller's `exec` resolves anyway, rather than rejected.
  */
 export function resolveDockerBinary(
   platform: NodeJS.Platform,
@@ -274,7 +271,6 @@ export function runDocker(
   });
 }
 
-/** The combined text a classifier should look at. */
 export function failureText(result: DockerResult): string {
   return `${result.stderr}\n${result.stdout}`.trim();
 }

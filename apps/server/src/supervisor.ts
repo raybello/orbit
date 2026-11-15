@@ -61,8 +61,8 @@ async function shutdown(signal: string) {
   try {
     await suspendComputers();
     log.info('all running bot computers suspended');
-  } catch (e: any) {
-    log.warn(`shutdown suspend failed: ${e?.message ?? e}`);
+  } catch (e) {
+    log.warn(`shutdown suspend failed: ${(e as { message?: unknown } | null)?.message ?? e}`);
   }
   process.exit(0);
 }
@@ -70,6 +70,6 @@ async function shutdown(signal: string) {
 process.on('SIGTERM', () => void shutdown('SIGTERM'));
 process.on('SIGINT', () => void shutdown('SIGINT'));
 // Nothing here throws at start-up unless the environment is unusable; log it rather than exit silently.
-process.on('unhandledRejection', (e: any) => log.error(`unhandled rejection: ${e?.message ?? e}`));
+process.on('unhandledRejection', (e) => log.error(`unhandled rejection: ${(e as { message?: unknown } | null)?.message ?? e}`));
 
 log.info(`sandbox supervisor up (no HTTP port); ${dockerComputers().length} bot computer(s) known`);

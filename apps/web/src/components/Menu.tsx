@@ -2,7 +2,6 @@ import { useEffect, useRef, type ReactNode } from 'react';
 
 export interface MenuItem { label: string; onSelect: () => void; danger?: boolean; hint?: string }
 
-/** Small popover menu anchored by its parent (position: relative). Closes on outside click / Escape. */
 export function Menu({ items, onClose, align = 'left', placement = 'below', children }: { items: MenuItem[]; onClose: () => void; align?: 'left' | 'right' | 'center'; placement?: 'below' | 'above'; children?: ReactNode }) {
   const ref = useRef<HTMLDivElement>(null);
   useEffect(() => {

@@ -14,6 +14,7 @@ import { computerState } from './computer.js';
 import type { ActivityKind, EventBody, MessageBody, RowBody, VoiceCallRecord, VoiceOption } from './types.js';
 import { listMemories } from './engine-memory.js';
 import { localVoiceApi } from './voice-local.js';
+import { requireBody, optionalBody, VoiceSessionSchema, VoiceToolSchema, VoiceEndSchema } from './api/schemas.js';
 
 export const voiceApi = new Hono<AuthVars>();
 // On-device STT/TTS: /api/voice/local/{status,stt,preview,models,models/download}.
@@ -54,8 +55,8 @@ async function listVoices(): Promise<VoiceOption[]> {
     const voices = (j.voices ?? []).map((v) => ({ id: v.voice_id, name: v.name ?? v.voice_id, gender: v.gender }));
     if (!voices.length) throw new Error('empty list');
     voiceCache = { at: Date.now(), voices };
-  } catch (e: any) {
-    console.warn('[voice] voice list unavailable, using static list:', e?.message);
+  } catch (e) {
+    console.warn('[voice] voice list unavailable, using static list:', (e as Error)?.message);
     voiceCache = { at: Date.now() - 3000_000, voices: FALLBACK_VOICES }; // retry in ~10 min
   }
   return voiceCache.voices;
@@ -66,8 +67,22 @@ const clampSpeed = (s: unknown) => {
   return Number.isFinite(n) ? Math.min(1.5, Math.max(0.7, n)) : 1;
 };
 const langName = (code: string) => LANGUAGES.find((l) => l.code.toLowerCase() === code?.toLowerCase())?.name;
-function settingsOf(bot: any) {
-  const language = langName(bot.voice_language) ? String(bot.voice_language) : 'auto';
+
+/** The bot columns the voice agent reads. */
+interface VoiceBot {
+  id: string;
+  name: string;
+  label?: string | null;
+  description?: string | null;
+  is_primary?: number | null;
+  instructions?: string | null;
+  voice?: string | null;
+  voice_speed?: number | null;
+  voice_language?: string | null;
+}
+
+function settingsOf(bot: VoiceBot) {
+  const language = langName(String(bot.voice_language ?? '')) ? String(bot.voice_language) : 'auto';
   return { voice: String(bot.voice || 'luna'), speed: clampSpeed(bot.voice_speed ?? 1), language };
 }
 
@@ -95,7 +110,7 @@ function messageText(body: RowBody): { role: 'user' | 'assistant'; text: string;
 /** Recent messages in the bot's current conversation, oldest first. */
 function recentMessages(botId: string, count: number) {
   const b = getBotRow(botId);
-  const rows = db.prepare("SELECT seq, body, created_at FROM rows WHERE bot_id=? AND generation=? AND kind IN ('message','event','card') ORDER BY seq DESC LIMIT ?").all(botId, b.generation, count * 2) as any[];
+  const rows = db.prepare("SELECT seq, body, created_at FROM rows WHERE bot_id=? AND generation=? AND kind IN ('message','event','card') ORDER BY seq DESC LIMIT ?").all(botId, b.generation, count * 2) as { seq: number; body: string; created_at: number }[];
   const out: { seq: number; at: number; who: string; text: string }[] = [];
   for (const r of rows) {
     const body = JSON.parse(r.body) as RowBody;
@@ -117,14 +132,15 @@ const clip = (s: string, n: number) => (s.length > n ? `${s.slice(0, n - 1)}…`
 function activitySnapshot(botId: string) {
   const live = getLive(botId);
   const tasks = listTasks(botId).filter((t) => t.state !== 'done').slice(0, 6);
-  const pending = (db.prepare("SELECT body FROM rows WHERE bot_id=? AND generation=? AND kind='card' ORDER BY seq DESC LIMIT 20").all(botId, getBotRow(botId).generation) as any[])
-    .map((r) => JSON.parse(r.body)).filter((b: any) => b.status === 'pending');
+  const pending = (db.prepare("SELECT body FROM rows WHERE bot_id=? AND generation=? AND kind='card' ORDER BY seq DESC LIMIT 20").all(botId, getBotRow(botId).generation) as { body: string }[])
+    .map((r) => JSON.parse(r.body) as RowBody)
+    .filter((b): b is Extract<RowBody, { type: 'card' }> => b.type === 'card' && b.status === 'pending');
   const lines: string[] = [];
   if (live.awaiting) lines.push(`Paused, waiting for the user: ${live.awaiting.reason} (since ${ago(live.awaiting.since)}).`);
   else if (live.isRunning) lines.push(`Busy right now: ${ACTIVITY_WORDS[live.activity?.kind ?? 'working'] ?? 'working'}${live.activity?.detail ? ` (${live.activity.detail})` : ''}, started ${live.startedAt ? ago(live.startedAt) : 'recently'}.`);
   else lines.push('Idle: not working on anything right now.');
   if (tasks.length) lines.push(`Open tasks:\n${tasks.map((t) => `- ${t.title} [${t.state === 'needs_input' ? 'needs input' : 'in progress'}]${t.note ? `: ${clip(t.note, 120)}` : ''}`).join('\n')}`);
-  if (pending.length) lines.push(`Waiting on the user in chat:\n${pending.map((b: any) => `- ${b.card === 'approval' ? b.title : b.card === 'question' ? b.question : b.card === 'connect' ? `Connect ${b.toolkitName}` : 'A draft to review'}`).join('\n')}`);
+  if (pending.length) lines.push(`Waiting on the user in chat:\n${pending.map((b) => `- ${b.card === 'approval' ? b.title : b.card === 'question' ? b.question : b.card === 'connect' ? `Connect ${b.toolkitName}` : 'A draft to review'}`).join('\n')}`);
   const comp = computerState(getBotRow(botId).user_id);
   lines.push(`Computer: ${comp.status === 'running' ? 'awake' : comp.status === 'absent' ? 'not set up yet' : comp.status}.`);
   return lines.join('\n');
@@ -168,8 +184,8 @@ export const VOICE_TOOLS = [
   },
 ];
 
-function voiceInstructions(userId: string, bot: any, language: string): string {
-  const user = db.prepare('SELECT name, email FROM users WHERE id=?').get(userId) as any;
+function voiceInstructions(userId: string, bot: VoiceBot, language: string): string {
+  const user = db.prepare('SELECT name, email FROM users WHERE id=?').get(userId) as { name?: string; email?: string } | undefined;
   const firstName = String(user?.name ?? '').split(/\s+/)[0] || 'the user';
   // What the agent remembers lives in its Hermes home (see engine-memory.ts); what it knows about the user comes first.
   const memories = listMemories(bot.id).sort((a, b) => Number(b.source === 'chat') - Number(a.source === 'chat')).slice(0, 12).map((m) => `- ${clip(m.text, 200)}`).join('\n');
@@ -238,21 +254,44 @@ const fmtDuration = (ms: number) => {
   return s < 60 ? `${s}s` : `${Math.floor(s / 60)}m ${String(s % 60).padStart(2, '0')}s`;
 };
 
+/** `fetch`'s answer, or the synthetic failure built when the call throws (status 0, no body). */
+interface SecretFetchResult {
+  ok: boolean;
+  status: number;
+  text(): Promise<string>;
+  json(): Promise<unknown>;
+}
+
+/** The body of POST /preview; every field is optional because the client may send none. */
+interface PreviewBody {
+  botId?: string;
+  voice?: string;
+  speed?: number;
+  language?: string;
+  text?: string;
+  codec?: 'mp3' | 'pcm';
+}
+
 voiceApi.get('/options', async (c) => c.json({ voices: await listVoices(), languages: LANGUAGES, speeds: SPEEDS }));
 
 voiceApi.post('/session', async (c) => {
   const user = c.get('user');
-  const { botId } = await c.req.json<{ botId: string }>().catch(() => ({ botId: '' }));
+  const { botId } = await optionalBody(c, VoiceSessionSchema, {});
   const bot = ownBot(user.id, botId);
   if (!bot) return c.json({ error: 'not found' }, 404);
   const s = settingsOf(bot);
 
-  const r = await fetch(`${XAI}/realtime/client_secrets`, {
+  const r: SecretFetchResult = await fetch(`${XAI}/realtime/client_secrets`, {
     method: 'POST',
     headers: { ...xaiHeaders(), 'Content-Type': 'application/json' },
     body: JSON.stringify({ expires_after: { seconds: 300 } }),
     signal: AbortSignal.timeout(15_000),
-  }).catch((e) => ({ ok: false, status: 0, text: async () => String(e?.message ?? e) }) as any);
+  }).catch((e) => ({
+    ok: false,
+    status: 0,
+    text: async () => String((e as Error)?.message ?? e),
+    json: async () => ({}),
+  }));
   if (!r.ok) {
     const detail = await r.text().catch(() => '');
     console.warn('[voice] client secret mint failed', r.status, detail.slice(0, 300));
@@ -298,10 +337,10 @@ voiceApi.post('/session', async (c) => {
 
 voiceApi.post('/tool', async (c) => {
   const user = c.get('user');
-  const { botId, callId, name, args } = await c.req.json<{ botId: string; callId?: string; name: string; args?: any }>();
+  const { botId, callId, name, args } = await requireBody(c, VoiceToolSchema);
   const bot = ownBot(user.id, botId);
   if (!bot) return c.json({ error: 'not found' }, 404);
-  const a = args && typeof args === 'object' ? args : {};
+  const a = (args && typeof args === 'object' ? args : {}) as Record<string, unknown>;
   const call = callId ? calls.get(callId) : undefined;
 
   switch (name) {
@@ -312,7 +351,7 @@ voiceApi.post('/tool', async (c) => {
       const row = appendRow(bot.id, 'message', { type: 'message', role: 'user', text: request, from });
       enqueue(bot.id, {
         type: 'user',
-        text: `[Voice call: ${String((db.prepare('SELECT name FROM users WHERE id=?').get(user.id) as any)?.name ?? 'the user').split(/\s+/)[0]} asked for this on a live voice call with you. Do the work, then reply in plain, short text with the outcome. Your reply is read aloud on the call, so lead with the answer and skip markdown, links and IDs unless asked.]\n${request}`,
+        text: `[Voice call: ${String((db.prepare('SELECT name FROM users WHERE id=?').get(user.id) as { name?: string } | undefined)?.name ?? 'the user').split(/\s+/)[0]} asked for this on a live voice call with you. Do the work, then reply in plain, short text with the outcome. Your reply is read aloud on the call, so lead with the answer and skip markdown, links and IDs unless asked.]\n${request}`,
       });
       call?.tasks.push(clip(request, 200));
       return c.json({ output: 'Handed off. You are working on it now; the result will arrive as a [work_landed] note. Tell the user briefly that you are on it (unless you already did), then wait.', taskSeq: row.seq });
@@ -325,13 +364,14 @@ voiceApi.post('/tool', async (c) => {
     case 'search_conversations': {
       const q = String(a.query ?? '').trim();
       if (!q) return c.json({ output: 'Error: query is empty.' });
-      const scope = ['this_chat', 'earlier', 'everything'].includes(a.scope) ? a.scope : 'this_chat';
+      const scope =
+        typeof a.scope === 'string' && ['this_chat', 'earlier', 'everything'].includes(a.scope) ? a.scope : 'this_chat';
       const like = `%${q.replace(/[%_]/g, (m) => `\\${m}`)}%`;
       const rows = (scope === 'everything'
         ? db.prepare("SELECT r.*, b.name bot_name FROM rows r JOIN bots b ON b.id=r.bot_id WHERE b.user_id=? AND r.kind IN ('message','event') AND r.body LIKE ? ESCAPE '\\' ORDER BY r.created_at DESC LIMIT 40").all(user.id, like)
         : scope === 'earlier'
           ? db.prepare("SELECT r.*, ? bot_name FROM rows r WHERE r.bot_id=? AND r.generation<? AND r.kind IN ('message','event') AND r.body LIKE ? ESCAPE '\\' ORDER BY r.created_at DESC LIMIT 40").all(bot.name, bot.id, bot.generation, like)
-          : db.prepare("SELECT r.*, ? bot_name FROM rows r WHERE r.bot_id=? AND r.generation=? AND r.kind IN ('message','event') AND r.body LIKE ? ESCAPE '\\' ORDER BY r.created_at DESC LIMIT 40").all(bot.name, bot.id, bot.generation, like)) as any[];
+          : db.prepare("SELECT r.*, ? bot_name FROM rows r WHERE r.bot_id=? AND r.generation=? AND r.kind IN ('message','event') AND r.body LIKE ? ESCAPE '\\' ORDER BY r.created_at DESC LIMIT 40").all(bot.name, bot.id, bot.generation, like)) as { body: string; bot_name: string; created_at: number }[];
       const hits: string[] = [];
       const ql = q.toLowerCase();
       for (const r of rows) {
@@ -376,7 +416,7 @@ function xai(): OpenAI {
 async function summarizeCall(botName: string, transcript: { role: string; text: string }[], tasks: string[]): Promise<string | null> {
   if (!transcript.length && !tasks.length) return null;
   const lines = transcript.map((t) => `${t.role === 'user' ? 'User' : botName}: ${t.text}`).join('\n').slice(-12_000);
-  const res: any = await xai().responses.create({
+  const res = (await xai().responses.create({
     model: env.xaiModel,
     reasoning: { effort: 'low' },
     store: false,
@@ -384,14 +424,14 @@ async function summarizeCall(botName: string, transcript: { role: string; text: 
       { role: 'system', content: `Summarise this voice call between the user and ${botName} in one short sentence (max 25 words), past tense, third person ("Talked about…", "Asked ${botName} to…"). No preamble.` },
       { role: 'user', content: `${lines || '(no transcript)'}${tasks.length ? `\n\nWork handed off during the call:\n${tasks.map((t) => `- ${t}`).join('\n')}` : ''}` },
     ],
-  } as any);
+  })) as unknown as { output_text?: string };
   const text = String(res.output_text ?? '').trim();
   return text ? clip(text.replace(/\s+/g, ' '), 240) : null;
 }
 
 voiceApi.post('/end', async (c) => {
   const user = c.get('user');
-  const { botId, callId, transcript, error } = await c.req.json<{ botId: string; callId: string; transcript?: { role: string; text: string }[]; error?: string }>();
+  const { botId, callId, transcript, error } = await requireBody(c, VoiceEndSchema);
   const bot = ownBot(user.id, botId);
   if (!bot) return c.json({ error: 'not found' }, 404);
   const call = calls.get(callId);
@@ -428,7 +468,9 @@ setInterval(() => {
 
 voiceApi.post('/preview', async (c) => {
   const user = c.get('user');
-  const p = await c.req.json<{ botId?: string; voice?: string; speed?: number; language?: string; text?: string; codec?: 'mp3' | 'pcm' }>().catch(() => ({} as any));
+  const p = await c.req
+    .json<PreviewBody>()
+    .catch(() => ({}) as PreviewBody);
   const bot = ownBot(user.id, p.botId);
   const s = bot ? settingsOf(bot) : { voice: 'luna', speed: 1, language: 'auto' };
   const voice = String(p.voice || s.voice).slice(0, 80);

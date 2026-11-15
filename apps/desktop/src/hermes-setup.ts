@@ -1,10 +1,9 @@
 /**
  * Finding, installing and wiring Hermes — the agent harness every Orbit bot runs on.
  *
- * Everything here takes its filesystem, process runner, HTTP client and HOME as arguments
- * (defaulting to the real ones), because this code runs behind a setup window with a
- * progress log: it has to be testable without a network or a real Hermes install, and a
- * failure has to be a readable line rather than a stack trace.
+ * Every side effect is an argument (defaulting to the real one): this runs behind the setup
+ * window's progress log, so it must be testable without a network, and a failure must be a
+ * readable line rather than a stack trace.
  */
 
 import { createHash, randomBytes } from 'node:crypto';
@@ -130,11 +129,9 @@ function firstVersion(text: string): string | null {
 }
 
 /**
- * Detect an existing Hermes.
- *
- * `HERMES_BIN` wins, then the usual install paths; a candidate only counts once
- * `--version` answers, so a stale symlink does not send the setup window down a broken
- * path.
+ * Detect an existing Hermes. `HERMES_BIN` wins, then the usual install paths; a candidate only
+ * counts once `--version` answers, so a stale symlink does not send setup down a broken path.
+ * Detection only reads — the setup window calls it on every open.
  */
 export async function detectHermes(
   env: NodeJS.ProcessEnv = process.env,
@@ -175,7 +172,6 @@ function readHermesApiKey(env: NodeJS.ProcessEnv = process.env, deps: HermesDeps
   }
 }
 
-/** Reject values that are not a bare 64-char lowercase hex digest. */
 export function pickSha256(shaFileText: string): string | null {
   const match = /\b([a-f0-9]{64})\b/i.exec(shaFileText ?? '');
   return match ? match[1].toLowerCase() : null;
@@ -245,7 +241,6 @@ interface ReleaseAsset {
   size?: number;
 }
 
-/** Choose the archive for this platform, preferring the exact arch name. */
 export function pickReleaseAsset(
   assets: ReleaseAsset[],
   platform: NodeJS.Platform,
