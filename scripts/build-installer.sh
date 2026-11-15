@@ -118,15 +118,17 @@ case "$PLATFORM" in
       exit 1
     fi
     echo "▸ no local Windows toolchain: building on GitHub Actions ($REPO @ $REF, publish off)"
-    BEFORE=$(gh run list -R "$REPO" -w desktop-release.yml -L 1 --json databaseId --jq '.[0].databaseId // 0')
+    # Compare like with like: the newest *manual* run before ours, so an old manual run is never
+    # mistaken for the one this script starts.
+    BEFORE=$(gh run list -R "$REPO" -w desktop-release.yml -e workflow_dispatch -L 1 --json databaseId --jq '.[0].databaseId // 0')
     gh workflow run desktop-release.yml -R "$REPO" --ref "$REF" -f publish=false
     RUN=""
     for _ in $(seq 1 30); do
       RUN=$(gh run list -R "$REPO" -w desktop-release.yml -e workflow_dispatch -L 1 --json databaseId --jq '.[0].databaseId // 0')
-      [ "$RUN" != "0" ] && [ "$RUN" != "$BEFORE" ] && break
+      [ "$RUN" != "0" ] && [ "$RUN" -gt "$BEFORE" ] && break
       sleep 2
     done
-    [ -n "$RUN" ] && [ "$RUN" != "$BEFORE" ] || { echo "✗ the workflow run did not appear" >&2; exit 1; }
+    [ -n "$RUN" ] && [ "$RUN" -gt "$BEFORE" ] || { echo "✗ the workflow run did not appear" >&2; exit 1; }
     echo "  https://github.com/$REPO/actions/runs/$RUN"
     gh run watch "$RUN" -R "$REPO" --interval 20 || true
     OUT="$DESKTOP/out/ci-win"
