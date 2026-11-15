@@ -3,7 +3,7 @@ import path from 'node:path';
 import { env } from './env.js';
 import { providerFor } from './computer-provider-registry.js';
 import { CdpSession, cdpAlive, listTabs, openTab, closeTab, type CdpTab } from './lib/cdp.js';
-import { IMAGE_READY, RESULTS_READY, SEARCH_ENGINES, VIDEO_READY, extractScript, imageScript, pageTextScript, searchUrl, videoScript, type SearchEngine } from './computer-research-scripts.js';
+import { BING_IMAGE_READY, IMAGE_READY, RESULTS_READY, SEARCH_ENGINES, VIDEO_READY, bingImageScript, bingImageUrl, extractScript, imageScript, pageTextScript, searchUrl, videoScript, type SearchEngine } from './computer-research-scripts.js';
 import type { ToolCtx, ToolResult } from './agent/tools.js';
 import type { ActivityKind } from './types.js';
 
@@ -88,24 +88,39 @@ async function openAndWait(cdp: string, url: string, readyExpr: string, timeoutM
 const slug = (s: string) => s.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '').slice(0, 40) || 'image';
 const EXT: Record<string, string> = { 'image/jpeg': 'jpg', 'image/png': 'png', 'image/webp': 'webp', 'image/gif': 'gif', 'image/avif': 'avif' };
 
-interface FoundImage { src: string; w: number; h: number; alt: string }
+interface FoundImage { src: string; fallback?: string | null; w: number; h: number; alt: string }
 
 /** Save one image into the Bot's Library and return the file name and media type. */
 async function saveImage(botId: string, query: string, index: number, image: FoundImage): Promise<{ file: string; mime: string; bytes: number }> {
-  const res = await fetch(image.src, {
-    headers: {
-      // gstatic and most search thumbnails reject a request without a browser-ish agent.
-      'user-agent': 'Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/156.0 Safari/537.36',
-      accept: 'image/avif,image/webp,image/png,image/jpeg,*/*',
-      referer: 'https://www.google.com/',
-    },
-    signal: AbortSignal.timeout(20_000),
-  });
-  if (!res.ok) throw new Error(`image ${index + 1} answered ${res.status}`);
-  const mime = (res.headers.get('content-type') ?? '').split(';')[0].trim().toLowerCase();
-  if (!mime.startsWith('image/')) throw new Error(`image ${index + 1} was ${mime || 'not an image'}`);
-  const bytes = Buffer.from(await res.arrayBuffer());
-  if (bytes.byteLength < 1024) throw new Error(`image ${index + 1} was empty`);
+  // A full-size URL is tried first, then the thumbnail: image hosts sometimes refuse a direct fetch
+  // of the original but serve their own cached copy.
+  let lastError = '';
+  let bytes: Buffer | null = null;
+  let mime = '';
+  for (const url of [image.src, image.fallback].filter((u): u is string => Boolean(u))) {
+    try {
+      const res = await fetch(url, {
+        headers: {
+          // gstatic and most search thumbnails reject a request without a browser-ish agent.
+          'user-agent': 'Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/156.0 Safari/537.36',
+          accept: 'image/avif,image/webp,image/png,image/jpeg,*/*',
+          referer: 'https://www.google.com/',
+        },
+        signal: AbortSignal.timeout(20_000),
+      });
+      if (!res.ok) throw new Error(`answered ${res.status}`);
+      const type = (res.headers.get('content-type') ?? '').split(';')[0].trim().toLowerCase();
+      if (!type.startsWith('image/')) throw new Error(`was ${type || 'not an image'}`);
+      const body = Buffer.from(await res.arrayBuffer());
+      if (body.byteLength < 1024) throw new Error('was empty');
+      bytes = body;
+      mime = type;
+      break;
+    } catch (e) {
+      lastError = String((e as { message?: unknown } | null)?.message ?? e);
+    }
+  }
+  if (!bytes) throw new Error(`image ${index + 1} ${lastError}`);
   const stamp = new Date().toISOString().replace(/[:.]/g, '-').slice(0, 19);
   const file = `${slug(query)}-${index + 1}-${stamp}.${EXT[mime] ?? 'img'}`;
   const dir = path.join(LIBRARY(), botId, 'images');
@@ -181,23 +196,30 @@ export const RESEARCH_TOOLS: ToolDef[] = [
       const requested = (SEARCH_ENGINES as readonly string[]).includes(str(a.engine, 20)) ? (str(a.engine, 20) as SearchEngine) : 'google';
       try {
         const { cdp } = await browserFor(ctx);
-        // A walled or empty results page falls through to DuckDuckGo's HTML endpoint, which has no
-        // consent gate and no JavaScript dependency. The answer says which engine actually served it.
+        // An engine can fail two ways: an empty results page, or a page that never loads because it
+        // is a bot wall (Google answers a container's IP with /sorry) or a consent gate. Both fall
+        // through to the next engine, and DuckDuckGo's HTML endpoint is last because it has neither.
+        const attempted: string[] = [];
         for (const engine of [...new Set<SearchEngine>([requested, 'duckduckgo'])]) {
-          const { tab, session } = await openAndWait(cdp, searchUrl(engine, query), RESULTS_READY[engine]);
           try {
-            const results = await session.evaluate<{ title: string; url: string; snippet: string }[]>(extractScript(engine, limit));
-            if (results?.length) {
-              return {
-                output: JSON.stringify({ engine, query, tab: { id: tab.id, url: tab.url }, results }),
-                summary: `${results.length} result(s) on ${engine}`,
-              };
+            const { tab, session } = await openAndWait(cdp, searchUrl(engine, query), RESULTS_READY[engine], 20_000);
+            try {
+              const results = await session.evaluate<{ title: string; url: string; snippet: string }[]>(extractScript(engine, limit));
+              if (results?.length) {
+                return {
+                  output: JSON.stringify({ engine, query, tab: { id: tab.id, url: tab.url }, results, ...(attempted.length ? { skipped: attempted } : {}) }),
+                  summary: `${results.length} result(s) on ${engine}`,
+                };
+              }
+              attempted.push(`${engine}: no results`);
+            } finally {
+              session.close();
             }
-          } finally {
-            session.close();
+          } catch (e) {
+            attempted.push(`${engine}: ${String((e as { message?: unknown } | null)?.message ?? e).slice(0, 160)}`);
           }
         }
-        return { output: `No results came back for "${query}". The results page may need a sign-in; try computer_browser open on a news site, or x_search.` };
+        return { output: `No results came back for "${query}". ${attempted.join('; ')}. Try computer_browser open on a news site, or x_search.` };
       } catch (e) {
         return { output: fail(e) };
       }
@@ -219,15 +241,37 @@ export const RESEARCH_TOOLS: ToolDef[] = [
       const count = clamp(a.count, 1, 6, 3);
       try {
         const { cdp } = await browserFor(ctx);
-        const url = `https://www.google.com/search?q=${encodeURIComponent(query)}&udm=2&hl=en`;
-        const { tab, session } = await openAndWait(cdp, url, "[...document.images].some((i) => i.src.startsWith('http') && i.naturalWidth > 80)", 30_000);
-        let found: FoundImage[];
-        try {
-          found = await session.evaluate<FoundImage[]>(imageScript(count));
-        } finally {
-          session.close();
+        // Google Images is the default; a walled address (Google answers a container IP with /sorry)
+        // falls through to Bing Images, whose tiles carry the full-size URL in their markup.
+        const attempts = [
+          { name: 'Google', url: `https://www.google.com/search?q=${encodeURIComponent(query)}&udm=2&hl=en`, ready: "[...document.images].some((i) => i.src.startsWith('http') && i.naturalWidth > 80)", script: imageScript(count) },
+          { name: 'Bing', url: bingImageUrl(query), ready: BING_IMAGE_READY, script: bingImageScript(count) },
+        ];
+        let found: FoundImage[] = [];
+        let tab: CdpTab | null = null;
+        let source = '';
+        const failures: string[] = [];
+        for (const attempt of attempts) {
+          try {
+            const opened = await openAndWait(cdp, attempt.url, attempt.ready, 20_000);
+            let pictures: FoundImage[];
+            try {
+              pictures = await opened.session.evaluate<FoundImage[]>(attempt.script);
+            } finally {
+              opened.session.close();
+            }
+            if (pictures?.length) {
+              found = pictures;
+              tab = opened.tab;
+              source = attempt.name;
+              break;
+            }
+            failures.push(`${attempt.name}: no pictures`);
+          } catch (e) {
+            failures.push(`${attempt.name}: ${String((e as { message?: unknown } | null)?.message ?? e).slice(0, 160)}`);
+          }
         }
-        if (!found?.length) return { output: `Google Images showed no downloadable pictures for "${query}". The page is still open at ${tab.url}.` };
+        if (!found.length) return { output: `No downloadable pictures for "${query}". ${failures.join('; ')}` };
         const saved: { file: string; mime: string; bytes: number; w: number; h: number; alt: string }[] = [];
         const skipped: string[] = [];
         for (const [i, image] of found.entries()) {
@@ -242,8 +286,8 @@ export const RESEARCH_TOOLS: ToolDef[] = [
         const lines = saved.map((s) => `[hq-file:images/${s.file}|${s.file}|${s.mime}]`);
         return {
           output: [
-            `Saved ${saved.length} image(s) for "${query}" into your Library under images/, from the Google Images tab (${tab.url}).`,
-            ...saved.map((s) => `- ${s.file} (${s.w}×${s.h}, ${Math.round(s.bytes / 1024)} KB)${s.alt ? ` — ${s.alt}` : ''}`),
+            `Saved ${saved.length} image(s) for "${query}" into your Library under images/, from the ${source} Images tab (${tab?.url ?? ''}).`,
+            ...saved.map((s) => `- ${s.file}${s.w && s.h ? ` (${s.w}×${s.h})` : ''}, ${Math.round(s.bytes / 1024)} KB${s.alt ? ` — ${s.alt}` : ''}`),
             ...(skipped.length ? [`Skipped: ${skipped.join('; ')}`] : []),
             ...lines,
           ].join('\n'),

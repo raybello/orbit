@@ -134,3 +134,29 @@ export function pageTextScript(maxChars: number): string {
     return { title: document.title, url: location.href, text: (document.body ? document.body.innerText : '').slice(0, max) };
   })()`;
 }
+
+/** Bing Images, the fallback when Google serves a bot wall to this computer's address. */
+export const BING_IMAGE_READY = "document.querySelectorAll('a.iusc').length > 0";
+
+/**
+ * Bing puts the full-size URL, a thumbnail and the title in each tile's `m` attribute as JSON.
+ * The thumbnail is kept as a fallback: some hosts refuse a direct fetch of the original.
+ */
+export function bingImageScript(count: number): string {
+  return `(() => {
+    const count = ${Math.max(1, Math.round(count))};
+    const out = [];
+    for (const a of document.querySelectorAll('a.iusc')) {
+      let m;
+      try { m = JSON.parse(a.getAttribute('m') || '{}'); } catch { continue; }
+      if (!m || !m.murl) continue;
+      out.push({ src: m.murl, fallback: m.turl || null, w: 0, h: 0, alt: String(m.t || '').slice(0, 200) });
+      if (out.length >= count) break;
+    }
+    return out;
+  })()`;
+}
+
+export function bingImageUrl(query: string): string {
+  return `https://www.bing.com/images/search?q=${encodeURIComponent(query)}&form=HDRSC2&first=1`;
+}

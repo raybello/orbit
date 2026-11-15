@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
-import { IMAGE_READY, RESULTS_READY, SEARCH_ENGINES, VIDEO_READY, extractScript, imageScript, pageTextScript, searchUrl, videoScript } from '../computer-research-scripts.js';
+import { BING_IMAGE_READY, IMAGE_READY, RESULTS_READY, SEARCH_ENGINES, VIDEO_READY, bingImageScript, bingImageUrl, extractScript, imageScript, pageTextScript, searchUrl, videoScript } from '../computer-research-scripts.js';
 
 /**
  * The page scripts are code that runs in another process, where a typo surfaces as "the page did not
@@ -36,6 +36,13 @@ test('image, video and page scripts parse and carry the requested counts', () =>
   assert.match(videos, /const limit = 6/);
 
   parses(pageTextScript(1234), 'page text script');
+
+  // The Bing fallback, for addresses Google walls off.
+  parses(BING_IMAGE_READY, 'bing image ready predicate');
+  const bing = bingImageScript(2);
+  parses(bing, 'bing image script');
+  assert.match(bing, /const count = 2/);
+  assert.match(bingImageUrl('red panda'), /images\/search\?q=red%20panda/);
 });
 
 test('a ready predicate is a boolean expression, not a selector', () => {
