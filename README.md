@@ -1,5 +1,3 @@
-# Orbit
-
 <p align="center">
   A team of AI agents you chat with, each with its own screen on its own computer.<br>
   <a href="https://github.com/NousResearch/hermes-agent">Hermes Agent</a> runs the bots, a Docker desktop gives each one a screen, <a href="https://composio.dev">Composio</a> connects their apps, and local STT/TTS or xAI gives them a voice.
