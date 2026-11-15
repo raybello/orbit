@@ -198,9 +198,10 @@ export type PresetId = (typeof presets)[number]['id'];
 
 /** Metrics for the app shell: the icon rail, the section panel and the details panel. */
 export const layout = {
-  navRailWidth: 48,
+  titleBarHeight: 48,
+  navRailWidth: 64,
   navRailItemHeight: 52,
-  sectionPanelWidth: 280,
+  sectionPanelWidth: 300,
   detailsPanelWidth: 360,
   conversationHeaderHeight: 48,
   sectionPanelHeaderHeight: 48,
@@ -209,6 +210,7 @@ export const layout = {
 
 /** CSS variables that carry the same metrics. */
 export const layoutVars = {
+  titleBarHeight: '--titlebar-height',
   navRailWidth: '--nav-rail-width',
   sectionPanelWidth: '--section-panel-width',
   detailsPanelWidth: '--details-panel-width',

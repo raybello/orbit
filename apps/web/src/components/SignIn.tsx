@@ -2,7 +2,6 @@ import { useState } from 'react';
 import { BotAvatar } from '../avatar/BotAvatar';
 import { api } from '../lib/api';
 import { useStore } from '../store';
-import { TrafficLights } from './Sidebar';
 
 export function SignIn() {
   const devLogin = useStore((s) => s.devLogin);
@@ -21,7 +20,6 @@ export function SignIn() {
 
   return (
     <div className="signin">
-      <div className="signin__chrome"><TrafficLights /></div>
       <div className="signin__card">
         <div className="signin__hero">
           <BotAvatar shape="blob" color="black" size={84} />
