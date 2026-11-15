@@ -38,7 +38,8 @@ export const configApi = {
   settings: (botId: string) => req<BotSettingsBundle>('GET', `/bots/${botId}/settings`),
   updateBot: (botId: string, p: BotPatch) => req<{ bot: Bot }>('PATCH', `/bots/${botId}`, p),
   deleteBot: (botId: string) => req<{ ok: true }>('DELETE', `/bots/${botId}`),
-  makePrimary: (botId: string) => req<{ ok: true }>('POST', `/bots/${botId}/primary`),
+  /** Promote a Bot to primary, or restore it to default. At most three primaries, at least one. */
+  setPrimary: (botId: string, primary: boolean) => req<{ ok: true; primaries: string[] }>('POST', `/bots/${botId}/primary${primary ? '' : '/restore'}`),
   fresh: (botId: string) => req<{ ok: true }>('POST', `/bots/${botId}/fresh`),
 
   deleteMemory: (id: string) => req<{ ok: true }>('DELETE', `/memories/${id}`),

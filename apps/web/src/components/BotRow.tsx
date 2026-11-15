@@ -2,6 +2,7 @@ import { memo } from 'react';
 import type { Bot } from '@orbit/contracts';
 import { BotAvatarFor } from '../avatar/BotAvatar';
 import { displayName } from '../domain/transcript-utils';
+import { PrimaryStar } from './PrimaryStar';
 import { listStamp } from '../lib/time';
 
 export function previewFor(bot: Bot, running: boolean, awaiting: string | null) {
@@ -15,6 +16,7 @@ export const BotRow = memo(function BotRow({ bot, selected, running, awaiting, o
     <button type="button" className={`bot-row${selected ? ' is-selected' : ''}`} onClick={() => onSelect(bot.id)} aria-current={selected || undefined}>
       <span className="bot-row__avatar">
         <BotAvatarFor bot={bot} size={32} />
+        {bot.isPrimary && <PrimaryStar />}
         {(running || awaiting || bot.unread > 0) && (
           <span className={`status-dot ${awaiting ? 'is-attention' : running ? 'is-working' : 'is-unread'}`} aria-label={awaiting ? 'Needs attention' : running ? 'Working' : 'Unread activity'} />
         )}

@@ -98,8 +98,10 @@ export function ChatListView() {
     return matched.slice().sort((a, b) => b.lastActivityAt - a.lastActivityAt);
   }, [bots, filter]);
 
-  const primary = visible.find((b) => b.isPrimary);
-  const rest = primary ? visible.filter((b) => b.id !== primary.id) : visible;
+  // Every primary Bot is pinned above the rest: the team can have up to three, and all of them
+  // carry the star and coordinate. The separator only appears when there is something below it.
+  const primaries = visible.filter((b) => b.isPrimary);
+  const rest = visible.filter((b) => !b.isPrimary);
 
   const row = (bot: Bot) => {
     const { selected, running, awaiting } = statusOf(bot.id, live, selectedBotId);
@@ -153,10 +155,10 @@ export function ChatListView() {
       </div>
 
       <div className="chat-list__rows">
-        {primary && (
+        {primaries.length > 0 && (
           <>
-            {row(primary)}
-            <div className="chat-list__sep" role="separator" />
+            {primaries.map(row)}
+            {rest.length > 0 && <div className="chat-list__sep" role="separator" />}
           </>
         )}
         {rest.map(row)}

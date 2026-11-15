@@ -19,6 +19,30 @@ function secret(name: string): string {
 
 const hermesHome = process.env.HERMES_HOME_PRIMARY ?? path.join(os.homedir(), '.hermes');
 
+/** Hosts a container uses to name another container; the host itself cannot resolve them. */
+const CONTAINER_ONLY_HOSTS = new Set(['host.docker.internal', 'orbit-api', 'gateway.docker.internal']);
+
+/**
+ * Where the primary (host-run) agent should reach this server's MCP endpoint.
+ *
+ * MCP_BASE_URL exists for gateways inside containers. The primary agent is the user's own Hermes on
+ * the host: writing that container-facing name into its config makes every app tool silently
+ * unavailable, which is what an agent reports as "send_to_bot isn't in my toolset". APP_URL is the
+ * published address the host can actually dial, so a container-only MCP base falls back to it.
+ */
+function primaryMcpBase(mcpBase: string | undefined, override: string | undefined, appUrl: string | undefined, port: string | undefined): string {
+  const explicit = (override ?? '').trim();
+  if (explicit) return explicit.replace(/\/+$/, '');
+  const mcp = (mcpBase ?? `http://127.0.0.1:${port ?? 8787}`).replace(/\/+$/, '');
+  try {
+    if (CONTAINER_ONLY_HOSTS.has(new URL(mcp).hostname)) return new URL((appUrl ?? '').trim() || mcp).origin;
+  } catch {
+    /* an unparseable base is left as given; the boot log warns about it */
+  }
+  return mcp;
+}
+
+
 /** Our own version, read from package.json at startup. dist/env.js sits one level under the package
  * root, so the same relative path works for source and build. */
 function packageVersion(): string {
@@ -66,9 +90,16 @@ export const env = {
   enginePortBase: Number(process.env.ENGINE_PORT_BASE ?? 8650),
   /** URL the Hermes gateways use to reach this server's MCP endpoint. */
   mcpBaseUrl: (process.env.MCP_BASE_URL ?? `http://127.0.0.1:${process.env.PORT ?? 8787}`).replace(/\/+$/, ''),
+  /**
+   * The MCP base the *primary* agent uses. That agent runs on the host, not inside the stack, so the
+   * container-facing MCP_BASE_URL (host.docker.internal:8787) is both unresolvable for it and on the
+   * wrong port; APP_URL is the address the host actually published. PRIMARY_MCP_BASE_URL wins when
+   * somebody fronts the app with a proxy.
+   */
+  primaryMcpBaseUrl: primaryMcpBase(process.env.MCP_BASE_URL, process.env.PRIMARY_MCP_BASE_URL, process.env.APP_URL, process.env.PORT),
   /** Extra MCP servers every managed bot gets, as a JSON object of Hermes `mcp_servers` entries (e.g. X's XMCP). */
   extraMcpServers: process.env.EXTRA_MCP_SERVERS ?? '',
-  primaryBotName: process.env.PRIMARY_BOT_NAME ?? 'Doug',
+  primaryBotName: process.env.PRIMARY_BOT_NAME ?? 'Atlas',
   primaryBotLabel: process.env.PRIMARY_BOT_LABEL ?? 'Chief of Staff',
 
   // ---- the one shared computer ----

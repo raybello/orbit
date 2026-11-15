@@ -54,6 +54,13 @@ mac:
   gatekeeperAssess: false
   entitlements: assets/entitlements.mac.plist
   entitlementsInherit: assets/entitlements.mac.plist
+  # Info.plist usage strings. macOS shows them in the consent sheet, and a missing
+  # NSCameraUsageDescription/NSMicrophoneUsageDescription kills the app the moment the
+  # device is touched, so they ship with the bundle rather than being added at signing time.
+  extendInfo:
+    NSCameraUsageDescription: Orbit uses the camera so you can turn video on during a call with a Bot.
+    NSMicrophoneUsageDescription: Orbit uses the microphone for voice calls with your Bots, so you can talk to them and hear spoken replies.
+    NSScreenCaptureDescription: Orbit uses screen sharing so you can show a Bot a window or your whole screen during a call. A share ends as soon as you stop it.
   # Notarization needs an Apple developer identity. The YAML keeps it off so an unsigned
   # local `pack` works; .github/workflows/desktop-release.yml turns it on with
   # `--config.mac.notarize=true` when APPLE_TEAM_ID and friends are present.

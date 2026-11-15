@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState, type KeyboardEvent as ReactKeyboardEvent } from 'react';
 import type { Bot, Routine } from '@orbit/contracts';
 import { BotAvatarFor } from '../avatar/BotAvatar';
+import { PrimaryStar } from './PrimaryStar';
 import { api, openPopup } from '../lib/api';
 import { botVars } from '../lib/colors';
 import { computerStatusText } from '../lib/computer';
@@ -209,7 +210,10 @@ export function DetailsPanel() {
           <div className="details__hero">
             <ComputerScreen key={bot.id} bot={bot} variant="panel" paused={viewerOpen} onExpand={openComputer} />
             <div className="details__who">
-              <BotAvatarFor bot={bot} size={36} />
+              <span className="details__avatar">
+                <BotAvatarFor bot={bot} size={36} />
+                {bot.isPrimary && <PrimaryStar size={14} />}
+              </span>
               <div className="details__who-text">
                 <div className="details__who-head">
                   <span className="details__who-name" title={displayName(bot)}>{displayName(bot)}</span>

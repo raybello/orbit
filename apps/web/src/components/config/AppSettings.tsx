@@ -1,8 +1,29 @@
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
 import type { Toolkit } from '@orbit/contracts';
 import { BotAvatarFor } from '../../avatar/BotAvatar';
 import { configApi, type ComputerDetails } from '../../lib/configApi';
+import {
+  audioContextCtor,
+  canPlayAudio,
+  canShareScreen,
+  describeDisplaySurface,
+  deviceLabel,
+  devicesForKind,
+  errorToMessage,
+  listDevices,
+  mediaDevices,
+  queryDevicePermission,
+  readDeviceSelection,
+  statusForError,
+  statusForPermission,
+  statusLabel,
+  writeDeviceSelection,
+  type DeviceKind,
+  type DeviceSelection,
+  type DeviceStatus,
+  type PermissionStateName,
+} from '../../lib/device-permissions';
 import { relativeShort } from '../../lib/time';
 import { presets } from '@orbit/ui-tokens';
 import { useConfigUI, type AppSection, type Preset, type Theme } from '../../configStore';
@@ -19,6 +40,7 @@ const SECTIONS: { id: AppSection; label: string }[] = [
   { id: 'appearance', label: 'Appearance' },
   { id: 'engine-auth', label: 'Engine Auth' },
   { id: 'computer', label: 'Computer' },
+  { id: 'devices', label: 'Devices & permissions' },
   { id: 'permissions', label: 'Permissions' },
   { id: 'apps', label: 'Connected apps' },
   { id: 'account', label: 'Account' },
@@ -52,6 +74,7 @@ export function AppSettings() {
           {section === 'appearance' && <AppearanceSection />}
           {section === 'engine-auth' && <EngineAuthSection />}
           {section === 'computer' && <ComputerSection />}
+          {section === 'devices' && <DevicesSection />}
           {section === 'permissions' && <PermissionsSection />}
           {section === 'apps' && <AppsSection />}
           {section === 'account' && <AccountSection />}
@@ -259,6 +282,345 @@ function ComputerSection() {
           })}
         </div>
         <div className="cfg-field__hint">Reset closes every window on that Bot’s screen, so it starts clean next time.{maxScreens ? ` Up to ${maxScreens} Bots can have a screen at once${details && details.screens.length >= maxScreens ? '; reset one to free it for another Bot' : ''}.` : ''}</div>
+      </section>
+    </>
+  );
+}
+
+/** One frame later, via rAF where it exists (jsdom has it, a few embedded webviews do not). */
+const nextFrame: (cb: () => void) => void =
+  typeof requestAnimationFrame === 'function'
+    ? (cb) => { requestAnimationFrame(() => cb()); }
+    : (cb) => { window.setTimeout(cb, 16); };
+
+/**
+ * Play the microphone into an analyser for `ms` and report a 0..1 peak while it runs.
+ * A browser without Web Audio has already been shown as Unsupported, so this is best-effort.
+ */
+async function sampleInputLevel(stream: MediaStream, ms: number, onLevel: (level: number) => void): Promise<void> {
+  const Ctx = audioContextCtor();
+  if (!Ctx) return;
+  const ctx = new Ctx();
+  try {
+    await ctx.resume();
+    const source = ctx.createMediaStreamSource(stream);
+    const analyser = ctx.createAnalyser();
+    analyser.fftSize = 512;
+    source.connect(analyser);
+    const data = new Uint8Array(analyser.fftSize);
+    const started = performance.now();
+    await new Promise<void>((resolve) => {
+      const tick = () => {
+        analyser.getByteTimeDomainData(data);
+        let peak = 0;
+        for (let i = 0; i < data.length; i += 1) peak = Math.max(peak, Math.abs(data[i] - 128) / 128);
+        onLevel(Math.min(1, peak * 2.5));
+        if (performance.now() - started >= ms) resolve();
+        else nextFrame(tick);
+      };
+      nextFrame(tick);
+    });
+  } catch {
+    /* the mic itself worked; only the meter is missing */
+  } finally {
+    onLevel(0);
+    await ctx.close().catch(() => {});
+  }
+}
+
+const DEVICE_KINDS: DeviceKind[] = ['microphone', 'camera', 'screen', 'speaker'];
+
+const DEVICE_COPY: Record<DeviceKind, { title: string; blurb: string; action: string; busy: string }> = {
+  microphone: {
+    title: 'Microphone',
+    blurb: 'Lets your Bots hear you during a voice call. The test below listens for two seconds so you can see it working.',
+    action: 'Allow microphone',
+    busy: 'Listening…',
+  },
+  camera: {
+    title: 'Camera',
+    blurb: 'Turns your video on in a call. The preview is local — Orbit never uploads it outside the call.',
+    action: 'Allow camera',
+    busy: 'Camera on…',
+  },
+  screen: {
+    title: 'Screen sharing',
+    blurb: 'Shows a Bot one of your windows or your whole screen while you are in a call. You pick the surface each time.',
+    action: 'Allow screen share',
+    busy: 'Waiting for the picker…',
+  },
+  speaker: {
+    title: 'Speaker',
+    blurb: 'Plays spoken replies out loud. The short test tone also unlocks audio so a Bot can speak straight away.',
+    action: 'Play test sound',
+    busy: 'Playing…',
+  },
+};
+
+interface DeviceCardState {
+  status: DeviceStatus;
+  busy: boolean;
+  /** What the last successful test did, e.g. the shared surface label. */
+  note: string | null;
+  error: string | null;
+}
+
+/** The honest starting point: only the hardware the browser exposes gets a button. */
+function initialStatus(kind: DeviceKind): DeviceStatus {
+  if (kind === 'speaker') return canPlayAudio() ? 'not-requested' : 'unsupported';
+  if (!mediaDevices()) return 'unsupported';
+  if (kind === 'screen' && !canShareScreen()) return 'unsupported';
+  return 'not-requested';
+}
+
+function initialCards(): Record<DeviceKind, DeviceCardState> {
+  const state = (kind: DeviceKind): DeviceCardState => ({ status: initialStatus(kind), busy: false, note: null, error: null });
+  return { microphone: state('microphone'), camera: state('camera'), screen: state('screen'), speaker: state('speaker') };
+}
+
+/**
+ * Devices & permissions: what this computer may give Orbit, one card per capability.
+ *
+ * Every capture path stops its tracks in a `finally`, so a rejected dialog, a thrown
+ * NotReadableError and a finished test all leave the hardware released.
+ */
+export function DevicesSection() {
+  const [devices, setDevices] = useState<MediaDeviceInfo[]>([]);
+  const [selection, setSelection] = useState<DeviceSelection>(readDeviceSelection);
+  const [cards, setCards] = useState<Record<DeviceKind, DeviceCardState>>(initialCards);
+  const [level, setLevel] = useState(0);
+  const [preview, setPreview] = useState<MediaStream | null>(null);
+  const videoRef = useRef<HTMLVideoElement | null>(null);
+  /** Streams a test is still holding, so unmounting the page mid-test does not leave a device open. */
+  const liveStreams = useRef<Set<MediaStream>>(new Set());
+
+  const patch = useCallback((kind: DeviceKind, next: Partial<DeviceCardState>) => {
+    setCards((prev) => ({ ...prev, [kind]: { ...prev[kind], ...next } }));
+  }, []);
+
+  const refreshDevices = useCallback(async () => {
+    const listed = await listDevices();
+    if (listed.supported) setDevices(listed.devices);
+  }, []);
+
+  // Capability detection first: a browser that cannot enumerate has nothing to offer, and the
+  // page must say so rather than throw when the permission prompt is opened.
+  useEffect(() => {
+    let alive = true;
+    void (async () => {
+      const listed = await listDevices();
+      if (!alive) return;
+      if (!listed.supported) {
+        setCards((prev) => {
+          const next = { ...prev };
+          for (const kind of DEVICE_KINDS) next[kind] = { ...next[kind], status: 'unsupported' };
+          return next;
+        });
+        return;
+      }
+      setDevices(listed.devices);
+      const [mic, camera] = await Promise.all([queryDevicePermission('microphone'), queryDevicePermission('camera')]);
+      if (!alive) return;
+      // A browser that already decided is worth showing; one that cannot answer keeps the pill.
+      const reflect = (current: DeviceStatus, state: PermissionStateName | null): DeviceStatus =>
+        current === 'unsupported' || state === null ? current : statusForPermission(state);
+      setCards((prev) => ({
+        ...prev,
+        microphone: { ...prev.microphone, status: reflect(prev.microphone.status, mic) },
+        camera: { ...prev.camera, status: reflect(prev.camera.status, camera) },
+      }));
+    })();
+    return () => { alive = false; };
+  }, []);
+
+  // The preview element takes the stream by ref: React never guarantees one on a plain prop.
+  useEffect(() => {
+    const el = videoRef.current;
+    if (!el || !preview) return;
+    el.srcObject = preview;
+    void el.play().catch(() => {});
+  }, [preview]);
+
+  useEffect(
+    () => () => {
+      for (const stream of liveStreams.current) stream.getTracks().forEach((track) => track.stop());
+      liveStreams.current.clear();
+    },
+    [],
+  );
+
+  const pick = (kind: DeviceKind, id: string) => {
+    const next: DeviceSelection =
+      kind === 'microphone' ? { ...selection, microphoneId: id }
+        : kind === 'camera' ? { ...selection, cameraId: id }
+          : { ...selection, speakerId: id };
+    setSelection(next);
+    writeDeviceSelection(next);
+  };
+
+  const allowMicrophone = async () => {
+    patch('microphone', { busy: true, note: null, error: null });
+    let stream: MediaStream | null = null;
+    try {
+      const md = mediaDevices();
+      if (!md) throw new DOMException('No media devices', 'NotSupportedError');
+      stream = await md.getUserMedia({ audio: selection.microphoneId ? { deviceId: { exact: selection.microphoneId } } : true });
+      liveStreams.current.add(stream);
+      patch('microphone', { status: 'allowed', note: 'Listening for a moment — speak and the bar below should move.' });
+      await sampleInputLevel(stream, 2000, setLevel);
+      await refreshDevices();
+    } catch (err) {
+      patch('microphone', { status: statusForError(err), error: errorToMessage(err), note: null });
+    } finally {
+      stream?.getTracks().forEach((track) => track.stop());
+      if (stream) liveStreams.current.delete(stream);
+      setLevel(0);
+      patch('microphone', { busy: false });
+    }
+  };
+
+  const allowCamera = async () => {
+    patch('camera', { busy: true, note: null, error: null });
+    let stream: MediaStream | null = null;
+    try {
+      const md = mediaDevices();
+      if (!md) throw new DOMException('No media devices', 'NotSupportedError');
+      stream = await md.getUserMedia({ video: selection.cameraId ? { deviceId: { exact: selection.cameraId } } : true });
+      liveStreams.current.add(stream);
+      setPreview(stream);
+      patch('camera', { status: 'allowed', note: 'That is the live preview — it stops on its own in a moment.' });
+      await new Promise<void>((resolve) => { window.setTimeout(resolve, 3000); });
+      await refreshDevices();
+    } catch (err) {
+      patch('camera', { status: statusForError(err), error: errorToMessage(err), note: null });
+    } finally {
+      stream?.getTracks().forEach((track) => track.stop());
+      if (stream) liveStreams.current.delete(stream);
+      setPreview(null);
+      patch('camera', { busy: false });
+    }
+  };
+
+  const allowScreen = async () => {
+    patch('screen', { busy: true, note: null, error: null });
+    let stream: MediaStream | null = null;
+    try {
+      const md = mediaDevices();
+      if (!md || typeof md.getDisplayMedia !== 'function') throw new DOMException('No screen capture', 'NotSupportedError');
+      stream = await md.getDisplayMedia({ video: true });
+      const track = stream.getVideoTracks()[0];
+      const surface = track ? describeDisplaySurface(track) : null;
+      patch('screen', {
+        status: 'allowed',
+        note: surface ? `${surface} — released straight away, nothing is being recorded.` : 'Screen capture is available.',
+      });
+    } catch (err) {
+      patch('screen', { status: statusForError(err), error: errorToMessage(err), note: null });
+    } finally {
+      stream?.getTracks().forEach((track) => track.stop());
+      patch('screen', { busy: false });
+    }
+  };
+
+  const playTestSound = async () => {
+    patch('speaker', { busy: true, note: null, error: null });
+    let ctx: AudioContext | null = null;
+    try {
+      const Ctx = audioContextCtor();
+      if (!Ctx) throw new DOMException('No Web Audio', 'NotSupportedError');
+      ctx = new Ctx();
+      await ctx.resume();
+      const osc = ctx.createOscillator();
+      const gain = ctx.createGain();
+      osc.type = 'sine';
+      osc.frequency.value = 440;
+      gain.gain.value = 0.05;
+      osc.connect(gain);
+      gain.connect(ctx.destination);
+      osc.start();
+      osc.stop(ctx.currentTime + 0.25);
+      await new Promise<void>((resolve) => { window.setTimeout(resolve, 350); });
+      patch('speaker', { status: 'allowed', note: 'That was the test tone. Spoken replies will play out loud now.' });
+    } catch (err) {
+      patch('speaker', { status: statusForError(err), error: errorToMessage(err), note: null });
+    } finally {
+      if (ctx) await ctx.close().catch(() => {});
+      patch('speaker', { busy: false });
+    }
+  };
+
+  const run = (kind: DeviceKind): Promise<void> =>
+    kind === 'microphone' ? allowMicrophone()
+      : kind === 'camera' ? allowCamera()
+        : kind === 'screen' ? allowScreen()
+          : playTestSound();
+
+  return (
+    <>
+      <PageHead
+        title="Devices & permissions"
+        sub="What Orbit may use on this computer, and which device it should use. Nothing is captured unless a call is open."
+      />
+      <section className="cfg-section">
+        <div className="device-grid">
+          {DEVICE_KINDS.map((kind) => {
+            const copy = DEVICE_COPY[kind];
+            const state = cards[kind];
+            const list = devicesForKind(devices, kind);
+            const chosen = kind === 'microphone' ? selection.microphoneId : kind === 'camera' ? selection.cameraId : selection.speakerId;
+            const unsupported = state.status === 'unsupported';
+            return (
+              <div className="cfg-card device-card" key={kind}>
+                <div className="device-card__head">
+                  <div className="cfg-row__text">
+                    <div className="cfg-row__title">{copy.title}</div>
+                    <div className="cfg-row__sub">{copy.blurb}</div>
+                  </div>
+                  <span className={`device-pill is-${state.status}`}>{statusLabel(state.status)}</span>
+                </div>
+                <div className="device-card__controls">
+                  {kind !== 'screen' && (
+                    <select
+                      className="text-input device-card__select"
+                      aria-label={`${copy.title} device`}
+                      value={chosen}
+                      disabled={unsupported}
+                      onChange={(e) => pick(kind, e.target.value)}
+                    >
+                      <option value="">System default</option>
+                      {list.map((device, i) => (
+                        <option key={device.deviceId || `${kind}-${i}`} value={device.deviceId}>{deviceLabel(device, i, kind)}</option>
+                      ))}
+                    </select>
+                  )}
+                  <button
+                    type="button"
+                    className="cfg-btn cfg-btn--primary"
+                    disabled={state.busy || unsupported}
+                    onClick={() => { void run(kind); }}
+                  >
+                    {state.busy ? copy.busy : copy.action}
+                  </button>
+                </div>
+                {kind === 'microphone' && (state.busy || level > 0) && (
+                  <div className="cfg-meter">
+                    <div className="cfg-meter__label"><span>Input level</span><span>{Math.round(level * 100)}%</span></div>
+                    <div className="cfg-meter__track"><span style={{ width: `${Math.round(level * 100)}%` }} /></div>
+                  </div>
+                )}
+                {kind === 'camera' && preview && (
+                  <video ref={videoRef} className="device-card__preview" autoPlay muted playsInline />
+                )}
+                {state.error
+                  ? <div className="cfg-error cfg-error--small">{state.error}</div>
+                  : state.note && <div className="device-card__note">{state.note}</div>}
+              </div>
+            );
+          })}
+        </div>
+        <div className="cfg-field__hint">
+          The system dialog is what actually grants access. If you denied something, change it in System Settings → Privacy &amp; Security, then try again here.
+        </div>
       </section>
     </>
   );

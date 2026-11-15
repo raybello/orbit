@@ -19,6 +19,7 @@
 }
 .details__hero { display: flex; flex-direction: column; gap: 14px; padding: 2px 16px 10px; }
 .details__who { display: flex; align-items: center; gap: 10px; padding: 0 4px; }
+.details__avatar { position: relative; display: inline-flex; flex-shrink: 0; }
 .details__who-text { display: flex; flex-direction: column; flex: 1 1 0; min-width: 0; }
 .details__who-name { min-width: 0; font-size: 16px; font-weight: 500; line-height: 22px; letter-spacing: 0.16px; color: var(--color-ink); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .details__who-head { display: flex; align-items: center; gap: 8px; min-width: 0; }

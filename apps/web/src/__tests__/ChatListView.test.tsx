@@ -63,6 +63,23 @@ describe('ChatListView', () => {
     expect(container.querySelector('.group-row')?.textContent).toContain('Design Crew');
   });
 
+  it('pins every primary Bot (up to three) with a star, above the rest', () => {
+    useStore.setState({
+      bots: [
+        bot({ id: 'a', name: 'Alpha', lastActivityAt: 900 }),
+        bot({ id: 'p1', name: 'Atlas', isPrimary: true, lastActivityAt: 100 }),
+        bot({ id: 'b', name: 'Beta', lastActivityAt: 800 }),
+        bot({ id: 'p2', name: 'Scout', isPrimary: true, lastActivityAt: 200 }),
+      ],
+    });
+    const { container } = render(<ChatListView />);
+
+    // Primaries are pinned as a group; inside it the list keeps its newest-first order.
+    expect(rowNames(container)).toEqual(['Scout', 'Atlas', 'Alpha', 'Beta']);
+    expect(container.querySelectorAll('.primary-star')).toHaveLength(2);
+    expect(container.querySelectorAll('.chat-list__sep')).toHaveLength(1);
+  });
+
   it('shows overlapping member avatars and a member-count badge on a group row', async () => {
     useStore.setState({ bots: [bot({ id: 'g', name: 'Design Crew', kind: 'room', lastActivityAt: 10 })] });
     vi.mocked(api.roomMembers).mockResolvedValue({

@@ -37,7 +37,7 @@ export function ComputerCard({ bot, onOpen }: Props) {
   const kind = KIND_LABEL[bot.kind] ?? '';
   // Nothing to photograph while the computer is asleep or gone; the last frame stays on screen.
   const live = bot.status === 'awake' || bot.status === 'starting';
-  const { src } = useScreenPreview(bot.botId, { enabled: live });
+  const preview = useScreenPreview(bot.botId, { enabled: live });
 
   // The roster can lag behind /computers; a neutral avatar keeps the card from shifting shape.
   const avatar: Pick<Bot, 'avatarShape' | 'avatarColor' | 'name'> = full ?? {
@@ -74,7 +74,7 @@ export function ComputerCard({ bot, onOpen }: Props) {
             <i /><i /><i />
           </span>
           <span className="computer-card__frame-body">
-            <ScreenFrame src={src} bot={avatar} size={30} />
+            <ScreenFrame preview={preview} bot={avatar} size={30} />
           </span>
         </span>
         <span className="computer-card__caption">

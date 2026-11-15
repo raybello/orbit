@@ -7,7 +7,7 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
-import { app, BrowserWindow, Menu, dialog, ipcMain, type IpcMainEvent, type IpcMainInvokeEvent } from 'electron';
+import { app, BrowserWindow, Menu, dialog, ipcMain, systemPreferences, type IpcMainEvent, type IpcMainInvokeEvent, type MediaAccessPermissionRequest, type Session } from 'electron';
 import { ORBIT_HEADERS, ORBIT_WEB_URL_ENV } from '@orbit/contracts';
 import { createLogger } from '@orbit/logger';
 import type { DesktopSetup, DesktopLocalStackState, ServerProbe } from './shared/api';
@@ -159,6 +159,57 @@ function openSetupWindow(): void {
 }
 
 /**
+ * The main window may use the microphone, the camera and screen capture — and nothing else.
+ *
+ * `app-window` installs a deliberately narrow policy on every session it creates (microphone
+ * only). Installing this afterwards replaces that policy on the app's own session; the setup
+ * window keeps its separate `orbit-setup` partition, so a welcome card can never ask for a
+ * camera. Keeping the allowlist here rather than widening the shared installer leaves the
+ * setup window's stricter policy intact.
+ */
+const APP_PERMISSIONS = new Set(['media', 'display-capture', 'fullscreen']);
+
+function installDevicePermissions(ses: Session): void {
+  ses.setPermissionRequestHandler((_webContents, permission, callback, details) => {
+    if (!APP_PERMISSIONS.has(permission)) {
+      callback(false);
+      return;
+    }
+    // Only getUserMedia is gated by Apple's TCC hardware switch; screen capture prompts on
+    // its own when the capture starts, and fullscreen needs no dialog at all.
+    if (process.platform !== 'darwin' || permission !== 'media') {
+      callback(true);
+      return;
+    }
+    void askForMacMediaAccess(details as MediaAccessPermissionRequest)
+      .then((granted) => callback(granted))
+      .catch(() => callback(true));
+  });
+
+  // `navigator.permissions.query({name:'microphone'})` reads this handler. Without it every
+  // device answers "denied" before a request is ever made, even though the handler above
+  // would grant it, and the settings page would show a lie.
+  ses.setPermissionCheckHandler((_webContents, permission) => APP_PERMISSIONS.has(permission));
+}
+
+/**
+ * Ask macOS for the microphone and/or camera the renderer's request names.
+ *
+ * Electron reports getUserMedia as one `media` permission with `mediaTypes`; a request with no
+ * types is the older microphone-and-camera pair. `askForMediaAccess` only shows the OS dialog
+ * the first time — later calls resolve from the stored decision, which is what we want.
+ */
+async function askForMacMediaAccess(details: MediaAccessPermissionRequest): Promise<boolean> {
+  const types = details.mediaTypes ?? [];
+  const wantsAudio = types.length === 0 || types.includes('audio');
+  const wantsVideo = types.length === 0 || types.includes('video');
+  const answers: boolean[] = [];
+  if (wantsAudio) answers.push(await systemPreferences.askForMediaAccess('microphone'));
+  if (wantsVideo) answers.push(await systemPreferences.askForMediaAccess('camera'));
+  return answers.every(Boolean);
+}
+
+/**
  * Open the app window on `url`.
  *
  * `initialUrl` is the first document to load when it differs from the app's own origin — the
@@ -182,6 +233,9 @@ async function openAppWindow(url: string, initialUrl?: string): Promise<void> {
     },
   });
   mainWindow = appSession.window;
+  // createAppWindow installs the shared narrow policy; this widens the app's own session to
+  // the media surface after it, and never touches the setup window's partition.
+  installDevicePermissions(appSession.session);
   booted = true;
 
   // createAppWindow already waited for the first load, so the session has cookies and
