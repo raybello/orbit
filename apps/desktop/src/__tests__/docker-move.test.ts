@@ -191,6 +191,21 @@ describe('dockerDataExists', () => {
     };
     assert.equal(await dockerDataExists({ userDataDir: userData, exec: failing, dockerBinary: 'docker' }), false);
   });
+
+  test('looks at the volume of the compose project actually in use', async () => {
+    const userData = tmpDir('data-project');
+    const asked: string[] = [];
+    const exec: RuntimeExec = async (_binary, args) => {
+      asked.push(args[2]);
+      // Only the dev stack's volume exists: a separate project must not mistake it for its own.
+      return args[2] === 'orbit_orbit-data'
+        ? ({ code: 0, stdout: '[]', stderr: '' } as ExecResult)
+        : ({ code: 1, stdout: '', stderr: 'no such volume' } as ExecResult);
+    };
+    const env = { COMPOSE_PROJECT_NAME: 'orbit-try' };
+    assert.equal(await dockerDataExists({ userDataDir: userData, exec, dockerBinary: 'docker', env }), false);
+    assert.deepEqual(asked, ['orbit-try_orbit-data', 'orbit-try_data']);
+  });
 });
 
 // ------------------------------------------------------------------ moveAccepted

@@ -187,6 +187,9 @@ jobs:
       APPLE_ID: ${{ matrix.platform == 'mac' && secrets.APPLE_ID || '' }}
       APPLE_APP_SPECIFIC_PASSWORD: ${{ matrix.platform == 'mac' && secrets.APPLE_APP_SPECIFIC_PASSWORD || '' }}
       GH_TOKEN: ${{ secrets.GH_TOKEN || secrets.GITHUB_TOKEN }}
+      # A tag publishes; a manual run publishes only when its `publish` input is ticked, so
+      # scripts/build-installer.sh can build installers on these runners without releasing them.
+      PUBLISH: ${{ (github.event_name == 'push' || inputs.publish) && 'always' || 'never' }}
       # Keep electron-builder from trying to sign with a keychain identity that isn't there.
       CSC_IDENTITY_AUTO_DISCOVERY: ${{ matrix.platform == 'mac' && secrets.APPLE_DEVELOPER_CERTIFICATE != '' || false }}
 
@@ -247,7 +250,7 @@ jobs:
       # --- macOS: signed + notarized when the secrets exist, plain build otherwise.
       - name: Package (macOS, notarized)
         if: matrix.platform == 'mac' && env.APPLE_TEAM_ID != '' && env.APPLE_ID != ''
-        run: pnpm --filter @orbit/desktop exec electron-builder --mac --publish always --config.mac.notarize=true
+        run: pnpm --filter @orbit/desktop exec electron-builder --mac --publish "$PUBLISH" --config.mac.notarize=true
 
       - name: Package (macOS, unsigned)
         if: matrix.platform == 'mac' && (env.APPLE_TEAM_ID == '' || env.APPLE_ID == '')
@@ -256,20 +259,20 @@ jobs:
           # An empty CSC_LINK is read as a path ("apps/desktop not a file"); without a
           # certificate the variables must be absent. after-pack.cjs then ad-hoc signs.
           if [ -z "$CSC_LINK" ]; then unset CSC_LINK CSC_KEY_PASSWORD; fi
-          pnpm --filter @orbit/desktop exec electron-builder --mac --publish always
+          pnpm --filter @orbit/desktop exec electron-builder --mac --publish "$PUBLISH"
 
       - name: Package (Windows)
         if: matrix.platform == 'win'
         shell: bash
         run: |
           unset CSC_LINK CSC_KEY_PASSWORD
-          pnpm --filter @orbit/desktop exec electron-builder --win --publish always
+          pnpm --filter @orbit/desktop exec electron-builder --win --publish "$PUBLISH"
 
       - name: Package (Linux)
         if: matrix.platform == 'linux'
         run: |
           unset CSC_LINK CSC_KEY_PASSWORD
-          pnpm --filter @orbit/desktop exec electron-builder --linux --publish always
+          pnpm --filter @orbit/desktop exec electron-builder --linux --publish "$PUBLISH"
 
       - name: Smoke the packaged app (macOS)
         if: matrix.platform == 'mac'

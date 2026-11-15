@@ -11,6 +11,10 @@ cd "$(dirname "$0")/.." || exit 1
 
 STACK="${ORBIT_STACK_DIR:-$HOME/Library/Application Support/Orbit/stack}"
 APP_IMAGE="ghcr.io/raybello/orbit/app:edge"
+# The loop builds :edge, so it must also run :edge. The stack's .env carries whatever tag the last
+# launched app wrote there, and an installed release (same "Orbit" profile) writes its own version,
+# e.g. v0.1.2. Compose and the desktop app both prefer this variable over the .env value.
+export ORBIT_IMAGE_TAG=edge
 
 echo "▸ 1/3 building $APP_IMAGE from this tree"
 # CACHE_BUST busts the source-copy + build layers on every run so the web and

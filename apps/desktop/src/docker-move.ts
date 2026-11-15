@@ -121,7 +121,10 @@ export async function dockerDataExists(opts: DockerDataOptions): Promise<boolean
     opts.dockerBinary ?? resolveDockerBinary(opts.platform ?? process.platform, opts.env ?? process.env, exists);
   if (!binary) return false;
 
-  for (const volume of ['orbit_orbit-data', 'orbit_data']) {
+  // Compose names volumes after the project: `orbit` from the compose file, unless
+  // COMPOSE_PROJECT_NAME overrides it (scripts/try-installer.sh does, to stay off the dev stack).
+  const project = (opts.env ?? process.env).COMPOSE_PROJECT_NAME?.trim() || 'orbit';
+  for (const volume of [`${project}_orbit-data`, `${project}_data`]) {
     try {
       const result = await exec(binary, ['volume', 'inspect', volume], { timeoutMs: 5_000 });
       if (result.code === 0) return true;

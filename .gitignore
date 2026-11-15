@@ -31,3 +31,6 @@ apps/mobile/dist/
 
 # /brag launch-video working files (the final video lives in site/media)
 brag-output/
+
+# fetched from a release by scripts/build-installer.sh; the release workflow makes its own
+apps/desktop/resources/server-bundle.json
