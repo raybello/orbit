@@ -40,6 +40,8 @@ extraResources:
     to: server-bundle.json
 
 asar: true
+# Ad-hoc signs the macOS bundle when no Developer ID is configured (see the script).
+afterPack: scripts/after-pack.cjs
 # No native modules in main: everything but electron/electron-updater is bundled by esbuild.
 npmRebuild: false
 

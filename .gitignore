@@ -28,3 +28,6 @@ apps/mobile/dist/
 
 # local agent scratch and decision logs
 .hermes/
+
+# /brag launch-video working files (the final video lives in site/media)
+brag-output/

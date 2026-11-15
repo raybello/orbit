@@ -1,9 +1,14 @@
+<h1 align="center">Orbit</h1>
+
 <p align="center">
   A team of AI agents you chat with, each with its own screen on its own computer.<br>
   <a href="https://github.com/NousResearch/hermes-agent">Hermes Agent</a> runs the bots, a Docker desktop gives each one a screen, <a href="https://composio.dev">Composio</a> connects their apps, and local STT/TTS or xAI gives them a voice.
 </p>
 
 <p align="center">
+  <a href="https://raybello.github.io/orbit/">Website</a> ·
+  <a href="https://raybello.github.io/orbit/#download">Download</a> ·
+  <a href="https://raybello.github.io/orbit/docs/">Docs</a> ·
   <a href="#what-you-get">What you get</a> ·
   <a href="#how-it-fits-together">How it works</a> ·
   <a href="#build-and-run">Build and run</a> ·
@@ -13,10 +18,25 @@
 </p>
 
 <p align="center">
+  <a href="https://github.com/raybello/orbit/actions/workflows/ci.yml"><img alt="CI" src="https://github.com/raybello/orbit/actions/workflows/ci.yml/badge.svg?branch=main"></a>
+  <a href="https://github.com/raybello/orbit/actions/workflows/publish-images.yml"><img alt="Publish images" src="https://github.com/raybello/orbit/actions/workflows/publish-images.yml/badge.svg?branch=main"></a>
+  <a href="https://raybello.github.io/orbit/"><img alt="Website" src="https://img.shields.io/website?url=https%3A%2F%2Fraybello.github.io%2Forbit%2F&label=website&up_message=live&color=5b5fc7"></a>
+  <a href="https://github.com/raybello/orbit/stargazers"><img alt="GitHub stars" src="https://img.shields.io/github/stars/raybello/orbit?style=flat&logo=github"></a>
+  <a href="https://github.com/raybello/orbit/commits/main"><img alt="Last commit" src="https://img.shields.io/github/last-commit/raybello/orbit"></a>
+  <a href="https://github.com/raybello/orbit/issues"><img alt="Open issues" src="https://img.shields.io/github/issues/raybello/orbit"></a>
+  <a href="https://github.com/raybello/orbit/pulls"><img alt="Open pull requests" src="https://img.shields.io/github/issues-pr/raybello/orbit"></a>
+  <br>
+  <a href="LICENSE"><img alt="License" src="https://img.shields.io/github/license/raybello/orbit"></a>
+  <img alt="Top language" src="https://img.shields.io/github/languages/top/raybello/orbit">
+  <img alt="Repo size" src="https://img.shields.io/github/repo-size/raybello/orbit">
   <img alt="Node 22 or newer" src="https://img.shields.io/badge/node-%E2%89%A522-3c873a">
   <img alt="pnpm 12" src="https://img.shields.io/badge/pnpm-12-f69220">
-  <img alt="MIT license" src="https://img.shields.io/badge/license-MIT-1c1c1c">
   <img alt="Status: experimental" src="https://img.shields.io/badge/status-experimental-fd690f">
+</p>
+
+<p align="center">
+  <a href="https://raybello.github.io/orbit/"><img src="site/media/brag.jpg" alt="Orbit launch video poster: download Orbit for macOS and Windows. Click to watch on the website." width="100%"></a><br>
+  <sub><a href="https://raybello.github.io/orbit/">Watch the 22-second launch video</a> · <a href="site/media/brag.mp4">16:9 MP4</a> · <a href="site/media/brag-vertical.mp4">9:16 MP4</a></sub>
 </p>
 
 <p align="center">
@@ -129,7 +149,7 @@ flowchart LR
 - **Groups are rooms, not agents.** A room row has `kind='room'` and a member list. The server dispatches turns; the bots reply with `post_to_group`, and an @mention triggers the next hop.
 - **The server owns the transcript.** Chat rows, cards, routines and screens live in SQLite. SSE fans changes out to every connected client, desktop and mobile.
 
-More detail is in the [architecture guide](docs/ARCHITECTURE.md) and [per-bot computers](docs/per-bot-computers.md).
+More detail is in the [documentation site](https://raybello.github.io/orbit/docs/) (usage, setup, [API reference](https://raybello.github.io/orbit/docs/api.html), [source map](https://raybello.github.io/orbit/docs/source.html)), the [architecture guide](docs/ARCHITECTURE.md) and [per-bot computers](docs/per-bot-computers.md).
 
 ### How this relates to Hermes Bot Mode
 
@@ -144,6 +164,61 @@ Hermes Desktop has its own Bot Mode. Orbit uses the same Hermes engine but does 
 | Bot to bot | Group rooms and `send_to_bot` | Hermes' `message_agent` tool |
 
 So bots made here do not show up in Hermes Desktop's Bots tab, and bots made there do not show up here.
+
+## Install the desktop app
+
+Download the installer for your computer from the [website](https://raybello.github.io/orbit/#download) (it picks your platform and shows each file's size and SHA-256) or from [GitHub Releases](https://github.com/raybello/orbit/releases/latest).
+
+| Platform | File |
+|---|---|
+| macOS, Apple silicon | `Orbit-<version>-arm64.dmg` |
+| macOS, Intel | `Orbit-<version>.dmg` |
+| Windows | `Orbit-Setup-<version>.exe` |
+| Linux | `Orbit-<version>.AppImage` |
+
+The builds are not signed with an Apple or Microsoft certificate yet, so the first launch needs one extra step.
+
+### macOS
+
+1. Open the DMG and drag **Orbit** into **Applications**.
+
+   <img src="docs/screenshots/install/01-dmg.png" alt="The Orbit disk image: drag Orbit.app onto the Applications folder." width="540">
+
+2. Open Orbit from Applications. Because the app is not notarized yet, macOS stops the first launch with "Orbit.app Not Opened". Click **Done**.
+
+   <img src="docs/screenshots/install/02-not-opened.png" alt="macOS: Orbit.app Not Opened. Apple could not verify Orbit.app is free of malware." width="260">
+
+3. Allow it once, either way:
+   - **Terminal:** clear the download flag, then open Orbit again.
+
+     ```bash
+     xattr -dr com.apple.quarantine /Applications/Orbit.app
+     ```
+
+   - **System Settings:** go to **Privacy & Security**, scroll to **Security**, and click **Open Anyway** next to the Orbit message (macOS shows it right after a blocked launch from Finder).
+
+4. Choose where Orbit runs. **This computer** runs the server locally; **Existing instance** connects to a server you already run.
+
+   <img src="docs/screenshots/install/03-setup.png" alt="Welcome to Orbit: choose This computer or Existing instance." width="540">
+
+5. Orbit checks and installs what it needs, asking before each install:
+   - **Hermes Agent**, the engine every bot runs on, if it is not installed.
+   - **Docker Desktop**, if Docker is missing: Orbit downloads the right build for your Mac, checks Docker's signature, copies it to Applications and starts it. Accept Docker's licence when it asks, then click **Continue**.
+   - **Apple's container runtime**, on Macs that use the native stack (macOS 26 or later with a release that ships the native server bundle). Orbit downloads Apple's signed package, checks its SHA-256 and signature, and macOS asks for your password to install it.
+
+6. Orbit pulls its server image, starts the stack and signs you in. Your primary bot is ready when its Engine panel shows **Hermes · ready**.
+
+   <img src="docs/screenshots/install/04-first-run.png" alt="Orbit's first run: Atlas, the primary bot, with Hermes ready and the engine connected." width="100%">
+
+The screenshots above come from a real install of the unsigned Apple-silicon DMG, downloaded with the quarantine flag a browser sets, on macOS 26.
+
+### Windows
+
+Run `Orbit-Setup-<version>.exe`. If SmartScreen warns about an unrecognised app, choose **More info**, then **Run anyway**. When Docker is missing, Orbit can download and start Docker Desktop's installer, which handles elevation and WSL 2.
+
+### Linux
+
+Make the AppImage executable (`chmod +x Orbit-*.AppImage`) and run it. Install Docker Engine with your package manager first; Orbit does not install it on Linux.
 
 ## Build and run
 

@@ -1,0 +1,76 @@
+<h1>Using Orbit</h1>
+<p class="lede">Give a bot a job, connect the apps it needs, and follow its work in chat. This page walks through each part of the app in the order you will meet it.</p>
+
+<h2 id="sign-in">Signing in</h2>
+<p>Orbit signs you in with Google when <code>GOOGLE_CLIENT_ID</code> and <code>GOOGLE_CLIENT_SECRET</code> are set. For local work, <code>DEV_LOGIN=1</code> turns on an email-only form; never set it on a public address. <code>ALLOWED_EMAILS</code> limits who may sign in. On a remote install without Google configured, <code>scripts/sign-in-link.sh you@example.com</code> prints a one-time sign-in link.</p>
+<p>The mobile app and other native clients sign in with <code>POST /api/auth/sign-in</code> and keep a bearer token; the browser and desktop app use a session cookie. Sessions last 30 days.</p>
+
+<h2 id="layout">Finding your way around</h2>
+<p>The left rail has seven sections: <strong>Activity</strong> (a feed across every bot), <strong>Chat</strong>, <strong>Calendar</strong>, <strong>Calls</strong>, <strong>Files</strong>, <strong>Screens</strong> and <strong>Skills</strong>. In Chat, the list of bots and groups sits beside the open conversation; the details panel on the right holds the bot's Screen, Activity, Tasks and Library tabs. Settings (theme, accent colour, devices, voice, connected apps) open from your avatar at the bottom of the rail.</p>
+
+<h2 id="bots">Creating a bot</h2>
+<ol>
+  <li>In Chat, choose <strong>New Bot</strong>.</li>
+  <li>Give it a name, pick an avatar shape and colour, and choose <strong>personal</strong> or <strong>teammate</strong> mode.</li>
+  <li>Orbit creates a Hermes home and engine for it, registers a computer, and gives it its own memory. The bot is ready once both its engine and its screen are up.</li>
+</ol>
+<p>The default ceiling is four bots (<code>MAX_BOTS=4</code>), because each desktop takes a screen, a browser and roughly 1–2 GB of RAM. A new managed bot inherits the primary agent's provider and API keys.</p>
+<p>Open a bot's settings to change its name, label, description and instructions, its reasoning effort (<code>low</code> to <code>xhigh</code>), its voice, and to pin it. <strong>Make primary</strong> promotes a bot to team coordinator.</p>
+
+<h2 id="chat">Chatting</h2>
+<p>Type in the composer and press Enter. You can attach files (they land in the bot's attachments) and use the mic button for dictation. While a bot works, the transcript shows what it is doing right now (thinking, browsing, running commands, waiting for you), how long it has been at it, and each tool call. When the turn ends it folds into a chip such as "Worked for 1m 14s · 2 steps" that you can open.</p>
+<ul>
+  <li><strong>Stop</strong> interrupts the running turn.</li>
+  <li><strong>New conversation</strong> clears the transcript and starts a fresh generation; the bot keeps its memory.</li>
+  <li>Unread counts and previews show on each bot in the list; mute a group to keep it quiet.</li>
+</ul>
+
+<h2 id="cards">Cards: when a bot asks you</h2>
+<div class="table-wrap"><table>
+<thead><tr><th>Card</th><th>Appears when</th><th>Your options</th></tr></thead>
+<tbody>
+<tr><td>Approval</td><td>A bot wants to run a Composio action that writes (send, post, delete).</td><td><strong>Allow</strong> once, <strong>Always</strong> (saves a policy for that tool), or <strong>Deny</strong>. Unanswered approvals expire.</td></tr>
+<tr><td>Question</td><td>A bot calls <code>ask_user</code> with a question and options.</td><td>Pick an option or type an answer; or dismiss.</td></tr>
+<tr><td>Connect</td><td>A bot needs an app you have not connected (<code>request_app_connection</code>).</td><td>Connect through Composio's OAuth flow, or skip.</td></tr>
+<tr><td>Draft</td><td>A bot prepared an email, Slack or chat message.</td><td>Send it or discard it.</td></tr>
+</tbody></table></div>
+<p>Saved "always" policies are listed under Settings and can be removed there.</p>
+
+<h2 id="screens">Screens: each bot's computer</h2>
+<p>The <strong>Screens</strong> section shows one card per bot with its status (Awake, Sleeping). <strong>Open</strong> shows the bot's desktop live over VNC. From the viewer you can:</p>
+<ul>
+  <li><strong>Watch</strong> what the bot does in its browser, files and terminal.</li>
+  <li><strong>Take control</strong> to use your own mouse and keyboard, for example to finish a sign-in the bot cannot do. <strong>Hand back</strong> returns control and tells the bot to continue.</li>
+  <li><strong>Reset</strong> restarts a stuck desktop.</li>
+</ul>
+<p>Idle containers are suspended after <code>COMPUTER_IDLE_TIMEOUT_MIN</code> minutes (30 by default) and resume when needed; the bot's home folder survives, so logins and files persist.</p>
+
+<h2 id="groups">Groups and bot handoffs</h2>
+<p>Choose <strong>Group</strong>, name it, and pick at least two bots. A message in a group dispatches the bots it @mentions, or the whole room when nobody is mentioned (capped at three). Bots answer in the room with <code>post_to_group</code>. When a bot @mentions a peer, Orbit dispatches that peer one hop deeper, so you can ask one bot to consult another. Bots can also message each other directly with <code>send_to_bot</code>.</p>
+
+<h2 id="calendar">Calendar, routines and check-ins</h2>
+<ul>
+  <li><strong>One-time event:</strong> pick a bot, a date and time, and the prompt it runs then.</li>
+  <li><strong>Recurring event:</strong> a cron preset (daily, weekdays, weekly) or a custom cron expression, in your time zone.</li>
+  <li><strong>Event routine:</strong> a Composio trigger (for example a new Gmail message) that wakes a bot with a prompt. These are stored as routines with a schedule of <code>event:&lt;TRIGGER_SLUG&gt;</code>.</li>
+  <li><strong>Check-ins:</strong> the primary bot can check in at times you choose and send one concise message or stay silent.</li>
+</ul>
+<p>Bots can create and edit their own routines with the <code>create_routine</code>, <code>update_routine</code> and <code>delete_routine</code> tools. You can pause, run now or delete a routine from the bot's details.</p>
+
+<h2 id="files">Tasks, memory and files</h2>
+<p>Each bot keeps a task list (working, needs input, done), a memory of facts (review it, or compact the conversation, from settings), and a Library of files it saved. The <strong>Files</strong> section is one list over every bot's Library, message attachments and workspace, with preview and download.</p>
+
+<h2 id="voice">Voice calls</h2>
+<p>Start a call from the composer. Orbit prefers on-device speech (sherpa-onnx STT, VAD and TTS) when the model files are installed, and falls back to the cloud voice (xAI) when they are not. Download local models from Settings → Voice. The spoken turn lands in the bot's normal transcript, with the call's summary and transcript on its end-of-call row. Per bot you can choose the voice, speed (0.7–1.5×), language and provider.</p>
+
+<h2 id="apps">Connected apps</h2>
+<p>Open <strong>Connect apps</strong> to link accounts through Composio (needs <code>COMPOSIO_API_KEY</code>). Google (Gmail and Calendar) can also be connected directly with your own OAuth client. Bots ask for an app when they need one; reads run directly, writes wait for an approval card.</p>
+
+<h2 id="engine">Models and subscriptions</h2>
+<p>In a bot's <strong>Engine</strong> panel, pick a provider and model, or leave both on the agent's default. <strong>Sign in to a subscription</strong> opens a terminal on the bot's own screen running Hermes' sign-in for that provider (for example Claude Pro/Max); finish it in the viewer and the bot uses that subscription from then on. Check your provider's terms before running an agent on a consumer subscription. Codex subscriptions always need their own sign-in.</p>
+
+<h2 id="skills">Skills</h2>
+<p>The <strong>Skills</strong> section lists the MCP servers available to each bot and lets you turn them on or off per bot. In a bot's settings you can also write custom skills: a name, a description and a body of instructions.</p>
+
+<h2 id="mobile">On your phone</h2>
+<p>The Expo app for iOS and Android has tabs for chats, activity, calendar, files, computers and settings, a thread view per bot, and a live VNC viewer. On first launch, point it at your Orbit server's URL (or bake <code>EXPO_PUBLIC_API_URL</code> into the build) and sign in. Push notifications are registered with <code>POST /api/push/register</code>.</p>

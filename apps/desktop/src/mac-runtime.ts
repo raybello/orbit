@@ -559,78 +559,111 @@ export function containerInstallRoot(opts: ContainerInstallOptions = {}): string
   return opts.installRoot ?? path.join(os.homedir(), 'Library', 'Containers', 'com.apple.container');
 }
 
+/** The signed installer package Apple publishes for each release. */
+export function containerPackageName(version: string): string {
+  return `container-${version}-installer-signed.pkg`;
+}
+
 export function containerReleaseUrl(version: string): string {
-  return `https://github.com/apple/container/releases/download/${version}/container-${version}-installer-signed.tar`;
+  return `https://github.com/apple/container/releases/download/${version}/${containerPackageName(version)}`;
 }
 
 /**
- * Install Apple's container CLI from its signed installer release.
+ * SHA-256 of the pinned release's signed package, from the GitHub release's asset digest.
+ * Bump it together with CONTAINER_RUNTIME_VERSION.
+ */
+export const CONTAINER_RUNTIME_SHA256: Record<string, string> = {
+  '1.7.1': 'b6739caf3d47ca53a78f1a7edf32521420a75c7941838c3cefa75f30b80f5a97',
+};
+
+/** What `pkgutil --check-signature` prints for a package Apple signed for distribution. */
+export const EXPECTED_PACKAGE_SIGNER = 'Developer ID Installer: Apple Inc.';
+
+/**
+ * `pkgutil --check-signature` output → ok only for a trusted Apple Developer ID signature.
+ * Pure, so the tests can feed it captured output.
+ */
+export function packageSignatureOk(output: string): boolean {
+  return /Status:\s*signed by a (developer certificate issued by Apple|certificate trusted by Mac OS X|certificate trusted by macOS)/i.test(output)
+    && output.includes(EXPECTED_PACKAGE_SIGNER);
+}
+
+/** Run a shell command as root through macOS's own password prompt. */
+export function adminShellArgs(command: string, prompt: string): string[] {
+  const quote = (text: string) => `"${text.replace(/\\/g, '\\\\').replace(/"/g, '\\"')}"`;
+  return ['-e', `do shell script ${quote(command)} with prompt ${quote(prompt)} with administrator privileges`];
+}
+
+/** Single-quote a path for a POSIX shell. */
+export function shellQuote(value: string): string {
+  return `'${value.replace(/'/g, `'\\''`)}'`;
+}
+
+/**
+ * Install Apple's container CLI from its signed installer package.
  *
- * There is no checksum we host, so the signature *is* the verification: unpack, verify
- * with `codesign`, and only then run the installer script (which asks for admin rights).
+ * The package is checked twice before anything runs as root: its SHA-256 must match the
+ * pinned release digest, and `pkgutil` must report Apple's Developer ID Installer signature.
+ * The install itself goes through macOS's administrator prompt, then the runtime's system
+ * service is started so the first bot VM does not have to wait for it.
  */
 export async function installContainerRuntime(
   version: string = CONTAINER_RUNTIME_VERSION,
   onProgress: (line: string) => void = () => {},
   opts: ContainerInstallOptions = {},
 ): Promise<string> {
-  const exists = opts.exists ?? ((file: string) => fs.existsSync(file));
   const exec = opts.exec ?? defaultExec;
   const download = opts.download ?? downloadVerified;
-  const verify = opts.verify ?? ((binary: string) => verifyRuntimeSignature(binary, { exec }));
   const installRoot = containerInstallRoot(opts);
-  const prefix = opts.prefixDir ?? '/usr/local/bin';
+
+  const existing = resolveContainerRuntime({ env: opts.env, exists: opts.exists });
+  if (existing && !existing.includes('com.apple.container/bin')) {
+    onProgress('Apple container is already installed');
+    await startContainerSystem(existing, exec, onProgress);
+    return existing;
+  }
 
   fs.mkdirSync(installRoot, { recursive: true, mode: 0o700 });
-  const archive = path.join(installRoot, `container-${version}-installer.tar`);
+  const pkg = path.join(installRoot, containerPackageName(version));
 
   onProgress(`Downloading Apple container ${version}`);
-  await download(containerReleaseUrl(version), '', 0, archive);
-
-  const extractDir = path.join(installRoot, `container-${version}`);
-  fs.rmSync(extractDir, { recursive: true, force: true });
-  fs.mkdirSync(extractDir, { recursive: true, mode: 0o700 });
-  const untar = await exec('tar', ['-xf', archive, '-C', extractDir], { timeoutMs: 600_000 });
-  if (untar.code !== 0) {
-    throw new BundleInstallError(`could not unpack the container installer: ${execText(untar)}`);
-  }
-  removeFile(archive);
-
-  const roots = [extractDir, singleDirectory(extractDir)].filter((candidate): candidate is string => !!candidate);
-  const binary = roots
-    .flatMap((root) => ['bin/container', 'container'].map((rel) => path.join(root, rel)))
-    .find(exists);
-  if (!binary) {
-    throw new BundleInstallError(`the container installer unpacked without a container binary in ${extractDir}`);
-  }
-  const root = roots.find((candidate) => binary.startsWith(`${candidate}${path.sep}`)) ?? extractDir;
+  await download(containerReleaseUrl(version), CONTAINER_RUNTIME_SHA256[version] ?? '', 0, pkg);
 
   onProgress('Verifying the Apple signature');
-  const signature = await verify(binary);
-  if (!signature.ok) {
-    throw new BundleInstallError(`refusing to install an unsigned container runtime: ${signature.detail}`);
+  const check = await exec('pkgutil', ['--check-signature', pkg], { timeoutMs: 60_000 });
+  if (check.code !== 0 || !packageSignatureOk(`${check.stdout}\n${check.stderr}`)) {
+    removeFile(pkg);
+    throw new BundleInstallError(`refusing to install a container package Apple did not sign: ${execText(check)}`);
   }
 
-  const script = path.join(root, 'install-container.sh');
   onProgress('Installing (macOS will ask for your password)');
-  if (exists(script)) {
-    const install = await exec('bash', [script, '-d', prefix], { timeoutMs: 600_000 });
-    if (install.code !== 0) {
-      throw new BundleInstallError(`the container installer failed: ${execText(install)}`);
-    }
-  } else {
-    // No script in the archive: the signed binaries are all there is to install.
-    fs.mkdirSync(prefix, { recursive: true });
-    for (const name of fs.readdirSync(path.join(root, 'bin'))) {
-      const from = path.join(root, 'bin', name);
-      const to = path.join(prefix, name);
-      fs.copyFileSync(from, to);
-      fs.chmodSync(to, 0o755);
-    }
+  const install = await exec(
+    'osascript',
+    adminShellArgs(`/usr/sbin/installer -pkg ${shellQuote(pkg)} -target /`, 'Orbit wants to install Apple’s container runtime for bot computers.'),
+    { timeoutMs: 600_000 },
+  );
+  removeFile(pkg);
+  if (install.code !== 0) {
+    throw new BundleInstallError(`the container installer failed: ${execText(install)}`);
   }
 
+  const binary = resolveContainerRuntime({ env: opts.env, exists: opts.exists }) ?? '/usr/local/bin/container';
+  await startContainerSystem(binary, exec, onProgress);
   onProgress(`Apple container ${version} installed`);
-  return resolveContainerRuntime({ env: opts.env }) ?? path.join(prefix, 'container');
+  return binary;
+}
+
+/** `container system start`, tolerated when it is already running. */
+async function startContainerSystem(binary: string, exec: RuntimeExec, onProgress: (line: string) => void): Promise<void> {
+  onProgress('Starting the container system service');
+  const start = await exec(binary, ['system', 'start', '--enable-kernel-install'], { timeoutMs: 300_000 });
+  if (start.code !== 0 && !/already|running/i.test(execText(start))) {
+    // Older releases do not know --enable-kernel-install; try the plain form once.
+    const plain = await exec(binary, ['system', 'start'], { timeoutMs: 300_000 });
+    if (plain.code !== 0 && !/already|running/i.test(execText(plain))) {
+      throw new BundleInstallError(`could not start the container system service: ${execText(plain)}`);
+    }
+  }
 }
 
 // ------------------------------------------------------------------ helpers

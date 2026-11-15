@@ -1,0 +1,152 @@
+<h1>Source code</h1>
+<p class="lede">A map of the repository: what each app and package does, how the server is split into domains, the state machines that govern bots, cards and computers, the database, and the key components on each client.</p>
+
+<h2 id="layout">Repository layout</h2>
+<pre><code>orbit/
+├─ apps/
+│  ├─ server/     Node · Hono · SQLite. API, SSE hub, MCP, Hermes adapters, Docker provider, voice
+│  ├─ web/        React 18 · Vite · Zustand. The UI, also the desktop app's renderer
+│  ├─ desktop/    Electron 36 shell: setup window, local stack controller, updates, badge
+│  └─ mobile/     Expo SDK 53 · React Native 0.79 · expo-router
+├─ packages/
+│  ├─ contracts/  @orbit/contracts: wire types shared by every app (Bot, Row, ServerEvent…)
+│  ├─ logger/     @orbit/logger: small structured logger
+│  └─ ui-tokens/  @orbit/ui-tokens: colour, type and accent-ramp tokens (tokens.css + TS)
+├─ infra/compose/ Source-based and image-based Docker Compose stacks
+├─ scripts/       Dev loops, remote install, Hermes wiring, smoke test
+├─ tests/         End-to-end and voice-call scripts
+└─ docs/          Architecture notes, screenshots, and these pages</code></pre>
+<p>The workspace is driven by pnpm and turbo: <code>pnpm build</code>, <code>pnpm test</code> and <code>pnpm typecheck</code> fan out to every package. CI (<code>.github/workflows/ci.yml</code>) runs install, typecheck, build, tests and the server smoke script on every push and pull request.</p>
+
+<h2 id="server">Server: <code>apps/server/src</code></h2>
+<p><code>index.ts</code> starts the long-running work (engines, gateways, routine and trigger schedulers, idle watchers, container recovery, voice warm-up). <code>api/app.ts</code> assembles the HTTP app on its own, so tests can drive every real route without booting a background process. Mount order: <code>/api/health</code>, the routers, then the built web app last so its catch-all cannot shadow an API route.</p>
+
+<h3>Modules by domain</h3>
+<div class="table-wrap"><table>
+<thead><tr><th>Domain</th><th>Files</th><th>Responsibility</th></tr></thead>
+<tbody>
+<tr><td>HTTP surface</td><td><code>api/app.ts</code>, <code>api/schemas.ts</code>, <code>routes.ts</code>, <code>routes-*.ts</code></td><td>Routers per area (config, calendar, computers, files, rooms, skills, check-ins) and the zod body schemas.</td></tr>
+<tr><td>Auth</td><td><code>lib/auth.ts</code>, <code>google-oauth.ts</code></td><td>Sessions (cookie or bearer), Google sign-in, one-time links, owner key.</td></tr>
+<tr><td>Agents</td><td><code>engine.ts</code>, <code>hermes-bin.ts</code>, <code>engine-memory.ts</code>, <code>bot-admin.ts</code></td><td>Primary and managed Hermes engines: homes, gateways, ports, config sync, inherited credentials, memory files.</td></tr>
+<tr><td>Turns</td><td><code>agent/loop.ts</code>, <code>agent/prompt.ts</code>, <code>agent/subagents.ts</code></td><td>Queues one turn per bot, posts to the engine's <code>/v1/responses</code>, and turns the event stream into rows and live state; tracks approvals mid-turn.</td></tr>
+<tr><td>Groups</td><td><code>agent/rooms.ts</code></td><td>Dispatches a room message to @mentioned members (or all, capped at three) and follows mention hops.</td></tr>
+<tr><td>Tools</td><td><code>mcp.ts</code>, <code>agent/tools.ts</code>, <code>agent/bot-tools.ts</code>, <code>computer-tools.ts</code></td><td>The MCP server engines call: app tools, team tools, computer tools, plus the user's Composio tools.</td></tr>
+<tr><td>Computers</td><td><code>computer.ts</code>, <code>computer-store.ts</code>, <code>computer-provider*.ts</code>, <code>docker-provider.ts</code>, <code>docker/*</code>, <code>orgo.ts</code>, <code>desk.ts</code>, <code>box.ts</code></td><td>One Docker container per managed bot (Xvfb, Chrome, VNC; <code>/home/bot</code> on the host) or Orgo screens; the "desk" look; scripts run on the box.</td></tr>
+<tr><td>Screens</td><td><code>vnc.ts</code>, <code>lib/vnc-stream.ts</code>, <code>lib/des.ts</code>, <code>lib/cdp.ts</code></td><td>WebSocket VNC relay with watch/control modes; Chrome DevTools access.</td></tr>
+<tr><td>Lifecycle</td><td><code>idle.ts</code>, <code>supervisor.ts</code></td><td>Viewer tracking and idle suspension; the separate sandbox-supervisor process that pauses containers the API left running.</td></tr>
+<tr><td>Scheduling</td><td><code>routines.ts</code>, <code>triggers.ts</code>, <code>proactive.ts</code></td><td>Cron and one-time routines, Composio event triggers (<code>event:&lt;SLUG&gt;</code>), proactive check-ins.</td></tr>
+<tr><td>Apps</td><td><code>composio.ts</code></td><td>Toolkits, connections, OAuth, tool execution.</td></tr>
+<tr><td>Files</td><td><code>files.ts</code>, <code>routes-files.ts</code></td><td>One list over Library, attachments and workspace, read straight from disk.</td></tr>
+<tr><td>Voice</td><td><code>voice.ts</code>, <code>voice-local*.ts</code>, <code>voice-models.ts</code>, <code>voice-model-files.ts</code>, <code>voice-runtime.ts</code></td><td>Cloud realtime sessions (xAI) and the on-device sherpa-onnx pipeline: model downloads, STT, VAD, TTS, call relay.</td></tr>
+<tr><td>Realtime</td><td><code>lib/hub.ts</code>, <code>push.ts</code></td><td>Per-user event hub with a replay buffer for SSE; mobile push.</td></tr>
+<tr><td>Persistence</td><td><code>db.ts</code>, <code>db-config.ts</code>, <code>store.ts</code>, <code>infra/bot-repository.ts</code></td><td>SQLite schema (created and upgraded in code, no migration runner), row storage, bot queries.</td></tr>
+<tr><td>Pure domain</td><td><code>domain/*</code>, <code>core/*</code></td><td>State machines and rules with no I/O (below), plus services that adapt them to rows.</td></tr>
+</tbody></table></div>
+
+<h3>A turn, end to end</h3>
+<ol>
+  <li><code>POST /api/bots/:id/messages</code> writes your message row and emits <code>rows</code> on the hub.</li>
+  <li><code>agent/loop.ts</code> queues the turn (one at a time per bot) and posts it to the bot's Hermes gateway at <code>/v1/responses</code>. For a room, <code>agent/rooms.ts</code> picks which members run.</li>
+  <li>The engine's event stream becomes assistant message rows and tool-call rows, revised in place (<code>updatedSeq</code>), and <code>live</code> events that say what the bot is doing.</li>
+  <li>When the engine calls an app tool it goes through <code>POST /mcp/&lt;botId&gt;</code>. A Composio write action without a saved policy creates an approval card and waits for <code>POST /api/approvals/:id</code>.</li>
+  <li>Each change is emitted on <code>lib/hub.ts</code>, which every client receives over <code>GET /api/events</code>.</li>
+</ol>
+
+<h2 id="state-machines">Domains and state machines</h2>
+<p>The rules live in small pure modules under <code>apps/server/src/domain</code>, tested on their own.</p>
+<h3>Bot lifecycle (<code>domain/bot-lifecycle.ts</code>)</h3>
+<p>A bot needs two independent things before it can work: a Hermes engine and a screen. They finish in either order, so <code>provisioning</code> accumulates facts until both are present.</p>
+<div class="table-wrap"><table>
+<thead><tr><th>State</th><th>Carries</th><th>Moves on</th></tr></thead>
+<tbody>
+<tr><td><code>created</code></td><td>botId</td><td><code>provision-engine</code> → provisioning</td></tr>
+<tr><td><code>provisioning</code></td><td>engineKind?, engine?, screen?</td><td><code>engine-ready</code>, <code>screen-assigned</code>; → ready once both exist</td></tr>
+<tr><td><code>ready</code></td><td>engine, screen</td><td><code>turn-started</code> → running</td></tr>
+<tr><td><code>running</code></td><td>engine, screen, turnId</td><td><code>turn-finished</code> → ready</td></tr>
+<tr><td><code>error</code></td><td>error, lastState</td><td>from any state on <code>error</code></td></tr>
+</tbody></table></div>
+<h3>Cards (<code>domain/card-workflow.ts</code>, <code>core/card-service.ts</code>)</h3>
+<div class="table-wrap"><table>
+<thead><tr><th>Card</th><th>Events</th><th>Terminal statuses</th></tr></thead>
+<tbody>
+<tr><td>approval</td><td><code>approve</code> (with <code>always</code>), <code>deny</code>, <code>expire</code></td><td>allowed, always, denied, expired</td></tr>
+<tr><td>question</td><td><code>answer</code>, <code>dismiss</code></td><td>answered, dismissed</td></tr>
+<tr><td>connect</td><td><code>connect</code>, <code>skip</code></td><td>connected, skipped</td></tr>
+<tr><td>draft</td><td><code>send</code>, <code>dismiss</code></td><td>sent, discarded</td></tr>
+</tbody></table></div>
+<p>The wire shape (<code>CardBody</code>) keeps every field at every status; the machine's terminal states only keep who decided and when. <code>card-service.ts</code> adapts between the two.</p>
+<h3>Computer (<code>domain/computer-model.ts</code>)</h3>
+<p><code>absent</code> → <code>provisioning</code> → <code>ready</code> (with a screen allocation table) ⇄ <code>suspended</code>, or <code>error</code>. Screens exist only on <code>ready</code>; a screen is free when its <code>botId</code> is null, and a bot keeps its screen across resumes.</p>
+<h3>Primary bots (<code>domain/primary-bots.ts</code>)</h3>
+<p>Being primary is a flag, not a role. At most <code>MAX_PRIMARY_BOTS</code> (3) at once and always at least one, so somebody can coordinate the team. <code>promote</code> and <code>restore</code> return a plan that the route applies.</p>
+<h3>Bot creation (<code>core/bot-service.ts</code>, <code>core/avatar.ts</code>)</h3>
+<p>Capacity, name fallback ("New Bot"), mode and voice-provider normalisation, and the avatar pick: an explicit shape and colour win only when the palette has them; otherwise a hash picks from a narrower palette that leaves black for the primary.</p>
+
+<h2 id="database">Database</h2>
+<p>SQLite, schema in <code>db.ts</code>, created and upgraded in code.</p>
+<div class="table-wrap"><table>
+<thead><tr><th>Table</th><th>Holds</th></tr></thead>
+<tbody>
+<tr><td><code>users</code>, <code>auth_sessions</code>, <code>login_attempts</code></td><td>Accounts, sessions, sign-in rate limiting.</td></tr>
+<tr><td><code>bots</code></td><td>Bots and rooms (<code>kind</code>), settings, engine choice, generation, unread state.</td></tr>
+<tr><td><code>rows</code></td><td>Transcript rows per bot and generation, with JSON bodies.</td></tr>
+<tr><td><code>llm_items</code>, <code>pending_turns</code></td><td>Engine conversation items and the per-bot turn queue.</td></tr>
+<tr><td><code>approvals</code>, <code>policies</code></td><td>Pending approvals and saved "always" decisions.</td></tr>
+<tr><td><code>routines</code>, <code>tasks</code>, <code>memories</code>, <code>skills</code></td><td>Per-bot schedules, task list, remembered facts, custom skills.</td></tr>
+<tr><td><code>computers</code>, <code>screens</code></td><td>Computers and the screen allocation.</td></tr>
+<tr><td><code>composio_sessions</code>, <code>google_tokens</code>, <code>google_oauth_states</code></td><td>App connections and Google OAuth.</td></tr>
+<tr><td><code>push_tokens</code></td><td>Mobile devices for push.</td></tr>
+</tbody></table></div>
+
+<h2 id="web">Web client: <code>apps/web/src</code></h2>
+<p>React 18, Vite and Zustand. <code>main.tsx</code> mounts <code>App.tsx</code>, which checks auth, starts the event stream (<code>lib/events.ts</code>) and renders the shell: <code>TitleBar</code>, <code>NavRail</code>, the section view, the <code>DetailsPanel</code>, modals and the config layer.</p>
+<h3>State</h3>
+<div class="table-wrap"><table>
+<thead><tr><th>Store</th><th>State</th><th>Notes</th></tr></thead>
+<tbody>
+<tr><td><code>store.ts</code> (<code>useStore</code>)</td><td><code>user</code>, <code>bots</code>, <code>live</code> (by bot), <code>selectedBotId</code>, <code>transcripts</code> (by bot), <code>routines</code>, <code>computer</code>, <code>recentActivity</code>, <code>activitySeen</code>, <code>rosterVersion</code>, <code>connectionsVersion</code>, <code>sseConnected</code>, <code>detailsOpen</code>, <code>modal</code>, <code>viewerOpen</code>, <code>viewerMode</code>, <code>mutedRooms</code></td><td>Server data and app-wide UI. <code>handleEvent()</code> applies every SSE event; <code>upsertRows()</code> merges streamed rows by <code>seq</code>/<code>updatedSeq</code>. Selection, details and mutes persist in localStorage.</td></tr>
+<tr><td><code>configStore.ts</code> (<code>useConfigUI</code>)</td><td><code>botSettings</code>, <code>appSettings</code>, <code>view</code>, <code>theme</code>, <code>preset</code>, <code>accentColor</code>, <code>navSection</code>, <code>sectionPanelCollapsed</code>, <code>versions</code></td><td>Settings modals, theme and accent, which rail section is open.</td></tr>
+</tbody></table></div>
+<h3>Key components</h3>
+<div class="table-wrap"><table>
+<thead><tr><th>Area</th><th>Components</th></tr></thead>
+<tbody>
+<tr><td>Shell</td><td><code>TitleBar</code>, <code>NavRail</code>, <code>SectionPanel</code>, <code>DetailsPanel</code>, <code>SignIn</code></td></tr>
+<tr><td>Chat</td><td><code>ChatListView</code>, <code>BotRow</code>, <code>ChatView</code>, <code>ConvHeader</code>, <code>Transcript</code>, <code>ActivityLine</code>, <code>Composer</code>, <code>FilePart</code>, <code>Markdown</code>, <code>MembersCard</code>, <code>cards/Cards</code></td></tr>
+<tr><td>Screens</td><td><code>ComputersView</code>, <code>ComputerCard</code>, <code>ScreenPreview</code>, <code>ComputerViewer</code> (noVNC, watch/control)</td></tr>
+<tr><td>Sections</td><td><code>ActivityView</code>, <code>CalendarView</code>, <code>CallsView</code>, <code>FilesView</code>, <code>SkillsView</code>, <code>config/TasksView</code></td></tr>
+<tr><td>Voice</td><td><code>VoiceCallBar</code>, <code>VoiceSettings</code>; <code>voice/call.ts</code> (cloud), <code>voice/local-call.ts</code> (on-device), <code>voice/dictation.ts</code>, <code>voice/audio.ts</code></td></tr>
+<tr><td>Settings</td><td><code>config/AppSettings</code>, <code>config/BotSettingsModal</code>, <code>config/EngineAuthPanel</code>, <code>EngineSettings</code>, <code>config/LibraryTab</code></td></tr>
+<tr><td>Modals</td><td><code>CreateBotModal</code>, <code>CreateGroupModal</code>, <code>CreateCalendarEventModal</code>, <code>ConnectAppsModal</code>, <code>SearchModal</code></td></tr>
+<tr><td>Helpers</td><td><code>lib/api.ts</code> and <code>lib/configApi.ts</code> (fetch wrappers), <code>domain/activity-feed.ts</code>, <code>avatar/BotAvatar</code></td></tr>
+</tbody></table></div>
+
+<h2 id="mobile">Mobile app: <code>apps/mobile</code></h2>
+<div class="table-wrap"><table>
+<thead><tr><th>Part</th><th>Files</th></tr></thead>
+<tbody>
+<tr><td>Routes (expo-router)</td><td><code>app/(tabs)/</code>: index (chats), bots, activity, calendar, files, computers, settings, more; <code>thread/[botId]</code>, <code>computer/[botId]</code>, <code>skills</code>, <code>server</code>, <code>sign-in</code>, <code>sign-out</code></td></tr>
+<tr><td>Data</td><td><code>lib/api.ts</code>, <code>lib/queries.ts</code>, <code>lib/sse.ts</code>, <code>lib/store.ts</code>, <code>lib/endpoint.ts</code> (server URL), <code>lib/session.ts</code></td></tr>
+<tr><td>Native</td><td><code>lib/push.ts</code>, <code>lib/vnc-url.ts</code>, <code>lib/files.ts</code>, <code>lib/native.ts</code></td></tr>
+<tr><td>Components</td><td><code>message-bubble</code>, <code>bot-avatar</code>, <code>ComputerCard.native</code>, <code>CalendarEventModal</code>, <code>FileRow</code>, <code>FileViewer</code>, <code>ui</code></td></tr>
+</tbody></table></div>
+
+<h2 id="desktop">Desktop shell: <code>apps/desktop/src</code></h2>
+<div class="table-wrap"><table>
+<thead><tr><th>File</th><th>Job</th></tr></thead>
+<tbody>
+<tr><td><code>main.ts</code></td><td>App lifecycle, IPC, and the startup decision.</td></tr>
+<tr><td><code>setup.ts</code>, <code>setup.html</code>, <code>setup-config.ts</code>, <code>setup-store.ts</code></td><td>First-run window; <code>ORBIT_WEB_URL</code> &gt; saved setup &gt; setup window; settings in <code>userData/setup.json</code>.</td></tr>
+<tr><td><code>local-stack.ts</code>, <code>stack-controller.ts</code>, <code>docker-cli.ts</code>, <code>docker-move.ts</code></td><td>Starts or attaches to the local Docker Compose stack.</td></tr>
+<tr><td><code>native-stack.ts</code>, <code>mac-runtime.ts</code></td><td>The native server bundle on Apple Silicon.</td></tr>
+<tr><td><code>hermes-setup.ts</code>, <code>hermes-setup-window.ts</code></td><td>Hermes wiring from the app.</td></tr>
+<tr><td><code>app-window.ts</code>, <code>app-menu.ts</code>, <code>badge.ts</code>, <code>auto-update.ts</code></td><td>Main window, menu, unread badge, updates.</td></tr>
+<tr><td><code>ipc-guard.ts</code>, <code>session-permissions.ts</code></td><td>IPC checks; only the microphone permission is granted.</td></tr>
+</tbody></table></div>
+
+<h2 id="testing">Tests</h2>
+<ul>
+  <li><strong>Server:</strong> unit tests for the domain machines and services, and integration tests that drive <code>createApp()</code> (for example <code>bot-service.test.ts</code>, <code>api-integration.test.ts</code>, <code>rooms-cascade.test.ts</code>, <code>routines-calendar.test.ts</code>).</li>
+  <li><strong>Web and desktop:</strong> Vitest and <code>node:test</code> suites.</li>
+  <li><strong>End to end:</strong> <code>tests/e2e.mjs</code> and <code>tests/voice-call.mjs</code>; <code>pnpm smoke</code> runs <code>scripts/smoke-server.mjs</code>.</li>
+</ul>

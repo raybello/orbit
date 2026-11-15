@@ -206,7 +206,14 @@ export class LocalStackController implements DockerStack {
     );
   }
 
+  /**
+   * The server image tag: this release's own tag when packaged, `edge` in development.
+   * `ORBIT_IMAGE_TAG` overrides both (support, and testing an installer before its release
+   * has published images).
+   */
   private imageTag(): string {
+    const forced = this.env.ORBIT_IMAGE_TAG?.trim();
+    if (forced && /^[\w][\w.-]{0,127}$/.test(forced)) return forced;
     return this.opts.packaged ? `v${this.opts.version}` : 'edge';
   }
 
@@ -471,12 +478,12 @@ export class LocalStackController implements DockerStack {
       let prepared = this.prepareEnv(port);
       let webUrl = prepared.webUrl;
 
-      this.set({ phase: 'pulling', detail: `Pulling orbit/api:${this.imageTag()}`, progress: 0.1 });
+      this.set({ phase: 'pulling', detail: `Pulling ghcr.io/raybello/orbit/app:${this.imageTag()}`, progress: 0.1 });
       const pull = await this.compose(binary, ['pull', '--quiet'], { timeoutMs: 600_000, signal });
       if (pull.code !== 0) {
         const kind = classifyDockerFailure(failureText(pull));
         if (kind === 'image-not-found') {
-          return this.fail(kind, `The image orbit/api:${this.imageTag()} is not published yet.`);
+          return this.fail(kind, `The image ghcr.io/raybello/orbit/app:${this.imageTag()} is not published yet.`);
         }
         if (signal.aborted) return this.set({ phase: 'idle', detail: 'Stopped' });
         // A pull can fail for a local-only tag or a flaky registry while usable images

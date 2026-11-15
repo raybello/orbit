@@ -20,7 +20,9 @@ import {
 import { clearSetup, configureSetupStore, readSetup, writeSetup } from './setup-store';
 import { LocalStackController, describeStackState } from './local-stack';
 import { NativeStackController, describeNativeState } from './native-stack';
-import { nativeStackEligible, readServerManifest, SERVER_BUNDLE_FILE } from './mac-runtime';
+import { CONTAINER_RUNTIME_VERSION, installContainerRuntime, nativeStackEligible, readServerManifest, resolveContainerRuntime, SERVER_BUNDLE_FILE } from './mac-runtime';
+import { installDockerDesktop } from './docker-install';
+import { openProgressWindow } from './progress-window';
 import { chooseStack, dockerDataExists, moveAccepted, readStackChoice, writeStackChoice, type StackChoice } from './docker-move';
 import { runDocker } from './docker-cli';
 import type { DockerStack, NativeStack, StackController, StackKind } from './stack-controller';
@@ -28,7 +30,7 @@ import { createAppWindow, openExternalSafely, sessionForServerUrl, type AppWindo
 import { buildAppMenu } from './app-menu';
 import { dismissUpdateBar, initAutoUpdate, checkForUpdates, restartAndInstall } from './auto-update';
 import { startBadge, type BadgeController } from './badge';
-import { detectHermes, ensureHermesApiKey } from './hermes-setup';
+import { detectHermes, ensureHermesApiKey, installHermes } from './hermes-setup';
 import { runHermesSetup, wireMcpForServer } from './hermes-setup-window';
 import { DEFAULT_OWNER_EMAIL, ensureDesktopSession } from './desktop-session';
 import { describeSender, isTrustedPage } from './ipc-guard';
@@ -37,6 +39,12 @@ const log = createLogger({ scope: 'main' });
 const here = path.dirname(fileURLToPath(import.meta.url));
 
 app.setName('Orbit');
+
+// A second profile on one machine (the smoke harness, a test run, a support check) must not
+// fight the running app for the single-instance lock, which is keyed on userData, nor share its
+// setup, stack folder or data. So the override is applied before anything reads the path.
+const userDataOverride = process.env.ORBIT_USER_DATA_DIR?.trim();
+if (userDataOverride) app.setPath('userData', path.resolve(userDataOverride));
 
 const userDataDir = app.getPath('userData');
 configureSetupStore(userDataDir);
@@ -454,20 +462,36 @@ async function startLocalStackOrExplain(): Promise<string | null> {
   if ((state.phase === 'ready' || state.phase === 'running') && state.webUrl) return state.webUrl;
 
   if (state.phase === 'docker-missing') {
+    const canInstall = process.platform === 'darwin' || process.platform === 'win32';
     const { response } = await dialog.showMessageBox({
       type: 'warning',
       message: 'Docker is required',
       detail:
-        'Orbit runs its server in Docker on this computer. Install Docker Desktop, then try again. ' +
+        'Orbit runs its server and each bot’s computer in Docker on this computer. ' +
+        (canInstall
+          ? 'Orbit can download and install Docker Desktop for you now (about 600 MB). '
+          : 'Install Docker Engine with your package manager, then try again. ') +
         'You can also connect to an Orbit server that is already running elsewhere.',
-      buttons: ['Open Docker download', 'Choose another server', 'Quit'],
+      buttons: canInstall
+        ? ['Install Docker Desktop', 'Open Docker download', 'Choose another server', 'Quit']
+        : ['Open Docker download', 'Choose another server', 'Quit'],
       defaultId: 0,
       // Dismissing a dialog (Escape, closing it) reports cancelId: it must never mean "quit the app".
-      cancelId: 1,
+      cancelId: canInstall ? 2 : 1,
     });
     log.warn(`docker-missing dialog answered ${response}`);
-    if (response === 0) await openExternalSafely('https://www.docker.com/products/docker-desktop/');
-    if (response === 1) openSetupWindow();
+    const choice = canInstall ? response : response + 1;
+    if (choice === 0) {
+      // Success or not, go round again: a failed install lands back on this same question.
+      await runDockerInstall();
+      return startLocalStackOrExplain();
+    }
+    if (choice === 1) {
+      await openExternalSafely('https://www.docker.com/products/docker-desktop/');
+      quitApp('docker is missing');
+      return null;
+    }
+    if (choice === 2) openSetupWindow();
     else quitApp('docker is missing');
     return null;
   }
@@ -513,12 +537,98 @@ async function startLocalStackOrExplain(): Promise<string | null> {
  * mirrored into the stack `.env` *before* `compose up` (see `mirrorHermesKey`): a container
  * reads its environment once, at start, so writing it here would be a restart too late.
  */
+/**
+ * Download and install Docker Desktop with a progress window, then wait for the person to
+ * finish Docker's own first-run prompts. Resolves true when the install step succeeded.
+ */
+async function runDockerInstall(): Promise<boolean> {
+  const progress = openProgressWindow('Installing Docker Desktop', 'Orbit runs its server and each bot’s computer in Docker.');
+  try {
+    await installDockerDesktop((line) => { log.info(`docker install: ${line}`); progress.line(line); }, {
+      onBytes: (received, total) => progress.percent(total > 0 ? (received / total) * 100 : null),
+    });
+    progress.percent(100);
+    progress.line('Docker Desktop is installed.');
+    await dialog.showMessageBox({
+      type: 'info',
+      message: 'Finish setting up Docker Desktop',
+      detail: 'Docker Desktop is opening. Accept its licence and any permission prompts, wait for it to say it is running, then click Continue.',
+      buttons: ['Continue'],
+    });
+    return true;
+  } catch (err) {
+    const message = err instanceof Error ? err.message : String(err);
+    log.error('Docker Desktop install failed', err);
+    progress.fail(message);
+    await dialog.showMessageBox({ type: 'error', message: 'Docker Desktop could not be installed', detail: message, buttons: ['OK'] });
+    return false;
+  } finally {
+    progress.close();
+  }
+}
+
+/**
+ * The native stack's bot VMs run on Apple's container runtime. Offer it once when it is
+ * missing; the answer is remembered so a "Not now" does not nag on every launch.
+ */
+async function ensureAppleContainerRuntime(): Promise<void> {
+  if (process.platform !== 'darwin' || stackKind() !== 'native') return;
+  if (resolveContainerRuntime()) return;
+  const marker = path.join(userDataDir, 'container-runtime-declined');
+  if (fs.existsSync(marker)) return;
+  const { response } = await dialog.showMessageBox({
+    type: 'question',
+    message: 'Install Apple’s container runtime?',
+    detail:
+      `On this Mac, Orbit can run each bot’s computer with Apple’s native containers (container ${CONTAINER_RUNTIME_VERSION}, about 170 MB). ` +
+      'The package is signed by Apple and macOS will ask for your password to install it.',
+    buttons: ['Install', 'Not now'],
+    defaultId: 0,
+    cancelId: 1,
+  });
+  if (response !== 0) {
+    try { fs.writeFileSync(marker, new Date().toISOString()); } catch { /* best effort */ }
+    return;
+  }
+  const progress = openProgressWindow('Installing Apple container', 'Native containers for your bots’ computers.', mainWindow);
+  try {
+    await installContainerRuntime(CONTAINER_RUNTIME_VERSION, (line) => { log.info(`container install: ${line}`); progress.line(line); });
+    progress.percent(100);
+    setTimeout(() => progress.close(), 1500);
+  } catch (err) {
+    const message = err instanceof Error ? err.message : String(err);
+    log.error('Apple container install failed', err);
+    progress.fail(message);
+    await dialog.showMessageBox({ type: 'error', message: 'Apple container could not be installed', detail: message, buttons: ['OK'] });
+    progress.close();
+  }
+}
+
 async function prepareLocalHermes(): Promise<void> {
   try {
-    const status = await detectHermes(process.env);
+    let status = await detectHermes(process.env);
     if (!status.found) {
-      log.info('Hermes not installed; skipping MCP wiring');
-      return;
+      const { response } = await dialog.showMessageBox({
+        type: 'question',
+        message: 'Install Hermes?',
+        detail: 'Every Orbit bot runs on Hermes Agent, and it is not installed yet. Orbit can install it now.',
+        buttons: ['Install Hermes', 'Not now'],
+        defaultId: 0,
+        cancelId: 1,
+      });
+      if (response !== 0) {
+        log.info('Hermes not installed; skipping MCP wiring');
+        return;
+      }
+      const progress = openProgressWindow('Installing Hermes', 'The agent harness every Orbit bot runs on.', mainWindow);
+      try {
+        status = await installHermes((line) => progress.line(line));
+        ensureHermesApiKey();
+        setTimeout(() => progress.close(), 1500);
+      } catch (err) {
+        progress.fail(err instanceof Error ? err.message : String(err));
+        throw err;
+      }
     }
     const token = stack.token();
     if (token) wireMcpForServer(token, stack.webUrl());
@@ -610,7 +720,7 @@ async function boot(): Promise<void> {
     if (!url) return;
     const entryUrl = await localStackEntryUrl(url, saved);
     await openAppWindow(url, entryUrl);
-    void prepareLocalHermes();
+    void prepareLocalHermes().then(() => ensureAppleContainerRuntime());
     return;
   }
 
@@ -919,10 +1029,6 @@ process.on('unhandledRejection', (reason) => {
   log.error('unhandled rejection in the main process', reason);
 });
 
-// A second profile in one machine (the smoke harness, a test run, a support check) must not
-// fight the running app for the single-instance lock, which is keyed on userData.
-const userDataOverride = process.env.ORBIT_USER_DATA_DIR?.trim();
-if (userDataOverride) app.setPath('userData', path.resolve(userDataOverride));
 
 if (!app.requestSingleInstanceLock()) {
   quitApp('another Orbit instance holds the single-instance lock');

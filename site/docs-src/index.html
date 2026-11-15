@@ -1,0 +1,43 @@
+<h1>Orbit documentation</h1>
+<p class="lede">Orbit is a self-hosted team of AI agents you chat with, each with its own screen on its own computer. These pages cover how to use it, how to set it up on each platform, the HTTP and MCP API, and how the source code is organised.</p>
+
+<div class="cards-grid">
+  <a class="doc-card" href="guide.html"><strong>Using Orbit</strong><span>Bots, chat, screens, groups, calendar, voice, apps and approvals: the everyday workflow.</span></a>
+  <a class="doc-card" href="setup.html"><strong>Setup</strong><span>macOS, Linux, Windows, Docker, the desktop app, iOS and Android, and remote installs.</span></a>
+  <a class="doc-card" href="api.html"><strong>API reference</strong><span>Every HTTP route, the SSE event stream, WebSockets, the MCP tools and the core data types.</span></a>
+  <a class="doc-card" href="source.html"><strong>Source code</strong><span>The monorepo, server modules by domain, state machines, the database, and the key components.</span></a>
+</div>
+
+<h2 id="concepts">Key concepts</h2>
+<p>A few words carry specific meanings across the app, the API and the code.</p>
+<div class="table-wrap"><table>
+<thead><tr><th>Term</th><th>What it is</th></tr></thead>
+<tbody>
+<tr><td><strong>Bot</strong></td><td>An agent you chat with. It has a name, an avatar shape and colour, instructions, its own memory, a Hermes engine and a computer. Stored as a row in the <code>bots</code> table with <code>kind='agent'</code>.</td></tr>
+<tr><td><strong>Primary bot</strong></td><td>A bot flagged as a team coordinator. A primary can talk to and change every other bot and carries a star in the UI. At least one bot is always primary, at most three.</td></tr>
+<tr><td><strong>Engine</strong></td><td>The Hermes agent that runs a bot. The <em>primary</em> engine is the Hermes gateway already running on the machine (<code>HERMES_URL</code>); each other bot gets a <em>managed</em> engine: its own Hermes home under <code>ENGINES_DIR/&lt;botId&gt;</code> and its own <code>hermes gateway run</code>.</td></tr>
+<tr><td><strong>Computer / screen</strong></td><td>The Linux desktop a bot works on. With <code>COMPUTER_KIND=docker</code> each bot gets a container running Xvfb, a window manager, Chrome and a VNC server; with Orgo, bots share one Orgo computer with one screen each.</td></tr>
+<tr><td><strong>Group (room)</strong></td><td>A bot row with <code>kind='room'</code> and a member list. A room never runs an agent itself: the server dispatches each message to the members who should answer.</td></tr>
+<tr><td><strong>Row</strong></td><td>One entry in a bot's transcript: a message, a tool call, a card, an event or a notice. Rows are ordered by <code>seq</code> and revised in place while streaming (<code>updatedSeq</code>).</td></tr>
+<tr><td><strong>Card</strong></td><td>A row where a bot stops and asks you something: an <em>approval</em> for a write action, a <em>question</em> with options, a <em>connect</em> request for an app, or a <em>draft</em> to send.</td></tr>
+<tr><td><strong>Routine / calendar event</strong></td><td>A prompt a bot runs on a schedule. Recurring events use a cron expression; one-time events use a date and time; event routines fire on a Composio trigger.</td></tr>
+<tr><td><strong>Task, memory, Library</strong></td><td>A bot's task list, the facts it remembers, and the folder where it saves files it makes.</td></tr>
+<tr><td><strong>Skill</strong></td><td>Instructions or MCP servers a bot can use, toggled per bot.</td></tr>
+<tr><td><strong>Connected app</strong></td><td>A third-party account (Gmail, Slack, GitHub…) connected through Composio. Write actions wait for your approval unless you chose "always allow".</td></tr>
+</tbody></table></div>
+
+<h2 id="at-a-glance">The system at a glance</h2>
+<pre><code>Desktop app / browser ─┐  HTTP + SSE, WebSocket (VNC, voice)
+Mobile app (Expo) ─────┤
+                       ▼
+             Orbit server  (Node · Hono · SQLite)
+               │  POST /v1/responses        ▲  MCP  /mcp/&lt;bot&gt;
+               ▼                            │
+             Hermes gateway (one per bot) ──┘
+               │
+             Docker API ──► bot desktop (Xvfb · Chrome · VNC)
+             Composio   ──► connected apps
+             sherpa-onnx / xAI ──► voice</code></pre>
+<p>The server owns the transcript: chat rows, cards, routines and screens live in SQLite, and every change fans out to connected clients over Server-Sent Events. Hermes owns the agent loop, model calls and history; it reaches the app's own tools (tasks, routines, files, the computer, other bots) over MCP.</p>
+
+<div class="callout callout--warn"><p><strong>Experimental.</strong> Orbit has had no security audit. Bots share a Docker host, and only Composio write actions are gated by approval cards; what a bot does in its own browser or shell is not.</p></div>

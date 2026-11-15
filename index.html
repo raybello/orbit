@@ -1,0 +1,217 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Orbit · Your team. Their own computers.</title>
+  <meta name="description" content="Orbit is a self-hosted team of AI agents you chat with, each with its own screen on its own computer. Built on Hermes Agent, Docker desktops and Composio. MIT licensed.">
+  <meta name="theme-color" content="#161616">
+  <link rel="icon" type="image/svg+xml" href="site/media/bot-orange.svg">
+  <meta property="og:type" content="website">
+  <meta property="og:title" content="Orbit · Your team. Their own computers.">
+  <meta property="og:description" content="A team of AI agents you chat with, each with its own screen on its own computer. Self-hosted, MIT.">
+  <meta property="og:url" content="https://raybello.github.io/orbit/">
+  <meta property="og:image" content="https://raybello.github.io/orbit/site/media/brag.jpg">
+  <meta property="og:video" content="https://raybello.github.io/orbit/site/media/brag.mp4">
+  <meta name="twitter:card" content="summary_large_image">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="site/styles.css">
+</head>
+<body>
+  <header class="nav">
+    <div class="wrap nav__inner">
+      <a class="brand" href="#top" aria-label="Orbit home">
+        <img src="site/media/bot-orange.svg" alt="" width="28" height="28">
+        <span>Orbit</span>
+      </a>
+      <nav class="nav__links" aria-label="Sections">
+        <a href="#download">Download</a>
+        <a href="#features">Features</a>
+        <a href="#how">How it works</a>
+        <a href="#start">Get started</a>
+        <a href="docs/">Docs</a>
+      </nav>
+      <a class="btn btn--ghost btn--sm" href="https://github.com/raybello/orbit">
+        <svg viewBox="0 0 16 16" width="16" height="16" aria-hidden="true"><path fill="currentColor" d="M8 0C3.58 0 0 3.58 0 8c0 3.54 2.29 6.53 5.47 7.59.4.07.55-.17.55-.38 0-.19-.01-.82-.01-1.49-2.01.37-2.53-.49-2.69-.94-.09-.23-.48-.94-.82-1.13-.28-.15-.68-.52-.01-.53.63-.01 1.08.58 1.23.82.72 1.21 1.87.87 2.33.66.07-.52.28-.87.51-1.07-1.78-.2-3.64-.89-3.64-3.95 0-.87.31-1.59.82-2.15-.08-.2-.36-1.02.08-2.12 0 0 .67-.21 2.2.82.64-.18 1.32-.27 2-.27.68 0 1.36.09 2 .27 1.53-1.04 2.2-.82 2.2-.82.44 1.1.16 1.92.08 2.12.51.56.82 1.27.82 2.15 0 3.07-1.87 3.75-3.65 3.95.29.25.54.73.54 1.48 0 1.07-.01 1.93-.01 2.2 0 .21.15.46.55.38A8.013 8.013 0 0016 8c0-4.42-3.58-8-8-8z"/></svg>
+        GitHub
+      </a>
+    </div>
+  </header>
+
+  <main id="top">
+    <!-- Hero -->
+    <section class="hero">
+      <div class="wrap hero__grid">
+        <div class="hero__copy">
+          <p class="eyebrow mono"><span class="dot"></span>Self-hosted · MIT · Experimental</p>
+          <h1>Your team.<br><span class="muted">Their own computers.</span></h1>
+          <p class="lede">A team of AI agents you chat with, each with its own screen on its own computer. <a href="https://github.com/NousResearch/hermes-agent">Hermes Agent</a> runs the bots, a Docker desktop gives each one a screen, <a href="https://composio.dev">Composio</a> connects their apps, and local STT/TTS or xAI gives them a voice.</p>
+          <div class="cta">
+            <a class="btn btn--primary" href="#download">Download the app</a>
+            <a class="btn btn--ghost" href="docs/">Read the docs</a>
+          </div>
+        </div>
+        <div class="hero__bots" aria-hidden="true">
+          <div class="halo"></div>
+          <img class="bot bot--blue" src="site/media/bot-blue.svg" alt="">
+          <img class="bot bot--orange" src="site/media/bot-orange.svg" alt="">
+          <img class="bot bot--green" src="site/media/bot-green.svg" alt="">
+        </div>
+      </div>
+
+      <div class="wrap">
+        <figure class="video">
+          <video id="launch-video" src="site/media/brag.mp4" poster="site/media/brag.jpg" controls playsinline preload="metadata" muted loop></video>
+          <button class="video__play" type="button" aria-label="Play the launch video with sound">
+            <svg viewBox="0 0 24 24" width="28" height="28" aria-hidden="true"><path fill="currentColor" d="M8 5v14l11-7z"/></svg>
+            <span>Watch the 22-second tour</span>
+          </button>
+          <figcaption class="mono">Launch video made with <a href="https://github.com/latent-spaces/brag">/brag</a> and <a href="https://hyperframes.heygen.com/">Hyperframes</a> · <a href="site/media/brag.mp4" download>16:9 MP4</a> · <a href="site/media/brag-vertical.mp4" download>9:16 MP4</a></figcaption>
+        </figure>
+      </div>
+    </section>
+
+    <!-- Download -->
+    <section id="download" class="section">
+      <div class="wrap download">
+        <div>
+          <p class="eyebrow mono">Download</p>
+          <h2>Get the desktop app</h2>
+          <p class="section__lede">The installer sets up what Orbit needs on first run: Hermes Agent, plus Docker Desktop, or on a Mac with the native stack, Apple's container runtime. The <a href="https://github.com/raybello/orbit#install-the-desktop-app">install guide</a> walks through each screen.</p>
+        </div>
+        <div class="dl" data-download data-repo="raybello/orbit">
+          <label class="dl__label mono" for="dl-platform">Platform</label>
+          <div class="dl__row">
+            <select id="dl-platform" class="dl__select">
+              <option value="mac-arm64">macOS · Apple silicon</option>
+              <option value="mac-x64">macOS · Intel</option>
+              <option value="win-x64">Windows · x64</option>
+              <option value="linux-x64">Linux · x64 (AppImage)</option>
+            </select>
+            <a class="btn btn--primary dl__btn" href="https://github.com/raybello/orbit/releases/latest" data-dl-link>
+              <svg viewBox="0 0 24 24" width="18" height="18" aria-hidden="true"><path fill="currentColor" d="M12 3a1 1 0 0 1 1 1v9.59l3.3-3.3a1 1 0 1 1 1.4 1.42l-5 5a1 1 0 0 1-1.4 0l-5-5a1 1 0 1 1 1.4-1.42l3.3 3.3V4a1 1 0 0 1 1-1zM5 19a1 1 0 1 0 0 2h14a1 1 0 1 0 0-2H5z"/></svg>
+              <span data-dl-label>Download</span>
+            </a>
+          </div>
+          <p class="dl__detect mono" data-dl-detect></p>
+          <dl class="dl__meta">
+            <div><dt>Release</dt><dd data-dl-version>…</dd></div>
+            <div><dt>Published</dt><dd data-dl-date>…</dd></div>
+            <div><dt>File</dt><dd data-dl-file>…</dd></div>
+            <div><dt>Size</dt><dd data-dl-size>…</dd></div>
+            <div class="dl__sha"><dt>SHA-256</dt><dd><code data-dl-sha>…</code><button type="button" class="code__copy mono dl__copy" data-dl-copy>Copy</button></dd></div>
+          </dl>
+          <p class="dl__note" data-dl-note></p>
+          <p class="dl__all"><a href="https://github.com/raybello/orbit/releases" data-dl-all>All releases and release notes</a></p>
+        </div>
+      </div>
+    </section>
+
+    <!-- Features -->
+    <section id="features" class="section">
+      <div class="wrap">
+        <p class="eyebrow mono">What you get</p>
+        <h2>Give a bot a job. Follow its work in chat.</h2>
+        <p class="section__lede">Each bot has a name, a look, its own memory, a Hermes engine, and a Docker desktop you can watch or take over. It can run on the model subscriptions you already pay for or on API keys.</p>
+        <div class="features">
+          <article class="feature"><h3>Chat that shows the work</h3><p>See what a bot is doing right now, how long it has been at it, and each step it took. Finished turns fold into a "Worked for 1m 14s · 2 steps" chip.</p></article>
+          <article class="feature"><h3>A screen per bot</h3><p>Every bot gets its own Docker desktop with Xvfb, Chrome and a VNC relay. Watch it live, open it full size, or take control.</p></article>
+          <article class="feature"><h3>Create a bot in one dialog</h3><p>Name it, pick a shape and colour, choose personal or teammate. It gets a Hermes home, an engine, a screen and its own memory.</p></article>
+          <article class="feature"><h3>Group chats with bot handoffs</h3><p>A message dispatches the bots it @mentions. A bot can @mention a peer and Orbit dispatches that peer one hop deeper.</p></article>
+          <article class="feature"><h3>Calendar events</h3><p>One-time events at a date and time, or recurring ones on a cron preset or custom expression. The assigned bot runs the prompt when it fires.</p></article>
+          <article class="feature"><h3>Voice calls</h3><p>Talk to a bot from the composer. On-device STT/TTS when the models are present, cloud voice when not; the spoken turn lands in the transcript.</p></article>
+          <article class="feature"><h3>Connected apps with approvals</h3><p>Bots ask for the app they need and you connect it through Composio. Actions that write wait for your OK on a card in the chat.</p></article>
+          <article class="feature"><h3>Mobile app</h3><p>An Expo client for iOS and Android: chats, threads, calendar, files, computers and a live VNC viewer.</p></article>
+        </div>
+      </div>
+    </section>
+
+    <!-- Gallery -->
+    <section class="section section--tight">
+      <div class="wrap">
+        <div class="gallery">
+          <figure><img src="docs/screenshots/refactor/16-chat.png" alt="A chat with Iris: the reply in progress and the finished answer." loading="lazy"><figcaption>Chat: the bot answers in its own transcript</figcaption></figure>
+          <figure><img src="docs/screenshots/refactor/06-screen-viewer.png" alt="Iris's own Linux desktop, live in Orbit's viewer." loading="lazy"><figcaption>Each bot's desktop, live</figcaption></figure>
+          <figure><img src="docs/screenshots/refactor/04-inter-bot.png" alt="Iris @mentions Milo in a group; Milo answers with his top launch risk." loading="lazy"><figcaption>Inter-bot handoff in a group</figcaption></figure>
+          <figure><img src="docs/screenshots/refactor/11-calendar-both.png" alt="A daily recurring check-in plus a one-time Launch retro." loading="lazy"><figcaption>One-time and recurring events</figcaption></figure>
+        </div>
+        <div class="phones">
+          <img src="docs/screenshots/refactor/12-mobile-bots.png" alt="Orbit on iPhone: the Chats list." loading="lazy">
+          <img src="docs/screenshots/refactor/13-mobile-thread.png" alt="Orbit on iPhone: a thread with Iris." loading="lazy">
+          <img src="docs/screenshots/refactor/14-mobile-calendar.png" alt="Orbit on iPhone: the calendar." loading="lazy">
+          <img src="docs/screenshots/refactor/15-mobile-computers.png" alt="Orbit on iPhone: each bot's Docker desktop." loading="lazy">
+        </div>
+      </div>
+    </section>
+
+    <!-- How it works -->
+    <section id="how" class="section">
+      <div class="wrap">
+        <p class="eyebrow mono">How it fits together</p>
+        <h2>One bot, one Hermes home, one desktop.</h2>
+        <div class="flow" role="img" aria-label="Desktop, browser and mobile clients talk to the Orbit server over HTTP, SSE and WebSocket. The server talks to one Hermes gateway per bot, one Docker desktop per bot, Composio for apps, and local or cloud voice.">
+          <div class="flow__col">
+            <div class="node">Desktop app / browser</div>
+            <div class="node">Mobile app <span class="mono">Expo</span></div>
+          </div>
+          <div class="flow__edge mono">HTTP · SSE · VNC</div>
+          <div class="flow__col">
+            <div class="node node--hub">Orbit server<span class="mono">Node · Hono · SQLite</span></div>
+          </div>
+          <div class="flow__edge mono">/v1/responses · MCP · Docker</div>
+          <div class="flow__col">
+            <div class="node">Hermes gateway <span class="mono">per bot</span></div>
+            <div class="node">Bot desktop <span class="mono">Xvfb · Chrome · VNC</span></div>
+            <div class="node">Composio apps</div>
+            <div class="node">Voice <span class="mono">on-device / xAI</span></div>
+          </div>
+        </div>
+        <ul class="points">
+          <li><strong>The app's tools reach Hermes over MCP.</strong> Each agent gets connected apps, tasks, routines, the Library, computer tools and messages to other bots.</li>
+          <li><strong>Groups are rooms, not agents.</strong> The server dispatches turns; an @mention triggers the next hop.</li>
+          <li><strong>The server owns the transcript.</strong> Chat rows, cards, routines and screens live in SQLite, and SSE fans changes out to desktop and mobile.</li>
+        </ul>
+      </div>
+    </section>
+
+    <!-- Get started -->
+    <section id="start" class="section">
+      <div class="wrap start">
+        <div>
+          <p class="eyebrow mono">Get started</p>
+          <h2>Build and run</h2>
+          <p class="section__lede">Needs Node.js 22+, pnpm 12, and Docker for the per-bot desktops. The <a href="docs/setup.html">setup guide</a> covers macOS, Linux, Windows, the desktop and mobile apps, and remote installs; the <a href="docs/api.html">API reference</a> lists every route.</p>
+        </div>
+        <div class="code">
+          <button class="code__copy mono" type="button" data-copy="code-start">Copy</button>
+<pre id="code-start"><code>git clone https://github.com/raybello/orbit.git
+cd orbit
+pnpm install
+cp .env.example .env   # fill in the keys
+pnpm build
+docker compose -f infra/compose/docker-compose.yml up --build
+open http://127.0.0.1:8787</code></pre>
+        </div>
+      </div>
+    </section>
+
+    <section class="section section--tight">
+      <div class="wrap limits">
+        <h3>Status and limits</h3>
+        <p>Experimental, with no security audit. Bots share a Docker host and can reach each other's files through their containers. Approval cards cover Composio write actions; what a bot does in its browser or shell is not gated. The default ceiling is four bots, since each desktop takes roughly 1 to 2 GB of RAM.</p>
+      </div>
+    </section>
+  </main>
+
+  <footer class="footer">
+    <div class="wrap footer__inner">
+      <span>Orbit is MIT licensed. Bot artwork and third-party logos remain their owners' property; see <a href="https://github.com/raybello/orbit/blob/main/THIRD_PARTY_NOTICES.md">third-party notices</a>.</span>
+      <span>Built with <a href="https://github.com/NousResearch/hermes-agent">Hermes Agent</a> and <a href="https://composio.dev">Composio</a>. An independent project.</span>
+    </div>
+  </footer>
+
+  <script src="site/main.js"></script>
+</body>
+</html>

@@ -1,0 +1,237 @@
+<h1>API reference</h1>
+<p class="lede">The Orbit server is a Hono app on Node. The web, desktop and mobile clients all use the same HTTP API, one Server-Sent Events stream, and two WebSocket relays. Hermes engines reach the app's tools over MCP.</p>
+
+<h2 id="conventions">Conventions</h2>
+<ul>
+  <li><strong>Base URL:</strong> the server origin, for example <code>http://127.0.0.1:8787</code>. Every route below is under <code>/api</code> unless shown otherwise.</li>
+  <li><strong>Auth:</strong> a session cookie (browser, desktop) or <code>Authorization: Bearer &lt;token&gt;</code> (mobile and native clients, from <code>POST /api/auth/sign-in</code>). Everything except <code>/api/auth/*</code>, <code>/api/apps/callback</code>, <code>/api/health</code> and <code>/api/desktop/probe</code> requires a user. Sessions last 30 days.</li>
+  <li><strong>Ownership:</strong> every bot, room, routine, skill and file route checks that the resource belongs to the signed-in user, and answers <code>404</code> when it does not.</li>
+  <li><strong>Bodies:</strong> JSON, validated with zod schemas in <code>apps/server/src/api/schemas.ts</code>. A malformed body is a <code>400</code>.</li>
+  <li><strong>Errors:</strong> <code>{ "error": "message" }</code> with a 4xx status. Unexpected failures are a plain-text <code>500</code>.</li>
+  <li><strong>Types:</strong> request and response shapes are shared from <code>packages/contracts</code> (<code>@orbit/contracts</code>).</li>
+</ul>
+<pre><code>curl -s http://127.0.0.1:8787/api/health
+# {"ok":true,"version":"…","engine":"hermes","uptimeMs":12345}
+
+TOKEN=$(curl -s -X POST http://127.0.0.1:8787/api/auth/sign-in \
+  -H 'content-type: application/json' -d '{"email":"you@example.com"}' | jq -r .token)
+curl -s -H "Authorization: Bearer $TOKEN" http://127.0.0.1:8787/api/bots</code></pre>
+
+<h2 id="auth">Auth and session</h2>
+<!--endpoints
+GET|/api/health|Public liveness: <code>{ ok, version, engine, uptimeMs }</code>. Adds <code>stackToken: "verified"</code> when the <code>x-orbit-stack-token</code> header matches <code>STACK_TOKEN</code>.
+GET|/api/auth/me|<code>{ user, devLogin }</code>; <code>user</code> is null when signed out.
+GET|/api/auth/google/start|Starts Google sign-in (redirect).
+GET|/api/auth/google/callback|Google OAuth callback; creates the session and redirects to <code>APP_URL</code>.
+POST|/api/auth/dev|<code>{ email, name? }</code>. Email-only sign-in, only when <code>DEV_LOGIN=1</code>.
+POST|/api/auth/sign-in|<code>{ email, name?, ownerKey? }</code> → <code>{ ok, token, user, expiresAt }</code>. Token flow for native clients.
+POST|/api/auth/owner|<code>{ email?, name?, link? }</code>, owner key in <code>Authorization</code>. Owner sign-in or a one-time link.
+GET|/api/auth/link/:token|Redeems a one-time sign-in link.
+POST|/api/auth/logout|Ends the session.
+GET|/api/desktop/probe|Liveness for the desktop app's stack controller, authenticated by the stack token.
+GET|/api/desktop/config|Settings the desktop shell reads from the server.
+POST|/api/push/register|<code>{ token, platform: "ios" | "android" }</code>. Registers a device for push.
+DELETE|/api/push/register|<code>?token=</code> removes one device; no token removes all of yours.
+-->
+
+<h2 id="events">Event stream (SSE)</h2>
+<!--endpoints
+GET|/api/events|Server-Sent Events for the signed-in user. Pass <code>?since=&lt;seq&gt;</code> to replay what you missed after a reconnect.
+-->
+<p>The first message is always <code>hello</code> with the server's current cursor; resume from that <code>seq</code>, not from your own. A <code>ping</code> is sent after 20 seconds of quiet. Each message's <code>data</code> is one JSON <code>ServerEvent</code>:</p>
+<div class="table-wrap"><table>
+<thead><tr><th>type</th><th>Payload</th><th>Meaning</th></tr></thead>
+<tbody>
+<tr><td><code>hello</code></td><td><code>serverTime, seq</code></td><td>Connected; resume cursor.</td></tr>
+<tr><td><code>rows</code></td><td><code>botId, generation, rows[]</code></td><td>New or revised transcript rows (streaming rewrites rows in place).</td></tr>
+<tr><td><code>cleared</code></td><td><code>botId, generation</code></td><td>Conversation reset; drop rows from older generations.</td></tr>
+<tr><td><code>live</code></td><td><code>state: LiveState</code></td><td>What a bot is doing right now: running, activity kind, awaiting, step count.</td></tr>
+<tr><td><code>bot</code></td><td><code>bot: Bot</code></td><td>A bot changed.</td></tr>
+<tr><td><code>roster</code></td><td></td><td>Bots were added, removed or regrouped; refetch <code>/api/bots</code>.</td></tr>
+<tr><td><code>computer</code></td><td><code>state: ComputerState</code></td><td>The shared computer changed.</td></tr>
+<tr><td><code>computer-status</code></td><td><code>status: BotComputerStatus</code></td><td>One bot's desktop changed (awake, sleeping, screen ready).</td></tr>
+<tr><td><code>routines</code>, <code>tasks</code>, <code>memories</code></td><td><code>botId</code></td><td>Refetch that list for the bot.</td></tr>
+<tr><td><code>files-updated</code></td><td><code>botId</code></td><td>The bot's files changed.</td></tr>
+<tr><td><code>connections</code></td><td></td><td>Connected apps changed.</td></tr>
+<tr><td><code>activity</code></td><td><code>item: ActivityItem</code></td><td>An entry for the cross-bot Activity feed.</td></tr>
+<tr><td><code>ping</code></td><td></td><td>Keep-alive.</td></tr>
+</tbody></table></div>
+
+<h2 id="bots">Bots and conversations</h2>
+<!--endpoints
+GET|/api/bots|<code>{ bots: Bot[], live: LiveState[] }</code>. Bots and groups, with each one's live state.
+POST|/api/bots|Create a bot: <code>{ name?, label?, description?, instructions?, avatarShape?, avatarColor?, mode?, isPrimary?, voiceProvider?, voiceModel? }</code> → <code>{ bot }</code>. Fails past <code>MAX_BOTS</code>.
+PATCH|/api/bots/:id|Update any of <code>name, label, description, instructions, avatarShape, avatarColor, mode, effort, pinned, voice, voiceSpeed, voiceLanguage, voiceProvider, voiceModel</code>.
+DELETE|/api/bots/:id|Delete a bot; reports which bot was promoted if it was the last primary.
+POST|/api/bots/:id/primary|Promote to primary (max 3).
+POST|/api/bots/:id/primary/restore|Restore the previous primary set.
+POST|/api/bots/:id/read|Mark the conversation read.
+GET|/api/bots/:id/rows|<code>?beforeSeq=&amp;limit=200</code> → <code>{ generation, rows }</code>. Pages backwards through the transcript.
+POST|/api/bots/:id/attachments|Multipart <code>file</code>. Uploads an attachment for the next message.
+POST|/api/bots/:id/messages|<code>{ text, files?: [{ path, filename, mediaType }] }</code> → <code>{ row }</code>. Sends a message and queues a turn.
+POST|/api/bots/:id/interrupt|Stops the running turn.
+POST|/api/bots/:id/fresh|Starts a new conversation (new generation).
+POST|/api/approvals/:id|<code>{ decision: "allow" | "always" | "deny" }</code>. Answers an approval card.
+POST|/api/bots/:id/cards/:seq/answer|<code>{ answer }</code>. Answers a question card.
+POST|/api/bots/:id/cards/:seq/dismiss|Dismisses a question, or skips a connect card.
+-->
+
+<h2 id="rooms">Groups</h2>
+<!--endpoints
+POST|/api/rooms|<code>{ name, botIds[] }</code> (at least two bots). Creates a group.
+GET|/api/rooms/:id/members|The group's member bots.
+PUT|/api/rooms/:id/members|<code>{ botIds[] }</code>. Replaces the member list.
+-->
+
+<h2 id="routines">Routines, calendar, tasks and memory</h2>
+<!--endpoints
+GET|/api/calendar|<code>?from=&amp;to=</code> → <code>{ events: CalendarEvent[] }</code>. Occurrences of every routine in the range.
+POST|/api/routines|<code>{ botId, prompt, title?, eventType: "recurring" | "one_time", schedule?, eventDate?, timezone?, description? }</code>. Creates a calendar event.
+GET|/api/bots/:id/routines|The bot's routines.
+PATCH|/api/routines/:id|<code>{ enabled }</code>. Pauses or resumes.
+POST|/api/routines/:id/run|Runs it now.
+DELETE|/api/routines/:id|Deletes it.
+GET|/api/bots/:id/tasks|The bot's tasks.
+GET|/api/tasks|The latest 200 tasks across your bots.
+GET|/api/bots/:id/memories|The bot's memories.
+DELETE|/api/memories/:id|Forgets one memory.
+GET|/api/checkins|Proactive check-in settings for the primary bot.
+PUT|/api/checkins|<code>{ enabled?, times?: ["09:00"], timezone? }</code>.
+POST|/api/checkins/now|Fires a check-in immediately.
+-->
+
+<h2 id="config">Bot settings, engine and skills</h2>
+<!--endpoints
+GET|/api/bots/:id/settings|Everything the bot settings modal shows.
+GET|/api/bots/:id/skills|The bot's custom skills.
+POST|/api/bots/:id/skills|<code>{ name, description?, body }</code>. Adds a skill.
+PATCH|/api/skills/:id|Edits a skill.
+DELETE|/api/skills/:id|Deletes a skill.
+GET|/api/skills|MCP servers per bot: <code>{ skills: SkillEntry[] }</code>.
+PUT|/api/skills/:botId/:skillName|<code>{ enabled: boolean }</code>. Turns an MCP server on or off for a bot.
+POST|/api/bots/:id/memories/consolidate|Asks the engine to consolidate memory.
+POST|/api/bots/:id/compact|Compacts the conversation history.
+GET|/api/bots/:id/engine|Provider and model options, and the current choice.
+PATCH|/api/bots/:id/engine|<code>{ provider, model }</code>; <code>null</code> means the agent's default.
+POST|/api/bots/:id/engine/login|<code>{ provider }</code>. Opens a subscription sign-in on the bot's screen.
+POST|/api/bots/:id/engine/restart|Restarts a managed engine.
+POST|/api/bots/:id/engine/screen/stop|Closes the sign-in terminal on the screen.
+POST|/api/bots/:id/handback|Hands the screen back to the bot after you drove it.
+GET|/api/config/engine-auth|Engine auth status for every bot.
+PUT|/api/config/engine-auth/:botId|<code>{ provider, model }</code> for one bot.
+POST|/api/config/engine-auth/sync|Re-syncs inherited credentials to managed bots.
+-->
+
+<h2 id="computers">Computers and screens</h2>
+<!--endpoints
+GET|/api/computers|<code>{ computers: BotComputerStatus[] }</code>. One entry per bot's desktop.
+GET|/api/computer|The shared computer's state (Orgo mode).
+POST|/api/computer/ensure|Starts or resumes the computer.
+POST|/api/computer/suspend|Suspends it.
+GET|/api/computer/details|Details for settings.
+GET|/api/bots/:id/screenshot|A PNG of the bot's screen.
+POST|/api/bots/:id/screen/control|<code>{ action: "take" | "give" }</code>. Takes or gives back control.
+POST|/api/bots/:id/screen/reset|Restarts the bot's desktop.
+WS|/api/bots/:id/screen|VNC relay. <code>?mode=watch|control</code>; auth by cookie or <code>?token=</code>.
+-->
+
+<h2 id="files">Files</h2>
+<!--endpoints
+GET|/api/files|<code>?botId=&amp;type=library|attachment|workspace&amp;page=&amp;pageSize=</code> → <code>{ files, total, page, pageSize }</code>.
+GET|/api/files/:fileId/download|Downloads a file from the unified list.
+GET|/api/bots/:id/files|<code>?path=&amp;wake=</code>. Lists a folder on the bot's computer.
+POST|/api/bots/:id/files/download|<code>{ path }</code>. Copies a file from the computer into the Library.
+GET|/api/bots/:id/files/raw|<code>?path=</code>. Streams a file.
+-->
+
+<h2 id="apps">Connected apps and Google</h2>
+<!--endpoints
+GET|/api/apps|<code>?search=&amp;category=&amp;limit=</code>. Composio toolkits and their connection state.
+POST|/api/apps/:slug/connect|<code>{ botId?, seq? }</code> → an OAuth redirect URL.
+GET|/api/apps/callback|Composio OAuth callback; resolves the connect card it came from.
+DELETE|/api/apps/:slug|Disconnects an app.
+GET|/api/policies|Saved "always allow" tool policies.
+DELETE|/api/policies/:tool|Removes a policy.
+GET|/api/google/status|Whether Google (Gmail, Calendar) is connected.
+GET|/api/google/connect|Starts the Google OAuth flow.
+GET|/api/google/callback|Google OAuth callback.
+DELETE|/api/google|Revokes Google access.
+-->
+
+<h2 id="voice">Voice</h2>
+<!--endpoints
+GET|/api/voice/options|Cloud voices, languages and speeds.
+POST|/api/voice/session|<code>{ botId }</code>. Mints a realtime cloud voice session.
+POST|/api/voice/tool|<code>{ botId, callId?, name, args }</code>. Runs a tool call the realtime model made.
+POST|/api/voice/end|<code>{ botId, callId, transcript?, error? }</code>. Ends a call and writes its row.
+POST|/api/voice/preview|Plays a sample of a cloud voice.
+POST|/api/voice/stt|Multipart <code>file</code>, <code>language</code>. Cloud dictation.
+GET|/api/voice/local/status|<code>VoiceLocalStatus</code>: runtime, model state, download progress.
+GET|/api/voice/local/models|The on-device model menu.
+POST|/api/voice/local/models/download|<code>{ model? , kind? }</code>; no body downloads the whole set.
+POST|/api/voice/local/stt|On-device dictation (<code>?botId=</code>).
+POST|/api/voice/local/preview|Plays a sample of a local voice.
+POST|/api/voice/local/session|<code>{ botId }</code>. Mints a local call id.
+WS|/api/voice/local/call/:callId|Audio relay for an on-device call.
+-->
+
+<h2 id="mcp">MCP for agents</h2>
+<!--endpoints
+POST|/mcp/:botId|Streamable HTTP MCP endpoint for one bot's engine. The bearer token is derived from the bot id and <code>SESSION_SECRET</code>.
+POST|/mcp/primary|The same, for whichever bot the primary engine is bound to.
+-->
+<p>Each call is stateless: the URL says which bot is calling. Besides the app's own tools, the list carries the user's Composio tools, so connected apps and their approvals work the same for every engine.</p>
+<div class="table-wrap"><table>
+<thead><tr><th>Area</th><th>Tools</th></tr></thead>
+<tbody>
+<tr><td>Talking to you</td><td><code>ask_user</code>, <code>stay_silent</code>, <code>show_file</code>, <code>save_file</code>, <code>request_app_connection</code></td></tr>
+<tr><td>The team</td><td><code>list_bots</code>, <code>create_bot</code>, <code>update_bot</code>, <code>delete_bot</code>, <code>set_primary_bot</code>, <code>send_to_bot</code>, <code>create_group</code>, <code>post_to_group</code></td></tr>
+<tr><td>Routines and tasks</td><td><code>create_routine</code>, <code>update_routine</code>, <code>delete_routine</code>, <code>list_routines</code>, <code>create_event_routine</code>, <code>list_event_triggers</code>, <code>create_task</code>, <code>update_task</code>, <code>set_checkins</code></td></tr>
+<tr><td>Its computer</td><td><code>computer_screenshot</code>, <code>computer_click</code>, <code>computer_drag</code>, <code>computer_scroll</code>, <code>computer_type</code>, <code>computer_key</code>, <code>computer_windows</code>, <code>computer_shell</code></td></tr>
+<tr><td>Research</td><td><code>x_search</code> (needs <code>XAI_API_KEY</code>)</td></tr>
+</tbody></table></div>
+
+<h2 id="types">Core types</h2>
+<p>From <code>packages/contracts/src/index.ts</code>.</p>
+<h3>Bot</h3>
+<pre><code>interface Bot {
+  id: string; name: string; label: string; description: string; instructions: string;
+  avatarShape: AvatarShape; avatarColor: AvatarColor;
+  mode: 'personal' | 'teammate'; isPrimary: boolean; kind?: 'agent' | 'room';
+  pinned: boolean; effort: 'low' | 'medium' | 'high' | 'xhigh';
+  voice: string; voiceSpeed: number; voiceLanguage: string;
+  voiceProvider: 'cloud' | 'local'; voiceModel: string;
+  model: string | null; provider: string | null;   // null = the engine's default
+  generation: number; unread: number; lastPreview: string | null;
+  lastActivityAt: number; createdAt: number;
+}</code></pre>
+<h3>Row</h3>
+<pre><code>interface Row {
+  botId: string; generation: number;
+  seq: number;          // order in the transcript
+  updatedSeq: number;   // per-bot revision counter; rows are rewritten while streaming
+  kind: 'message' | 'tool-call' | 'card' | 'event' | 'notice';
+  body: MessageBody | ToolCallBody | CardBody | EventBody | NoticeBody;
+  createdAt: number;
+}</code></pre>
+<h3>Cards</h3>
+<pre><code>type CardBody =
+  | { card: 'approval'; approvalId; title; detail; tool; args;
+      status: 'pending' | 'allowed' | 'always' | 'denied' | 'expired' }
+  | { card: 'question'; question; options: string[];
+      status: 'pending' | 'answered' | 'dismissed'; answer? }
+  | { card: 'connect'; toolkit; toolkitName; reason;
+      status: 'pending' | 'connected' | 'skipped' }
+  | { card: 'draft'; channel: 'email' | 'slack' | 'message'; to; subject?; text; approvalId;
+      status: 'pending' | 'sent' | 'discarded' };</code></pre>
+<h3>LiveState</h3>
+<pre><code>interface LiveState {
+  botId: string; isRunning: boolean; startedAt: number | null;
+  activity: { kind: ActivityKind; detail?: string; since: number } | null;
+  awaiting: { reason: string; since: number } | null;
+  caption?: string | null;   // a short line from the model's live reasoning
+  steps?: number;            // tool calls so far this turn
+}
+type ActivityKind = 'thinking' | 'working' | 'searching_web' | 'reading_web' | 'browsing_web'
+  | 'on_its_computer' | 'running_commands' | 'waiting_on_command' | 'messaging_named'
+  | 'connecting_service' | 'waiting_for_you' | 'drafting_file' | 'remembering';</code></pre>
