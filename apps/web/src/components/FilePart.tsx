@@ -28,7 +28,10 @@ function uniqueFiles(files: MessageFile[]) {
 
 function ImagePreview({ file, botId }: { file: MessageFile; botId: string }) {
   const [lightbox, setLightbox] = useState(false);
+  const [failed, setFailed] = useState(false);
   const url = fileUrl(botId, file);
+  // A file that is gone must read as a download chip, never as the browser's broken-image glyph.
+  if (failed) return <FileChip file={file} botId={botId} />;
   return (
     <>
       <button
@@ -38,7 +41,7 @@ function ImagePreview({ file, botId }: { file: MessageFile; botId: string }) {
         aria-label={`View ${file.filename}`}
         title={file.filename}
       >
-        <img src={url} alt={file.filename} className="file-part__img" loading="lazy" />
+        <img src={url} alt={file.filename} className="file-part__img" loading="lazy" onError={() => setFailed(true)} />
         <div className="file-part__img-caption">
           <span className="file-part__name">{file.filename}</span>
           <Icon name="expand" size={11} opacity={0.5} />

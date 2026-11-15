@@ -341,10 +341,14 @@
 .empty-chat__sub { max-width: 380px; font-size: 14px; line-height: 20px; color: var(--color-fg-subtle); }
 
 /* ---------- composer ---------- */
-.composer-area { flex-shrink: 0; padding: 0 16px 16px; position: relative; }
+/* Teams' writing strip: a solid band under the transcript, controls on one 32px line. */
+.composer-area {
+  flex-shrink: 0; padding: 10px 16px 14px; position: relative;
+  background: var(--color-bg-stage); border-top: 1px solid var(--color-border-subtle);
+}
 .composer {
-  display: flex; flex-direction: row; align-items: flex-end; gap: 4px;
-  max-width: 860px; min-height: 44px; margin: 0 auto; padding: 0 8px 6px;
+  display: flex; align-items: flex-end; gap: 4px;
+  max-width: 860px; min-height: 48px; margin: 0 auto; padding: 7px 8px;
   background: var(--color-bg-stage); border: 1px solid var(--color-border-default); border-radius: var(--radius-md);
   transition: border-color 120ms var(--ease-standard), box-shadow 120ms var(--ease-standard);
 }
@@ -352,13 +356,12 @@
   border-color: var(--accent-500);
   box-shadow: 0 0 0 2px color-mix(in srgb, var(--accent-500) 20%, transparent);
 }
-/* Toolbar sits inline at the bottom-left of the input, Teams style. */
+/* Toolbar sits inline at the left of the input, Teams style: one 32px row, centred on it. */
 .composer__toolbar {
-  display: flex; align-items: center; gap: 2px; padding-bottom: 6px; flex-shrink: 0;
-  align-self: flex-end;
+  display: flex; align-items: center; gap: 2px; height: 32px; flex-shrink: 0;
 }
 .composer__toolbar-btn {
-  display: inline-flex; align-items: center; justify-content: center; width: 28px; height: 28px;
+  display: inline-flex; align-items: center; justify-content: center; width: 30px; height: 30px;
   border-radius: var(--radius-sm); color: var(--color-fg-subtle); flex-shrink: 0;
   transition: background 120ms var(--ease-standard), color 120ms var(--ease-standard);
 }
@@ -368,19 +371,17 @@
 .composer__toolbar-btn.is-transcribing { color: var(--accent-500); }
 .composer__toolbar-sep { width: 1px; height: 16px; margin: 0 4px; background: var(--color-border-subtle); flex-shrink: 0; }
 .composer__main { display: flex; align-items: flex-end; gap: 4px; flex: 1 1 0; min-width: 0; }
-.composer__main .composer__input { padding: 8px 0 6px 4px; }
-.composer__left { display: flex; align-items: flex-end; gap: 4px; flex: 1 1 0; min-width: 0; }
-.composer__right { display: flex; align-items: center; gap: 4px; padding-bottom: 2px; flex-shrink: 0; }
+.composer__right { display: flex; align-items: center; gap: 4px; height: 32px; flex-shrink: 0; }
 .composer__plus-anchor { position: relative; display: inline-flex; }
 .composer__btn {
-  display: inline-flex; align-items: center; justify-content: center; width: 28px; height: 28px; border-radius: var(--radius-sm);
+  display: inline-flex; align-items: center; justify-content: center; width: 30px; height: 30px; border-radius: var(--radius-sm);
   background: transparent; flex-shrink: 0; color: var(--color-fg-subtle);
   transition: background 120ms, color 120ms;
 }
 .composer__btn:hover:not(:disabled) { background: var(--color-bg-nav-hover); color: var(--color-fg-default); }
 .composer__input {
-  flex: 1 1 0; min-width: 0; border: 0; outline: none; resize: none; background: transparent;
-  padding: 8px 0 6px; margin: 0; font-size: 14px; line-height: 20px; color: var(--color-fg-default);
+  flex: 1 1 0; min-width: 0; min-height: 32px; border: 0; outline: none; resize: none; background: transparent;
+  padding: 6px 4px; margin: 0; font-size: 14px; line-height: 20px; color: var(--color-fg-default);
   max-height: 200px; display: block;
 }
 .composer__input::placeholder { color: var(--color-fg-muted); opacity: 1; }

@@ -170,20 +170,18 @@ export function Composer({ bot, running }: { bot: Bot; running: boolean }) {
           </button>
         </div>
         <div className="composer__main">
-          <div className="composer__left">
-            <textarea
-              ref={ref}
-              className="composer__input"
-              rows={1}
-              value={text}
-              placeholder="Type a new message"
-              onChange={(e) => setText(e.target.value)}
-              onKeyDown={(e) => {
-                if (e.key === 'Enter' && !e.shiftKey && !e.nativeEvent.isComposing) { e.preventDefault(); send(); }
-              }}
-              aria-label={`Message ${displayName(bot)}`}
-            />
-          </div>
+          <textarea
+            ref={ref}
+            className="composer__input"
+            rows={1}
+            value={text}
+            placeholder="Type a new message"
+            onChange={(e) => setText(e.target.value)}
+            onKeyDown={(e) => {
+              if (e.key === 'Enter' && !e.shiftKey && !e.nativeEvent.isComposing) { e.preventDefault(); send(); }
+            }}
+            aria-label={`Message ${displayName(bot)}`}
+          />
           <div className="composer__right">
             <button
               type="button"
