@@ -2,7 +2,6 @@ import { useCallback, useEffect, useState } from 'react';
 import type { Bot, LibraryFile } from '@orbit/contracts';
 import { configApi, type LibraryListing } from '../../lib/configApi';
 import { relativeShort } from '../../lib/time';
-import { useStore } from '../../store';
 import { Icon } from '../Icon';
 import { ImageViewer } from '../ImageViewer';
 import { Glyph } from './glyphs';
@@ -10,9 +9,14 @@ import { formatBytes } from './ui';
 
 const IMAGE = /\.(png|jpe?g|gif|webp|avif|bmp|svg)$/i;
 
-/** Files the bot saved under /root/grokbot/files/<botId> on its computer. */
+/**
+ * A directory explorer over the bot computer's own filesystem.
+ *
+ * The listing is the folder the computer keeps its work in (a Docker bot's /home/bot, the shared
+ * computer's Library), one directory at a time, with folders to walk into. It reads the disk even
+ * while the computer sleeps, so a stopped container still shows what the bot saved.
+ */
 export function LibraryTab({ bot }: { bot: Bot }) {
-  const awake = useStore((s) => s.computer?.status === 'running');
   const [path, setPath] = useState('');
   const [list, setList] = useState<LibraryListing | null>(null);
   const [loading, setLoading] = useState(false);
@@ -29,12 +33,14 @@ export function LibraryTab({ bot }: { bot: Bot }) {
     finally { setLoading(false); }
   }, [bot.id, path]);
 
-  useEffect(() => { setPath(''); setList(null); }, [bot.id]);
-  useEffect(() => { load(); }, [load, awake]);
+  useEffect(() => { setPath(''); setList(null); setBroken({}); }, [bot.id]);
+  useEffect(() => { load(); }, [load]);
 
   const relFor = (f: LibraryFile) => (path ? `${path}/${f.name}` : f.name);
   const rawUrl = (rel: string) => `/api/bots/${bot.id}/files/raw?path=${encodeURIComponent(rel)}`;
   const isImage = (f: LibraryFile) => !f.isDir && IMAGE.test(f.name);
+  const crumbs = path ? path.split('/') : [];
+  const up = () => setPath(crumbs.slice(0, -1).join('/'));
 
   const download = async (f: LibraryFile) => {
     setBusyFile(f.name); setError(null);
@@ -57,41 +63,46 @@ export function LibraryTab({ bot }: { bot: Bot }) {
     finally { setOpening(null); }
   };
 
-  const crumbs = path ? path.split('/') : [];
-
   return (
     <div className="details__sections">
       <section>
         <div className="section-label section-label--row">
           <span className="lib-crumbs">
-            {crumbs.length ? (
-              <>
-                <button type="button" className="link-btn link-btn--small" onClick={() => setPath('')}>Files</button>
-                {crumbs.map((c, i) => (
-                  <span key={i} className="lib-crumbs__part">
-                    <Icon name="chev_right" size={8} opacity={0.5} />
-                    <button type="button" className="link-btn link-btn--small" onClick={() => setPath(crumbs.slice(0, i + 1).join('/'))}>{c}</button>
-                  </span>
-                ))}
-              </>
-            ) : 'Files'}
+            <button
+              type="button"
+              className="lib-crumbs__up"
+              onClick={up}
+              disabled={!path}
+              aria-label="Up one folder"
+              title="Up one folder"
+            >
+              <Icon name="chev_right" size={12} opacity={path ? 0.7 : 0.3} style={{ transform: 'rotate(180deg)' }} />
+            </button>
+            <button type="button" className="link-btn link-btn--small" onClick={() => setPath('')}>Home</button>
+            {crumbs.map((c, i) => (
+              <span key={i} className="lib-crumbs__part">
+                <Icon name="chev_right" size={8} opacity={0.5} />
+                <button type="button" className="link-btn link-btn--small" onClick={() => setPath(crumbs.slice(0, i + 1).join('/'))}>{c}</button>
+              </span>
+            ))}
           </span>
           <button type="button" className="link-btn link-btn--small" onClick={() => load()} disabled={loading} aria-label="Refresh files" title="Refresh">
             <Icon name="refresh" size={12} opacity={0.7} style={loading ? { animation: 'cfg-spin 0.8s linear infinite' } : undefined} />
           </button>
         </div>
+        {list?.root && <div className="lib-root" title={`The bot computer’s filesystem, ${list.root}`}>{list.root}</div>}
         <div className="panel-card">
           {list?.status === 'asleep' ? (
             <div className="lib-empty">
-              <div>{bot.name}’s computer is asleep. Wake it to see saved files.</div>
-              <button type="button" className="cfg-btn cfg-btn--secondary" onClick={() => load(true)} disabled={loading}>{loading ? 'Waking…' : 'Wake and show files'}</button>
+              <div>{bot.name}’s computer is asleep, so its files can’t be read. Start it to browse them.</div>
+              <button type="button" className="cfg-btn cfg-btn--secondary" onClick={() => load(true)} disabled={loading}>{loading ? 'Starting…' : 'Start its computer'}</button>
             </div>
           ) : !list && loading ? (
-            <div className="panel-empty">Looking for files…</div>
+            <div className="panel-empty">Reading the computer’s files…</div>
           ) : list?.status === 'error' ? (
-            <div className="panel-empty">Couldn’t reach the computer. {list.error ? <span className="lib-err">{list.error}</span> : null}</div>
+            <div className="panel-empty">Couldn’t read this folder. {list.error ? <span className="lib-err">{list.error}</span> : null}</div>
           ) : !list?.files.length ? (
-            <div className="panel-empty panel-empty--center">{path ? 'This folder is empty.' : `Files that ${bot.name} creates, like reports and notes, are kept here.`}</div>
+            <div className="panel-empty panel-empty--center">{path ? 'This folder is empty.' : `Files ${bot.name} saves on its computer show up here.`}</div>
           ) : (
             list.files.map((f) => {
               const rel = relFor(f);
@@ -113,9 +124,9 @@ export function LibraryTab({ bot }: { bot: Bot }) {
                       <span className="panel-row__title">{f.name}</span>
                       <span className="panel-row__meta">{f.isDir ? 'Folder' : formatBytes(f.size)} · {relativeShort(f.modifiedAt) === 'now' ? 'just now' : relativeShort(f.modifiedAt)}</span>
                     </span>
-                    {opening === f.name ? <span className="cfg-spinner" /> : image ? <Icon name="expand" size={11} opacity={0.4} /> : null}
+                    {opening === f.name ? <span className="cfg-spinner" /> : f.isDir ? <Icon name="chev_right" size={11} opacity={0.4} /> : image ? <Icon name="expand" size={11} opacity={0.4} /> : null}
                   </button>
-                  {f.isDir ? <Icon name="chev_right" size={12} opacity={0.5} /> : (
+                  {f.isDir ? null : (
                     <button type="button" className="cfg-icon-btn" onClick={() => download(f)} disabled={busyFile === f.name} aria-label={`Download ${f.name}`} title="Download">
                       {busyFile === f.name ? <span className="cfg-spinner" /> : <Glyph name="download" size={14} />}
                     </button>

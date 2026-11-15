@@ -25,6 +25,17 @@ export function useScreenPreview(botId: string, { enabled = true }: { enabled?: 
   const [at, setAt] = useState<number | null>(null);
   const urlRef = useRef<string | null>(null);
 
+  // A different bot's last frame must not outlive the switch: it is the wrong picture, and its
+  // blob URL may already be revoked (which renders as the browser's broken-image glyph).
+  useEffect(() => {
+    setSrc(null);
+    setAt(null);
+    if (urlRef.current) {
+      URL.revokeObjectURL(urlRef.current);
+      urlRef.current = null;
+    }
+  }, [botId]);
+
   useEffect(() => {
     if (!enabled || !botId) return;
     let alive = true;
@@ -47,7 +58,9 @@ export function useScreenPreview(botId: string, { enabled = true }: { enabled?: 
         urlRef.current = next;
         setSrc(next);
         setAt(Date.now());
-        if (previous) URL.revokeObjectURL(previous);
+        // Revoking while the old URL is still painted makes the browser draw a broken image for a
+        // frame, so the previous blob is released once the new one has had time to paint.
+        if (previous) window.setTimeout(() => URL.revokeObjectURL(previous), 1000);
       } catch {
         /* a dropped refresh keeps the last frame; the next tick tries again */
       } finally {
@@ -83,5 +96,7 @@ export function ScreenFrame({ src, bot, size = 30 }: { src: string | null; bot: 
       </span>
     );
   }
-  return <img className="screen-shot" src={src} alt="" draggable={false} />;
+  // A background image cannot show the browser's broken-image glyph, so a frame that fails to
+  // decode reads as an empty frame instead of a torn icon.
+  return <span className="screen-shot is-image" style={{ backgroundImage: `url("${src}")` }} aria-hidden />;
 }

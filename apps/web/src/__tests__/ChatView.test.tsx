@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { cleanup, render, screen } from '@testing-library/react';
+import { act, cleanup, fireEvent, render, screen } from '@testing-library/react';
 import type { Bot, Row } from '@orbit/contracts';
 
 vi.mock('../lib/api', () => ({
@@ -11,6 +11,13 @@ vi.mock('../lib/api', () => ({
     routines: vi.fn(async () => ({ routines: [] })),
     markRead: vi.fn(async () => ({ ok: true })),
     bots: vi.fn(async () => ({ bots: [], live: [] })),
+    files: vi.fn(async ({ botId }: { botId?: string }) => ({
+      files: botId === 'b'
+        ? [{ id: 'f-b', botId: 'b', botName: 'Ruby', type: 'library', filename: 'ruby-notes.md', path: 'ruby-notes.md', size: 10, mediaType: 'text/markdown', createdAt: 1, downloadUrl: '/api/files/f-b/download' }]
+        : [{ id: 'f-a', botId: 'a', botName: 'Scout', type: 'library', filename: 'scout-plan.md', path: 'scout-plan.md', size: 10, mediaType: 'text/markdown', createdAt: 1, downloadUrl: '/api/files/f-a/download' }],
+      total: 1, page: 1, pageSize: 50,
+    })),
+    fileUrl: (f: { downloadUrl: string }) => f.downloadUrl,
   },
 }));
 
@@ -87,5 +94,22 @@ describe('ChatView', () => {
     expect(screen.getByText('The deck has nine slides and two appendices')).toBeTruthy();
     // A transcript with messages does not show the empty state.
     expect(screen.queryByText('Keeps the release train on time.')).toBeNull();
+  });
+
+  it('shows only the selected bot’s files after switching chats on the Files tab', async () => {
+    const RUBY = bot({ id: 'b', name: 'Ruby', isPrimary: false });
+    useStore.setState({
+      bots: [SCOUT, RUBY],
+      selectedBotId: 'a',
+      transcripts: { a: { generation: 1, bySeq: {}, loaded: true }, b: { generation: 1, bySeq: {}, loaded: true } },
+    });
+    render(<ChatView />);
+
+    fireEvent.click(screen.getByRole('tab', { name: 'Files' }));
+    expect(await screen.findByText('scout-plan.md')).toBeTruthy();
+
+    act(() => useStore.setState({ selectedBotId: 'b' }));
+    expect(await screen.findByText('ruby-notes.md')).toBeTruthy();
+    expect(screen.queryByText('scout-plan.md')).toBeNull();
   });
 });

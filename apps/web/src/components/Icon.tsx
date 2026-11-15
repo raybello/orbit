@@ -9,7 +9,7 @@ export type IconName =
   // inline extras not in the icon font export
   | 'arrow_up' | 'stop' | 'more' | 'monitor' | 'refresh'
   // inline outline glyphs
-  | 'eye' | 'pointer' | 'expand' | 'shrink' | 'panel' | 'emoji';
+  | 'eye' | 'pointer' | 'expand' | 'shrink' | 'panel' | 'emoji' | 'people' | 'bell' | 'bell_off' | 'leave';
 
 const INLINE: Partial<Record<IconName, string>> = {
   arrow_up: 'M12 4.5a1 1 0 0 1 .7.3l6 6a1 1 0 0 1-1.4 1.4L13 7.9V19a1 1 0 1 1-2 0V7.9l-4.3 4.3a1 1 0 1 1-1.4-1.4l6-6a1 1 0 0 1 .7-.3Z',
@@ -28,6 +28,10 @@ const OUTLINE: Partial<Record<IconName, string>> = {
   // details-panel toggle: a page with a filled right rail (Teams' panel icon).
   panel: 'M4 5.5h16v13H4z M15.5 5.5v13',
   emoji: 'M12 3.8a8.2 8.2 0 1 0 0 16.4 8.2 8.2 0 0 0 0-16.4Z M9 10.2h.01 M15 10.2h.01 M8.6 14a4.4 4.4 0 0 0 6.8 0',
+  people: 'M9 11.2a3.3 3.3 0 1 0 0-6.6 3.3 3.3 0 0 0 0 6.6Z M2.9 19.6c0-2.9 2.7-4.8 6.1-4.8s6.1 1.9 6.1 4.8 M15.9 5.3a3 3 0 0 1 0 5.6 M17.3 14.9c2.3.4 3.9 1.9 3.9 4.4',
+  bell: 'M12 3.6a5.6 5.6 0 0 0-5.6 5.6v4.1l-1.6 2.8h14.4l-1.6-2.8V9.2A5.6 5.6 0 0 0 12 3.6Z M10 19a2 2 0 0 0 4 0',
+  bell_off: 'M4 4l16 16 M18.4 13.6V9.2A6.4 6.4 0 0 0 11 2.9 M7.6 7.7A5.6 5.6 0 0 0 6.4 9.2v4.1l-1.6 2.8h11 M10 19a2 2 0 0 0 4 0',
+  leave: 'M14 4.2h3.6a2 2 0 0 1 2 2v11.6a2 2 0 0 1-2 2H14 M9.4 8.2 5.6 12l3.8 3.8 M5.6 12h9.2',
 };
 
 interface Props { name: IconName; size?: number; opacity?: number; className?: string; style?: CSSProperties; color?: string }

@@ -24,7 +24,7 @@ export interface BotSettingsBundle {
   memory: { lastConsolidatedAt: number | null; historyChars: number; compactAtChars: number; lastCompaction: { method: string; created_at: number } | null };
 }
 
-export interface LibraryListing { status: 'ok' | 'asleep' | 'error'; path: string; files: LibraryFile[]; error?: string }
+export interface LibraryListing { status: 'ok' | 'asleep' | 'error'; path: string; root?: string; files: LibraryFile[]; error?: string }
 
 export interface ComputerDetails {
   computer: ComputerState;

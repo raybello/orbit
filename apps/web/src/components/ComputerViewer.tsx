@@ -192,8 +192,8 @@ export function ComputerScreen({ bot, variant, initialMode = 'watch', hint, paus
     >
       <div className="screen__body">
         <div className="screen__view" style={{ aspectRatio: `${width} / ${height}` }}>
-          {variant === 'panel' && still && (phase === 'preview' || phase === 'live' || phase === 'switching') && (
-            <img className="screen__shot" src={still} alt="" draggable={false} />
+          {variant === 'panel' && still && (phase === 'preview' || phase === 'switching') && (
+            <div className="screen__shot" style={{ backgroundImage: `url("${still}")` }} aria-hidden />
           )}
           <div ref={canvasRef} className="screen__canvas" />
           {/* noVNC swallows clicks on its canvas, so the way into the large view is a button laid over it. */}

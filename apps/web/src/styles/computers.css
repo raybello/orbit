@@ -225,7 +225,8 @@
 }
 
 /* A still of the screen, or the bot's avatar while there is nothing to show yet. */
-.screen-shot { display: block; width: 100%; height: 100%; object-fit: cover; }
+.screen-shot { display: block; width: 100%; height: 100%; }
+.screen-shot.is-image { background-color: #000000; background-size: cover; background-position: center; background-repeat: no-repeat; }
 .screen-shot.is-empty { display: grid; place-items: center; }
 
 .computer-card__preview.is-sleeping .computer-card__frame-body,

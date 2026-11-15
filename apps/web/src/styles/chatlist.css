@@ -54,6 +54,7 @@
   background: var(--color-bg-nav-active); color: var(--color-fg-subtle);
   font-size: 10px; font-weight: 600; line-height: 18px;
 }
+.group-row__muted { display: inline-flex; align-items: center; color: var(--color-fg-muted); }
 
 /* ---------- new group chat modal ---------- */
 .create-modal__sub {

@@ -24,6 +24,8 @@ interface State {
    * or `live:<botId>:<kind>:<turn stamp>`. Keeps a streamed row and a running turn from repeating.
    */
   activitySeen: Record<string, number>;
+  /** Bumped when a group's membership changes, so cached member lists (counts, avatar stacks) refetch. */
+  rosterVersion: number;
   /** Bumped on every `connections` event so open views can refetch. */
   connectionsVersion: number;
   sseConnected: boolean;
@@ -35,6 +37,8 @@ interface State {
   viewerMode: 'watch' | 'control';
   /** One line shown under the large computer view while the person is driving (e.g. a sign-in to finish). */
   viewerHint: string | null;
+  /** Group chats the person muted: their unread badge and preview stay quiet. */
+  mutedRooms: string[];
 
   checkAuth(): Promise<void>;
   loadBots(): Promise<void>;
@@ -46,10 +50,12 @@ interface State {
   handleEvent(ev: ServerEvent): void;
   setModal(m: ModalKind): void;
   set(p: Partial<State>): void;
+  toggleMuteRoom(id: string): void;
 }
 
 const LS_SELECTED = 'grokbot.selectedBot';
 const LS_DETAILS = 'grokbot.detailsOpen';
+const LS_MUTED = 'orbit.mutedRooms';
 // Storage is blocked in private mode and in sandboxed frames: a failed read counts as unset and a
 // failed write is dropped, so the store still works for the session.
 const lsGet = (k: string) => { try { return localStorage.getItem(k); } catch { return null; } };
@@ -68,6 +74,7 @@ export const useStore = create<State>((set, get) => ({
   recentActivity: [],
   activitySeen: {},
   connectionsVersion: 0,
+  rosterVersion: 0,
   sseConnected: false,
   // Closed by default (Teams): the conversation takes the full width until asked otherwise.
   detailsOpen: lsGet(LS_DETAILS) === '1',
@@ -75,6 +82,12 @@ export const useStore = create<State>((set, get) => ({
   viewerOpen: false,
   viewerMode: 'watch',
   viewerHint: null,
+  mutedRooms: (() => {
+    try {
+      const raw = JSON.parse(lsGet(LS_MUTED) ?? '[]');
+      return Array.isArray(raw) ? raw.filter((x): x is string => typeof x === 'string') : [];
+    } catch { return []; }
+  })(),
 
   async checkAuth() {
     try {
@@ -91,9 +104,11 @@ export const useStore = create<State>((set, get) => ({
     for (const l of live) liveMap[l.botId] = l;
     const sel = get().selectedBotId;
     const selectedBotId = sel && bots.some((b) => b.id === sel) ? sel : (bots.find((b) => b.isPrimary) ?? bots[0])?.id ?? null;
-    set({ bots, live: liveMap });
-    if (selectedBotId !== get().selectedBotId || !get().transcripts[selectedBotId ?? '']) {
-      if (selectedBotId) get().selectBot(selectedBotId);
+    const changed = selectedBotId !== get().selectedBotId;
+    // A deleted last chat must clear the selection too, or the shell keeps pointing at a gone bot.
+    set({ bots, live: liveMap, ...(selectedBotId ? {} : { selectedBotId: null }) });
+    if (selectedBotId && (changed || !get().transcripts[selectedBotId])) {
+      get().selectBot(selectedBotId);
     }
   },
 
@@ -214,6 +229,7 @@ export const useStore = create<State>((set, get) => ({
         }));
         return;
       case 'roster':
+        set((st) => ({ rosterVersion: st.rosterVersion + 1 }));
         s.loadBots().catch(console.error);
         return;
       case 'bot': {
@@ -245,6 +261,14 @@ export const useStore = create<State>((set, get) => ({
   set(p) {
     if (p.detailsOpen !== undefined) lsSet(LS_DETAILS, p.detailsOpen ? '1' : '0');
     set(p);
+  },
+
+  toggleMuteRoom(id) {
+    set((s) => {
+      const next = s.mutedRooms.includes(id) ? s.mutedRooms.filter((x) => x !== id) : [...s.mutedRooms, id];
+      lsSet(LS_MUTED, JSON.stringify(next));
+      return { mutedRooms: next };
+    });
   },
 }));
 
