@@ -1,9 +1,8 @@
 import fs from 'node:fs/promises';
 import path from 'node:path';
 import { env } from '../env.js';
-import { docker } from './client.js';
+import { docker, type DockerError } from './client.js';
 
-/** The image every bot container runs. */
 export const COMPUTER_IMAGE = env.computerImage;
 
 /** Files the local build sends (see server/docker/computer). */
@@ -27,8 +26,8 @@ async function exists(image: string): Promise<boolean> {
   try {
     await docker().getImage(image).inspect();
     return true;
-  } catch (e: any) {
-    if (e?.statusCode === 404) return false;
+  } catch (e) {
+    if ((e as DockerError)?.statusCode === 404) return false;
     throw e;
   }
 }

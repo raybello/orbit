@@ -7,7 +7,6 @@ import { Icon, type IconName } from './Icon';
 import { Menu } from './Menu';
 import { hasNativeWindowControls } from '../lib/desktop-shell';
 
-/** The rail's sections: id, label and glyph, in the order they appear. */
 const SECTIONS: readonly { id: NavSection; label: string; icon: IconName }[] = [
   { id: 'activity', label: 'Activity', icon: 'activity' },
   { id: 'chat', label: 'Chat', icon: 'chat_filled' },
@@ -44,7 +43,6 @@ interface Props {
   unreadCounts?: Partial<Record<NavSection, number>>;
 }
 
-/** The 60px icon rail down the left edge: window dots, the seven sections, the account. */
 export function NavRail({ active, onChange, unreadCounts }: Props) {
   const user = useStore((s) => s.user);
   const setModal = useStore((s) => s.setModal);

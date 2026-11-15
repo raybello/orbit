@@ -29,7 +29,6 @@ const looksLikeCron = (s: string) => /^\s*\S+(\s+\S+){4,5}\s*$/.test(s);
 
 interface Props { initialDate: Date; onClose: () => void; onSaved: () => void }
 
-/** Create one calendar event: a one-time routine at a datetime, or a recurring cron routine. */
 export function CreateCalendarEventModal({ initialDate, onClose, onSaved }: Props) {
   const bots = useStore((s) => s.bots);
   const selectedBotId = useStore((s) => s.selectedBotId);

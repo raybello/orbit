@@ -19,13 +19,14 @@
  * is, and that row is the only place a voice can be chosen per bot. `/preview` takes an explicit
  * `model` for the same reason: it previews a model the user is about to pick, not "the" model.
  */
-import { Hono } from 'hono';
+import { Hono, type Context } from 'hono';
 import { requireUser, type AuthVars } from './lib/auth.js';
 import { newId } from './lib/ids.js';
 import { getBotRow } from './store.js';
 import * as models from './voice-models.js';
 import * as runtime from './voice-runtime.js';
 import { CALL_SAMPLE_RATE, createLocalCall } from './voice-local-session.js';
+import { optionalBody, VoiceModelDownloadSchema, LocalVoiceSessionSchema } from './api/schemas.js';
 
 export const localVoiceApi = new Hono<AuthVars>();
 
@@ -65,7 +66,7 @@ function ownBot(userId: string, botId: string | undefined) {
 }
 
 /** Reject a botId that names someone else's bot; absent is fine (dictation needs no bot). */
-function botForbidden(c: any, userId: string, botId: string | undefined): boolean {
+function botForbidden(_c: Context<AuthVars>, userId: string, botId: string | undefined): boolean {
   return !!botId && !ownBot(userId, botId);
 }
 
@@ -75,8 +76,8 @@ function audioRate(header: string | undefined): number {
   return Math.round(n);
 }
 
-const unavailable = (c: any) => c.json({ available: false, reason: 'unsupported-runtime' }, 503);
-const missingModels = (c: any) => c.json({ available: false, reason: 'models-missing' }, 503);
+const unavailable = (c: Context<AuthVars>) => c.json({ available: false, reason: 'unsupported-runtime' }, 503);
+const missingModels = (c: Context<AuthVars>) => c.json({ available: false, reason: 'models-missing' }, 503);
 
 export interface VoiceMenuItem {
   id: string;
@@ -166,8 +167,8 @@ localVoiceApi.post('/stt', async (c) => {
     // Padded 0.3 s + 1.0 s inside transcribe(): without it the first and last words are lost.
     const r = await runtime.transcribe(samples, rate);
     return c.json({ text: r.text, audioMs: r.audioMs, ms: Math.round(r.ms) });
-  } catch (e: any) {
-    console.warn('[voice] local stt failed:', e?.message);
+  } catch (e) {
+    console.warn('[voice] local stt failed:', (e as Error)?.message);
     return c.json({ error: 'transcription failed' }, 502);
   }
 });
@@ -211,13 +212,12 @@ localVoiceApi.post('/preview', async (c) => {
       'X-Audio-Model': out.model,
       'Cache-Control': 'no-store',
     });
-  } catch (e: any) {
-    console.warn('[voice] local tts failed:', e?.message);
+  } catch (e) {
+    console.warn('[voice] local tts failed:', (e as Error)?.message);
     return c.json({ error: 'preview unavailable' }, 502);
   }
 });
 
-/** The model menu: both TTS tiers with tier, size, rate and state. */
 localVoiceApi.get('/models', (c) => c.json({ items: menu(), ready: models.modelsReady() }));
 
 /**
@@ -228,7 +228,7 @@ localVoiceApi.get('/models', (c) => c.json({ items: menu(), ready: models.models
  * only place an optional voice's state (or its error) can be read.
  */
 localVoiceApi.post('/models/download', async (c) => {
-  const p = await c.req.json<{ model?: string; kind?: string }>().catch(() => ({} as { model?: string; kind?: string }));
+  const p = await optionalBody(c, VoiceModelDownloadSchema, {});
 
   let target: models.VoiceKind | string | undefined;
   if (p.model !== undefined) {
@@ -273,7 +273,7 @@ localVoiceApi.post('/models/download', async (c) => {
  */
 localVoiceApi.post('/session', async (c) => {
   const user = c.get('user');
-  const p = await c.req.json<{ botId?: string }>().catch(() => ({} as { botId?: string }));
+  const p = await optionalBody(c, LocalVoiceSessionSchema, {});
   const bot = ownBot(user.id, p.botId);
   if (!bot) return c.json({ error: 'not found' }, 404);
 

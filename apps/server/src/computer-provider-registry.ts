@@ -13,10 +13,13 @@ import type { ComputerProvider } from './computer-provider.js';
  * its choice from bot_computers, which is set when the bot is created and never changes.
  */
 
-const isPrimary = (botId: string) => (db.prepare('SELECT engine, is_primary FROM bots WHERE id=?').get(botId) as any)?.engine === 'primary'
-  || Boolean((db.prepare('SELECT is_primary FROM bots WHERE id=?').get(botId) as any)?.is_primary);
+const isPrimary = (botId: string) =>
+  (db.prepare('SELECT engine, is_primary FROM bots WHERE id=?').get(botId) as { engine: string | null; is_primary: number } | undefined)?.engine === 'primary'
+  || Boolean((db.prepare('SELECT is_primary FROM bots WHERE id=?').get(botId) as { is_primary: number } | undefined)?.is_primary);
 
-/** Where this bot's computer runs today. */
+/** Message off a caught value, which may be an Error or anything a dependency threw. */
+const messageOf = (e: unknown): string => String((e as { message?: unknown } | null)?.message ?? e);
+
 /**
  * The rule, with no database in the way, so it can be tested: a bot that already has a computer row
  * keeps it; the shared machine wins for the primary bot when one is configured; the setting decides
@@ -87,9 +90,9 @@ export async function recoverComputers(): Promise<void> {
         if (status.running) await stopContainer(row.container_id);
       }
       setComputerState(row.bot_id, 'suspended', { error: null });
-    } catch (e: any) {
-      console.warn(`[docker] could not recover ${row.bot_id}: ${e?.message ?? e}`);
-      setComputerState(row.bot_id, 'error', { error: String(e?.message ?? e) });
+    } catch (e) {
+      console.warn(`[docker] could not recover ${row.bot_id}: ${messageOf(e)}`);
+      setComputerState(row.bot_id, 'error', { error: messageOf(e) });
     }
   }
 }
@@ -100,8 +103,8 @@ export async function suspendComputers(): Promise<void> {
     if (row.state !== 'running') continue;
     try {
       await dockerProvider.suspend(row.bot_id);
-    } catch (e: any) {
-      console.warn(`[docker] could not suspend ${row.bot_id}: ${e?.message ?? e}`);
+    } catch (e) {
+      console.warn(`[docker] could not suspend ${row.bot_id}: ${messageOf(e)}`);
     }
   }
 }

@@ -40,17 +40,24 @@ function caller(slug: string, auth: string | undefined): { botId: string | null 
   return getBotRow(slug) ? { botId: slug } : null;
 }
 
+/** A JSON-RPC message or payload from a client, read field by field. */
+const asRecord = (v: unknown): Record<string, unknown> | null =>
+  v && typeof v === 'object' && !Array.isArray(v) ? (v as Record<string, unknown>) : null;
+
 async function listTools(botId: string | null) {
   const own = TOOLS.map((t) => ({ name: t.name, description: t.description, inputSchema: t.parameters }));
   const bot = botId ? getBotRow(botId) : null;
   if (!bot) return own;
   const apps = (await composioTools(bot.user_id))
-    .filter((t: any) => t?.type === 'function' && typeof t.name === 'string' && !toolMap.has(t.name))
-    .map((t: any) => ({ name: t.name as string, description: String(t.description ?? ''), inputSchema: t.parameters ?? { type: 'object', properties: {} } }));
+    .filter((t: unknown) => (t as { type?: unknown; name?: unknown } | null)?.type === 'function' && typeof (t as { name?: unknown }).name === 'string' && !toolMap.has((t as { name: string }).name))
+    .map((t) => {
+      const tool = t as { name: string; description?: unknown; parameters?: unknown };
+      return { name: tool.name, description: String(tool.description ?? ''), inputSchema: tool.parameters ?? { type: 'object', properties: {} } };
+    });
   return [...own, ...apps];
 }
 
-async function callTool(botId: string | null, rawName: string, args: any): Promise<CallResult> {
+async function callTool(botId: string | null, rawName: string, args: Record<string, unknown>): Promise<CallResult> {
   const bot = botId ? getBotRow(botId) : null;
   if (!botId || !bot) return text('The team app has no bot for this agent yet. Ask the user to open the app once, then try again.', true);
   const userId: string = bot.user_id;
@@ -76,7 +83,6 @@ async function callTool(botId: string | null, rawName: string, args: any): Promi
       const r = await own.impl(args, ctx);
       if (r.endTurn) markSilent(botId);
       noteToolOutcome(botId, rowSeq, { status: 'done', summary: r.summary });
-      // Extract [hq-file:] markers from tool output and register them for auto-attachment.
       if (/\[hq-file:/.test(r.output)) {
         const matches = [...r.output.matchAll(/\[hq-file:([^|\]]+)\|([^|\]]+)\|([^\]]+)\]/g)];
         const files = matches.map(([, path, filename, mediaType]) => ({ path: path.trim(), filename: filename.trim(), mediaType: mediaType.trim() }));
@@ -97,8 +103,8 @@ async function callTool(botId: string | null, rawName: string, args: any): Promi
     const r = await runComposioTool(ctx, name, args);
     noteToolOutcome(botId, rowSeq, { status: r.summary === 'failed' ? 'error' : 'done', summary: r.summary === 'failed' ? 'Failed' : undefined });
     return text(r.output);
-  } catch (e: any) {
-    const msg = String(e?.message ?? e);
+  } catch (e) {
+    const msg = String((e as { message?: unknown } | null)?.message ?? e);
     noteToolOutcome(botId, rowSeq, { status: 'error', summary: msg.slice(0, 200) });
     return text(`Tool error: ${msg}`, true);
   }
@@ -107,13 +113,16 @@ async function callTool(botId: string | null, rawName: string, args: any): Promi
 const rpcError = (id: unknown, code: number, message: string) => ({ jsonrpc: '2.0', id: id ?? null, error: { code, message } });
 
 /** Answer one JSON-RPC message; null for notifications (they get no answer). */
-async function handle(msg: any, botId: string | null): Promise<object | null> {
-  if (!msg || typeof msg !== 'object' || msg.jsonrpc !== '2.0' || typeof msg.method !== 'string') {
+async function handle(msg: unknown, botId: string | null): Promise<object | null> {
+  const m = asRecord(msg);
+  const method = m?.method;
+  if (!m || m.jsonrpc !== '2.0' || typeof method !== 'string') {
     // A response to something we never asked; nothing to do with it.
-    if (msg && typeof msg === 'object' && ('result' in msg || 'error' in msg)) return null;
-    return rpcError(msg?.id, -32600, 'Invalid request');
+    if (m && ('result' in m || 'error' in m)) return null;
+    return rpcError(m?.id, -32600, 'Invalid request');
   }
-  const { id, method, params } = msg;
+  const { id } = m;
+  const params = asRecord(m.params);
   if (id === undefined || id === null) return null;
   switch (method) {
     case 'initialize': {
@@ -135,7 +144,7 @@ async function handle(msg: any, botId: string | null): Promise<object | null> {
     case 'tools/call': {
       const name = params?.name;
       if (typeof name !== 'string' || !name) return rpcError(id, -32602, 'Missing tool name');
-      const args = params?.arguments && typeof params.arguments === 'object' ? params.arguments : {};
+      const args = params?.arguments && typeof params.arguments === 'object' ? (params.arguments as Record<string, unknown>) : {};
       return { jsonrpc: '2.0', id, result: await callTool(botId, name, args) };
     }
     case 'resources/list':
@@ -154,7 +163,7 @@ export const mcpApi = new Hono();
 mcpApi.post('/:bot', async (c) => {
   const who = caller(c.req.param('bot'), c.req.header('authorization'));
   if (!who) return c.json(rpcError(null, -32001, 'Unauthorized'), 401);
-  let body: any;
+  let body: unknown;
   try { body = await c.req.json(); } catch { return c.json(rpcError(null, -32700, 'Parse error'), 400); }
   if (Array.isArray(body)) {
     const answers = (await Promise.all(body.map((m) => handle(m, who.botId)))).filter(Boolean);

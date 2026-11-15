@@ -5,7 +5,6 @@ import { api, type RoomMember } from '../lib/api';
 import { useStore } from '../store';
 import { Icon } from './Icon';
 
-/** Members of a group chat, with add/remove. Shown in the details panel for rooms. */
 export function MembersCard({ room }: { room: Bot }) {
   const bots = useStore((s) => s.bots);
   const [members, setMembers] = useState<RoomMember[] | null>(null);

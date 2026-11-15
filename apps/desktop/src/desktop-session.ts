@@ -2,16 +2,13 @@
  * Signing the app in to its own bundled stack.
  *
  * A packaged desktop ships `.env.images.example` with `DEV_LOGIN=0` and no Composio key, so the
- * web app's sign-in screen has nothing that works: the Google button needs a Composio
- * connection, and the dev form is hidden. The server already has an answer for exactly this
- * case — the owner key (`apps/server/src/lib/auth.ts` `isOwnerKey`, and
- * `scripts/sign-in-link.sh` for the shell equivalent): an HMAC of `owner-login` keyed by
- * SESSION_SECRET, minted on the machine that holds that secret. `POST /api/auth/owner` with
- * `{ link: true }` then answers with a one-time URL that sets the session cookie for the
- * stack's origin.
+ * web app's own sign-in screen has nothing that works. The server already has an answer: the
+ * owner key — an HMAC of `owner-login` keyed by SESSION_SECRET, minted on the machine that holds
+ * that secret (`apps/server/src/lib/auth.ts` `isOwnerKey`) — and `POST /api/auth/owner` with
+ * `{ link: true }` answers with a one-time URL that sets the session cookie for the origin.
  *
- * This module is the whole of that decision and no more, so it holds no Electron imports: the
- * main process asks it what URL to load, and the tests can drive it against a fake server.
+ * No Electron imports: the main process asks it what URL to load, and tests drive it against a
+ * fake server.
  */
 
 import { createHmac } from 'node:crypto';
@@ -29,7 +26,6 @@ export const DEFAULT_OWNER_EMAIL = 'owner@orbit.local';
 export type DesktopSessionStatus = 'existing' | 'signed-in' | 'failed';
 
 export interface EnsureDesktopSessionOptions {
-  /** Where the stack answers, e.g. `http://127.0.0.1:8787`. */
   webUrl: string;
   /** The SESSION_SECRET the controller generated for this stack; the owner key derives from it. */
   sessionSecret?: string | null;
@@ -53,7 +49,6 @@ export function ownerKeyFor(sessionSecret: string): string {
   return createHmac('sha256', sessionSecret).update('owner-login').digest('hex');
 }
 
-/** SESSION_SECRET out of a stack `.env`, or null when it is missing/unreadable. */
 export function sessionSecretFromEnvFile(envPath: string): string | null {
   try {
     return envValue(fs.readFileSync(envPath, 'utf8'), 'SESSION_SECRET');

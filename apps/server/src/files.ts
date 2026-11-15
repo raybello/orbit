@@ -69,8 +69,6 @@ export function resolveInside(root: string, rel: string | undefined | null): str
   return real ? insideReal(real, String(rel ?? '')) : null;
 }
 
-// ---------- ids: an opaque handle the download route can resolve ----------
-
 export interface FileRef {
   kind: FileKind;
   botId: string;
@@ -95,25 +93,24 @@ export interface ResolvedFile extends FileRef {
 
 /** The inverse of fileIdFor. Anything malformed, unsafe or gone from disk resolves to null. */
 export function resolveFileId(id: string): ResolvedFile | null {
-  let parsed: any;
+  let parsed: unknown;
   try {
     parsed = JSON.parse(Buffer.from(String(id ?? ''), 'base64url').toString('utf8'));
   } catch {
     return null;
   }
-  const kind = parsed?.k;
+  const ref = parsed && typeof parsed === 'object' ? (parsed as { k?: unknown; b?: unknown; p?: unknown }) : null;
+  const kind = ref?.k;
   if (kind !== 'library' && kind !== 'attachment' && kind !== 'workspace') return null;
-  if (typeof parsed?.b !== 'string' || typeof parsed?.p !== 'string') return null;
-  const botId = safeBotId(parsed.b);
-  const rel = safeRel(parsed.p);
+  if (typeof ref?.b !== 'string' || typeof ref?.p !== 'string') return null;
+  const botId = safeBotId(ref.b);
+  const rel = safeRel(ref.p);
   if (!botId || !rel) return null;
   const file = resolveInside(rootFor(kind, botId), rel);
   if (!file) return null;
   const filename = rel.split('/').pop()!;
   return { kind, botId, path: rel, file, filename, size: fs.statSync(file).size, mediaType: mediaTypeFor(filename) };
 }
-
-// ---------- walks ----------
 
 interface WalkedFile {
   path: string;
@@ -182,18 +179,19 @@ export function listWorkspaceFiles(botId: string, botName: string): FileEntry[] 
  * a size of 0, so the row still shows up (and its download 404s).
  */
 export function listAttachmentFiles(botId: string, botName: string): FileEntry[] {
-  const rows = db.prepare("SELECT body, created_at FROM rows WHERE bot_id=? AND kind='message' ORDER BY seq ASC").all(botId) as any[];
+  const rows = db.prepare("SELECT body, created_at FROM rows WHERE bot_id=? AND kind='message' ORDER BY seq ASC").all(botId) as { body: string; created_at: number }[];
   const out: FileEntry[] = [];
   for (const row of rows) {
-    let body: any;
+    let body: unknown;
     try {
       body = JSON.parse(row.body);
     } catch {
       continue;
     }
-    const files = Array.isArray(body?.files) ? body.files : [];
+    const files = Array.isArray((body as { files?: unknown } | null)?.files) ? (body as { files: unknown[] }).files : [];
     for (const f of files) {
-      const rel = safeRel(typeof f?.path === 'string' ? f.path : null);
+      const attachment = f as { path?: unknown; filename?: unknown } | null;
+      const rel = safeRel(typeof attachment?.path === 'string' ? attachment.path : null);
       if (!rel) continue;
       const file = resolveInside(libraryRoot(botId), rel);
       let size = 0;
@@ -203,14 +201,12 @@ export function listAttachmentFiles(botId: string, botName: string): FileEntry[]
         size = st.size;
         createdAt = Math.round(st.mtimeMs);
       }
-      const name = typeof f?.filename === 'string' && f.filename.trim() ? f.filename.trim() : rel.split('/').pop()!;
+      const name = typeof attachment?.filename === 'string' && attachment.filename.trim() ? attachment.filename.trim() : rel.split('/').pop()!;
       out.push(entryFor('attachment', botId, botName, rel, size, createdAt, name));
     }
   }
   return out;
 }
-
-// ---------- the aggregate the Files view asks for ----------
 
 export interface AggregateFilesOptions {
   userId: string;
@@ -240,12 +236,12 @@ const NOT_ROOM = (db.prepare('PRAGMA table_info(bots)').all() as { name: string 
 /** The user's own bots, or just the one they asked for. A room is not a file owner. */
 function botsFor(userId: string, botId?: string): { id: string; name: string; engine: string | null }[] {
   if (botId) {
-    const row = db.prepare(`SELECT id, name, engine FROM bots WHERE id=? AND user_id=?${NOT_ROOM}`).get(botId, userId) as any;
+    const row = db.prepare(`SELECT id, name, engine FROM bots WHERE id=? AND user_id=?${NOT_ROOM}`).get(botId, userId) as { id: string; name: string; engine: string | null } | undefined;
     return row ? [row] : [];
   }
   return db
     .prepare(`SELECT id, name, engine FROM bots WHERE user_id=?${NOT_ROOM} ORDER BY created_at ASC`)
-    .all(userId) as any[];
+    .all(userId) as { id: string; name: string; engine: string | null }[];
 }
 
 /** Every file the user can see, filtered, newest first, then one page of it. */

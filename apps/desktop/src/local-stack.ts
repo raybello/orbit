@@ -1,15 +1,9 @@
 /**
- * The local stack: Orbit's server in Docker Compose, driven from the main process.
+ * Orbit's server in Docker Compose, driven from the main process. Every phase is observable
+ * because each one maps to a line of text in the setup window.
  *
- * The state machine is deliberately linear and observable, because every phase maps to a
- * line of text in the setup window:
- *
- *   idle -> checking-docker -> docker-missing | docker-not-running
- *                            -> preparing -> pulling -> starting -> waiting-healthy -> ready
- *                                                                                 -> failed
- *
- * Secrets never round-trip through IPC: they are generated into the stack `.env` (0600)
- * and the `/api/health` probe carries only STACK_TOKEN.
+ * Secrets never round-trip through IPC: they are generated into the stack `.env` (0600) and
+ * the `/api/health` probe carries only STACK_TOKEN.
  */
 
 import fs from 'node:fs';
@@ -41,6 +35,7 @@ import {
 } from './local-stack-networking';
 import { sessionSecretFromEnvFile } from './desktop-session';
 import { hermesHome } from './hermes-setup';
+import type { DockerStack } from './stack-controller';
 import type { DesktopLocalStackState, DockerFailureKind, StackPhase } from './shared/api';
 
 const log = createLogger({ scope: 'stack' });
@@ -51,7 +46,6 @@ export { allocateLoopbackPort, bindLoopback } from './loopback-port';
 export type { BindFn, BindResult } from './loopback-port';
 export type { SecretSpec } from './env-file';
 
-/** The subset of runDocker's options the controller passes through (and tests fake). */
 export interface DockerRunOptions {
   timeoutMs?: number;
   signal?: AbortSignal;
@@ -61,15 +55,13 @@ export interface DockerRunOptions {
 // ------------------------------------------------------------------ controller
 
 export interface LocalStackOptions {
-  /** `app.getPath('userData')`. */
   userDataDir: string;
-  /** `app.getAppPath()` in dev, so resources resolve relative to the checkout. */
   appRoot: string;
   version: string;
   packaged: boolean;
   platform?: NodeJS.Platform;
   env?: NodeJS.ProcessEnv;
-  /** Overrides `extraResources/stack` / the dev checkout's `infra/compose`. */
+  /** Overrides the resolved `extraResources/stack` or `infra/compose` folder. */
   resourcesDir?: string;
   exists?: (file: string) => boolean;
   exec?: (binary: string, args: string[], opts?: DockerRunOptions) => Promise<DockerResult>;
@@ -93,24 +85,19 @@ const ACTIVE_PHASES: StackPhase[] = [
 ];
 
 /**
- * The two names the stack dir always has, and where each may come from.
- *
- * Packaged builds get them from `extraResources/stack` already renamed; a checkout has the
- * images pair under their own names (and no `.env.example`), so those are what a dev desktop
- * stages.
+ * The two names the stack dir always has. A checkout holds the images pair under their own
+ * names (and no `.env.example`); packaged builds get them from `extraResources/stack`.
  */
 const STACK_FILES: ReadonlyArray<{ target: string; candidates: readonly string[] }> = [
   { target: 'docker-compose.yml', candidates: ['docker-compose.images.yml', 'docker-compose.yml'] },
   { target: '.env.example', candidates: ['.env.images.example', '.env.example'] },
 ];
 
-/**
- * A compose file that builds from the repo root — the source-build file, which cannot work
- * once it sits in `userData/stack` because `../..` is not the repo there.
- */
+/** A compose file that builds from the repo root: `../..` is not the repo once staged. */
 const SOURCE_BUILD_CONTEXT = /^\s*context:\s*['"]?\.\.\/\.\.['"]?\s*$/m;
 
-export class LocalStackController {
+export class LocalStackController implements DockerStack {
+  readonly kind = 'docker' as const;
   readonly stackDir: string;
   private readonly opts: Required<Pick<LocalStackOptions, 'userDataDir' | 'appRoot' | 'version' | 'packaged'>> &
     LocalStackOptions;
@@ -128,7 +115,6 @@ export class LocalStackController {
     this.current = { phase: 'idle', at: Date.now(), detail: 'Not started' };
   }
 
-  /** Where the bundled compose file and `.env.example` live. */
   resourceDir(): string {
     if (this.opts.resourcesDir) return this.opts.resourcesDir;
     if (this.opts.packaged) {
@@ -137,7 +123,6 @@ export class LocalStackController {
         path.join(path.dirname(process.execPath), '..', 'Resources');
       return path.join(resourcesPath, 'stack');
     }
-    // Dev: apps/desktop/../../infra/compose
     return path.resolve(this.opts.appRoot, '..', '..', 'infra', 'compose');
   }
 
@@ -153,7 +138,6 @@ export class LocalStackController {
     return readStackToken(this.stackDir);
   }
 
-  /** The SESSION_SECRET this stack was started with, for the owner-key sign-in. */
   sessionSecret(): string | null {
     return sessionSecretFromEnvFile(path.join(this.stackDir, '.env'));
   }
@@ -176,7 +160,6 @@ export class LocalStackController {
     return probe?.imageTag === this.imageTag();
   }
 
-  /** `GET /api/desktop/probe`, authenticated by the stack token alone. */
   private async probe(
     webUrl: string,
     token: string,
@@ -228,13 +211,9 @@ export class LocalStackController {
   }
 
   /**
-   * Copy compose + `.env.example` into the stack dir on first run.
-   *
-   * A checkout holds the source-build files (`docker-compose.yml`, whose context is the repo
-   * root, and no `.env.example` at all) beside the images pair the packaged app ships. The
-   * controller runs from `userData/stack` with fixed names, so in a dev tree the images files
-   * are staged under those names — otherwise a dev desktop tries a build whose context points
-   * outside its own stack folder and can never start.
+   * Copy compose + `.env.example` into the stack dir on first run, under the fixed names the
+   * controller uses: in a dev tree that means the images pair, because the source-build file's
+   * context points outside `userData/stack` and can never start there.
    */
   private prepareFiles(): void {
     fs.mkdirSync(this.stackDir, { recursive: true, mode: 0o700 });
@@ -256,14 +235,11 @@ export class LocalStackController {
   }
 
   /**
-   * Should an existing file in the stack dir be replaced by the bundled one?
-   *
-   * Two cases, both about shipping a fix to an install that already ran:
-   *   1. a dev profile still holding the source-build compose file from an earlier launch — it can
-   *      never start (its build context points outside the stack dir);
-   *   2. any app whose bundled compose file has changed since it was staged (a new service, a
-   *      healthcheck, a fixed env default). Upgrades otherwise never reach existing stacks.
-   * `.env` is never touched, so generated secrets and the user's edits survive.
+   * Should an existing file in the stack dir be replaced by the bundled one? Both cases ship a
+   * fix to an install that already ran: a dev profile holding the source-build compose file
+   * (which can never start), and any app whose bundled compose changed since it was staged (a
+   * new service, a healthcheck, a fixed env default) — otherwise upgrades never reach existing
+   * stacks. `.env` is never touched, so generated secrets and the user's edits survive.
    */
   private stageOverStale(destination: string, target: string): boolean {
     if (target !== 'docker-compose.yml') return false;
@@ -277,7 +253,6 @@ export class LocalStackController {
     }
   }
 
-  /** The compose file this build ships, for comparison with the staged copy. */
   private bundledCompose(): string | null {
     const resources = this.resourceDir();
     const source = STACK_FILES.find((f) => f.target === 'docker-compose.yml')
@@ -322,8 +297,8 @@ export class LocalStackController {
    * Read `.env`, fill secrets, pin the image tag, port and URLs, write it back 0600.
    *
    * The port is always the one the controller decided on: the example file pins 8787, and a
-   * leftover 8787 in a hand-edited file is exactly what made a port collision unrecoverable —
-   * `up` was retried on the same busy port while health was polled at a URL nothing served.
+   * leftover 8787 makes a port collision unrecoverable — `up` retried on the busy port while
+   * health was polled at a URL nothing served.
    */
   private prepareEnv(port: number): { token: string; webUrl: string } {
     const envPath = path.join(this.stackDir, '.env');
@@ -360,7 +335,6 @@ export class LocalStackController {
     return { token, webUrl };
   }
 
-  /** `docker info`; true when the daemon answers. */
   private async daemonUp(binary: string, signal?: AbortSignal): Promise<{ up: boolean; text: string }> {
     const result = await this.exec(binary, ['info', '--format', '{{.ServerVersion}}'], {
       timeoutMs: 20_000,
@@ -383,12 +357,9 @@ export class LocalStackController {
   }
 
   /**
-   * Is the thing answering `/api/health` this stack?
-   *
-   * `{ ok: true }` alone proves only that *an* Orbit server is there — a foreign one on the
-   * same port (an older image, another checkout's stack) answers exactly the same way. The
-   * server echoes `stackToken: 'verified'` only when the caller presented the STACK_TOKEN it
-   * was started with, which is the one thing a stranger cannot fake.
+   * Is the thing answering `/api/health` this stack? `{ ok: true }` alone proves only that *an*
+   * Orbit server is there. The server echoes `stackToken: 'verified'` only when the caller
+   * presented the STACK_TOKEN it was started with — the one thing a stranger cannot fake.
    */
   private async probeHealth(webUrl: string, token: string, signal?: AbortSignal): Promise<boolean> {
     const fetchImpl = this.opts.fetchImpl ?? fetch;
@@ -626,7 +597,6 @@ export async function launchDockerDesktopDefault(
   await spawnDetached('systemctl', ['--user', 'start', 'docker']);
 }
 
-/** Handy in logs and in the setup window's error line. */
 export function describeStackState(state: DesktopLocalStackState): string {
   switch (state.phase) {
     case 'docker-missing':

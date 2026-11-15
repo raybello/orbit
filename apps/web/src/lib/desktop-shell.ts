@@ -25,7 +25,6 @@ export function hasNativeWindowControls(env: ShellEnvironment = currentEnvironme
   return /\bElectron\//i.test(env.userAgent ?? '');
 }
 
-/** Read the live environment (browser or Electron renderer). */
 export function currentEnvironment(): ShellEnvironment {
   if (typeof navigator === 'undefined' || typeof document === 'undefined') return {};
   return {

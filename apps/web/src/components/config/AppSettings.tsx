@@ -24,7 +24,6 @@ const SECTIONS: { id: AppSection; label: string }[] = [
   { id: 'account', label: 'Account' },
 ];
 
-/** Full-window settings page, opened from the account menu. */
 export function AppSettings() {
   const section = useConfigUI((s) => s.appSettings);
   const close = useConfigUI((s) => s.closeAppSettings);
@@ -72,8 +71,6 @@ function PageHead({ title, sub }: { title: string; sub?: string }) {
   );
 }
 
-// ---------------------------------------------------------------------------
-
 function ThemeTile({ value, label, current, onPick }: { value: Theme; label: string; current: Theme; onPick: (t: Theme) => void }) {
   return (
     <button type="button" role="radio" aria-checked={current === value} className={`theme-tile${current === value ? ' is-active' : ''}`} onClick={() => onPick(value)}>
@@ -109,9 +106,6 @@ function GeneralSection() {
   );
 }
 
-// ---------------------------------------------------------------------------
-
-/** Theme, the six accent presets, and a free-form accent colour. */
 function AppearanceSection() {
   const theme = useConfigUI((s) => s.theme);
   const setTheme = useConfigUI((s) => s.setTheme);
@@ -178,8 +172,6 @@ function AppearanceSection() {
   );
 }
 
-// ---------------------------------------------------------------------------
-
 function EngineAuthSection() {
   return (
     <>
@@ -190,8 +182,6 @@ function EngineAuthSection() {
     </>
   );
 }
-
-// ---------------------------------------------------------------------------
 
 const screenLabel = (id: string) => (id === 'default' ? 'Main screen' : `Screen ${Number(id.replace('screen-', '')) - 98 || id}`);
 
@@ -274,8 +264,6 @@ function ComputerSection() {
   );
 }
 
-// ---------------------------------------------------------------------------
-
 function humanizeTool(slug: string): { app: string; action: string } {
   const parts = slug.split(/[_:]/).filter(Boolean);
   const cap = (s: string) => s.charAt(0).toUpperCase() + s.slice(1).toLowerCase();
@@ -312,8 +300,6 @@ function PermissionsSection() {
   );
 }
 
-// ---------------------------------------------------------------------------
-
 function AppsSection() {
   const version = useStore((s) => s.connectionsVersion);
   const [apps, setApps] = useState<Toolkit[] | null>(null);
@@ -346,8 +332,6 @@ function AppsSection() {
     </>
   );
 }
-
-// ---------------------------------------------------------------------------
 
 function AccountSection() {
   const user = useStore((s) => s.user);

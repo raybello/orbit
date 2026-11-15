@@ -2,8 +2,9 @@ import crypto from 'node:crypto';
 import fs from 'node:fs';
 import path from 'node:path';
 import { Hono } from 'hono';
+import { HTTPException } from 'hono/http-exception';
 import { streamSSE } from 'hono/streaming';
-import { ORBIT_HEADERS, type DesktopConfigResponse, type DesktopProbeResponse, type PushPlatform, type PushRegisterRequest, type SignInResponse } from '@orbit/contracts';
+import { asUserId, ORBIT_HEADERS, type CardBody, type DesktopConfigResponse, type DesktopProbeResponse, type PushPlatform, type SignInResponse } from '@orbit/contracts';
 import { db, now } from './db.js';
 import { env } from './env.js';
 import { newId } from './lib/ids.js';
@@ -12,7 +13,7 @@ import { createSession, destroySession, isOwnerKey, issueSessionToken, requireUs
 import { stackTokenMatches } from './lib/stack.js';
 import { hermesConnected } from './lib/hermes-probe.js';
 import { registerPushToken, removePushToken, removePushTokens } from './push.js';
-import { allLive, appendRow, clearConversation, emitBot, getBot, getBotRow, getRow, listBots, listRoutines, listRows, listTasks, toRoutine, updateRow } from './store.js';
+import { allLive, appendRow, clearConversation, emitBot, getBot, getRow, listBots, listRoutines, listRows, listTasks, toRoutine, updateRow, type RoutineRow, type TaskRow } from './store.js';
 import { enqueue, interrupt, resolveApproval } from './agent/loop.js';
 import { computerState, ensureComputer, forgetBotFiles, readyScreen, refreshComputer, releaseScreen, suspendComputer } from './computer.js';
 import { computerKindFor, providerFor, registerBotComputer, releaseBotComputer } from './computer-provider-registry.js';
@@ -27,63 +28,97 @@ import { runRoutine, scheduleRoutine, unscheduleRoutine } from './routines.js';
 import { deleteEventTrigger } from './triggers.js';
 import { dispatchRoomMessage } from './agent/rooms.js';
 import { voiceApi } from './voice.js';
-import type { AvatarColor, AvatarShape, Toolkit } from './types.js';
+import type { Toolkit } from './types.js';
+import { pickAvatar } from './core/avatar.js';
+import { beginProvisioning, type BotCreationInput, planBotCreation, TeamFullError } from './core/bot-service.js';
+import { decideCard, IllegalCardMoveError } from './core/card-service.js';
+import type { CardEvent } from './domain/card-workflow.js';
+import { botRow, botRowsForUser, insertBot, type BotRow } from './infra/bot-repository.js';
+import {
+  AppConnectSchema,
+  ApprovalDecisionSchema,
+  CardAnswerSchema,
+  CardDismissSchema,
+  CreateBotSchema,
+  DevLoginSchema,
+  optionalBody,
+  OwnerSignInSchema,
+  PatchBotSchema,
+  PushRegisterSchema,
+  PushTokenQuerySchema,
+  requireBody,
+  RoutineEnableSchema,
+  ScreenControlSchema,
+  SendMessageSchema,
+  SignInSchema,
+} from './api/schemas.js';
 
 export const api = new Hono<AuthVars>();
-
-const SHAPES: AvatarShape[] = ['blob', 'pebble', 'bean', 'egg', 'squircle', 'tablet', 'capsule', 'cylinder', 'hex', 'gem', 'crystal', 'wedge', 'shield', 'dome', 'arch', 'cloud', 'teardrop', 'leaf', 'square', 'sparkle', 'clover', 'flower', 'heart', 'house', 'star'];
-const COLORS: AvatarColor[] = ['black', 'brown', 'red', 'orange', 'yellow', 'green', 'cyan', 'blue', 'violet', 'magenta', 'gray'];
-
-function hashPick<T>(id: string, list: T[]): T {
-  let h = 0x811c9dc5;
-  for (const ch of id) { h ^= ch.charCodeAt(0); h = Math.imul(h, 0x01000193) >>> 0; }
-  return list[h % list.length];
-}
 
 /** Thrown for things the user can fix; the message is shown to them. */
 class UserError extends Error {}
 
-const agentCount = () => (db.prepare("SELECT COUNT(*) n FROM bots WHERE COALESCE(kind,'agent')<>'room' AND COALESCE(hidden,0)=0").get() as any).n as number;
+/** A route's error message when it is one we raised for the user, otherwise the caller's fallback. */
+const userFacing = (e: unknown, fallback: string): string =>
+  e instanceof UserError || e instanceof TeamFullError ? e.message : fallback;
 
-function createBot(userId: string, b: { name: string; label?: string; description?: string; instructions?: string; avatarShape?: string; avatarColor?: string; mode?: string; isPrimary?: boolean; voiceProvider?: string; voiceModel?: string }) {
-  // Every bot needs a screen of its own on the one shared computer.
-  if (agentCount() >= env.maxBots) throw new UserError(`The team is full: the computer has room for ${env.maxBots} bots. Remove one to add another.`);
-  const id = newId('bot');
-  const shape = SHAPES.includes(b.avatarShape as AvatarShape) ? b.avatarShape : hashPick(id, SHAPES.slice(0, 13));
-  const color = COLORS.includes(b.avatarColor as AvatarColor) ? b.avatarColor : hashPick(id, COLORS.filter((c) => c !== 'black'));
-  db.prepare(
-    'INSERT INTO bots(id,user_id,name,label,description,instructions,avatar_shape,avatar_color,mode,is_primary,voice_provider,voice_model,created_at,updated_at) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?)',
-  ).run(
-    id, userId, b.name.trim().slice(0, 60) || 'New Bot', b.label ?? '', b.description ?? '', b.instructions ?? '', shape, color,
-    b.mode === 'teammate' ? 'teammate' : 'personal', b.isPrimary ? 1 : 0,
-    // A bot can be created straight into on-device voice; both default to the cloud path and Piper.
-    b.voiceProvider === 'local' ? 'local' : 'cloud',
-    String(b.voiceModel ?? '').slice(0, 80) || 'piper-lessac-medium',
-    now(), now(),
-  );
+/** Message off a caught value, which may be an Error or anything a dependency threw. */
+const messageOf = (e: unknown): string => String((e as { message?: unknown } | null)?.message ?? e);
+
+const agentCount = () => (db.prepare("SELECT COUNT(*) n FROM bots WHERE COALESCE(kind,'agent')<>'room' AND COALESCE(hidden,0)=0").get() as { n: number }).n;
+
+/**
+ * Create a bot: plan the row (core/bot-service.ts decides the rules), insert it (infra/bot-repository.ts
+ * owns the SQL), then do the wiring a new bot has always needed, in the order it has always happened:
+ * assign its engine, start that engine when it is a managed one, register its computer, tell the roster.
+ */
+function createBot(userId: string, input: Omit<BotCreationInput, 'userId'>) {
+  const plan = planBotCreation({ ...input, userId: asUserId(userId) }, {
+    // Capacity is about this computer's screens, not this account: the count is global.
+    canAddBot: () => agentCount() < env.maxBots,
+    maxBots: env.maxBots,
+    newBotId: () => newId('bot'),
+    pickAvatar: (id, shape, color) => pickAvatar(id, shape, color),
+  });
+  insertBot({
+    id: plan.botId,
+    userId,
+    name: plan.name,
+    label: plan.label,
+    description: plan.description,
+    instructions: plan.instructions,
+    avatarShape: plan.avatar.shape,
+    avatarColor: plan.avatar.color,
+    mode: plan.mode,
+    isPrimary: plan.isPrimary,
+    voiceProvider: plan.voiceProvider,
+    voiceModel: plan.voiceModel,
+    createdAt: now(),
+    updatedAt: now(),
+  });
   // The first bot is the agent that already runs on the computer; the others get an engine of their own.
   // Nothing pins a model here: a managed Bot's home is written from the primary agent's config, so it
   // runs the primary's model with the primary's credentials. Pinning a default would both ignore that
   // model and ask for a provider key the bot may not have.
-  if (assignEngine(id) === 'managed') provisionEngine(id);
+  const engineKind = assignEngine(plan.botId);
+  const state = beginProvisioning(plan.state, engineKind);
+  if (state.status === 'provisioning' && engineKind === 'managed') provisionEngine(plan.botId);
   // Where this bot's desktop lives is fixed now (a container for managed bots, the shared computer
   // for the first one); see computer-provider-registry.ts.
-  registerBotComputer(id);
+  registerBotComputer(plan.botId);
   hub.emit(userId, { type: 'roster' });
-  return getBot(id)!;
+  return getBot(plan.botId)!;
 }
 
 function findOrCreateUser(email: string, name?: string, preferId?: string) {
-  const existing = db.prepare('SELECT * FROM users WHERE lower(email)=lower(?)').get(email) as any;
-  if (existing) return { id: existing.id as string, isNew: false };
+  const existing = db.prepare('SELECT * FROM users WHERE lower(email)=lower(?)').get(email) as { id: string } | undefined;
+  if (existing) return { id: existing.id, isNew: false };
   if (env.allowedEmails.length && !env.allowedEmails.includes(email.toLowerCase())) throw new UserError('This account is not allowed to sign in here.');
   const id = preferId ?? newId('usr');
   db.prepare('INSERT INTO users(id,email,name,created_at) VALUES (?,?,?,?)').run(id, email, name ?? email.split('@')[0], now());
   createBot(id, { name: env.primaryBotName, label: env.primaryBotLabel, description: 'Your main point of contact. Checks in proactively and coordinates work with your other Bots.', avatarShape: 'blob', avatarColor: 'black', isPrimary: true });
   return { id, isNew: true };
 }
-
-// ---------- auth ----------
 
 api.get('/auth/me', (c) => {
   const user = userFromCookieHeader(c.req.header('cookie')) ?? userFromAuthorizationHeader(c.req.header('authorization'));
@@ -101,7 +136,9 @@ api.get('/auth/google/start', async (c) => {
 });
 
 api.get('/auth/google/callback', async (c) => {
-  const attempt = db.prepare('SELECT * FROM login_attempts WHERE id=?').get(c.req.query('attempt') ?? '') as any;
+  const attempt = db.prepare('SELECT * FROM login_attempts WHERE id=?').get(c.req.query('attempt') ?? '') as
+    | { id: string; provisional_user_id: string; connected_account_id: string | null }
+    | undefined;
   const caId = c.req.query('connected_account_id') ?? attempt?.connected_account_id;
   if (!attempt || c.req.query('status') === 'failed' || !caId) return c.redirect(`${env.appUrl}/?login=failed`);
   if (attempt.connected_account_id && caId !== attempt.connected_account_id) return c.redirect(`${env.appUrl}/?login=failed`);
@@ -113,7 +150,7 @@ api.get('/auth/google/callback', async (c) => {
     if (!isNew && id !== attempt.provisional_user_id) await deleteConnection(caId);
     createSession(c, id);
     return c.redirect(`${env.appUrl}/`);
-  } catch (e: any) {
+  } catch (e) {
     console.error('[auth] google callback', e);
     return c.redirect(`${env.appUrl}/?login=failed`);
   }
@@ -121,14 +158,14 @@ api.get('/auth/google/callback', async (c) => {
 
 api.post('/auth/dev', async (c) => {
   if (!env.devLogin) return c.json({ error: 'disabled' }, 403);
-  const { email, name } = await c.req.json<{ email: string; name?: string }>();
+  const { email, name } = await requireBody(c, DevLoginSchema);
   if (!email?.includes('@')) return c.json({ error: 'email required' }, 400);
   try {
     const { id } = findOrCreateUser(email, name);
     createSession(c, id);
     return c.json({ ok: true });
-  } catch (e: any) {
-    return c.json({ error: e instanceof UserError ? e.message : 'could not sign in' }, 403);
+  } catch (e) {
+    return c.json({ error: userFacing(e, 'could not sign in') }, 403);
   }
 });
 
@@ -138,19 +175,19 @@ api.post('/auth/dev', async (c) => {
  * Only the owner key, or a dev server, may mint one — there is no password store to check against.
  */
 api.post('/auth/sign-in', async (c) => {
-  const body = await c.req.json<{ email?: string; name?: string; ownerKey?: string }>().catch(() => ({} as any));
-  const email = String(body?.email ?? '').trim();
-  const byOwnerKey = Boolean(body?.ownerKey) && isOwnerKey(String(body.ownerKey));
+  const body = await requireBody(c, SignInSchema);
+  const email = String(body.email ?? '').trim();
+  const byOwnerKey = Boolean(body.ownerKey) && isOwnerKey(String(body.ownerKey));
   if (!byOwnerKey && !env.devLogin) return c.json({ error: 'owner key required' }, 403);
   if (!email.includes('@')) return c.json({ error: 'email required' }, 400);
   try {
-    const { id } = findOrCreateUser(email, body?.name);
+    const { id } = findOrCreateUser(email, body.name);
     const { token, expiresAt } = issueSessionToken(id);
     const user = userFromToken(token);
     if (!user) return c.json({ error: 'could not sign in' }, 500);
     return c.json({ ok: true, token, user, expiresAt } satisfies SignInResponse);
-  } catch (e: any) {
-    return c.json({ error: e instanceof UserError ? e.message : 'could not sign in' }, 403);
+  } catch (e) {
+    return c.json({ error: userFacing(e, 'could not sign in') }, 403);
   }
 });
 
@@ -161,7 +198,7 @@ const signInLinks = new Map<string, { userId: string; expires: number }>();
 // With `link`, it answers with a link that signs one browser in, once (scripts/sign-in-link.sh).
 api.post('/auth/owner', async (c) => {
   if (!isOwnerKey((c.req.header('authorization') ?? '').replace(/^Bearer\s+/i, ''))) return c.json({ error: 'forbidden' }, 403);
-  const { email, name, link } = await c.req.json<{ email: string; name?: string; link?: boolean }>();
+  const { email, name, link } = await requireBody(c, OwnerSignInSchema);
   if (!email?.includes('@')) return c.json({ error: 'email required' }, 400);
   try {
     const { id } = findOrCreateUser(email, name);
@@ -172,8 +209,8 @@ api.post('/auth/owner', async (c) => {
     }
     createSession(c, id);
     return c.json({ ok: true });
-  } catch (e: any) {
-    return c.json({ error: e instanceof UserError ? e.message : 'could not sign in' }, 403);
+  } catch (e) {
+    return c.json({ error: userFacing(e, 'could not sign in') }, 403);
   }
 });
 
@@ -188,14 +225,11 @@ api.get('/auth/link/:token', (c) => {
 
 api.post('/auth/logout', (c) => { destroySession(c); return c.json({ ok: true }); });
 
-// everything below requires a session
 api.use('/*', async (c, next) => {
   // /api/desktop/probe is authenticated by the stack token itself (see its handler).
   if (c.req.path.startsWith('/api/auth/') || c.req.path.startsWith('/api/apps/callback') || c.req.path === '/api/health' || c.req.path === '/api/desktop/probe') return next();
   return requireUser(c, next);
 });
-
-// ---------- events (SSE) ----------
 
 api.get('/events', (c) => {
   const user = c.get('user');
@@ -228,8 +262,6 @@ api.get('/events', (c) => {
   });
 });
 
-// ---------- desktop app ----------
-
 /**
  * Liveness for the desktop's local stack controller, authenticated by the stack token alone: it
  * runs on the same machine and holds no user session. 403 means this server has no STACK_TOKEN at
@@ -259,12 +291,10 @@ api.get('/desktop/config', (c) => {
   return c.json(body);
 });
 
-// ---------- push notifications ----------
-
 api.post('/push/register', async (c) => {
-  const body = await c.req.json<PushRegisterRequest>().catch(() => ({} as any));
-  const platform = body?.platform;
-  if (!body?.token || typeof body.token !== 'string') return c.json({ error: 'token required' }, 400);
+  const body = await requireBody(c, PushRegisterSchema);
+  const platform = body.platform;
+  if (!body.token || typeof body.token !== 'string') return c.json({ error: 'token required' }, 400);
   if (platform !== 'ios' && platform !== 'android') return c.json({ error: "platform must be 'ios' or 'android'" }, 400);
   registerPushToken(c.get('user').id, body.token, platform as PushPlatform);
   return c.json({ ok: true });
@@ -273,30 +303,29 @@ api.post('/push/register', async (c) => {
 /**
  * Forgets one device's token when the body or query names it, so signing out on a phone does not
  * silence the others. A client that cannot say which token is its own still clears the account.
+ * The body is optional (a DELETE often has none), hence optionalBody rather than requireBody.
  */
 api.delete('/push/register', async (c) => {
-  const body = await c.req.json<{ token?: string }>().catch(() => null);
-  const token = c.req.query('token') ?? (typeof body?.token === 'string' ? body.token : '');
+  const body = await optionalBody(c, PushTokenQuerySchema, {});
+  const token = c.req.query('token') ?? (typeof body.token === 'string' ? body.token : '');
   if (token) removePushToken(c.get('user').id, token);
   else removePushTokens(c.get('user').id);
   return c.json({ ok: true });
 });
 
-// ---------- bots ----------
-
-const ownBot = (userId: string, id: string) => {
-  const b = getBotRow(id);
+const ownBot = (userId: string, id: string): BotRow | null => {
+  const b = botRow(id);
   return b && b.user_id === userId ? b : null;
 };
 
 api.get('/bots', (c) => c.json({ bots: listBots(c.get('user').id), live: allLive(c.get('user').id) }));
 
 api.post('/bots', async (c) => {
-  const body = await c.req.json();
+  const body = await requireBody(c, CreateBotSchema);
   try {
     return c.json({ bot: createBot(c.get('user').id, body) });
-  } catch (e: any) {
-    if (e instanceof UserError) return c.json({ error: e.message }, 409);
+  } catch (e) {
+    if (e instanceof TeamFullError) return c.json({ error: e.message }, 409);
     throw e;
   }
 });
@@ -304,10 +333,11 @@ api.post('/bots', async (c) => {
 api.patch('/bots/:id', async (c) => {
   const b = ownBot(c.get('user').id, c.req.param('id'));
   if (!b) return c.json({ error: 'not found' }, 404);
-  const p = await c.req.json();
+  const p = await requireBody(c, PatchBotSchema);
   const cols: Record<string, string> = { name: 'name', label: 'label', description: 'description', instructions: 'instructions', avatarShape: 'avatar_shape', avatarColor: 'avatar_color', mode: 'mode', effort: 'effort', pinned: 'pinned', voice: 'voice', voiceSpeed: 'voice_speed', voiceLanguage: 'voice_language', voiceProvider: 'voice_provider', voiceModel: 'voice_model' };
   for (const [k, col] of Object.entries(cols)) {
-    if (p[k] !== undefined) db.prepare(`UPDATE bots SET ${col}=?, updated_at=? WHERE id=?`).run(typeof p[k] === 'boolean' ? (p[k] ? 1 : 0) : p[k], now(), b.id);
+    const value = p[k];
+    if (value !== undefined) db.prepare(`UPDATE bots SET ${col}=?, updated_at=? WHERE id=?`).run(typeof value === 'boolean' ? (value ? 1 : 0) : value, now(), b.id);
   }
   if (b.kind !== 'room') {
     if (['name', 'label', 'description'].some((k) => p[k] !== undefined)) syncPersona(b.id);
@@ -365,8 +395,6 @@ api.post('/bots/:id/read', (c) => {
   return c.json({ ok: true });
 });
 
-// ---------- conversation ----------
-
 api.get('/bots/:id/rows', (c) => {
   const b = ownBot(c.get('user').id, c.req.param('id'));
   if (!b) return c.json({ error: 'not found' }, 404);
@@ -406,15 +434,16 @@ api.post('/bots/:id/attachments', async (c) => {
 api.post('/bots/:id/messages', async (c) => {
   const b = ownBot(c.get('user').id, c.req.param('id'));
   if (!b) return c.json({ error: 'not found' }, 404);
-  const { text, files } = await c.req.json<{ text: string; files?: { path: string; filename: string; mediaType: string }[] }>();
+  const { text, files } = await requireBody(c, SendMessageSchema);
   if (!text?.trim()) return c.json({ error: 'empty' }, 400);
-  const body: { type: 'message'; role: 'user'; text: string; files?: typeof files } = { type: 'message', role: 'user', text: text.trim() };
+  const trimmed = text.trim();
+  const body: { type: 'message'; role: 'user'; text: string; files?: typeof files } = { type: 'message', role: 'user', text: trimmed };
   if (Array.isArray(files) && files.length > 0) body.files = files;
   const row = appendRow(b.id, 'message', body);
   // Group chats dispatch to their member Bots instead of running their own loop.
-  if (b.kind === 'room') dispatchRoomMessage(b.id, text.trim(), enqueue);
+  if (b.kind === 'room') dispatchRoomMessage(b.id, trimmed, enqueue);
   // Any pending question card is answered by a free-text message.
-  else enqueue(b.id, { type: 'user', text: text.trim() });
+  else enqueue(b.id, { type: 'user', text: trimmed });
   return c.json({ row });
 });
 
@@ -435,35 +464,60 @@ api.post('/bots/:id/fresh', (c) => {
 });
 
 api.post('/approvals/:id', async (c) => {
-  const { decision } = await c.req.json<{ decision: 'allow' | 'always' | 'deny' }>();
+  const { decision } = await requireBody(c, ApprovalDecisionSchema);
   try { resolveApproval(c.get('user').id, c.req.param('id'), decision); } catch { return c.json({ error: 'not found' }, 404); }
   return c.json({ ok: true });
 });
+
+/**
+ * The route-level reading of the card machine: a move the card does not allow is a bad request, not
+ * a server error — the card has already been decided, or it never was the kind the route assumed.
+ * app.ts renders the HTTPException as `{ error }` with the card machine's message.
+ */
+function decideCardRow(body: CardBody, event: CardEvent, cardId: string): CardBody {
+  try {
+    return decideCard(body, event, cardId);
+  } catch (e) {
+    if (e instanceof IllegalCardMoveError) throw new HTTPException(400, { message: e.message });
+    throw e;
+  }
+}
 
 api.post('/bots/:id/cards/:seq/answer', async (c) => {
   const b = ownBot(c.get('user').id, c.req.param('id'));
   if (!b) return c.json({ error: 'not found' }, 404);
   const row = getRow(b.id, Number(c.req.param('seq')));
-  const { answer } = await c.req.json<{ answer: string }>();
+  const { answer } = await requireBody(c, CardAnswerSchema);
   if (!row || row.body.type !== 'card' || row.body.card !== 'question') return c.json({ error: 'not a question' }, 400);
-  updateRow(b.id, row.seq, { ...row.body, status: 'answered', answer });
+  // Already decided: idempotent success, like resolveApproval on a settled approval. A second tap
+  // must not append the answer to the conversation a second time.
+  if (row.body.status !== 'pending') return c.json({ ok: true });
+  const body = decideCardRow(row.body, { type: 'answer', userId: c.get('user').id, at: now(), answer }, String(row.seq));
+  updateRow(b.id, row.seq, body);
   appendRow(b.id, 'message', { type: 'message', role: 'user', text: answer });
   enqueue(b.id, { type: 'user', text: `[Answer to "${row.body.question}"] ${answer}` });
   return c.json({ ok: true });
 });
 
-api.post('/bots/:id/cards/:seq/dismiss', (c) => {
+api.post('/bots/:id/cards/:seq/dismiss', async (c) => {
   const b = ownBot(c.get('user').id, c.req.param('id'));
   if (!b) return c.json({ error: 'not found' }, 404);
   const row = getRow(b.id, Number(c.req.param('seq')));
+  // Nothing is read from the body; parsing it keeps this route under the same boundary rule as the rest.
+  await optionalBody(c, CardDismissSchema, {});
   if (!row || row.body.type !== 'card') return c.json({ error: 'not a card' }, 400);
-  const body: any = { ...row.body, status: row.body.card === 'connect' ? 'skipped' : 'dismissed' };
+  // Already decided: idempotent success (a double-tapped Skip), and no repeated system message.
+  if (row.body.status !== 'pending') return c.json({ ok: true });
+  // Skipping a connect card is the machine's 'skip'; every other card is dismissed. A draft becomes
+  // 'discarded' (its only legal terminal state), which the old code got wrong by writing 'dismissed'.
+  const event: CardEvent = row.body.card === 'connect'
+    ? { type: 'skip', userId: c.get('user').id, at: now() }
+    : { type: 'dismiss', userId: c.get('user').id, at: now() };
+  const body = decideCardRow(row.body, event, String(row.seq));
   updateRow(b.id, row.seq, body);
   if (row.body.card === 'connect') enqueue(b.id, { type: 'system', text: `The user skipped connecting ${row.body.toolkitName}. Continue without it.` });
   return c.json({ ok: true });
 });
-
-// ---------- routines / tasks / memories ----------
 
 api.get('/bots/:id/routines', (c) => {
   const b = ownBot(c.get('user').id, c.req.param('id'));
@@ -471,25 +525,25 @@ api.get('/bots/:id/routines', (c) => {
 });
 
 api.patch('/routines/:id', async (c) => {
-  const r = db.prepare('SELECT r.* FROM routines r JOIN bots b ON b.id=r.bot_id WHERE r.id=? AND b.user_id=?').get(c.req.param('id'), c.get('user').id) as any;
+  const r = db.prepare('SELECT r.* FROM routines r JOIN bots b ON b.id=r.bot_id WHERE r.id=? AND b.user_id=?').get(c.req.param('id'), c.get('user').id) as RoutineRow | undefined;
   if (!r) return c.json({ error: 'not found' }, 404);
-  const { enabled } = await c.req.json<{ enabled: boolean }>();
+  const { enabled } = await requireBody(c, RoutineEnableSchema);
   db.prepare('UPDATE routines SET enabled=? WHERE id=?').run(enabled ? 1 : 0, r.id);
-  const next = toRoutine(db.prepare('SELECT * FROM routines WHERE id=?').get(r.id));
+  const next = toRoutine(db.prepare('SELECT * FROM routines WHERE id=?').get(r.id) as RoutineRow);
   enabled ? scheduleRoutine(next) : unscheduleRoutine(r.id);
   hub.emit(c.get('user').id, { type: 'routines', botId: r.bot_id });
   return c.json({ routine: next });
 });
 
 api.post('/routines/:id/run', (c) => {
-  const r = db.prepare('SELECT r.* FROM routines r JOIN bots b ON b.id=r.bot_id WHERE r.id=? AND b.user_id=?').get(c.req.param('id'), c.get('user').id) as any;
+  const r = db.prepare('SELECT r.* FROM routines r JOIN bots b ON b.id=r.bot_id WHERE r.id=? AND b.user_id=?').get(c.req.param('id'), c.get('user').id) as RoutineRow | undefined;
   if (!r) return c.json({ error: 'not found' }, 404);
   runRoutine(r.id);
   return c.json({ ok: true });
 });
 
 api.delete('/routines/:id', async (c) => {
-  const r = db.prepare('SELECT r.* FROM routines r JOIN bots b ON b.id=r.bot_id WHERE r.id=? AND b.user_id=?').get(c.req.param('id'), c.get('user').id) as any;
+  const r = db.prepare('SELECT r.* FROM routines r JOIN bots b ON b.id=r.bot_id WHERE r.id=? AND b.user_id=?').get(c.req.param('id'), c.get('user').id) as RoutineRow | undefined;
   if (!r) return c.json({ error: 'not found' }, 404);
   unscheduleRoutine(r.id);
   await deleteEventTrigger(r.id);
@@ -504,7 +558,7 @@ api.get('/bots/:id/tasks', (c) => {
 });
 
 api.get('/tasks', (c) => {
-  const rows = db.prepare('SELECT t.* FROM tasks t JOIN bots b ON b.id=t.bot_id WHERE b.user_id=? ORDER BY t.updated_at DESC LIMIT 200').all(c.get('user').id) as any[];
+  const rows = db.prepare('SELECT t.* FROM tasks t JOIN bots b ON b.id=t.bot_id WHERE b.user_id=? ORDER BY t.updated_at DESC LIMIT 200').all(c.get('user').id) as TaskRow[];
   return c.json({ tasks: rows.map((r) => ({ id: r.id, botId: r.bot_id, title: r.title, state: r.state, note: r.note, updatedAt: r.updated_at })) });
 });
 
@@ -521,8 +575,6 @@ api.delete('/memories/:id', (c) => {
   return c.json({ ok: true });
 });
 
-// ---------- computer ----------
-
 api.get('/computer', async (c) => c.json({ computer: await refreshComputer(c.get('user').id) }));
 
 api.post('/computer/ensure', async (c) => {
@@ -531,9 +583,9 @@ api.post('/computer/ensure', async (c) => {
   // bot's desktop is its own container, so "wake" means create/start the containers — asking Orgo
   // here (which has no id) is what made the viewer's Retry fail with a 500 instead of a screen.
   if (!env.orgoComputerId && env.computerKind !== 'orgo') {
-    const bots = db
-      .prepare("SELECT id FROM bots WHERE user_id=? AND COALESCE(kind,'agent')<>'room' AND COALESCE(hidden,0)=0")
-      .all(userId) as { id: string }[];
+    // Every visible bot of this user, oldest first: rooms dispatch to members and hidden subagents
+    // keep their parent's screen, so neither owns a container here.
+    const bots = botRowsForUser(userId).filter((b) => b.kind !== 'room' && !b.hidden);
     // Booting a container (and, the first time, building the computer image) takes far longer than a
     // request should. Answer at once with the current state; the viewer follows the computer's state
     // over SSE and the screen opens when it is ready.
@@ -559,7 +611,7 @@ api.get('/bots/:id/screenshot', async (c) => {
   const b = ownBot(user.id, c.req.param('id'));
   if (!b) return c.json({ error: 'not found' }, 404);
   const provider = providerFor(b.id);
-  const scr = db.prepare('SELECT screen_id FROM screens WHERE bot_id=?').get(b.id) as any;
+  const scr = db.prepare('SELECT screen_id FROM screens WHERE bot_id=?').get(b.id) as { screen_id: string } | undefined;
   if (computerKindFor(b.id) === 'docker') {
     const shot = await provider.screenshot(b.id, '').catch(() => null);
     if (!shot) return c.body(null, 204);
@@ -579,8 +631,8 @@ api.post('/bots/:id/screen/control', async (c) => {
   const user = c.get('user');
   const b = ownBot(user.id, c.req.param('id'));
   if (!b) return c.json({ error: 'not found' }, 404);
-  const body = await c.req.json().catch(() => ({} as any));
-  const action = body?.action;
+  const body = await requireBody(c, ScreenControlSchema);
+  const action = body.action;
   if (action !== 'take' && action !== 'give') return c.json({ error: "action must be 'take' or 'give'" }, 400);
   const provider = providerFor(b.id);
   try {
@@ -588,12 +640,10 @@ api.post('/bots/:id/screen/control', async (c) => {
     if (action === 'take') await provider.takeControl(b.id, screenId);
     else await provider.giveControl(b.id, screenId);
     return c.json({ ok: true, control: action === 'take' ? 'human' : 'bot' });
-  } catch (e: any) {
-    return c.json({ error: String(e?.message ?? e) }, 502);
+  } catch (e) {
+    return c.json({ error: messageOf(e) }, 502);
   }
 });
-
-// ---------- apps (Composio marketplace) ----------
 
 api.get('/apps', async (c) => {
   const user = c.get('user');
@@ -611,7 +661,7 @@ api.get('/apps', async (c) => {
 api.post('/apps/:slug/connect', async (c) => {
   const user = c.get('user');
   const slug = c.req.param('slug');
-  const { botId, seq } = await c.req.json<{ botId?: string; seq?: number }>().catch(() => ({} as any));
+  const { botId, seq } = await requireBody(c, AppConnectSchema);
   const cb = new URL(`${env.serverUrl}/api/apps/callback`);
   cb.searchParams.set('slug', slug);
   if (botId) cb.searchParams.set('bot', botId);
@@ -635,7 +685,11 @@ api.get('/apps/callback', async (c) => {
         const info = await toolkitInfo(slug);
         if (seq) {
           const row = getRow(botId, seq);
-          if (row?.body.type === 'card' && row.body.card === 'connect') updateRow(botId, seq, { ...row.body, status: 'connected' });
+          // The connection completing is the connect card's own 'connect' event. A card that is
+          // already decided is left alone, which is what its terminal state means.
+          if (row?.body.type === 'card' && row.body.card === 'connect' && row.body.status === 'pending') {
+            updateRow(botId, seq, decideCard(row.body, { type: 'connect', userId, at: now() }, String(seq)));
+          }
         }
         enqueue(botId, { type: 'system', text: `The user connected ${info?.name ?? slug}. Continue with what you were doing.` });
       }
@@ -671,8 +725,8 @@ api.get('/google/connect', async (c) => {
   try {
     const url = generateAuthUrl(userId, cb);
     return c.json({ redirectUrl: url });
-  } catch (e: any) {
-    return c.json({ error: String(e?.message ?? e) }, 500);
+  } catch (e) {
+    return c.json({ error: messageOf(e) }, 500);
   }
 });
 
@@ -690,7 +744,7 @@ api.get('/google/callback', async (c) => {
       return c.html(`<!doctype html><meta charset="utf-8"><title>Google</title><body style="font-family:system-ui;padding:40px;text-align:center">Could not connect Google account. Please try again.<script>try{window.opener&&window.opener.postMessage({type:'grokbot-connected',provider:'google',ok:false},'*')}catch(e){}setTimeout(()=>window.close(),2000)</script></body>`);
     }
     hub.emit(
-      (db.prepare('SELECT user_id FROM google_oauth_states WHERE state=?').get(state) as any)?.user_id ?? '',
+      (db.prepare('SELECT user_id FROM google_oauth_states WHERE state=?').get(state) as { user_id: string } | undefined)?.user_id ?? '',
       { type: 'connections' },
     );
   }

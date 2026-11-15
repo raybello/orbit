@@ -1,3 +1,4 @@
+import { assignScreen, canAssignScreen, type ComputerStatus, type Screen } from './domain/computer-model.js';
 import { db, now } from './db.js';
 
 /**
@@ -91,11 +92,29 @@ export function getScreen(botId: string, screenId?: string): ScreenRow | null {
   return row ?? null;
 }
 
-/** Lowest display index no bot is using, or null when they are all taken. */
-export function freeDisplayIndex(limit: number): number | null {
-  const taken = new Set((db.prepare('SELECT display_index FROM computer_screens').all() as { display_index: number }[]).map((r) => r.display_index));
-  for (let i = 1; i <= limit; i++) if (!taken.has(i)) return i;
-  return null;
+/**
+ * The first display a bot may hold. Display 0 is the machine's own console: the allocator has always
+ * started at 1, and the port arithmetic below (5900+i, 9200+i) and the container's `DISPLAY=:i` are
+ * built on that.
+ */
+const FIRST_DISPLAY = 1;
+
+/**
+ * The display slots the host can hand out, in the shape the pure allocator works with. A screen
+ * here is a row in computer_screens, so a display with no row is free; `lastUsedAt` is when its
+ * holder last touched it (0 when unknown).
+ */
+function displaySlots(limit: number): Screen[] {
+  const rows = db
+    .prepare('SELECT display_index, bot_id, idle_at FROM computer_screens')
+    .all() as Pick<ScreenRow, 'display_index' | 'bot_id' | 'idle_at'>[];
+  const owner = new Map(rows.map((r) => [r.display_index, r]));
+  const screens: Screen[] = [];
+  for (let i = FIRST_DISPLAY; i <= limit; i++) {
+    const row = owner.get(i);
+    screens.push({ screenId: `screen-${i}`, botId: row?.bot_id ?? null, lastUsedAt: row?.idle_at ?? 0 });
+  }
+  return screens;
 }
 
 export function saveScreen(row: ScreenRow): void {
@@ -132,15 +151,30 @@ export function touchScreen(botId: string, screenId: string, patch: { ensuredAt?
 /**
  * Put the bot's screen back on its last display index, or claim a free one. The token stays the
  * same across resumes so a browser already holding the VNC password keeps working.
+ *
+ * Which display a new bot gets is a decision of the pure allocator (domain/computer-model.ts):
+ * hand it the slots and it picks the same lowest free display this used to loop for. A bot that
+ * already holds a screen is returned as-is, so it never takes a second slot — the model is
+ * idempotent for that case too.
  */
 export function claimScreen(botId: string, limit: number, token: () => string): ScreenRow {
   const existing = getScreen(botId);
   if (existing) return existing;
-  const index = freeDisplayIndex(limit);
-  if (index === null) throw new Error(`No free display left (${limit} bot screens at most). Remove a bot to free one.`);
+
+  const screens = displaySlots(limit);
+  const computer: ComputerStatus = { status: 'ready', orgoId: 'local', screens };
+  if (!canAssignScreen(computer)) {
+    throw new Error(`No free display left (${limit} bot screens at most). Remove a bot to free one.`);
+  }
+
+  const assigned = assignScreen(computer, botId);
+  const claimed = assigned.status === 'ready' ? assigned.screens.find((s) => s.botId === botId) : undefined;
+  if (!claimed) throw new Error(`assignScreen gave ${botId} no screen on a computer with a free one`);
+  const index = FIRST_DISPLAY + screens.findIndex((s) => s.screenId === claimed.screenId);
+
   const row: ScreenRow = {
     bot_id: botId,
-    screen_id: `screen-${index}`,
+    screen_id: claimed.screenId,
     display_index: index,
     vnc_port: 5900 + index,
     cdp_port: 9200 + index,

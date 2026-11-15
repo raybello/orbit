@@ -22,8 +22,6 @@ const KNOWN: Record<string, string> = { github: 'GitHub', gitlab: 'GitLab', hubs
 /** "googlecalendar" → "Google Calendar", "slack" → "Slack". */
 export const humanizeToolkit = (slug: string) => KNOWN[slug.toLowerCase()] ?? slug.replace(/^(google|microsoft)(?=\w)/i, '$1 ').replace(/[-_]+/g, ' ').replace(/\b\w/g, (c) => c.toUpperCase());
 
-// ---------------- approval ----------------
-
 const APPROVAL_OUTCOME: Record<string, string> = { allowed: 'Allowed once', always: 'Always allowed', denied: 'Not allowed', expired: 'Expired' };
 
 export function ApprovalCard({ body }: { body: Card<'approval'> }) {
@@ -59,8 +57,6 @@ export function ApprovalCard({ body }: { body: Card<'approval'> }) {
     </div>
   );
 }
-
-// ---------------- question ----------------
 
 export function QuestionCard({ row, body }: { row: Row; body: Card<'question'> }) {
   const { busy, error, run } = useBusy();
@@ -99,8 +95,6 @@ export function QuestionCard({ row, body }: { row: Row; body: Card<'question'> }
     </div>
   );
 }
-
-// ---------------- connect ----------------
 
 export function ConnectCard({ row, body }: { row: Row; body: Card<'connect'> }) {
   const { busy, error, run } = useBusy();
@@ -146,8 +140,6 @@ export function ConnectCard({ row, body }: { row: Row; body: Card<'connect'> }) 
     </div>
   );
 }
-
-// ---------------- draft (screen 02) ----------------
 
 const CHANNEL_LABEL: Record<string, string> = { email: 'Email', slack: 'Slack', message: 'Chat' };
 

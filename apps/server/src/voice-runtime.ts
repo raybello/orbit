@@ -79,8 +79,8 @@ function loadSherpa(): SherpaModule | null {
     try {
       sherpa = addonLoader ? addonLoader() : (require('sherpa-onnx-node') as SherpaModule);
       if (!sherpa?.OnlineRecognizer || !sherpa?.OfflineTts || !sherpa?.Vad) throw new Error('sherpa-onnx-node exports are incomplete');
-    } catch (e: any) {
-      addonError = String(e?.message ?? e);
+    } catch (e) {
+      addonError = String((e as { message?: string })?.message ?? e);
       sherpa = null;
       console.warn('[voice] sherpa-onnx-node unavailable, local voice disabled:', addonError.slice(0, 300));
     }
@@ -200,7 +200,8 @@ function loadTts(spec: VoiceModelSpec): OfflineTts {
   if (spec.engine === 'kokoro') {
     // sherpa-onnx-node ships no .d.ts: TypeScript infers its API from JSDoc, and that inference
     // collapses OfflineTtsModelConfig to `{ vits }`, so the Kokoro block the addon documents and
-    // this code loads at runtime (24 000 Hz, 54 speakers) needs one escape hatch.
+    // this code loads at runtime (24 000 Hz, 54 speakers) needs one escape hatch — typed as the
+    // constructor's own config parameter, so nothing else in this file is weakened.
     const config = {
       model: {
         kokoro: {
@@ -218,7 +219,7 @@ function loadTts(spec: VoiceModelSpec): OfflineTts {
       provider: 'cpu',
       debug: 0,
     };
-    return new s.OfflineTts(config as any);
+    return new s.OfflineTts(config as unknown as ConstructorParameters<SherpaModule['OfflineTts']>[0]);
   }
   return new s.OfflineTts({
     model: { vits: { model: p[TTS_FILES.model], tokens: p[TTS_FILES.tokens], dataDir: espeakDataDir() } },
@@ -315,8 +316,8 @@ export async function warmUp(opts: { tts?: boolean; model?: string } = {}): Prom
     recognizer.getResult(stream).text; // force the result path too: that is where the transcript is built
     result.decodeMs = performance.now() - d0;
     result.ok = true;
-  } catch (e: any) {
-    result.error = String(e?.message ?? e);
+  } catch (e) {
+    result.error = String((e as { message?: string })?.message ?? e);
     result.totalMs = performance.now() - started;
     return result;
   }
@@ -328,8 +329,8 @@ export async function warmUp(opts: { tts?: boolean; model?: string } = {}): Prom
       await getTts(model);
       result.ttsMs = performance.now() - t0;
       result.model = ttsModel(model)?.id ?? null;
-    } catch (e: any) {
-      result.ttsError = String(e?.message ?? e);
+    } catch (e) {
+      result.ttsError = String((e as { message?: string })?.message ?? e);
     }
   }
   result.totalMs = performance.now() - started;

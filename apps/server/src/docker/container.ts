@@ -1,6 +1,6 @@
 import type Docker from 'dockerode';
 import { env } from '../env.js';
-import { docker } from './client.js';
+import { docker, type DockerError } from './client.js';
 import { COMPUTER_IMAGE, ensureComputerImage } from './image.js';
 import { cdpBridgePort, screenPorts } from './screen.js';
 import { botNetworkName, extraNetworksFor, serverPlacement } from './reach.js';
@@ -53,7 +53,6 @@ export function memoryBytes(raw: string): number {
   return bytes;
 }
 
-/** Docker create options for a bot's computer. */
 export function containerCreateOptions(spec: ContainerSpec): Docker.ContainerCreateOptions {
   const ports = screenPorts(spec.displayIndex);
   const memory = memoryBytes(env.computerMemoryLimit);
@@ -119,7 +118,6 @@ export function containerCreateOptions(spec: ContainerSpec): Docker.ContainerCre
   };
 }
 
-/** Create and start a container for a bot. Returns its id. */
 export async function createBotContainer(spec: ContainerSpec): Promise<string> {
   await ensureComputerImage();
   const existing = await findBotContainer(spec.botId);
@@ -141,25 +139,23 @@ export async function startContainer(containerId: string): Promise<void> {
   await docker().getContainer(containerId).start();
 }
 
-/** Stop a container gracefully, then kill it if it will not go. */
 export async function stopContainer(containerId: string): Promise<void> {
   try {
     await docker().getContainer(containerId).stop({ t: 10 });
-  } catch (e: any) {
-    if (e?.statusCode === 404) return; // already gone
+  } catch (e) {
+    if ((e as DockerError)?.statusCode === 404) return; // already gone
     throw e;
   }
 }
 
-/** Remove a container (stopping it first when it still runs). */
 export async function removeContainer(containerId: string): Promise<void> {
   try {
     const c = docker().getContainer(containerId);
     const info = await c.inspect();
     if (info.State?.Running) await c.stop({ t: 10 }).catch(() => undefined);
     await c.remove({ force: true });
-  } catch (e: any) {
-    if (e?.statusCode === 404) return;
+  } catch (e) {
+    if ((e as DockerError)?.statusCode === 404) return;
     throw e;
   }
 }
@@ -181,8 +177,8 @@ export async function containerStatus(containerId: string): Promise<ContainerSta
   try {
     const info = await docker().getContainer(containerId).inspect();
     return { exists: true, running: Boolean(info.State?.Running), status: info.State?.Status };
-  } catch (e: any) {
-    if (e?.statusCode === 404) return { exists: false, running: false };
+  } catch (e) {
+    if ((e as DockerError)?.statusCode === 404) return { exists: false, running: false };
     throw e;
   }
 }

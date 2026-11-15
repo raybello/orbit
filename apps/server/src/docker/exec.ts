@@ -13,7 +13,6 @@ async function container(containerId: string) {
   return c;
 }
 
-/** Split a multiplexed Docker stream into stdout and stderr text. */
 export function demuxOutput(buf: Buffer): { stdout: string; stderr: string } {
   const out: Buffer[] = [];
   const err: Buffer[] = [];
@@ -67,7 +66,6 @@ export async function execInContainer(
   return { stdout: output.stdout, stderr: output.stderr, code: inspect.ExitCode ?? 0 };
 }
 
-/** Run a command and stream its output as it comes (long uploads, log tails). */
 export async function execStreaming(
   containerId: string,
   cmd: string[],
@@ -97,7 +95,6 @@ export async function execStreaming(
   return inspect.ExitCode ?? 0;
 }
 
-/** Write a file inside the container by streaming it to a small python writer. */
 export async function writeFileInContainer(
   containerId: string,
   target: string,

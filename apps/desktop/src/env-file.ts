@@ -45,7 +45,6 @@ export function setEnvValue(envText: string, key: string, value: string): string
   return `${base}${line}\n`;
 }
 
-/** Keys whose `.env` line exists but is empty (or is missing entirely). */
 export function missingStackSecrets(envText: string): string[] {
   return REQUIRED_SECRETS.filter((spec) => !envValue(envText, spec.key)).map((spec) => spec.key);
 }

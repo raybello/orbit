@@ -45,9 +45,8 @@ interface Props {
 }
 
 /**
- * The live status block at the end of the transcript while a turn runs: the bot's mascot sitting on a
- * dark pill with its name and a pulsing status word, a one-line caption of what it is doing, and a
- * running timer. When the bot is waiting for the person, the pill reads "Needs you" and stops pulsing.
+ * The live status block at the end of the transcript while a turn runs: mascot pill, caption, timer.
+ * When the bot waits for the person it reads "Needs you" and stops pulsing.
  */
 export function ThinkingBlock({ bot, live, rows, steps = 0 }: Props) {
   const [now, setNow] = useState(Date.now());

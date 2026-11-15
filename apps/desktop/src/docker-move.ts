@@ -1,17 +1,10 @@
 /**
  * Which stack this Mac should run, and the one-way move from Docker to native.
  *
- * Three jobs, in order of how often they run:
- *
- *  1. remember the user's choice (`.desktop-stack-choice` in userData)
- *  2. decide on first run on an eligible Mac — and, when a Docker stack with data already
- *     exists, ask before touching it
- *  3. perform the move: checkpoint the SQLite WAL, copy the database and the two data
- *     directories out of the container, record the choice, then stop compose *without*
- *     `-v` so the volumes survive a rollback
- *
- * Nothing here imports Electron: the dialog is a function the caller passes in. That keeps
- * the module testable and keeps the decision logic honest about who is asking the question.
+ * The move copies rather than re-downloads: the user's bots and messages exist only in the
+ * Docker volumes, so the database is checkpointed inside the container, copied out, and the
+ * choice is recorded only once the copy succeeded. Nothing here imports Electron — the dialog
+ * is passed in — which keeps the decision logic testable and honest about who is asking.
  */
 
 import fs from 'node:fs';
@@ -108,11 +101,9 @@ export interface DockerDataOptions {
 }
 
 /**
- * "Is there a Docker stack here worth asking about?"
- *
- * The compose project is named `orbit`, so the volume Compose creates is
- * `orbit_orbit-data`; an older standalone compose file used `orbit_data` and a bind mount
- * under `userData/docker`. Any of the three means the user has bots in Docker.
+ * "Is there a Docker stack here worth asking about?" The compose project is named `orbit`, so
+ * the volume is `orbit_orbit-data`; an older standalone compose file used `orbit_data` and a
+ * bind mount under `userData/docker`. Any of the three means the user has bots in Docker.
  */
 export async function dockerDataExists(opts: DockerDataOptions): Promise<boolean> {
   const exists = opts.exists ?? ((file: string) => fs.existsSync(file));
@@ -236,15 +227,14 @@ export interface MoveResult {
 /**
  * Copy the Docker stack's data out and hand the machine to the native stack.
  *
- * Why in the container and not here: the database is `better-sqlite3` behind a named
- * volume, so the only process that can checkpoint and read it is the one inside the
- * image. Running `node -e` there uses the image's own `better-sqlite3`; adding that module
- * to Electron is not an option — it is a native addon, and this app ships with
- * `npmRebuild: false` (build.mjs bundles the main process with esbuild, so nothing native
- * is rebuilt for our ABI). `docker compose cp` then moves the resulting file out.
+ * The copy runs in the container on purpose: the database is `better-sqlite3` behind a named
+ * volume, so only the process inside the image can checkpoint it with the module it already
+ * has. Adding that addon to Electron is not an option — this app ships `npmRebuild: false`
+ * (esbuild bundles the main process), so it would not match our ABI. `docker compose cp` then
+ * moves the file out.
  *
- * Rollback: the last step is `compose down`, never `down -v`. The volumes stay, so
- * "Switch to Docker…" works with every bot and message still in place.
+ * Rollback: the last step is `compose down`, never `down -v`, so "Switch to Docker…" works
+ * with every bot and message still in place.
  */
 export async function moveAccepted(opts: MoveAcceptedOptions): Promise<MoveResult> {
   const steps: string[] = [];

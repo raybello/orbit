@@ -3,7 +3,8 @@ import type { Bot, LiveState, MessageBody, Row, ToolCallBody } from '@orbit/cont
 import { BotAvatarFor } from '../avatar/BotAvatar';
 import { isWaitingForYou } from '../lib/phrases';
 import { clock, dividerLabel, duration } from '../lib/time';
-import { displayName, useStore } from '../store';
+import { useStore } from '../store';
+import { displayName } from '../domain/transcript-utils';
 import { ThinkingBlock } from './ActivityLine';
 import { CardRow } from './cards/Cards';
 import { FileParts } from './FilePart';
@@ -19,7 +20,6 @@ type Item =
 const DIVIDER_GAP = 60 * 60 * 1000;
 const GROUP_GAP = 5 * 60 * 1000;
 
-/** Turns rows into render items: date dividers, grouped bubbles, collapsed tool-call steps, cards, events. */
 function buildItems(rows: Row[]): Item[] {
   const items: Item[] = [];
   let prevTs = 0;
@@ -64,7 +64,6 @@ function initialsOf(name: string) {
 const MsgRow = memo(function MsgRow({ row, bot, name, mine, follow }: {
   row: Row;
   bot: Bot;
-  /** Sender name shown on the first row of the run. */
   name: string;
   /** The person's own message: left-aligned with an accent bar. */
   mine: boolean;
@@ -116,7 +115,6 @@ function OriginLabel({ from }: { from: NonNullable<MessageBody['from']> }) {
 
 const MAX_WORK_MS = 12 * 60 * 60 * 1000;
 
-/** How long a finished run of steps took, from the row before it to the row after it. */
 function workedMs(item: Extract<Item, { kind: 'steps' }>): number | null {
   const end = item.endTs ?? item.rows[item.rows.length - 1].createdAt;
   if (!item.startTs) return null;
@@ -167,7 +165,6 @@ function StepRow({ call }: { call: ToolCallBody }) {
  */
 function Steps({ item, active, open: unfinished, extra }: {
   item: Extract<Item, { kind: 'steps' }>;
-  /** The bot is working on this run of steps right now. */
   active: boolean;
   /** The turn this run belongs to has not ended (it may be paused, waiting for the person). */
   open: boolean;
@@ -226,7 +223,6 @@ export function Transcript({ bot, rows, live, loaded }: Props) {
   const streamingNow = last?.body.type === 'message' && last.body.role === 'assistant' && !!last.body.streaming;
   const showActivity = (running && !streamingNow) || waiting;
 
-  // The chip that is still growing: the last thing in the transcript while the turn runs.
   const lastItem = items[items.length - 1];
   const openKey = (running || waiting) && lastItem?.kind === 'steps' ? lastItem.key : null;
   const activeKey = running && !waiting ? openKey : null;
@@ -243,12 +239,10 @@ export function Transcript({ bot, rows, live, loaded }: Props) {
   const serverSteps = running ? live?.steps ?? 0 : 0;
   const extraSteps = Math.max(0, serverSteps - turnSteps);
 
-  // Keep pinned to the bottom while new content arrives, unless the user scrolled up.
   useLayoutEffect(() => {
     const el = scrollRef.current;
     if (el && stick.current) el.scrollTop = el.scrollHeight;
   });
-  // Jump to bottom when switching bots.
   useLayoutEffect(() => {
     stick.current = true;
     const el = scrollRef.current;

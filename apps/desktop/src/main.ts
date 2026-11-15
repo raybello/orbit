@@ -1,9 +1,7 @@
 /**
  * Electron main: decide what to open, then keep it alive.
  *
- * Launch has exactly two shapes — first-run setup, or a window onto a server — and one
- * side quest: when the server is the local Docker stack, it has to be started (and
- * health-checked) before a window is worth showing.
+ * A local Docker stack must be started and health-checked before a window is worth showing.
  */
 
 import fs from 'node:fs';
@@ -25,7 +23,7 @@ import { NativeStackController, describeNativeState } from './native-stack';
 import { nativeStackEligible, readServerManifest, SERVER_BUNDLE_FILE } from './mac-runtime';
 import { chooseStack, dockerDataExists, moveAccepted, readStackChoice, writeStackChoice, type StackChoice } from './docker-move';
 import { runDocker } from './docker-cli';
-import type { StackController, StackKind } from './stack-controller';
+import type { DockerStack, NativeStack, StackController, StackKind } from './stack-controller';
 import { createAppWindow, openExternalSafely, sessionForServerUrl, type AppWindow } from './app-window';
 import { buildAppMenu } from './app-menu';
 import { dismissUpdateBar, initAutoUpdate, checkForUpdates, restartAndInstall } from './auto-update';
@@ -47,22 +45,17 @@ let mainWindow: BrowserWindow | null = null;
 let setupWindow: BrowserWindow | null = null;
 let appSession: AppWindow | null = null;
 let badge: BadgeController | null = null;
-/** The URL the app window is pointing at, for Settings and the menu. */
 let currentUrl: string | null = null;
 let booted = false;
 /** Set once `boot()` has picked a controller, so re-activating the app does not re-ask. */
 let stackSelected = false;
 
-/**
- * Which controller this machine runs. Docker everywhere by default; an eligible Mac with a
- * `server-bundle.json` may run the native one instead (see `selectStackController`).
- */
 function onStackState(state: DesktopLocalStackState): void {
   broadcast(IPC.stackState, state);
   refreshMenu();
 }
 
-function dockerStack(): StackController {
+function dockerStack(): DockerStack {
   return new LocalStackController({
     userDataDir,
     appRoot: app.getAppPath(),
@@ -72,7 +65,7 @@ function dockerStack(): StackController {
   });
 }
 
-function nativeStack(manifest: NonNullable<ReturnType<typeof readServerManifest>>): StackController {
+function nativeStack(manifest: NonNullable<ReturnType<typeof readServerManifest>>): NativeStack {
   return new NativeStackController({
     userDataDir,
     manifest,
@@ -86,7 +79,7 @@ function nativeStack(manifest: NonNullable<ReturnType<typeof readServerManifest>
 let stack: StackController = dockerStack();
 
 function stackKind(): StackKind {
-  return stack.kind ?? 'docker';
+  return stack.kind;
 }
 
 /** Electron's `Resources/` — where `extraResources` puts `server-bundle.json`. */
@@ -97,6 +90,20 @@ function resourcesDir(): string {
 
 function bundledManifestPath(): string {
   return path.join(resourcesDir(), SERVER_BUNDLE_FILE);
+}
+
+/**
+ * The stack resources this build shipped, for the smoke test's presence checks. The native
+ * stack ships no compose files at all, so its answer is the folder the Docker stack stages
+ * from — which is the point of the report: a native build has none of them.
+ */
+function stackResourceDir(controller: StackController): string {
+  switch (controller.kind) {
+    case 'docker':
+      return controller.resourceDir();
+    case 'native':
+      return path.join(resourcesDir(), 'stack');
+  }
 }
 
 function broadcast(channel: string, payload: unknown): void {
@@ -206,7 +213,6 @@ function isLocalServer(): boolean {
   return desired === normalizeServerUrl(DEFAULT_LOCAL_WEB_URL) || desired === normalizeServerUrl(stack.webUrl());
 }
 
-/** True only where the native stack is both possible and installable. */
 function nativeStackAvailable(): boolean {
   return nativeStackEligible() && readServerManifest(bundledManifestPath()) !== null;
 }
@@ -243,10 +249,6 @@ async function stopStack(): Promise<void> {
 
 // ------------------------------------------------------------------ stack choice
 
-/**
- * The "Run Orbit without Docker?" dialog, shown once when an eligible Mac already has a
- * Docker stack with data in it.
- */
 async function askToSwitchToNative(): Promise<boolean> {
   const { response } = await dialog.showMessageBox({
     type: 'question',
@@ -281,8 +283,6 @@ async function performNativeMove(): Promise<boolean> {
 }
 
 /**
- * Phase 6-E: pick the controller for this launch.
- *
  * `ORBIT_FORCE_STACK=docker|native` exists for support and for CI: `docker` short-circuits
  * everything, `native` skips the first-run question. A missing or invalid
  * `server-bundle.json` never quietly becomes a native stack — without the bundle there is
@@ -330,11 +330,9 @@ async function selectStackController(opts: { interactive?: boolean } = {}): Prom
 }
 
 /**
- * The menu's Switch to Docker… / Switch to Native…: record the choice, restart on it.
- *
- * Switching back to Docker does not copy the native database back — Docker's volumes still
- * hold the pre-switch data, and the native files stay on disk so switching forward again
- * picks up where it left off.
+ * The menu's Switch to Docker… / Switch to Native…: record the choice, restart on it. Switching
+ * back does not copy the native database back — Docker's volumes still hold the pre-switch data,
+ * and the native files stay on disk, so switching forward again picks up where it left off.
  */
 async function switchStack(choice: StackChoice): Promise<void> {
   if (!nativeStackAvailable()) return;
@@ -457,12 +455,9 @@ async function startLocalStackOrExplain(): Promise<string | null> {
 }
 
 /**
- * When the local stack comes up, make sure the agent harness can reach it: an API key in
- * `~/.hermes/.env`, and an `mcp_servers.orbit` entry pointing at this server.
- *
- * The key itself is mirrored into the stack `.env` *before* `compose up` (see
- * `mirrorHermesKey`) — a container reads its environment once, at start, so writing it here
- * would leave the running server without a key until the next restart.
+ * When the local stack comes up, point `mcp_servers.orbit` at this server. The key itself is
+ * mirrored into the stack `.env` *before* `compose up` (see `mirrorHermesKey`): a container
+ * reads its environment once, at start, so writing it here would be a restart too late.
  */
 async function prepareLocalHermes(): Promise<void> {
   try {
@@ -486,29 +481,26 @@ async function prepareLocalHermes(): Promise<void> {
  */
 function mirrorHermesKey(): void {
   try {
-    const envPath = stack.prepareEnvFile?.() ?? path.join(stack.stackDir, '.env');
+    // Both stacks keep the key in the same `stack/.env` (the native one reads it back in
+    // `hermesKey()`); the fallback is the Docker controller's staged file failing to appear,
+    // in which case that path is still where the key belongs.
+    const envPath = stack.prepareEnvFile() ?? path.join(stack.stackDir, '.env');
     ensureHermesApiKey({}, { stackEnvPath: envPath });
   } catch (err) {
     log.warn('could not mirror HERMES_KEY into the stack env before starting', err);
   }
 }
 
-/**
- * Quitting is a product decision, so it says why in the log. Every silent exit from this app has
- * cost an hour of guessing at a stack that was working perfectly.
- */
+/** Quitting is a product decision, so it says why in the log. */
 function quitApp(reason: string): void {
   log.warn(`quitting: ${reason}`);
   app.quit();
 }
 
 /**
- * The URL the app window should open on a local stack, signing in first when it has to.
- *
- * A bundled stack ships `DEV_LOGIN=0` and no Composio key, so its own sign-in screen has
- * nothing that works. The main process mints a one-time owner link instead (see
- * `desktop-session.ts`) and loads it; from the second launch on, `/api/auth/me` already has
- * a session and the window opens on the bare origin.
+ * The URL the app window should open on a local stack, signing in first when it has to. A
+ * bundled stack ships `DEV_LOGIN=0` and no Composio key, so its own sign-in screen has nothing
+ * that works; the main process mints a one-time owner link instead (`desktop-session.ts`).
  */
 async function localStackEntryUrl(webUrl: string, setup: DesktopSetup | null): Promise<string> {
   const email = setup?.email ?? DEFAULT_OWNER_EMAIL;
@@ -518,7 +510,7 @@ async function localStackEntryUrl(webUrl: string, setup: DesktopSetup | null): P
   const { ses } = sessionForServerUrl(webUrl);
   const result = await ensureDesktopSession({
     webUrl,
-    sessionSecret: stack.sessionSecret?.() ?? null,
+    sessionSecret: stack.sessionSecret(),
     email,
     fetchImpl: ses.fetch.bind(ses) as unknown as typeof fetch,
   });
@@ -579,12 +571,9 @@ function setupFileUrl(): string {
 }
 
 /**
- * Is this call coming from a page we ship?
- *
- * The app window carries the whole preload bridge wherever it is pointed, so a server the
- * user merely connected to ("existing instance") could otherwise drive Docker, rewrite
- * `~/.hermes/config.yaml` or replace the setup file. Only the setup window's own document
- * and the local stack's origin pass (see `ipc-guard.ts`).
+ * Is this call coming from a page we ship? The app window carries the whole preload bridge
+ * wherever it is pointed, so a server the user merely connected to could otherwise drive Docker
+ * or rewrite `~/.hermes/config.yaml`. Only the setup document and the local stack's origin pass.
  */
 function senderTrusted(event: IpcMainInvokeEvent | IpcMainEvent): boolean {
   const stackWebUrl = stack.webUrl();
@@ -594,7 +583,6 @@ function senderTrusted(event: IpcMainInvokeEvent | IpcMainEvent): boolean {
   return false;
 }
 
-/** Throwing variant for `ipcMain.handle`, where the renderer gets the error back. */
 function assertSender(event: IpcMainInvokeEvent): void {
   if (!senderTrusted(event)) throw new Error('not allowed from this page');
 }
@@ -717,10 +705,9 @@ function registerIpc(): void {
 // ------------------------------------------------------------------ smoke test
 
 /**
- * `ORBIT_SMOKE=1 electron .` loads the real setup window off-screen, checks that the
- * preload bridge is present, prints what it found and exits. CI and the packaging job use
- * it to prove the bundle, the HTML and the preload path all agree — without a visible
- * window.
+ * `ORBIT_SMOKE=1 electron .` loads the real setup window off-screen, checks the preload bridge,
+ * prints what it found and exits: CI proves the bundle, the HTML and the preload path agree
+ * without a visible window.
  */
 async function runSmokeTest(): Promise<void> {
   const win = new BrowserWindow({
@@ -747,9 +734,7 @@ async function runSmokeTest(): Promise<void> {
       continueDisabled: document.getElementById('continue') ? document.getElementById('continue').disabled : null,
     }))()`)) as Record<string, unknown>;
     // Resolved in main, where process.resourcesPath and the stack controller live.
-    // The Docker stack's resource dir is the native stack's *absence*, so report both.
-    const resources =
-      stack instanceof LocalStackController ? stack.resourceDir() : path.join(resourcesDir(), 'stack');
+    const resources = stackResourceDir(stack);
     if (process.env.ORBIT_FORCE_STACK) {
       // Exercise the override for real: `docker` returns without any dialog.
       stack = await selectStackController({ interactive: false });
@@ -872,8 +857,7 @@ async function runSmokeTest(): Promise<void> {
 
 // ------------------------------------------------------------------ lifecycle
 
-// A main-process error used to mean a silent exit with code 0 and one line of log at most. Say what
-// happened, and stay alive when the failure is recoverable (a single bad request must not end the app).
+// Stay alive and say what happened: a single bad request must not end the app.
 process.on('uncaughtException', (err) => {
   log.error('uncaught exception in the main process', err);
 });
@@ -938,8 +922,15 @@ if (!app.requestSingleInstanceLock()) {
   app.on('before-quit', () => {
     // Abort an in-flight start; never block quit on `docker compose down`.
     stack.abort();
-    // A native stack's children would outlive us as orphans, so kill them now.
-    stack.dispose?.();
+    // A native stack's children would outlive us as orphans, so kill them now. Docker
+    // containers survive a quit on purpose: `Stop Local Stack` is the explicit action.
+    switch (stack.kind) {
+      case 'native':
+        stack.dispose();
+        break;
+      case 'docker':
+        break;
+    }
     badge?.stop();
     badge = null;
     dismissUpdateBar();

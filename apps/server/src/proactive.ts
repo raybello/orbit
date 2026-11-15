@@ -1,4 +1,5 @@
 import { db, now } from './db.js';
+import type { Trigger } from './agent/loop.js';
 
 /**
  * Proactive check-ins for the primary bot (Grok Bot: "checks in proactively").
@@ -6,9 +7,18 @@ import { db, now } from './db.js';
  * primary bot gets a [check-in] turn and either sends ONE concise message or stays silent.
  */
 
-let enqueueFn: ((botId: string, t: any) => void) | null = null;
+interface ProactivityRow {
+  user_id: string;
+  enabled: number;
+  times: string;
+  timezone: string;
+  last_fired: string | null;
+  silent_streak: number;
+}
 
-export function initProactive(enqueue: (botId: string, t: any) => void) {
+let enqueueFn: ((botId: string, t: Trigger) => void) | null = null;
+
+export function initProactive(enqueue: (botId: string, t: Trigger) => void) {
   db.exec(`CREATE TABLE IF NOT EXISTS proactivity (
     user_id TEXT PRIMARY KEY,
     enabled INTEGER NOT NULL DEFAULT 0,
@@ -20,11 +30,11 @@ export function initProactive(enqueue: (botId: string, t: any) => void) {
   )`);
   enqueueFn = enqueue;
   setInterval(tick, 60_000).unref();
-  console.log(`[proactive] ${(db.prepare('SELECT COUNT(*) n FROM proactivity WHERE enabled=1').get() as any).n} user(s) with check-ins`);
+  console.log(`[proactive] ${(db.prepare('SELECT COUNT(*) n FROM proactivity WHERE enabled=1').get() as { n: number }).n} user(s) with check-ins`);
 }
 
 export function getCheckins(userId: string) {
-  const r = db.prepare('SELECT * FROM proactivity WHERE user_id=?').get(userId) as any;
+  const r = db.prepare('SELECT * FROM proactivity WHERE user_id=?').get(userId) as ProactivityRow | undefined;
   return r ? { enabled: !!r.enabled, times: JSON.parse(r.times) as string[], timezone: r.timezone } : { enabled: false, times: ['09:00', '16:30'], timezone: 'UTC' };
 }
 
@@ -52,7 +62,7 @@ function localParts(tz: string) {
 
 function tick() {
   if (!enqueueFn) return;
-  const rows = db.prepare('SELECT * FROM proactivity WHERE enabled=1').all() as any[];
+  const rows = db.prepare('SELECT * FROM proactivity WHERE enabled=1').all() as ProactivityRow[];
   for (const r of rows) {
     try {
       const { date, hm } = localParts(r.timezone);
@@ -76,17 +86,17 @@ const minutesBetween = (from: string, to: string) => {
 };
 
 export function fireCheckin(userId: string, silentStreak = 0, force = false) {
-  const primary = db.prepare('SELECT id FROM bots WHERE user_id=? AND is_primary=1').get(userId) as any;
+  const primary = db.prepare('SELECT id FROM bots WHERE user_id=? AND is_primary=1').get(userId) as { id: string } | undefined;
   if (!primary || !enqueueFn) return;
   // Don't interrupt an active conversation.
-  const lastUser = db.prepare("SELECT MAX(created_at) t FROM rows WHERE bot_id IN (SELECT id FROM bots WHERE user_id=?) AND kind='message' AND json_extract(body,'$.role')='user'").get(userId) as any;
+  const lastUser = db.prepare("SELECT MAX(created_at) t FROM rows WHERE bot_id IN (SELECT id FROM bots WHERE user_id=?) AND kind='message' AND json_extract(body,'$.role')='user'").get(userId) as { t: number | null } | undefined;
   if (!force && lastUser?.t && now() - lastUser.t < 20 * 60_000) return;
 
-  const needsInput = db.prepare("SELECT b.name, t.title FROM tasks t JOIN bots b ON b.id=t.bot_id WHERE b.user_id=? AND t.state='needs_input' LIMIT 10").all(userId) as any[];
+  const needsInput = db.prepare("SELECT b.name, t.title FROM tasks t JOIN bots b ON b.id=t.bot_id WHERE b.user_id=? AND t.state='needs_input' LIMIT 10").all(userId) as { name: string; title: string }[];
   const since = now() - 12 * 3600_000;
-  const routineRuns = db.prepare("SELECT b.name bot, r.name FROM routines r JOIN bots b ON b.id=r.bot_id WHERE b.user_id=? AND r.last_run_at > ?").all(userId, since) as any[];
-  const pendingApprovals = db.prepare("SELECT b.name bot, a.tool FROM approvals a JOIN bots b ON b.id=a.bot_id WHERE b.user_id=? AND a.status='pending'").all(userId) as any[];
-  const otherBots = db.prepare("SELECT name, label FROM bots WHERE user_id=? AND is_primary=0").all(userId) as any[];
+  const routineRuns = db.prepare("SELECT b.name bot, r.name FROM routines r JOIN bots b ON b.id=r.bot_id WHERE b.user_id=? AND r.last_run_at > ?").all(userId, since) as { bot: string; name: string }[];
+  const pendingApprovals = db.prepare("SELECT b.name bot, a.tool FROM approvals a JOIN bots b ON b.id=a.bot_id WHERE b.user_id=? AND a.status='pending'").all(userId) as { bot: string; tool: string }[];
+  const otherBots = db.prepare("SELECT name, label FROM bots WHERE user_id=? AND is_primary=0").all(userId) as { name: string; label: string | null }[];
 
   const context = [
     needsInput.length ? `Tasks waiting on the user: ${needsInput.map((t) => `${t.title} (${t.name})`).join('; ')}` : 'No tasks waiting on the user.',

@@ -7,6 +7,12 @@ import { env } from '../env.js';
  * server still starts (and Orgo bots still work) when Docker is not installed.
  */
 
+/** What dockerode rejects with: an HTTP status from the daemon, and a message. */
+export interface DockerError {
+  statusCode?: number;
+  message?: string;
+}
+
 let client: Docker | null = null;
 
 function options(): Docker.DockerOptions {
@@ -33,8 +39,8 @@ export async function dockerProblem(): Promise<string | null> {
   try {
     await docker().ping();
     return null;
-  } catch (e: any) {
+  } catch (e) {
     const where = options().socketPath ?? `${options().host}:${options().port}`;
-    return `Docker is not reachable at ${where} (${e?.message ?? e}). Start Docker, or set DOCKER_SOCKET.`;
+    return `Docker is not reachable at ${where} (${(e as DockerError)?.message ?? e}). Start Docker, or set DOCKER_SOCKET.`;
   }
 }

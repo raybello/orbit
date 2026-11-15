@@ -23,7 +23,7 @@ interface ToolDef {
   activity: ActivityKind;
   label: string;
   policy?: 'needs_approval';
-  impl: (args: any, ctx: ToolCtx) => Promise<ToolResult>;
+  impl: (args: Record<string, unknown>, ctx: ToolCtx) => Promise<ToolResult>;
 }
 
 const obj = (properties: Record<string, unknown>, required: string[] = []) => ({ type: 'object', properties, required, additionalProperties: false });

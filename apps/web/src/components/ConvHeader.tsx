@@ -1,16 +1,13 @@
 import { useState } from 'react';
 import type { Bot } from '@orbit/contracts';
 import { BotAvatarFor } from '../avatar/BotAvatar';
-import { displayName, useStore } from '../store';
+import { useStore } from '../store';
+import { displayName } from '../domain/transcript-utils';
 import { useConfigUI } from '../configStore';
 import { configApi } from '../lib/configApi';
 import { Icon } from './Icon';
 import { Menu } from './Menu';
 
-/**
- * The conversation top bar, Teams style: identity on the left, the Chat / Files tab strip,
- * then the overflow menu and the details-panel toggle on the right.
- */
 export function ConvHeader({ bot, running, activeTab, onTabChange, onNotice }: {
   bot: Bot;
   running: boolean;

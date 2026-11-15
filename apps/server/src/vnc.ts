@@ -82,7 +82,6 @@ async function browserHandshake(q: ByteQueue, send: (b: Buffer) => void, serverI
   send(serverInit);
 }
 
-/** Filters a client->server RFB stream, dropping input events. Returns bytes to forward. */
 class WatchFilter {
   private pending = Buffer.alloc(0);
   feed(chunk: Buffer): Buffer {
@@ -131,7 +130,9 @@ export function attachVncRelay(server: Server) {
       // A React Native WebView cannot send cookies, so native clients pass the session token in the
       // query string instead: /api/bots/:id/screen?token=<session token>.
       ?? userFromToken(url.searchParams.get('token') ?? undefined);
-    const bot = user ? (db.prepare('SELECT * FROM bots WHERE id=? AND user_id=?').get(m[1], user.id) as any) : null;
+    const bot = user
+      ? (db.prepare('SELECT * FROM bots WHERE id=? AND user_id=?').get(m[1], user.id) as { id: string } | undefined)
+      : null;
     if (!user || !bot) {
       socket.write('HTTP/1.1 401 Unauthorized\r\n\r\n');
       socket.destroy();
@@ -258,8 +259,8 @@ async function relay(client: WebSocket, userId: string, botId: string, mode: 'wa
     if (leftoverUp.length) client.send(leftoverUp);
     const leftoverClient = fromClient.takeAll();
     if (leftoverClient.length) forward(leftoverClient);
-  } catch (e: any) {
-    const message = String(e?.message ?? e);
+  } catch (e) {
+    const message = String((e as Error)?.message ?? e);
     // A person closing the tab mid-handshake is not a failure worth a warning.
     if (!/client closed/i.test(message)) console.warn('[vnc] relay failed', message);
     closeAll(1011, message);
@@ -268,6 +269,8 @@ async function relay(client: WebSocket, userId: string, botId: string, mode: 'wa
 
 /** The bot's screen id, for the control handback when the relay itself does not hold one. */
 function getScreenId(botId: string): string {
-  const row = db.prepare('SELECT screen_id FROM computer_screens WHERE bot_id=? ORDER BY display_index LIMIT 1').get(botId) as any;
-  return (row?.screen_id as string) ?? 'default';
+  const row = db.prepare('SELECT screen_id FROM computer_screens WHERE bot_id=? ORDER BY display_index LIMIT 1').get(botId) as
+    | { screen_id: string }
+    | undefined;
+  return row?.screen_id ?? 'default';
 }

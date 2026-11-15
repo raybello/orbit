@@ -12,6 +12,7 @@ import { randomUUID } from 'node:crypto';
 import { db } from './db.js';
 import { env } from './env.js';
 import { DEFAULT_PATH, defaultHermesLookup, hermesBin, resolveHermesBin } from './hermes-bin.js';
+import type { BotRow } from './infra/bot-repository.js';
 import type { EngineInfo, EngineProvider } from './types.js';
 
 /**
@@ -30,9 +31,18 @@ import type { EngineInfo, EngineProvider } from './types.js';
 export type EngineKind = 'primary' | 'managed';
 export interface Engine { kind: EngineKind; url: string; key: string; home: string }
 
-const botRow = (botId: string) => db.prepare('SELECT * FROM bots WHERE id=?').get(botId) as any;
+/** A Hermes config.yaml. Genuinely open-ended: only a handful of keys are ever read here. */
+export type HermesConfig = Record<string, unknown>;
 
-// ---------- small file helpers ----------
+/** A config block (providers, mcp_servers, model...): an object, or nothing usable. */
+export const asBlock = (v: unknown): Record<string, unknown> =>
+  v && typeof v === 'object' && !Array.isArray(v) ? (v as Record<string, unknown>) : {};
+
+/** Message off a caught value, which may be an Error or anything a dependency threw. */
+const messageOf = (e: unknown): string => String((e as { message?: unknown } | null)?.message ?? e);
+
+// Typed non-nullable: every caller guards on the row or would already crash without one.
+const botRow = (botId: string) => db.prepare('SELECT * FROM bots WHERE id=?').get(botId) as BotRow;
 
 /** KEY=value lines of a dotenv file (quotes stripped). Missing file = {}. */
 export function readDotenv(file: string): Record<string, string> {
@@ -49,8 +59,8 @@ export function readDotenv(file: string): Record<string, string> {
   return out;
 }
 
-export function readYaml(file: string): any {
-  try { return YAML.parse(fs.readFileSync(file, 'utf8')) ?? {}; } catch { return {}; }
+export function readYaml(file: string): HermesConfig {
+  try { return (YAML.parse(fs.readFileSync(file, 'utf8')) ?? {}) as HermesConfig; } catch { return {}; }
 }
 
 export function writePrivate(file: string, content: string) {
@@ -59,12 +69,9 @@ export function writePrivate(file: string, content: string) {
   fs.chmodSync(file, 0o600);
 }
 
-/** KEY=value lines for a dotenv file. */
 function dotenvText(vars: Record<string, string>): string {
   return Object.entries(vars).map(([k, v]) => `${k}=${v}`).join('\n') + '\n';
 }
-
-// ---------- identity ----------
 
 /** Token a bot's Hermes agent presents to this server's MCP endpoint. `primary` names the primary bot. */
 export function mcpToken(botId: string): string {
@@ -72,7 +79,7 @@ export function mcpToken(botId: string): string {
 }
 
 export function primaryBotId(): string | null {
-  return (db.prepare("SELECT id FROM bots WHERE engine='primary' LIMIT 1").get() as any)?.id ?? null;
+  return (db.prepare("SELECT id FROM bots WHERE engine='primary' LIMIT 1").get() as { id: string } | undefined)?.id ?? null;
 }
 
 export function engineKind(botId: string): EngineKind | null {
@@ -91,10 +98,8 @@ function primaryKey(): string {
   return cachedPrimaryKey;
 }
 
-// ---------- assignment ----------
-
 function freePort(avoid: number[] = []): number {
-  const used = new Set((db.prepare('SELECT engine_port FROM bots WHERE engine_port IS NOT NULL').all() as any[]).map((r) => r.engine_port as number));
+  const used = new Set((db.prepare('SELECT engine_port FROM bots WHERE engine_port IS NOT NULL').all() as { engine_port: number }[]).map((r) => r.engine_port));
   for (const p of avoid) used.add(p);
   let p = env.enginePortBase;
   while (used.has(p)) p++;
@@ -114,8 +119,6 @@ export function assignEngine(botId: string): EngineKind {
   return 'managed';
 }
 
-// ---------- a managed bot's Hermes home ----------
-
 /** Model credentials a managed agent may inherit from the primary agent. Never messaging tokens. */
 export const SHARED_ENV = [
   'ANTHROPIC_API_KEY', 'ANTHROPIC_BASE_URL', 'ANTHROPIC_TOKEN', 'CLAUDE_CODE_OAUTH_TOKEN',
@@ -128,8 +131,8 @@ export const SHARED_ENV = [
 /** Parts of the primary agent's config a managed agent starts from, so it reaches the same models. */
 export const SHARED_CONFIG = ['model', 'providers', 'custom_providers', 'auxiliary', 'fallback_model', 'fallback_providers', 'mcp_servers'];
 
-function soul(b: any): string {
-  const owner = (db.prepare('SELECT name FROM users WHERE id=?').get(b.user_id) as any)?.name ?? 'the user';
+function soul(b: BotRow): string {
+  const owner = (db.prepare('SELECT name FROM users WHERE id=?').get(b.user_id) as { name: string } | undefined)?.name ?? 'the user';
   const role = b.label ? `, ${b.label}` : '';
   return [
     `You are ${b.name}${role}. You work for ${owner} as one of a small team of AI agents, each with its own screen on a shared computer.`,
@@ -148,11 +151,11 @@ export function syncPersona(botId: string) {
   fs.writeFileSync(path.join(home, 'SOUL.md'), soul(b));
 }
 
-function extraMcpServers(): Record<string, any> {
+function extraMcpServers(): Record<string, unknown> {
   if (!env.extraMcpServers) return {};
   try {
-    const v = JSON.parse(env.extraMcpServers);
-    return v && typeof v === 'object' && !Array.isArray(v) ? v : {};
+    const v = JSON.parse(env.extraMcpServers) as unknown;
+    return v && typeof v === 'object' && !Array.isArray(v) ? (v as Record<string, unknown>) : {};
   } catch {
     console.warn('[engine] EXTRA_MCP_SERVERS is not valid JSON; ignored');
     return {};
@@ -166,41 +169,48 @@ const OAUTH_SINGLETON_FILES = ['.anthropic_oauth.json'];
 /** Marks a row this server wrote from the primary's grant, so it is never mistaken for a bot's own. */
 const INHERITED_SOURCE = 'inherited:orbit';
 
+/** One `auth.json` credential_pool row: JSON Hermes wrote, fields read defensively. */
+type AuthPoolRow = Record<string, unknown>;
+
 interface AuthStore {
   version?: number;
-  providers?: Record<string, any>;
-  credential_pool?: Record<string, any[]>;
+  providers?: Record<string, unknown>;
+  credential_pool?: Record<string, AuthPoolRow[]>;
   active_provider?: string;
   updated_at?: string;
-  [key: string]: any;
+  [key: string]: unknown;
 }
 
 function readAuthStore(file: string): AuthStore | null {
   try {
-    const store = JSON.parse(fs.readFileSync(file, 'utf8'));
-    return store && typeof store === 'object' ? store : null;
+    const store = JSON.parse(fs.readFileSync(file, 'utf8')) as unknown;
+    return store && typeof store === 'object' ? (store as AuthStore) : null;
   } catch {
     return null;
   }
 }
 
-const isInheritedRow = (row: any) =>
-  Boolean(row && typeof row === 'object' && String(row.source ?? '') === INHERITED_SOURCE);
-const tokenOf = (row: any) => String(row?.access_token ?? '').trim();
-const refreshOf = (row: any) => String(row?.refresh_token ?? '').trim();
+/** The row as an object, or null for anything else: a pool entry can be junk. */
+const asAuthRow = (row: unknown): AuthPoolRow | null =>
+  row && typeof row === 'object' && !Array.isArray(row) ? (row as AuthPoolRow) : null;
+
+const isInheritedRow = (row: unknown) => String(asAuthRow(row)?.source ?? '') === INHERITED_SOURCE;
+const tokenOf = (row: unknown) => String(asAuthRow(row)?.access_token ?? '').trim();
+const refreshOf = (row: unknown) => String(asAuthRow(row)?.refresh_token ?? '').trim();
 
 /** An access token that is present and not (about to be) expired. */
-function liveToken(row: any, skewSeconds = 120): boolean {
-  if (!row || typeof row !== 'object' || !tokenOf(row)) return false;
-  const expMs = Number(row.expires_at_ms ?? NaN);
+function liveToken(row: unknown, skewSeconds = 120): boolean {
+  const r = asAuthRow(row);
+  if (!r || !tokenOf(r)) return false;
+  const expMs = Number(r.expires_at_ms ?? NaN);
   if (Number.isFinite(expMs)) return expMs - skewSeconds * 1000 > Date.now();
-  const expSec = Number(row.expires_at ?? NaN);
+  const expSec = Number(r.expires_at ?? NaN);
   if (Number.isFinite(expSec)) return expSec * 1000 - skewSeconds * 1000 > Date.now();
   return true;
 }
 
 /** A row this server wrote: no refresh token, so using it can never rotate the primary's grant. */
-function usableInheritedRow(row: any): boolean {
+function usableInheritedRow(row: unknown): boolean {
   return isInheritedRow(row) && !refreshOf(row) && liveToken(row);
 }
 
@@ -218,11 +228,11 @@ const SUBSCRIPTION_ENV: Record<string, string> = { anthropic: 'ANTHROPIC_TOKEN' 
 
 export function primarySubscriptions(): PrimarySubscription[] {
   const store = readAuthStore(path.join(env.hermesHome, 'auth.json'));
-  const pool = (store?.credential_pool ?? {}) as Record<string, any[]>;
+  const pool = store?.credential_pool ?? {};
   const out: PrimarySubscription[] = [];
   for (const provider of SINGLE_USE_OAUTH) {
     const rows = Array.isArray(pool[provider]) ? pool[provider] : [];
-    const row = rows.find((r) => liveToken(r));
+    const row = asAuthRow(rows.find((r) => liveToken(r)));
     if (!row) continue;
     out.push({
       provider,
@@ -262,12 +272,13 @@ export function inheritSubscriptions(home: string): string[] {
   const subs = primarySubscriptions();
   const ownFile = path.join(home, 'auth.json');
   const own: AuthStore = readAuthStore(ownFile) ?? { version: 1, providers: {} };
-  own.credential_pool = own.credential_pool && typeof own.credential_pool === 'object' ? own.credential_pool : {};
+  if (!own.credential_pool || typeof own.credential_pool !== 'object') own.credential_pool = {};
   if (!own.providers || typeof own.providers !== 'object') own.providers = {};
+  const pool = own.credential_pool;
   const changed: string[] = [];
 
   for (const provider of SINGLE_USE_OAUTH) {
-    const mine: any[] = Array.isArray(own.credential_pool[provider]) ? own.credential_pool[provider] : [];
+    const mine: AuthPoolRow[] = Array.isArray(pool[provider]) ? pool[provider] : [];
     const sub = subs.find((x) => x.provider === provider) ?? null;
 
     // A fork carries the primary's refresh token; using it could rotate the user's sign-in away.
@@ -280,15 +291,15 @@ export function inheritSubscriptions(home: string): string[] {
 
     // A bot's own sign-in wins over anything inherited.
     if (kept.some((r) => !isInheritedRow(r))) {
-      if (dirty) own.credential_pool[provider] = kept;
+      if (dirty) pool[provider] = kept;
       continue;
     }
     if (!sub) {
-      if (kept.length) { delete own.credential_pool[provider]; changed.push(`-expired:${provider}`); }
+      if (kept.length) { delete pool[provider]; changed.push(`-expired:${provider}`); }
       continue;
     }
-    const row: Record<string, any> = {
-      id: kept[0]?.id ?? crypto.randomBytes(3).toString('hex'),
+    const row: AuthPoolRow = {
+      id: asAuthRow(kept[0])?.id ?? crypto.randomBytes(3).toString('hex'),
       label: `inherited:${sub.label}`,
       auth_type: 'oauth',
       source: INHERITED_SOURCE,
@@ -299,7 +310,7 @@ export function inheritSubscriptions(home: string): string[] {
     if (sub.expiresAtMs) row.expires_at_ms = sub.expiresAtMs;
     if (sub.baseUrl) row.base_url = sub.baseUrl;
     if (JSON.stringify(kept) === JSON.stringify([row])) continue;
-    own.credential_pool[provider] = [row];
+    pool[provider] = [row];
     changed.push(provider);
   }
 
@@ -330,9 +341,9 @@ export function startSubscriptionSync(intervalMs = 5 * 60_000): NodeJS.Timeout {
   const run = async () => {
     const subs = primarySubscriptions();
     const envVars = subscriptionEnv(subs);
-    let bots: any[] = [];
+    let bots: { id: string }[] = [];
     try {
-      bots = db.prepare("SELECT id FROM bots WHERE engine='managed'").all() as any[];
+      bots = db.prepare("SELECT id FROM bots WHERE engine='managed'").all() as { id: string }[];
     } catch {
       return;
     }
@@ -353,10 +364,10 @@ export function startSubscriptionSync(intervalMs = 5 * 60_000): NodeJS.Timeout {
         }
         if (!changed) continue;
         writePrivate(envFile, dotenvText(vars));
-        await restartEngine(b.id).catch((e: any) => console.warn(`[engine] restart after subscription sync ${b.id} failed: ${e?.message ?? e}`));
+        await restartEngine(b.id).catch((e) => console.warn(`[engine] restart after subscription sync ${b.id} failed: ${messageOf(e)}`));
         console.log(`[engine] subscription sync ${b.id}: restarted with a refreshed token`);
-      } catch (e: any) {
-        console.warn(`[engine] subscription sync ${b.id} failed: ${e?.message ?? e}`);
+      } catch (e) {
+        console.warn(`[engine] subscription sync ${b.id} failed: ${messageOf(e)}`);
       }
     }
   };
@@ -389,10 +400,11 @@ export function adaptLocalEndpoints<T>(cfg: T): T {
     typeof value === 'string'
       ? value.replace(/\/\/(?:127\.0\.0\.1|localhost|\[::1\])(?=[:/]|$)/i, '//host.docker.internal')
       : value;
+  const holder = cfg as Record<string, unknown>;
   for (const key of ['providers', 'custom_providers'] as const) {
-    const block = (cfg as any)[key];
+    const block = holder[key];
     if (!block || typeof block !== 'object') continue;
-    for (const entry of Object.values<any>(block)) {
+    for (const entry of Object.values(block as Record<string, Record<string, unknown>>)) {
       if (!entry || typeof entry !== 'object') continue;
       if ('base_url' in entry) entry.base_url = fix(entry.base_url);
       if ('api_base' in entry) entry.api_base = fix(entry.api_base);
@@ -423,16 +435,16 @@ async function writeHome(botId: string): Promise<{ home: string; key: string; di
       cdp = await providerFor(botId)
         .cdpUrl(botId, s.screen_id)
         .catch(() => `http://127.0.0.1:${screenPorts(s.display_index).cdpPort}`);
-    } catch (e: any) {
-      console.warn(`[engine] no display for ${b.name} yet: ${e?.message ?? e}`);
+    } catch (e) {
+      console.warn(`[engine] no display for ${b.name} yet: ${messageOf(e)}`);
     }
   } else if (env.localBox) {
     try {
       const s = await screenFor(b.user_id, botId);
       display = displayFor(s.screenId);
       cdp = cdpUrlFor(botId, s.screenId);
-    } catch (e: any) {
-      console.warn(`[engine] no screen for ${b.name} yet: ${e?.message ?? e}`);
+    } catch (e) {
+      console.warn(`[engine] no screen for ${b.name} yet: ${messageOf(e)}`);
     }
   }
 
@@ -441,20 +453,18 @@ async function writeHome(botId: string): Promise<{ home: string; key: string; di
 
   const cfgFile = path.join(home, 'config.yaml');
   const fresh = !fs.existsSync(cfgFile);
-  const cfg = fresh ? {} : readYaml(cfgFile);
+  const cfg: HermesConfig = fresh ? {} : readYaml(cfgFile);
   if (fresh) {
     const primary = readYaml(path.join(env.hermesHome, 'config.yaml'));
     for (const k of SHARED_CONFIG) if (primary[k] !== undefined) cfg[k] = primary[k];
     cfg.agent = { reasoning_effort: 'medium' };
   }
-  // A model endpoint on the host's loopback (LM Studio, ollama, a custom server) has to be addressed
-  // through the host when this server runs in a container.
   adaptLocalEndpoints(cfg);
-  cfg.platform_toolsets = { ...(cfg.platform_toolsets ?? {}), api_server: ['hermes-api-server', ...(display ? ['computer_use'] : [])] };
-  cfg.terminal = { ...(cfg.terminal ?? {}), cwd };
-  if (cdp) cfg.browser = { ...(cfg.browser ?? {}), cdp_url: cdp };
+  cfg.platform_toolsets = { ...asBlock(cfg.platform_toolsets), api_server: ['hermes-api-server', ...(display ? ['computer_use'] : [])] };
+  cfg.terminal = { ...asBlock(cfg.terminal), cwd };
+  if (cdp) cfg.browser = { ...asBlock(cfg.browser), cdp_url: cdp };
   cfg.mcp_servers = {
-    ...(cfg.mcp_servers ?? {}),
+    ...asBlock(cfg.mcp_servers),
     ...extraMcpServers(),
     hq: { url: managedMcpUrl(botId), headers: { Authorization: `Bearer ${mcpToken(botId)}` }, timeout: 1800, connect_timeout: 30 },
   };
@@ -492,8 +502,6 @@ async function writeHome(botId: string): Promise<{ home: string; key: string; di
 
   return { home, key, display };
 }
-
-// ---------- keeping managed credentials in line with the primary ----------
 
 /**
  * Bring a managed bot's .env and config.yaml up to date with the primary agent's credentials.
@@ -576,10 +584,10 @@ export function syncManagedAuth(botId: string): string[] {
   // Only a stored word is repaired: no model stored at all is a legitimate "use the engine default".
   if (storedModel && storedModel.toLowerCase() === 'default') {
     const block = cfg.model;
-    const name = typeof block === 'string' ? block : (block as any)?.default;
+    const name = typeof block === 'string' ? block : asBlock(block).default;
     if (typeof name === 'string' && name.trim() && !isPlaceholderModel(name)) {
       db.prepare('UPDATE bots SET model=?, updated_at=? WHERE id=?').run(name.trim(), Date.now(), botId);
-      const provider = (block as any)?.provider;
+      const provider = asBlock(block).provider;
       if (typeof provider === 'string' && provider.trim()) db.prepare('UPDATE bots SET provider=? WHERE id=?').run(provider.trim(), botId);
       synced.push('bots.model');
     }
@@ -621,7 +629,7 @@ function warnNoPrimaryCredentials() {
 
 /** The same pass over every managed bot. Returns how many bots had something brought in line. */
 export async function syncAllManagedAuth({ restart = false }: { restart?: boolean } = {}): Promise<number> {
-  const bots = db.prepare("SELECT id FROM bots WHERE engine='managed'").all() as any[];
+  const bots = db.prepare("SELECT id FROM bots WHERE engine='managed'").all() as { id: string }[];
   let synced = 0;
   for (const b of bots) {
     try {
@@ -631,21 +639,19 @@ export async function syncAllManagedAuth({ restart = false }: { restart?: boolea
       // A gateway reads its .env when it starts, so a key that arrived afterwards only takes effect
       // on the next start. Restarting is opt-in: at boot the gateway is being started right now.
       if (restart) {
-        void restartEngine(b.id).catch((e: any) => console.warn(`[engine] restart after auth sync ${b.id} failed: ${e?.message ?? e}`));
+        void restartEngine(b.id).catch((e) => console.warn(`[engine] restart after auth sync ${b.id} failed: ${messageOf(e)}`));
       }
-    } catch (e: any) {
-      console.warn(`[engine] auth sync ${b.id} failed: ${e?.message ?? e}`);
+    } catch (e) {
+      console.warn(`[engine] auth sync ${b.id} failed: ${messageOf(e)}`);
     }
   }
   return synced;
 }
 
-// ---------- a managed bot's gateway ----------
-
-async function healthy(url: string, timeoutMs = 2500): Promise<any | null> {
+async function healthy(url: string, timeoutMs = 2500): Promise<Record<string, unknown> | null> {
   try {
     const r = await fetch(`${url}/health`, { signal: AbortSignal.timeout(timeoutMs) });
-    return r.ok ? await r.json() : null;
+    return r.ok ? ((await r.json()) as Record<string, unknown>) : null;
   } catch { return null; }
 }
 
@@ -777,14 +783,14 @@ async function startGateway(botId: string, attempt = 0): Promise<void> {
   });
   fs.closeSync(log);
   let exited: string | null = null;
-  child.once('error', (e: any) => {
+  child.once('error', (e: NodeJS.ErrnoException) => {
     exited =
       e?.code === 'ENOENT'
         // Resolved, then vanished between the check and the spawn (image swap, uninstall). Rare, but
         // say what to fix rather than echoing "ENOENT".
         ? `could not run ${bin}: the file is no longer executable or has gone. ` +
           `Set HERMES_BIN to the hermes executable (currently ${env.hermesBinConfigured || `"hermes" on PATH`}).`
-        : `could not run ${bin}: ${e?.message ?? e}`;
+        : `could not run ${bin}: ${messageOf(e)}`;
   });
   child.once('exit', (code) => { exited = `the agent stopped while starting (exit ${code}). See ${path.join(home, 'logs', 'gateway.out.log')}`; });
   child.unref();
@@ -806,8 +812,8 @@ function ensureManaged(botId: string): Promise<void> {
   if (!p) {
     p = startGateway(botId)
       .then(() => { failures.delete(botId); })
-      .catch((e: any) => {
-        const msg = String(e?.message ?? e);
+      .catch((e) => {
+        const msg = messageOf(e);
         failures.set(botId, msg);
         console.warn(`[engine] ${botId}: ${msg}`);
         throw e;
@@ -855,8 +861,8 @@ export function ownScreenOn(botId: string): boolean {
     if (!Number.isInteger(pid) || pid <= 1 || !fs.existsSync(path.join(dir, 'env'))) return false;
     process.kill(pid, 0);
     return true;
-  } catch (e: any) {
-    return e?.code === 'EPERM';
+  } catch (e) {
+    return (e as NodeJS.ErrnoException)?.code === 'EPERM';
   }
 }
 
@@ -867,7 +873,7 @@ export function stopOwnScreen(botId: string): Promise<void> {
   let bin: string;
   try {
     bin = hermesBin(defaultHermesLookup({ configured: env.hermesBinConfigured }));
-  } catch (e: any) {
+  } catch (e) {
     return Promise.reject(e);
   }
   return new Promise((resolve, reject) => {
@@ -904,21 +910,21 @@ export async function removeEngine(botId: string): Promise<void> {
   if (path.resolve(home).startsWith(path.resolve(env.enginesDir) + path.sep)) fs.rmSync(home, { recursive: true, force: true });
 }
 
-/** On server start: give older bots an engine, then bring the managed gateways up. */
 /** Inject the hq MCP server entry into the primary Hermes config so it can reach the app's tools. */
 function syncPrimaryHqConfig(botId: string) {
   const cfgFile = path.join(env.hermesHome, 'config.yaml');
   if (!fs.existsSync(cfgFile)) return;
   const cfg = readYaml(cfgFile);
   const hqUrl = `${env.mcpBaseUrl}/mcp/${botId}`;
-  if (cfg.mcp_servers?.hq?.url === hqUrl) return; // already up-to-date
+  if (asBlock(asBlock(cfg.mcp_servers).hq).url === hqUrl) return; // already up-to-date
   cfg.mcp_servers = {
-    ...(cfg.mcp_servers ?? {}),
+    ...asBlock(cfg.mcp_servers),
     hq: { url: hqUrl, headers: { Authorization: `Bearer ${mcpToken(botId)}` }, timeout: 1800, connect_timeout: 30 },
   };
   fs.writeFileSync(cfgFile, YAML.stringify(cfg), 'utf8');
 }
 
+/** On server start: give older bots an engine, then bring the managed gateways up. */
 export function initEngines() {
   fs.mkdirSync(env.enginesDir, { recursive: true });
   // Say where the CLI came from (or what is missing) once, at boot: the first place to look when a
@@ -926,36 +932,39 @@ export function initEngines() {
   const resolution = resolveHermesBin(defaultHermesLookup({ configured: env.hermesBinConfigured }));
   if (resolution.found) console.log(`[engine] hermes: ${resolution.path} (${resolution.via})`);
   else console.warn(`[engine] ${resolution.message}`);
-  const bots = db.prepare("SELECT id, is_primary FROM bots WHERE engine IS NULL AND COALESCE(kind,'agent') <> 'room' AND COALESCE(hidden,0)=0 ORDER BY is_primary DESC, created_at ASC").all() as any[];
+  const bots = db.prepare("SELECT id, is_primary FROM bots WHERE engine IS NULL AND COALESCE(kind,'agent') <> 'room' AND COALESCE(hidden,0)=0 ORDER BY is_primary DESC, created_at ASC").all() as { id: string }[];
   for (const b of bots) assignEngine(b.id);
-  const primaryBot = db.prepare("SELECT id FROM bots WHERE engine='primary' LIMIT 1").get() as any;
+  const primaryBot = db.prepare("SELECT id FROM bots WHERE engine='primary' LIMIT 1").get() as { id: string } | undefined;
   if (primaryBot) syncPrimaryHqConfig(primaryBot.id);
-  for (const b of db.prepare("SELECT id FROM bots WHERE engine='managed'").all() as any[]) provisionEngine(b.id);
+  for (const b of db.prepare("SELECT id FROM bots WHERE engine='managed'").all() as { id: string }[]) provisionEngine(b.id);
 }
-
-// ---------- what the settings panel shows ----------
 
 /** Providers worth showing even when not signed in. */
 const WELL_KNOWN = ['anthropic', 'openai-codex', 'xai-oauth', 'xai', 'openrouter', 'nous', 'gemini', 'openai-api'];
 
-const optionsCache = new Map<string, { at: number; data: any }>();
+/** `/api/model/options` body, as far as this server reads it. */
+type ModelOptions = Record<string, unknown>;
 
-async function modelOptions(botId: string, e: { url: string; key: string }): Promise<any | null> {
+const optionsCache = new Map<string, { at: number; data: ModelOptions | null }>();
+
+async function modelOptions(botId: string, e: { url: string; key: string }): Promise<ModelOptions | null> {
   const hit = optionsCache.get(botId);
   if (hit && Date.now() - hit.at < 15_000) return hit.data;
   try {
     const r = await fetch(`${e.url}/api/model/options`, { headers: e.key ? { Authorization: `Bearer ${e.key}` } : {}, signal: AbortSignal.timeout(8000) });
     if (!r.ok) return null;
-    const data = await r.json();
+    const data = (await r.json()) as ModelOptions;
     optionsCache.set(botId, { at: Date.now(), data });
     return data;
   } catch { return null; }
 }
 
-function toProviders(data: any): EngineProvider[] {
-  const list: any[] = Array.isArray(data?.providers) ? data.providers : [];
+function toProviders(data: unknown): EngineProvider[] {
+  const listed = asBlock(data).providers;
+  const list: unknown[] = Array.isArray(listed) ? listed : [];
   const out = list
-    .filter((p) => p?.slug && (p.authenticated || WELL_KNOWN.includes(p.slug)))
+    .map((p) => asBlock(p))
+    .filter((p) => Boolean(p.slug && (p.authenticated || WELL_KNOWN.includes(String(p.slug)))))
     .map((p): EngineProvider => {
       const featured = Array.isArray(p.featured_models) && p.featured_models.length ? p.featured_models : Array.isArray(p.models) ? p.models : [];
       return {
@@ -964,7 +973,7 @@ function toProviders(data: any): EngineProvider[] {
         // Hermes lists Anthropic as an API-key provider, yet it can also sign in to a Claude subscription. Offer that until a key is in place.
         kind: String(p.auth_type ?? '').includes('oauth') || (p.slug === 'anthropic' && !p.authenticated) ? 'subscription' : 'api_key',
         connected: !!p.authenticated,
-        models: featured.filter((m: unknown) => typeof m === 'string').slice(0, 12),
+        models: featured.filter((m): m is string => typeof m === 'string').slice(0, 12),
       };
     });
   const rank = (p: EngineProvider) => (p.connected ? 0 : 1) * 100 + (WELL_KNOWN.indexOf(p.id) < 0 ? 50 : WELL_KNOWN.indexOf(p.id));
@@ -1001,8 +1010,8 @@ export async function engineInfo(botId: string): Promise<EngineInfo> {
     ...base,
     status: 'ready',
     version: typeof health.version === 'string' && health.version !== 'unknown' ? health.version : null,
-    model: b.model ?? data?.model ?? null,
-    provider: b.provider ?? data?.provider ?? null,
+    model: b.model ?? (data?.model as string | undefined) ?? null,
+    provider: b.provider ?? (data?.provider as string | undefined) ?? null,
     providers: toProviders(data),
   };
 }

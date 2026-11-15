@@ -18,9 +18,7 @@ export const PREVIEW_INTERVAL_MS = 8_000;
  * painting this screen).
  */
 export function useScreenPreview(botId: string, { enabled = true }: { enabled?: boolean } = {}): {
-  /** A blob URL for the newest frame, or null before the first one arrived. */
   src: string | null;
-  /** When that frame was taken, for a caption. */
   at: number | null;
 } {
   const [src, setSrc] = useState<string | null>(null);
@@ -76,10 +74,7 @@ export function useScreenPreview(botId: string, { enabled = true }: { enabled?: 
   return { src, at };
 }
 
-/**
- * The frame itself: the newest still, or the bot's avatar while there is nothing to show.
- * Layout-neutral — the parent gives it its size.
- */
+/** The newest still, or the bot's avatar while there is nothing to show. The parent sizes it. */
 export function ScreenFrame({ src, bot, size = 30 }: { src: string | null; bot: Pick<Bot, 'avatarShape' | 'avatarColor' | 'name'>; size?: number }) {
   if (!src) {
     return (

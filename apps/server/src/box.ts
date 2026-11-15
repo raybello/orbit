@@ -50,7 +50,9 @@ function shellEnv(screenId?: string | null): NodeJS.ProcessEnv {
 function localBash(command: string, timeoutSec: number, screenId?: string | null): Promise<BashResult> {
   return new Promise((resolve) => {
     execFile('bash', ['-c', command], { timeout: timeoutSec * 1000, maxBuffer: 32 * 1024 * 1024, env: shellEnv(screenId) }, (err, stdout, stderr) => {
-      const code = err ? (typeof (err as any).code === 'number' ? (err as any).code : 1) : 0;
+      // `code` is the exit status when the process ran, or an errno string when it could not start.
+      const failure = err as { code?: unknown } | null;
+      const code = err ? (typeof failure?.code === 'number' ? failure.code : 1) : 0;
       resolve({ output: `${stdout ?? ''}${stderr ?? ''}`, exit_code: code });
     });
   });
@@ -79,7 +81,6 @@ function localBox(): Box {
   };
 }
 
-/** A box on one Orgo computer, through Orgo's API. */
 export function orgoBox(computerId: string): Box {
   const b: Box = {
     local: false,
@@ -140,5 +141,3 @@ export const box: Box = env.localBox
       },
       quote: q,
     };
-
-// The global box above satisfies the Box interface for desk.ts; managed bots get a box of their own.

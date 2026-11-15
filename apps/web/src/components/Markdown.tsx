@@ -9,7 +9,7 @@ const components: Components = {
   ),
 };
 
-/** Assistant message markdown: paragraphs, lists, blockquotes, inline code, code blocks (screen 02), tables. */
+/** Assistant markdown. No `rehype-raw`: HTML a bot writes stays text, never DOM. */
 export const Markdown = memo(function Markdown({ text }: { text: string }) {
   return (
     <div className="md">

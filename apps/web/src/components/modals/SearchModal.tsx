@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { BotAvatarFor } from '../../avatar/BotAvatar';
-import { displayName, useStore } from '../../store';
+import { useStore } from '../../store';
+import { displayName } from '../../domain/transcript-utils';
 import { Icon } from '../Icon';
 import { Modal } from './Modal';
 

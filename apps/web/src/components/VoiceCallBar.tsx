@@ -27,7 +27,6 @@ const fmt = (ms: number) => {
   return `${Math.floor(s / 60)}:${String(s % 60).padStart(2, '0')}`;
 };
 
-/** In-call bar shown above the composer while a voice call is connecting, live, or just failed. */
 export function VoiceCallBar() {
   const v = useVoice();
   const bot = useStore((s) => s.bots.find((b) => b.id === v.botId));

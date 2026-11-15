@@ -16,7 +16,6 @@ const run = promisify(execFile);
 const HOMES = path.join(env.computerHomeDir, 'homes');
 const WORKSPACES = path.join(env.computerHomeDir, 'workspaces');
 
-/** Where the bot's home lives on this machine. */
 export function homeDirFor(botId: string): string {
   if (!/^bot_[\w-]+$/.test(botId)) throw new Error(`bot id ${JSON.stringify(botId)} cannot be used as a folder name`);
   return path.join(HOMES, botId);
@@ -59,9 +58,10 @@ export async function checkpointWorkspace(botId: string): Promise<void> {
   try {
     await run('tar', args, { maxBuffer: 8 * 1024 * 1024 });
     await fs.rename(next, target);
-  } catch (e: any) {
+  } catch (e) {
     await fs.rm(next, { force: true }).catch(() => undefined);
-    throw new Error(`could not checkpoint ${botId}'s home: ${e?.stderr || e?.message || e}`);
+    const err = e as { stderr?: string; message?: string };
+    throw new Error(`could not checkpoint ${botId}'s home: ${err?.stderr || err?.message || e}`);
   }
 }
 
@@ -84,7 +84,6 @@ export async function restoreWorkspace(botId: string): Promise<boolean> {
   return true;
 }
 
-/** Delete the home folder and its checkpoint (the bot is gone, or its workspace is being wiped). */
 export async function wipeWorkspace(botId: string): Promise<void> {
   await fs.rm(homeDirFor(botId), { recursive: true, force: true });
   await fs.rm(checkpointPath(botId), { force: true });

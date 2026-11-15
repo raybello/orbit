@@ -7,7 +7,7 @@ import { db } from './db.js';
  */
 
 function hasColumn(table: string, col: string): boolean {
-  return (db.prepare(`PRAGMA table_info(${table})`).all() as any[]).some((c) => c.name === col);
+  return (db.prepare(`PRAGMA table_info(${table})`).all() as { name: string }[]).some((c) => c.name === col);
 }
 
 function addColumn(table: string, col: string, ddl: string) {

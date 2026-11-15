@@ -8,17 +8,12 @@ import { Icon } from './Icon';
 import { listStamp } from '../lib/time';
 import '../styles/chatlist.css';
 
-/** Row status, shared by agent rows and group rows. */
 function statusOf(botId: string, live: ReturnType<typeof useStore.getState>['live'], selectedBotId: string | null) {
   const l = live[botId];
   return { selected: botId === selectedBotId, running: !!l?.isRunning, awaiting: l?.awaiting?.reason ?? null };
 }
 
-/**
- * A group chat row: overlapping member avatars, the group name, a preview line and a
- * person-count badge. Shares the `.bot-row` markup/classes with agent rows so the list
- * reads as one thing.
- */
+/** A group chat row: overlapping avatars and a person count, sharing `.bot-row` with agent rows. */
 function GroupRow({ bot, members, selected, running, awaiting, onSelect }: {
   bot: Bot;
   /** null while loading or when the member fetch failed — falls back to the group's own avatar. */
@@ -60,10 +55,7 @@ function GroupRow({ bot, members, selected, running, awaiting, onSelect }: {
   );
 }
 
-/**
- * The Chat section body: every Bot and group chat in one recency-sorted list, with a
- * search filter and the two create actions. The primary Bot is pinned above the rest.
- */
+/** Every Bot and group chat in one recency-sorted list, primary Bot pinned above the rest. */
 export function ChatListView() {
   const bots = useStore((s) => s.bots);
   const live = useStore((s) => s.live);

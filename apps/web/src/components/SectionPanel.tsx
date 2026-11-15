@@ -3,7 +3,6 @@ import { ChatListView } from './ChatListView';
 import { TasksIsland } from './config/TasksView';
 import { Icon } from './Icon';
 
-/** Panel titles, one per rail section. */
 const TITLES: Record<NavSection, string> = {
   activity: 'Activity',
   chat: 'Chats',
@@ -20,10 +19,6 @@ interface Props {
   onToggleCollapsed: () => void;
 }
 
-/**
- * The body of a section. One branch per section — everything is a placeholder until that
- * section ships, so replacing a body means replacing exactly one branch below.
- */
 function SectionBody({ section }: { section: NavSection }) {
   switch (section) {
     case 'activity':

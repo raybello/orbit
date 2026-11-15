@@ -104,8 +104,8 @@ export function createIdleWatcher(deps: IdleDeps, opts: { idleMs: number; dryRun
       deps.log(`[idle] suspending computer for user=${c.userId}: no turns or viewers for ${mins} min`);
       try {
         await deps.suspend(c.userId);
-      } catch (e: any) {
-        deps.log(`[idle] suspend failed for user=${c.userId}: ${e?.message ?? e}`);
+      } catch (e) {
+        deps.log(`[idle] suspend failed for user=${c.userId}: ${(e as { message?: unknown } | null)?.message ?? e}`);
         busyAt.set(c.userId, deps.now()); // back off a full window before retrying
       } finally {
         inFlight.delete(c.userId);
@@ -116,8 +116,6 @@ export function createIdleWatcher(deps: IdleDeps, opts: { idleMs: number; dryRun
 
   return { decide, sweep };
 }
-
-// ---------- production wiring ----------
 
 /**
  * The computer is the primary agent's own machine and stays up for its other work (messages,

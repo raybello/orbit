@@ -69,7 +69,6 @@ function Shell() {
     return () => { stop(); window.removeEventListener('message', onMsg); };
   }, []);
 
-  // Global shortcuts: ⌘K search, ⌘B section panel, ⇧⌘, details, ⌘, app settings.
   useEffect(() => {
     const k = (e: KeyboardEvent) => {
       const mod = e.metaKey || e.ctrlKey;

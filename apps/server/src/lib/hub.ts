@@ -55,7 +55,6 @@ class Hub {
     return this.connections(userId) > 0;
   }
 
-  /** The sequence number of the last event emitted for this user. */
   seq(userId: string): number {
     return this.seqs.get(userId) ?? 0;
   }

@@ -155,8 +155,6 @@ class LocalCall {
     setV({ muted: on, listening: on ? false : useVoice.getState().listening });
   }
 
-  // ---------- server frames ----------
-
   private handle(ev: ServerFrame) {
     switch (ev.type) {
       case 'ready':
@@ -233,8 +231,6 @@ class LocalCall {
     copy[i] = { ...prev, text: text || prev.text, final: final || prev.final };
     setV({ captions: copy });
   }
-
-  // ---------- teardown ----------
 
   end(error?: string) {
     if (this.ended) return;

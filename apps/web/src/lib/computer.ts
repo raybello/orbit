@@ -23,7 +23,6 @@ export function screenSize(c: ComputerState | null, botId: string, primary = fal
   return s && ok(s.width) && ok(s.height) ? { width: s.width, height: s.height } : primary ? PRIMARY_SCREEN : DEFAULT_SCREEN;
 }
 
-/** True when every screen is taken and this bot does not have one. */
 export function screensFull(c: ComputerState | null, botId: string): boolean {
   if (!c?.maxScreens) return false;
   return c.screens.length >= c.maxScreens && !c.screens.some((s) => s.botId === botId);

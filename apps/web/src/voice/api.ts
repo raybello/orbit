@@ -27,7 +27,6 @@ async function post<T>(path: string, body: unknown): Promise<T> {
   return res.json() as Promise<T>;
 }
 
-// ---------- on-device voice (docs/voice-local-conventions.md) ----------
 // Types are duplicated from the contract on purpose: the web app must not hard-depend on the
 // parent-owned contracts file adding these in the same change.
 

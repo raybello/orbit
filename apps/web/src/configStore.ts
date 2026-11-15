@@ -23,7 +23,6 @@ interface ConfigUI {
   preset: Preset;
   /** A custom accent hex, when the person picked their own; null while a preset is in charge. */
   accentColor: string | null;
-  /** Which section the left icon rail has selected. */
   navSection: NavSection;
   /** The 280px section panel next to the rail; ⌘B collapses it to nothing. */
   sectionPanelCollapsed: boolean;
@@ -36,7 +35,6 @@ interface ConfigUI {
   setView(v: 'chat' | 'tasks'): void;
   setTheme(t: Theme): void;
   setPreset(p: Preset): void;
-  /** Write a custom accent ramp onto :root and remember the hex. */
   setAccentColor(hex: string | null): void;
   setNavSection(s: NavSection): void;
   toggleSectionPanel(): void;

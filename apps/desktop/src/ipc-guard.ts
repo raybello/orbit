@@ -33,12 +33,10 @@ function stripFragment(url: string): string {
   return hash === -1 ? url : url.slice(0, hash);
 }
 
-/** True when the page is the setup window's own file, ignoring a `#fragment`. */
 export function isSetupWindowPage(pageUrl: string, setupFileUrl: string): boolean {
   return stripFragment(pageUrl) === stripFragment(setupFileUrl);
 }
 
-/** True only for the setup window document or the local stack's own origin. */
 export function isTrustedPage(input: TrustedPageInput): boolean {
   const pageUrl = typeof input.pageUrl === 'string' ? input.pageUrl.trim() : '';
   if (!pageUrl) return false;

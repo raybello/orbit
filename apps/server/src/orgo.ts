@@ -8,7 +8,14 @@ export class OrgoError extends Error {
   }
 }
 
-async function call<T = any>(method: string, path: string, body?: unknown, opts: { timeoutMs?: number; headers?: Record<string, string> } = {}): Promise<T> {
+/** The error envelope Orgo puts in a failed response. */
+interface OrgoErrorBody {
+  error?: string | { message?: string; code?: string };
+  code?: string;
+  raw?: string;
+}
+
+async function call<T = unknown>(method: string, path: string, body?: unknown, opts: { timeoutMs?: number; headers?: Record<string, string> } = {}): Promise<T> {
   const ctrl = new AbortController();
   const timer = setTimeout(() => ctrl.abort(), opts.timeoutMs ?? 120_000);
   try {
@@ -23,12 +30,14 @@ async function call<T = any>(method: string, path: string, body?: unknown, opts:
       signal: ctrl.signal,
     });
     const text = await res.text();
-    let json: any = undefined;
+    let json: unknown = undefined;
     try { json = text ? JSON.parse(text) : undefined; } catch { json = { raw: text }; }
     if (!res.ok) {
-      const err = json?.error;
-      const msg = typeof err === 'string' ? err : err?.message ?? `${res.status} ${res.statusText}`;
-      throw new OrgoError(res.status, json?.code ?? err?.code, `Orgo ${method} ${path}: ${msg}`, json);
+      const payload = json as OrgoErrorBody | undefined;
+      const err = payload?.error;
+      const errObj = typeof err === 'object' ? err : undefined;
+      const msg = typeof err === 'string' ? err : errObj?.message ?? `${res.status} ${res.statusText}`;
+      throw new OrgoError(res.status, payload?.code ?? errObj?.code, `Orgo ${method} ${path}: ${msg}`, json);
     }
     return json as T;
   } finally {
@@ -51,12 +60,12 @@ export interface OrgoScreen { id: string; display: string; width: number; height
 const q = (screen?: string) => (screen && screen !== 'default' ? `?screen=${encodeURIComponent(screen)}` : '');
 
 export const orgo = {
-  workspaces: () => call<any>('GET', '/workspaces'),
+  workspaces: () => call<unknown>('GET', '/workspaces'),
 
   getComputer: (id: string) => call<OrgoComputer>('GET', `/computers/${id}`),
-  start: (id: string) => call<any>('POST', `/computers/${id}/start`, {}, { timeoutMs: 320_000 }),
-  resume: (id: string) => call<any>('POST', `/computers/${id}/resume`, {}, { timeoutMs: 200_000 }),
-  suspend: (id: string) => call<any>('POST', `/computers/${id}/suspend`, {}),
+  start: (id: string) => call<unknown>('POST', `/computers/${id}/start`, {}, { timeoutMs: 320_000 }),
+  resume: (id: string) => call<unknown>('POST', `/computers/${id}/resume`, {}, { timeoutMs: 200_000 }),
+  suspend: (id: string) => call<unknown>('POST', `/computers/${id}/suspend`, {}),
   vncPassword: (id: string) => call<{ password: string; desktop_api_token: string }>('GET', `/computers/${id}/vnc-password`),
 
   listScreens: (id: string) => call<{ screens: OrgoScreen[] } | OrgoScreen[]>('GET', `/computers/${id}/screens`).then((r) => (Array.isArray(r) ? r : r.screens ?? [])),

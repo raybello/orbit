@@ -1,13 +1,9 @@
 /**
  * Unread count on the dock (macOS), the taskbar (Windows) or the Unity launcher (Linux).
  *
- * The number comes from the server's own state: `GET /api/bots` returns each bot's
- * `unread`, and `GET /api/events` (SSE) tells us when anything changed. We re-read
- * `/api/bots` on change rather than trying to apply events incrementally, because the
- * server owns the count and a stale badge is worse than a slightly late one.
- *
- * Everything here is defensive by design: a badge is decoration, and must never be able
- * to take down the app or spam the network.
+ * The server owns the count: `GET /api/events` (SSE) only says *something* changed, and
+ * `/api/bots` is re-read, because a stale badge is worse than a slightly late one. A badge is
+ * decoration and must never take down the app or spam the network.
  */
 
 import zlib from 'node:zlib';
@@ -19,8 +15,7 @@ import { normalizeServerUrl } from './setup-config';
 const log = createLogger({ scope: 'badge' });
 
 export interface BadgeController {
-  /** Recompute now (used after the window finishes loading). */
-  refresh(): Promise<void>;
+    refresh(): Promise<void>;
   stop(): void;
   /** The last number applied, for tests and logs. */
   count(): number;
@@ -145,7 +140,6 @@ function crc32(buf: Buffer): number {
   return crc ^ 0xffffffff;
 }
 
-/** The default platform behaviour. */
 export function applyBadge(count: number, window?: BrowserWindow): void {
   const n = count > 0 ? count : 0;
   try {

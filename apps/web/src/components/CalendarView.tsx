@@ -59,10 +59,6 @@ const MODES: { value: Mode; label: string }[] = [
   { value: 'day', label: 'Day' },
 ];
 
-/**
- * Month / week / day calendar over GET /api/calendar. Every cell is a click target that opens
- * the create-event modal for that day; events open a small details popover.
- */
 export function CalendarView() {
   const rootRef = useRef<HTMLDivElement>(null);
   const bots = useStore((s) => s.bots);
@@ -100,7 +96,6 @@ export function CalendarView() {
     return (botId: string) => byId.get(botId) ?? 'gray';
   }, [bots]);
 
-  /** Events grouped by local day, each list already in start order. */
   const byDay = useMemo(() => {
     const map = new Map<string, CalendarEvent[]>();
     for (const ev of events) {

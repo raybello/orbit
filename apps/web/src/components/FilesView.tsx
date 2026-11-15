@@ -55,7 +55,6 @@ function writeView(view: ViewMode) {
   try { localStorage.setItem(LS_VIEW, view); } catch { /* storage can be unavailable */ }
 }
 
-/** Hand the file to the browser's downloader; `download` keeps the original filename. */
 function download(entry: FileEntry) {
   const a = document.createElement('a');
   a.href = api.fileUrl(entry);
@@ -159,7 +158,6 @@ function FileItem({
     </span>
   );
 
-  // List mode is a flat table row: clicking anywhere selects it, the name opens the file.
   if (mode === 'list') {
     return (
       <div
@@ -209,9 +207,8 @@ function FileItem({
 }
 
 /**
- * One browser for every file the bots own: library saves, message attachments and workspace output.
- * Filter by bot, type and name; previews stay in-app for images and text, everything else downloads.
- * When `botId` is provided the view is scoped to that bot (Files tab inside a bot chat).
+ * One browser for every file the bots own: library saves, attachments and workspace output.
+ * Scoped to one bot when `botId` is given (the Files tab inside a chat).
  */
 export function FilesView({ botId: scopedBotId }: { botId?: string } = {}) {
   const bots = useStore((s) => s.bots);
