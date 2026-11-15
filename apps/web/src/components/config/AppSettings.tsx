@@ -29,55 +29,119 @@ import { presets } from '@orbit/ui-tokens';
 import { useConfigUI, type AppSection, type Preset, type Theme } from '../../configStore';
 import { useStore } from '../../store';
 import { computerStatusText } from '../DetailsPanel';
-import { Icon } from '../Icon';
+import { Icon, type IconName } from '../Icon';
 import { ToolkitLogo } from '../ToolkitLogo';
 import { EngineAuthPanel } from './EngineAuthPanel';
 import { Glyph } from './glyphs';
 import { ConfirmButton } from './ui';
 
-const SECTIONS: { id: AppSection; label: string }[] = [
-  { id: 'general', label: 'General' },
-  { id: 'appearance', label: 'Appearance' },
-  { id: 'engine-auth', label: 'Engine Auth' },
-  { id: 'computer', label: 'Computer' },
-  { id: 'devices', label: 'Devices & permissions' },
-  { id: 'permissions', label: 'Permissions' },
-  { id: 'apps', label: 'Connected apps' },
-  { id: 'account', label: 'Account' },
+interface SectionMeta { id: AppSection; label: string; icon: IconName; sub?: string }
+
+const SECTION_META: Record<AppSection, SectionMeta> = {
+  general: { id: 'general', label: 'General', icon: 'sliders' },
+  appearance: { id: 'appearance', label: 'Appearance', icon: 'palette', sub: 'Light or dark, a colour theme, and the accent every control uses.' },
+  'engine-auth': { id: 'engine-auth', label: 'Engine Auth', icon: 'key', sub: 'Which provider and model runs each Bot, and whether it has the credentials to reach them.' },
+  computer: { id: 'computer', label: 'Computer', icon: 'monitor', sub: 'Your Bots share one cloud computer. Each Bot works on its own screen.' },
+  devices: { id: 'devices', label: 'Devices & permissions', icon: 'mic', sub: 'What Orbit may use on this computer, and which device it should use. Nothing is captured unless a call is open.' },
+  permissions: { id: 'permissions', label: 'Permissions', icon: 'shield', sub: 'Actions your Bots can take without asking first. Remove one and they’ll ask again next time.' },
+  apps: { id: 'apps', label: 'Connected apps', icon: 'apps', sub: 'Apps your Bots can use for you, like email, calendar and docs.' },
+  account: { id: 'account', label: 'Account', icon: 'person' },
+};
+
+/** The nav, grouped the way the sections relate; Account sits in the footer as the signed-in person. */
+const NAV_GROUPS: { label: string; items: AppSection[] }[] = [
+  { label: 'Settings', items: ['general', 'appearance'] },
+  { label: 'Bots', items: ['engine-auth', 'computer', 'permissions', 'apps'] },
+  { label: 'System', items: ['devices'] },
 ];
 
+const FOCUSABLE = 'a[href], button:not([disabled]), input:not([disabled]), select:not([disabled]), textarea:not([disabled]), [tabindex]:not([tabindex="-1"])';
+
+/** A dialog of the app's own (Connect apps, a confirm) is open on top, so keys belong to it. */
+const nestedModalOpen = () => !!document.querySelector('.modal-root');
+
+/**
+ * App settings: a modal dialog over whatever is on screen. Closes on Esc, a backdrop click or the
+ * close button; Tab stays inside it while it is open, and focus goes back where it was on close.
+ * Which section shows lives in the config store, so `openAppSettings('engine-auth')` deep-links.
+ */
 export function AppSettings() {
   const section = useConfigUI((s) => s.appSettings);
   const close = useConfigUI((s) => s.closeAppSettings);
   const open = useConfigUI((s) => s.openAppSettings);
+  const dialogRef = useRef<HTMLDivElement>(null);
+  const bodyRef = useRef<HTMLDivElement>(null);
+  const isOpen = !!section;
+
+  // Remember what had focus, move focus into the dialog, and hand it back on close.
   useEffect(() => {
-    const k = (e: KeyboardEvent) => { if (e.key === 'Escape' && !document.querySelector('.modal-root')) { e.preventDefault(); close(); } };
-    window.addEventListener('keydown', k);
-    return () => window.removeEventListener('keydown', k);
-  }, [close]);
+    if (!isOpen) return;
+    const prev = document.activeElement as HTMLElement | null;
+    const dialog = dialogRef.current;
+    const first = dialog?.querySelector<HTMLElement>('.settings-nav__item[aria-current="true"]') ?? dialog;
+    first?.focus({ preventScroll: true });
+    return () => { if (prev && document.contains(prev)) prev.focus?.({ preventScroll: true }); };
+  }, [isOpen]);
+
+  useEffect(() => {
+    if (!isOpen) return;
+    const onKey = (e: KeyboardEvent) => {
+      if (nestedModalOpen()) return;
+      if (e.key === 'Escape') { e.preventDefault(); close(); return; }
+      if (e.key !== 'Tab') return;
+      const dialog = dialogRef.current;
+      if (!dialog) return;
+      const items = [...dialog.querySelectorAll<HTMLElement>(FOCUSABLE)].filter((el) => !el.closest('[hidden]'));
+      if (items.length === 0) { e.preventDefault(); dialog.focus(); return; }
+      const firstEl = items[0];
+      const lastEl = items[items.length - 1];
+      const active = document.activeElement as HTMLElement | null;
+      const inside = !!active && dialog.contains(active);
+      if (e.shiftKey && (!inside || active === firstEl || active === dialog)) { e.preventDefault(); lastEl.focus(); }
+      else if (!e.shiftKey && (!inside || active === lastEl)) { e.preventDefault(); firstEl.focus(); }
+    };
+    window.addEventListener('keydown', onKey);
+    return () => window.removeEventListener('keydown', onKey);
+  }, [isOpen, close]);
+
+  // A new section starts at the top.
+  useEffect(() => { bodyRef.current?.scrollTo?.({ top: 0 }); }, [section]);
+
   if (!section) return null;
+  const meta = SECTION_META[section];
   return createPortal(
-    <div className="app-settings" role="dialog" aria-modal="true" aria-label="Settings">
-      <aside className="app-settings__nav">
-        <button type="button" className="app-settings__back" onClick={close}><Glyph name="arrow_left" size={14} /> Back to Bots</button>
-        <div className="app-settings__heading">Settings</div>
-        {SECTIONS.map((s) => (
-          <button key={s.id} type="button" className={`cfg-nav__item${section === s.id ? ' is-active' : ''}`} onClick={() => open(s.id)} aria-current={section === s.id || undefined}>
-            {s.label}
-          </button>
-        ))}
-      </aside>
-      <div className="app-settings__main">
-        <button type="button" className="app-settings__close icon-btn" onClick={close} aria-label="Close settings" title="Close (Esc)"><Icon name="close" opacity={0.8} /></button>
-        <div className="app-settings__page">
-          {section === 'general' && <GeneralSection />}
-          {section === 'appearance' && <AppearanceSection />}
-          {section === 'engine-auth' && <EngineAuthSection />}
-          {section === 'computer' && <ComputerSection />}
-          {section === 'devices' && <DevicesSection />}
-          {section === 'permissions' && <PermissionsSection />}
-          {section === 'apps' && <AppsSection />}
-          {section === 'account' && <AccountSection />}
+    <div className="settings-root">
+      <div className="settings-scrim" aria-hidden onMouseDown={close} />
+      <div ref={dialogRef} className="settings-dialog" role="dialog" aria-modal="true" aria-labelledby="settings-title" tabIndex={-1}>
+        <nav className="settings-nav" aria-label="Settings sections">
+          <div className="settings-nav__groups">
+            {NAV_GROUPS.map((g) => (
+              <div className="settings-nav__group" key={g.label} role="group" aria-label={g.label}>
+                <div className="settings-nav__label" aria-hidden>{g.label}</div>
+                {g.items.map((id) => <NavItem key={id} meta={SECTION_META[id]} active={section === id} onPick={open} />)}
+              </div>
+            ))}
+          </div>
+          <AccountNavItem active={section === 'account'} onPick={() => open('account')} />
+        </nav>
+        <div className="settings-main">
+          <header className="settings-header">
+            <h1 id="settings-title" className="settings-header__title">{meta.label}</h1>
+            <button type="button" className="settings-header__close" onClick={close} aria-label="Close settings" title="Close (Esc)"><Icon name="close" size={14} opacity={0.8} /></button>
+          </header>
+          <div ref={bodyRef} className="settings-body">
+            <div className="settings-page">
+              {meta.sub && <p className="settings-page__sub">{meta.sub}</p>}
+              {section === 'general' && <GeneralSection />}
+              {section === 'appearance' && <AppearanceSection />}
+              {section === 'engine-auth' && <EngineAuthSection />}
+              {section === 'computer' && <ComputerSection />}
+              {section === 'devices' && <DevicesSection />}
+              {section === 'permissions' && <PermissionsSection />}
+              {section === 'apps' && <AppsSection />}
+              {section === 'account' && <AccountSection />}
+            </div>
+          </div>
         </div>
       </div>
     </div>,
@@ -85,12 +149,41 @@ export function AppSettings() {
   );
 }
 
-function PageHead({ title, sub }: { title: string; sub?: string }) {
+function NavItem({ meta, active, onPick }: { meta: SectionMeta; active: boolean; onPick: (s: AppSection) => void }) {
   return (
-    <div className="app-settings__head">
-      <h1>{title}</h1>
-      {sub && <p>{sub}</p>}
-    </div>
+    <button
+      type="button"
+      className={`settings-nav__item${active ? ' is-active' : ''}`}
+      onClick={() => onPick(meta.id)}
+      aria-current={active || undefined}
+      title={meta.label}
+    >
+      <Icon name={meta.icon} size={16} className="settings-nav__icon" />
+      <span className="settings-nav__text">{meta.label}</span>
+    </button>
+  );
+}
+
+const initialsOf = (name?: string | null, email?: string | null) =>
+  (name ?? email ?? '?').trim().split(/\s+/).map((p) => p[0]).slice(0, 2).join('').toUpperCase();
+
+function AccountNavItem({ active, onPick }: { active: boolean; onPick: () => void }) {
+  const user = useStore((s) => s.user);
+  return (
+    <button
+      type="button"
+      className={`settings-nav__item settings-nav__account${active ? ' is-active' : ''}`}
+      onClick={onPick}
+      aria-current={active || undefined}
+      aria-label="Account"
+      title="Account"
+    >
+      <span className="account__initials settings-nav__avatar" aria-hidden>{initialsOf(user?.name, user?.email)}</span>
+      <span className="settings-nav__text settings-nav__who" aria-hidden>
+        <span className="settings-nav__who-name">{user?.name ?? 'Account'}</span>
+        <span className="settings-nav__who-sub">Account</span>
+      </span>
+    </button>
   );
 }
 
@@ -113,7 +206,6 @@ function GeneralSection() {
   const label = preset === 'custom' ? 'Custom accent' : presets.find((p) => p.id === preset)?.label ?? 'Orbit Purple';
   return (
     <>
-      <PageHead title="General" />
       <section className="cfg-section">
         <div className="cfg-card">
           <button type="button" className="cfg-row cfg-row--button" onClick={() => open('appearance')}>
@@ -141,7 +233,6 @@ function AppearanceSection() {
 
   return (
     <>
-      <PageHead title="Appearance" sub="Light or dark, a colour theme, and the accent every control uses." />
 
       <section className="cfg-section">
         <div className="cfg-section__label">Theme</div>
@@ -198,7 +289,6 @@ function AppearanceSection() {
 function EngineAuthSection() {
   return (
     <>
-      <PageHead title="Engine Auth" sub="Which provider and model runs each Bot, and whether it has the credentials to reach them." />
       <section className="cfg-section">
         <EngineAuthPanel />
       </section>
@@ -232,7 +322,6 @@ function ComputerSection() {
 
   return (
     <>
-      <PageHead title="Computer" sub="Your Bots share one cloud computer. Each Bot works on its own screen." />
       <section className="cfg-section">
         <div className="cfg-card">
           <div className="cfg-row">
@@ -557,10 +646,6 @@ export function DevicesSection() {
 
   return (
     <>
-      <PageHead
-        title="Devices & permissions"
-        sub="What Orbit may use on this computer, and which device it should use. Nothing is captured unless a call is open."
-      />
       <section className="cfg-section">
         <div className="device-grid">
           {DEVICE_KINDS.map((kind) => {
@@ -639,7 +724,6 @@ function PermissionsSection() {
   useEffect(() => { load(); }, [load]);
   return (
     <>
-      <PageHead title="Permissions" sub="Actions your Bots can take without asking first. Remove one and they’ll ask again next time." />
       <section className="cfg-section">
         <div className="cfg-card">
           {policies === null ? <div className="cfg-empty cfg-empty--flat">Loading…</div> : policies.length === 0 ? (
@@ -669,7 +753,6 @@ function AppsSection() {
   const openApps = () => { useConfigUI.getState().closeAppSettings(); useStore.getState().setModal('apps'); };
   return (
     <>
-      <PageHead title="Connected apps" sub="Apps your Bots can use for you, like email, calendar and docs." />
       <section className="cfg-section">
         <div className="cfg-card">
           <div className="cfg-row">
@@ -698,10 +781,9 @@ function AppsSection() {
 function AccountSection() {
   const user = useStore((s) => s.user);
   const [busy, setBusy] = useState(false);
-  const initials = (user?.name ?? user?.email ?? '?').trim().split(/\s+/).map((p) => p[0]).slice(0, 2).join('').toUpperCase();
+  const initials = initialsOf(user?.name, user?.email);
   return (
     <>
-      <PageHead title="Account" />
       <section className="cfg-section">
         <div className="cfg-card">
           <div className="cfg-row">
