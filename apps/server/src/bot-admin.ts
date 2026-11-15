@@ -151,6 +151,10 @@ export async function deleteBotFor(userId: string, botId: string): Promise<{ pro
   const b = ownedBot(userId, botId);
   if (!b) throw new BotAdminError(404, 'No such bot.');
   if (b.kind === 'room') throw new BotAdminError(400, `"${b.name}" is a group chat, not a Bot.`);
+  // A team with no Bots has no primary, and nothing would ever make one again. Refuse the last one;
+  // the person can create its replacement first.
+  const agents = botRowsForUser(userId).filter((r) => r.kind !== 'room' && !r.hidden);
+  if (agents.length <= 1) throw new BotAdminError(400, 'A team needs at least one Bot. Create another Bot before removing this one.');
 
   interrupt(b.id);
   for (const r of listRoutines(b.id)) {

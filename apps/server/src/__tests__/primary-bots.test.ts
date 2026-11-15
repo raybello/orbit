@@ -15,6 +15,7 @@ const { db } = await import('../db.js');
 const { now } = await import('../db.js');
 const { toolMap } = await import('../agent/tools.js');
 const { planPrimaryChange, MAX_PRIMARY_BOTS } = await import('../domain/primary-bots.js');
+const { deleteBotFor } = await import('../bot-admin.js');
 
 const app = createApp();
 const botCount = () => (db.prepare('SELECT COUNT(*) n FROM bots').get() as { n: number }).n;
@@ -173,4 +174,12 @@ test('a group chat cannot be made primary', async () => {
   assert.equal(res.status, 400);
   assert.match(((await res.json()) as Json).error, /group chat/i);
   assert.equal((db.prepare("SELECT is_primary FROM bots WHERE id='room_primary_test'").get() as { is_primary: number }).is_primary, 0);
+});
+
+test('the last Bot on a team cannot be deleted, so the team keeps a primary', async () => {
+  const user = 'usr_last_bot_test';
+  db.prepare('INSERT INTO users(id,email,name,created_at) VALUES (?,?,?,?)').run(user, 'last@example.test', 'Last', now());
+  db.prepare("INSERT INTO bots(id,user_id,name,kind,is_primary,created_at,updated_at) VALUES (?,?,?,'agent',1,?,?)").run('bot_only_one', user, 'Only', now(), now());
+  await assert.rejects(() => deleteBotFor(user, 'bot_only_one'), /at least one Bot/i);
+  assert.ok(db.prepare("SELECT 1 FROM bots WHERE id='bot_only_one'").get(), 'the only Bot is still there');
 });
