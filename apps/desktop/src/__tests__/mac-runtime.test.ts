@@ -373,7 +373,7 @@ describe('container runtime', () => {
     assert.equal(CONTAINER_RUNTIME_VERSION, '1.7.1');
   });
 
-  test('resolveContainerRuntime looks in the usual places and honours an override', () => {
+  test('resolveContainerRuntime looks in the usual places and honours an override', { skip: process.platform === 'win32' ? 'Apple container is macOS-only' : false }, () => {
     assert.equal(resolveContainerRuntime({ exists: () => false, homeDir: '/Users/x', env: {} }), null);
     assert.equal(
       resolveContainerRuntime({ exists: (file) => file === '/opt/homebrew/bin/container', homeDir: '/Users/x', env: {} }),

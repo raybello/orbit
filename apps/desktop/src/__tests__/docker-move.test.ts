@@ -17,6 +17,9 @@ import {
 } from '../docker-move';
 import type { ExecResult, RuntimeExec } from '../mac-runtime';
 
+/** POSIX permission bits do not exist on Windows; the 0600 checks only mean something elsewhere. */
+const posixModes = process.platform !== 'win32';
+
 const tmpRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'orbit-docker-move-'));
 
 after(() => {
@@ -39,8 +42,10 @@ describe('stack choice file', () => {
 
     writeStackChoice(userData, 'native');
     assert.equal(readStackChoice(userData), 'native');
-    const mode = fs.statSync(stackChoiceFile(userData)).mode & 0o777;
-    assert.equal(mode, 0o600, `expected 0600, got ${mode.toString(8)}`);
+    if (posixModes) {
+      const mode = fs.statSync(stackChoiceFile(userData)).mode & 0o777;
+      assert.equal(mode, 0o600, `expected 0600, got ${mode.toString(8)}`);
+    }
 
     writeStackChoice(userData, 'docker');
     assert.equal(readStackChoice(userData), 'docker');
@@ -146,11 +151,11 @@ describe('composeArgsFor', () => {
     assert.deepEqual(composeArgsFor('/u/stack', ['ps']), [
       'compose',
       '-f',
-      '/u/stack/docker-compose.yml',
+      path.join('/u/stack', 'docker-compose.yml'),
       '--project-directory',
       '/u/stack',
       '--env-file',
-      '/u/stack/.env',
+      path.join('/u/stack', '.env'),
       'ps',
     ]);
   });

@@ -18,6 +18,9 @@ import {
 import { nativePortsFile } from '../docker-move';
 import type { ServerManifest } from '../mac-runtime';
 
+/** POSIX permission bits do not exist on Windows; the 0600 checks only mean something elsewhere. */
+const posixModes = process.platform !== 'win32';
+
 const tmpRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'orbit-native-stack-'));
 
 after(() => {
@@ -130,7 +133,7 @@ describe('native ports file', () => {
 
     writeNativePorts(file, { api: 42_001, web: 42_000 });
     assert.deepEqual(readNativePorts(file), { api: 42_001, web: 42_000 });
-    assert.equal(fs.statSync(file).mode & 0o777, 0o600);
+    if (posixModes) assert.equal(fs.statSync(file).mode & 0o777, 0o600);
 
     for (const bad of ['{"api":1,"web":2}', '{"api":42001,"web":42001}', '{"api":"x","web":42000}', 'not json']) {
       fs.writeFileSync(file, bad);
@@ -344,7 +347,7 @@ function harness(options: HarnessOptions = {}) {
 }
 
 describe('NativeStackController', () => {
-  test('migrates, spawns the API, waits for health, and reports running', async () => {
+  test('migrates, spawns the API, waits for health, and reports running', { skip: process.platform === 'win32' ? 'the native stack is macOS-only' : false }, async () => {
     const h = harness();
 
     const state = await h.controller.start();
