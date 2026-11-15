@@ -26,7 +26,6 @@ function SectionBody({ section }: { section: NavSection }) {
     case 'chat':
       return (
         <div className="section-panel__chat">
-          <TasksIsland />
           <ChatListView />
         </div>
       );
@@ -58,7 +57,8 @@ export function SectionPanel({ section, collapsed, onToggleCollapsed }: Props) {
       aria-label={`${TITLES[section]} panel`}
     >
       <div className="section-panel__header">
-        {!collapsed && <h2 className="section-panel__title">{TITLES[section]}</h2>}
+        {!collapsed && section === 'chat' && <TasksIsland />}
+        {!collapsed && section !== 'chat' && <h2 className="section-panel__title">{TITLES[section]}</h2>}
         <button
           type="button"
           className="icon-btn icon-btn--plain section-panel__collapse"

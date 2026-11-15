@@ -38,6 +38,10 @@ services:
       # Everything the server writes lives on the volume, so `up --build` and image upgrades keep it.
       DB_PATH: /data/orbit.db
       ENGINES_DIR: /data/engines
+      # The Library (saved files, screenshots, images a Bot finds) is on the volume too. The
+      # default is inside the container's writable layer, which a --force-recreate throws away:
+      # every Library file and message attachment would 404 with nothing saying why.
+      BOT_DATA_DIR: /data/files
       # The on-device voice models (263 MB) live on the data volume, not in the container's
       # writable layer: a `--force-recreate` would otherwise throw them away and the next
       # /api/voice/local/status would silently re-download them.

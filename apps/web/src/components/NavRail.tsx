@@ -32,6 +32,7 @@ export function NavRail({ active, onChange, unreadCounts }: Props) {
             <button
               key={s.id}
               type="button"
+              data-section={s.id}
               className={`nav-rail__item${isActive ? ' is-active' : ''}`}
               onClick={() => onChange(s.id)}
               aria-label={count > 0 ? `${s.label}, ${count} unread` : s.label}

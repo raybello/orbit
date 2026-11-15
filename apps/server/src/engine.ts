@@ -910,16 +910,25 @@ export async function removeEngine(botId: string): Promise<void> {
   if (path.resolve(home).startsWith(path.resolve(env.enginesDir) + path.sep)) fs.rmSync(home, { recursive: true, force: true });
 }
 
-/** Inject the hq MCP server entry into the primary Hermes config so it can reach the app's tools. */
-function syncPrimaryHqConfig(botId: string) {
+/**
+ * Inject the hq MCP server entry into the primary Hermes config so it can reach the app's tools.
+ *
+ * The URL must be the one the *host* can dial (env.primaryMcpBaseUrl), not the container-facing
+ * MCP_BASE_URL: a config pointing at host.docker.internal:8787 leaves the primary agent without a
+ * single app tool, and it then tells the user it cannot message other Bots.
+ */
+export function syncPrimaryHqConfig(botId: string, { force = false } = {}) {
   const cfgFile = path.join(env.hermesHome, 'config.yaml');
   if (!fs.existsSync(cfgFile)) return;
   const cfg = readYaml(cfgFile);
-  const hqUrl = `${env.mcpBaseUrl}/mcp/${botId}`;
-  if (asBlock(asBlock(cfg.mcp_servers).hq).url === hqUrl) return; // already up-to-date
+  const hqUrl = `${env.primaryMcpBaseUrl}/mcp/${botId}`;
+  const current = asBlock(asBlock(cfg.mcp_servers).hq);
+  if (!force && current.url === hqUrl) return; // already up-to-date
+  const headers = asBlock(current.headers);
+  const keep = Object.fromEntries(Object.entries(headers).filter(([k]) => k.toLowerCase() !== 'authorization'));
   cfg.mcp_servers = {
     ...asBlock(cfg.mcp_servers),
-    hq: { url: hqUrl, headers: { Authorization: `Bearer ${mcpToken(botId)}` }, timeout: 1800, connect_timeout: 30 },
+    hq: { ...current, url: hqUrl, headers: { ...keep, Authorization: `Bearer ${mcpToken(botId)}` }, timeout: 1800, connect_timeout: 30 },
   };
   fs.writeFileSync(cfgFile, YAML.stringify(cfg), 'utf8');
 }

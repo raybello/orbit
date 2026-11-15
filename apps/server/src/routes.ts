@@ -15,9 +15,8 @@ import { hermesConnected } from './lib/hermes-probe.js';
 import { registerPushToken, removePushToken, removePushTokens } from './push.js';
 import { allLive, appendRow, clearConversation, emitBot, getBot, getRow, listBots, listRoutines, listRows, listTasks, toRoutine, updateRow, type RoutineRow, type TaskRow } from './store.js';
 import { enqueue, interrupt, resolveApproval } from './agent/loop.js';
-import { computerState, ensureComputer, forgetBotFiles, readyScreen, refreshComputer, releaseScreen, suspendComputer } from './computer.js';
-import { computerKindFor, providerFor, registerBotComputer, releaseBotComputer } from './computer-provider-registry.js';
-import { assignEngine, provisionEngine, removeEngine, syncPersona } from './engine.js';
+import { computerState, ensureComputer, refreshComputer, suspendComputer } from './computer.js';
+import { computerKindFor, providerFor } from './computer-provider-registry.js';
 import { deleteMemory, listMemories, memoryBot } from './engine-memory.js';
 import { orgo } from './orgo.js';
 import { catalog, composioEnabled, connectedToolkits, deleteConnection, disconnect, googleProfile, startConnect, startGoogleLogin, toolkitInfo } from './composio.js';
@@ -29,11 +28,11 @@ import { deleteEventTrigger } from './triggers.js';
 import { dispatchRoomMessage } from './agent/rooms.js';
 import { voiceApi } from './voice.js';
 import type { Toolkit } from './types.js';
-import { pickAvatar } from './core/avatar.js';
-import { beginProvisioning, type BotCreationInput, planBotCreation, TeamFullError } from './core/bot-service.js';
+import { TeamFullError } from './core/bot-service.js';
+import { BotAdminError, createBotFor, deleteBotFor, setBotPrimary, updateBotFor } from './bot-admin.js';
 import { decideCard, IllegalCardMoveError } from './core/card-service.js';
 import type { CardEvent } from './domain/card-workflow.js';
-import { botRow, botRowsForUser, insertBot, type BotRow } from './infra/bot-repository.js';
+import { botRow, botRowsForUser, type BotRow } from './infra/bot-repository.js';
 import {
   AppConnectSchema,
   ApprovalDecisionSchema,
@@ -65,49 +64,11 @@ const userFacing = (e: unknown, fallback: string): string =>
 /** Message off a caught value, which may be an Error or anything a dependency threw. */
 const messageOf = (e: unknown): string => String((e as { message?: unknown } | null)?.message ?? e);
 
-const agentCount = () => (db.prepare("SELECT COUNT(*) n FROM bots WHERE COALESCE(kind,'agent')<>'room' AND COALESCE(hidden,0)=0").get() as { n: number }).n;
-
-/**
- * Create a bot: plan the row (core/bot-service.ts decides the rules), insert it (infra/bot-repository.ts
- * owns the SQL), then do the wiring a new bot has always needed, in the order it has always happened:
- * assign its engine, start that engine when it is a managed one, register its computer, tell the roster.
- */
-function createBot(userId: string, input: Omit<BotCreationInput, 'userId'>) {
-  const plan = planBotCreation({ ...input, userId: asUserId(userId) }, {
-    // Capacity is about this computer's screens, not this account: the count is global.
-    canAddBot: () => agentCount() < env.maxBots,
-    maxBots: env.maxBots,
-    newBotId: () => newId('bot'),
-    pickAvatar: (id, shape, color) => pickAvatar(id, shape, color),
-  });
-  insertBot({
-    id: plan.botId,
-    userId,
-    name: plan.name,
-    label: plan.label,
-    description: plan.description,
-    instructions: plan.instructions,
-    avatarShape: plan.avatar.shape,
-    avatarColor: plan.avatar.color,
-    mode: plan.mode,
-    isPrimary: plan.isPrimary,
-    voiceProvider: plan.voiceProvider,
-    voiceModel: plan.voiceModel,
-    createdAt: now(),
-    updatedAt: now(),
-  });
-  // The first bot is the agent that already runs on the computer; the others get an engine of their own.
-  // Nothing pins a model here: a managed Bot's home is written from the primary agent's config, so it
-  // runs the primary's model with the primary's credentials. Pinning a default would both ignore that
-  // model and ask for a provider key the bot may not have.
-  const engineKind = assignEngine(plan.botId);
-  const state = beginProvisioning(plan.state, engineKind);
-  if (state.status === 'provisioning' && engineKind === 'managed') provisionEngine(plan.botId);
-  // Where this bot's desktop lives is fixed now (a container for managed bots, the shared computer
-  // for the first one); see computer-provider-registry.ts.
-  registerBotComputer(plan.botId);
-  hub.emit(userId, { type: 'roster' });
-  return getBot(plan.botId)!;
+/** An admin operation's own status when it raised one, otherwise rethrow for the app's 500 handler. */
+function adminFailure(c: { json: (body: { error: string }, status: 400 | 404 | 409) => Response }, e: unknown) {
+  if (e instanceof BotAdminError) return c.json({ error: e.message }, e.status);
+  if (e instanceof TeamFullError) return c.json({ error: e.message }, 409);
+  throw e;
 }
 
 function findOrCreateUser(email: string, name?: string, preferId?: string) {
@@ -116,7 +77,7 @@ function findOrCreateUser(email: string, name?: string, preferId?: string) {
   if (env.allowedEmails.length && !env.allowedEmails.includes(email.toLowerCase())) throw new UserError('This account is not allowed to sign in here.');
   const id = preferId ?? newId('usr');
   db.prepare('INSERT INTO users(id,email,name,created_at) VALUES (?,?,?,?)').run(id, email, name ?? email.split('@')[0], now());
-  createBot(id, { name: env.primaryBotName, label: env.primaryBotLabel, description: 'Your main point of contact. Checks in proactively and coordinates work with your other Bots.', avatarShape: 'blob', avatarColor: 'black', isPrimary: true });
+  createBotFor(id, { name: env.primaryBotName, label: env.primaryBotLabel, description: 'Your main point of contact. Checks in proactively and coordinates work with your other Bots.', avatarShape: 'blob', avatarColor: 'black', isPrimary: true });
   return { id, isNew: true };
 }
 
@@ -323,68 +284,51 @@ api.get('/bots', (c) => c.json({ bots: listBots(c.get('user').id), live: allLive
 api.post('/bots', async (c) => {
   const body = await requireBody(c, CreateBotSchema);
   try {
-    return c.json({ bot: createBot(c.get('user').id, body) });
+    return c.json({ bot: createBotFor(c.get('user').id, body) });
   } catch (e) {
-    if (e instanceof TeamFullError) return c.json({ error: e.message }, 409);
-    throw e;
+    return adminFailure(c, e);
   }
 });
 
 api.patch('/bots/:id', async (c) => {
-  const b = ownBot(c.get('user').id, c.req.param('id'));
-  if (!b) return c.json({ error: 'not found' }, 404);
   const p = await requireBody(c, PatchBotSchema);
-  const cols: Record<string, string> = { name: 'name', label: 'label', description: 'description', instructions: 'instructions', avatarShape: 'avatar_shape', avatarColor: 'avatar_color', mode: 'mode', effort: 'effort', pinned: 'pinned', voice: 'voice', voiceSpeed: 'voice_speed', voiceLanguage: 'voice_language', voiceProvider: 'voice_provider', voiceModel: 'voice_model' };
-  for (const [k, col] of Object.entries(cols)) {
-    const value = p[k];
-    if (value !== undefined) db.prepare(`UPDATE bots SET ${col}=?, updated_at=? WHERE id=?`).run(typeof value === 'boolean' ? (value ? 1 : 0) : value, now(), b.id);
+  try {
+    return c.json({ bot: updateBotFor(c.get('user').id, c.req.param('id'), p) });
+  } catch (e) {
+    return adminFailure(c, e);
   }
-  if (b.kind !== 'room') {
-    if (['name', 'label', 'description'].some((k) => p[k] !== undefined)) syncPersona(b.id);
-    // Its desktop carries its name and colour: dress the screen again, if it has one.
-    const looks = ['name', 'label', 'avatarShape', 'avatarColor'].some((k) => p[k] !== undefined);
-    if (looks) {
-      const provider = providerFor(b.id);
-      const hasComputer = computerKindFor(b.id) === 'docker'
-        ? Boolean(db.prepare('SELECT 1 FROM computer_screens WHERE bot_id=?').get(b.id))
-        : Boolean(db.prepare('SELECT 1 FROM screens WHERE bot_id=?').get(b.id));
-      if (hasComputer) provider.readyScreen(b.user_id, b.id, { redress: true }).catch((e) => console.warn('[computer] redress failed', e?.message ?? e));
-    }
-  }
-  emitBot(b.id);
-  return c.json({ bot: getBot(b.id) });
 });
 
 api.delete('/bots/:id', async (c) => {
-  const b = ownBot(c.get('user').id, c.req.param('id'));
-  if (!b) return c.json({ error: 'not found' }, 404);
-  interrupt(b.id);
-  for (const r of listRoutines(b.id)) {
-    unscheduleRoutine(r.id);
-    await deleteEventTrigger(r.id).catch(() => {});
+  try {
+    const { promoted } = await deleteBotFor(c.get('user').id, c.req.param('id'));
+    return c.json({ ok: true, promoted });
+  } catch (e) {
+    return adminFailure(c, e);
   }
-  if (b.kind !== 'room') {
-    await removeEngine(b.id).catch((e) => console.warn('[engine] remove failed', e?.message ?? e));
-    if (computerKindFor(b.id) === 'docker') {
-      await releaseBotComputer(b.id).catch((e) => console.warn('[computer] container cleanup failed', e?.message ?? e));
-    } else {
-      await releaseScreen(b.id).catch((e) => console.warn('[computer] release failed', e?.message ?? e));
-      await forgetBotFiles(b.id).catch((e) => console.warn('[computer] cleanup failed', e?.message ?? e));
-    }
-  }
-  db.prepare('DELETE FROM screens WHERE bot_id=?').run(b.id);
-  db.prepare('DELETE FROM bots WHERE id=?').run(b.id);
-  hub.emit(c.get('user').id, { type: 'roster' });
-  return c.json({ ok: true });
 });
 
+/**
+ * Make a Bot primary. Idempotent; a team allows MAX_PRIMARY_BOTS primaries at once, and this no
+ * longer demotes the others (that was the single-primary rule).
+ */
 api.post('/bots/:id/primary', (c) => {
-  const user = c.get('user');
-  const b = ownBot(user.id, c.req.param('id'));
-  if (!b) return c.json({ error: 'not found' }, 404);
-  db.prepare('UPDATE bots SET is_primary = (id = ?) WHERE user_id=?').run(b.id, user.id);
-  hub.emit(user.id, { type: 'roster' });
-  return c.json({ ok: true });
+  try {
+    const { primaries } = setBotPrimary(c.get('user').id, c.req.param('id'), 'promote');
+    return c.json({ ok: true, primaries });
+  } catch (e) {
+    return adminFailure(c, e);
+  }
+});
+
+/** Restore a primary Bot to default. Refused when it is the last one, so the team keeps a coordinator. */
+api.post('/bots/:id/primary/restore', (c) => {
+  try {
+    const { primaries } = setBotPrimary(c.get('user').id, c.req.param('id'), 'restore');
+    return c.json({ ok: true, primaries });
+  } catch (e) {
+    return adminFailure(c, e);
+  }
 });
 
 api.post('/bots/:id/read', (c) => {

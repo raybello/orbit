@@ -28,6 +28,12 @@ describe('NavRail', () => {
     }
   });
 
+  it('tags each item with its section so the rail can carry a per-section pastel accent', () => {
+    const { container } = render(<NavRail active="chat" onChange={() => {}} />);
+    const items = Array.from(container.querySelectorAll<HTMLElement>('.nav-rail__item'));
+    expect(items.map((el) => el.dataset.section)).toEqual(ORDER.map(([id]) => id));
+  });
+
   it('calls onChange with the section that was clicked', () => {
     const onChange = vi.fn();
     render(<NavRail active="chat" onChange={onChange} />);

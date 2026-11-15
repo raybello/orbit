@@ -8,7 +8,7 @@ import { computerStatusText, screenSize, screensFull } from '../lib/computer';
 import { configApi } from '../lib/configApi';
 import { useSelectedBot, useStore } from '../store';
 import { Icon } from './Icon';
-import { useScreenPreview } from './ScreenPreview';
+import { useScreenPreview, ScreenLayers } from './ScreenPreview';
 
 export type ScreenMode = 'watch' | 'control';
 type Conn = 'idle' | 'connecting' | 'connected' | 'disconnected' | 'error';
@@ -63,9 +63,10 @@ export function ComputerScreen({ bot, variant, initialMode = 'watch', hint, paus
   const wantLive = running && !paused && (variant === 'stage' || visible) && (opened || hasScreen);
   // The panel shows a still of the screen until the stream takes over, so the details panel is never
   // an empty frame for a bot that has a computer. A screenshot is cheap; a stream holds a screen.
-  const { src: still } = useScreenPreview(bot.id, {
+  const preview = useScreenPreview(bot.id, {
     enabled: variant === 'panel' && !paused && conn !== 'connected',
   });
+  const still = preview.src;
 
   const wake = useCallback(() => {
     setWaking(true); setWakeError(null);
@@ -191,9 +192,11 @@ export function ComputerScreen({ bot, variant, initialMode = 'watch', hint, paus
       style={style}
     >
       <div className="screen__body">
-        <div className="screen__view" style={{ aspectRatio: `${width} / ${height}` }}>
+        <div className="screen__view" ref={preview.ref} style={{ aspectRatio: `${width} / ${height}` }}>
           {variant === 'panel' && still && (phase === 'preview' || phase === 'switching') && (
-            <div className="screen__shot" style={{ backgroundImage: `url("${still}")` }} aria-hidden />
+            <div className="screen__shot is-layered" aria-hidden>
+              <ScreenLayers layers={preview.layers} active={preview.active} />
+            </div>
           )}
           <div ref={canvasRef} className="screen__canvas" />
           {/* noVNC swallows clicks on its canvas, so the way into the large view is a button laid over it. */}

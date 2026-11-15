@@ -6,6 +6,7 @@ import { configApi, type BotSettingsBundle } from '../../lib/configApi';
 import { useConfigUI, useVersion, type BotSettingsTab } from '../../configStore';
 import { useStore } from '../../store';
 import { Icon } from '../Icon';
+import { PrimaryStar } from '../PrimaryStar';
 import { Modal } from '../modals/Modal';
 import { Glyph } from './glyphs';
 import { ConfirmButton, Field, Segmented, Switch, nextRunLabel, shortDate } from './ui';
@@ -58,7 +59,10 @@ export function BotSettingsModal() {
     <Modal onClose={onClose} className="bot-settings" label={`${bot.name} settings`}>
       <div className="modal__header">
         <div className="bot-settings__title">
-          <BotAvatarFor bot={bot} size={24} />
+          <span className="bot-settings__avatar">
+            <BotAvatarFor bot={bot} size={24} />
+            {bot.isPrimary && <PrimaryStar size={11} />}
+          </span>
           <span className="modal__title">{bot.name}</span>
         </div>
         <button type="button" className="modal__close" onClick={onClose} aria-label="Close"><Icon name="close" size={14} opacity={0.68} /></button>
@@ -95,6 +99,7 @@ function openEngineCredentials() {
 }
 
 function GeneralTab({ bot, onClose }: { bot: Bot; onClose: () => void }) {
+  const primaryCount = useStore((s) => s.bots.filter((b) => b.isPrimary).length);
   const [draft, setDraft] = useState<Draft>(() => draftOf(bot));
   const [picker, setPicker] = useState(false);
   const [saving, setSaving] = useState(false);
@@ -185,8 +190,35 @@ function GeneralTab({ bot, onClose }: { bot: Bot; onClose: () => void }) {
       </section>
 
       <section className="cfg-section">
-        <div className="cfg-section__label">Conversation</div>
+        <div className="cfg-section__label">Team</div>
         <div className="cfg-card">
+          <div className="cfg-row">
+            <div className="cfg-row__text">
+              <div className="cfg-row__title">{bot.isPrimary ? 'Primary Bot' : 'Make primary'}</div>
+              <div className="cfg-row__sub">
+                {bot.isPrimary
+                  ? 'Carries the star, and can add, edit or remove the other Bots. Every team keeps at least one primary.'
+                  : 'Primary Bots carry a star and can change the team. A team allows three at a time.'}
+              </div>
+            </div>
+            <button
+              type="button"
+              className="cfg-btn cfg-btn--secondary"
+              disabled={bot.isPrimary ? primaryCount <= 1 : primaryCount >= 3}
+              title={bot.isPrimary
+                ? (primaryCount <= 1 ? 'The last primary cannot be restored to default.' : 'Back to a normal Bot')
+                : (primaryCount >= 3 ? 'Three Bots are already primary.' : 'Give this Bot the star')}
+              onClick={async () => {
+                try {
+                  await configApi.setPrimary(bot.id, !bot.isPrimary);
+                  await useStore.getState().loadBots();
+                  flash(bot.isPrimary ? `${bot.name} is no longer primary` : `${bot.name} is now primary`);
+                } catch (e) { flash((e as Error).message, 'error'); }
+              }}
+            >
+              {bot.isPrimary ? 'Restore to default' : 'Make primary'}
+            </button>
+          </div>
           <div className="cfg-row">
             <div className="cfg-row__text">
               <div className="cfg-row__title">New conversation</div>
@@ -196,15 +228,6 @@ function GeneralTab({ bot, onClose }: { bot: Bot; onClose: () => void }) {
               Start new
             </ConfirmButton>
           </div>
-          {!bot.isPrimary && (
-            <div className="cfg-row">
-              <div className="cfg-row__text">
-                <div className="cfg-row__title">Make primary</div>
-                <div className="cfg-row__sub">Your go-to Bot. It reaches out first and keeps the others on track.</div>
-              </div>
-              <button type="button" className="cfg-btn cfg-btn--secondary" onClick={() => configApi.makePrimary(bot.id).then(() => flash(`${bot.name} is now your primary Bot`)).catch((e) => flash(e.message, 'error'))}>Make primary</button>
-            </div>
-          )}
         </div>
       </section>
 
@@ -214,10 +237,9 @@ function GeneralTab({ bot, onClose }: { bot: Bot; onClose: () => void }) {
           <div className="cfg-row">
             <div className="cfg-row__text">
               <div className="cfg-row__title">Delete {bot.name}</div>
-              <div className="cfg-row__sub">{bot.isPrimary ? 'Make another Bot primary first.' : 'Removes its chat, memories, skills and routines for good.'}</div>
+              <div className="cfg-row__sub">{bot.isPrimary && primaryCount === 1 ? 'The oldest remaining Bot becomes primary, so the team keeps a coordinator.' : 'Removes its chat, memories, skills and routines for good.'}</div>
             </div>
             <ConfirmButton
-              disabled={bot.isPrimary}
               confirmLabel={`Delete ${bot.name}`}
               onConfirm={async () => {
                 try {

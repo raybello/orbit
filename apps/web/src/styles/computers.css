@@ -225,9 +225,33 @@
 }
 
 /* A still of the screen, or the bot's avatar while there is nothing to show yet. */
-.screen-shot { display: block; width: 100%; height: 100%; }
-.screen-shot.is-image { background-color: #000000; background-size: cover; background-position: center; background-repeat: no-repeat; }
+.screen-shot { position: relative; display: block; width: 100%; height: 100%; }
+/* No colour of its own: whatever is behind the still shows through, so a gap never reads as black. */
+.screen-shot.is-image { overflow: hidden; background-color: transparent; }
 .screen-shot.is-empty { display: grid; place-items: center; }
+
+/*
+ * The still is two decoded frames stacked in the same box: the newest on top, the frame it replaced
+ * underneath at full opacity. Neither fades and neither changes its src in place, so a refresh is a
+ * single paint — the browser never gets a chance to show an empty buffer between frames.
+ */
+.screen-shot__layer {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  object-position: center;
+  opacity: 1;
+  transition: none;
+  pointer-events: none;
+  z-index: 0;
+}
+
+.screen-shot__layer.is-current { z-index: 1; }
+
+/* The details panel's still is painted by those layers now, so its own backdrop must never show. */
+.screen__shot.is-layered { background-color: transparent; }
 
 .computer-card__preview.is-sleeping .computer-card__frame-body,
 .computer-card__preview.is-unknown .computer-card__frame-body {

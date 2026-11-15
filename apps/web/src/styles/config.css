@@ -238,3 +238,32 @@
   border: 1px solid var(--color-border-default); border-radius: var(--radius-sm); background: var(--color-bg-stage);
 }
 .appearance__hex { flex-shrink: 0; font-family: var(--font-mono-stack); font-size: 12px; color: var(--color-fg-subtle); }
+
+/* ---------- devices & permissions ---------- */
+.device-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
+.device-card { display: flex; flex-direction: column; gap: 10px; padding: 14px; }
+.device-card__head { display: flex; align-items: flex-start; gap: 10px; }
+.device-card__head .cfg-row__text { gap: 3px; }
+.device-card__head .cfg-row__title { white-space: normal; overflow: visible; }
+.device-card__head .cfg-row__sub { line-height: 17px; }
+/* Controls sit at the bottom of every card, so the four buttons line up even when a blurb wraps. */
+.device-card__controls { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; margin-top: auto; }
+.device-card__select { flex: 1 1 140px; min-width: 0; height: 30px; padding: 4px 8px; }
+.device-card__note { font-size: 12px; line-height: 16px; color: var(--color-text-secondary); overflow-wrap: anywhere; }
+.device-card__preview { display: block; width: 100%; max-height: 132px; border-radius: var(--radius-md); object-fit: cover; background: var(--color-bg-stage); }
+
+/* The pill is the page's whole answer: decided, denied, or not available on this build. */
+.device-pill {
+  display: inline-flex; align-items: center; flex-shrink: 0; height: 20px; padding: 0 8px;
+  border-radius: var(--radius-full); font-size: 11px; font-weight: 500; line-height: 20px;
+  letter-spacing: 0.1px; white-space: nowrap;
+  background: var(--color-bg-tertiary); color: var(--color-text-tertiary);
+}
+.device-pill.is-allowed { background: var(--color-success-bg); color: var(--color-success-text); }
+.device-pill.is-blocked { background: var(--color-danger-bg); color: var(--color-danger-text); }
+.device-pill.is-unsupported { background: var(--color-bg-tertiary); color: var(--color-text-quaternary); }
+.device-pill.is-not-requested { background: var(--color-bg-tertiary); color: var(--color-text-tertiary); }
+
+@media (max-width: 760px) {
+  .device-grid { grid-template-columns: 1fr; }
+}

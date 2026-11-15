@@ -122,3 +122,6 @@
 .group-pick__opt:hover { background: var(--color-bg-hover); }
 .group-pick__opt.is-active { background: var(--color-bg-active, var(--color-bg-hover)); }
 .group-pick__name { flex: 1; font-size: 13px; line-height: 18px; color: var(--color-ink); }
+
+/* The primary Bot's star in the settings title, like every other avatar in the app. */
+.bot-settings__avatar { position: relative; display: inline-flex; flex-shrink: 0; }

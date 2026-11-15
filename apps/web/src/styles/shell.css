@@ -67,16 +67,24 @@
 .nav-rail__item {
   position: relative; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 3px;
   width: 100%; height: 54px; color: var(--nav-rail-icon);
-  transition: color 120ms var(--ease-standard), background-color 120ms var(--ease-standard);
+  transition: color 160ms var(--ease-standard), background-color 160ms var(--ease-standard);
 }
-.nav-rail__item:hover { background: rgb(255 255 255 / 0.08); color: var(--nav-rail-icon-selected); }
-.nav-rail__item.is-active { background: rgb(255 255 255 / 0.12); color: var(--nav-rail-icon-selected); }
-.nav-rail__item.is-active:hover { background: rgb(255 255 255 / 0.16); }
+/* Each section carries its own muted pastel; the fallback keeps a new section readable. */
+.nav-rail__item[data-section='activity']  { --nav-accent: var(--nav-accent-activity); }
+.nav-rail__item[data-section='chat']      { --nav-accent: var(--nav-accent-chat); }
+.nav-rail__item[data-section='calendar']  { --nav-accent: var(--nav-accent-calendar); }
+.nav-rail__item[data-section='calls']     { --nav-accent: var(--nav-accent-calls); }
+.nav-rail__item[data-section='files']     { --nav-accent: var(--nav-accent-files); }
+.nav-rail__item[data-section='computers'] { --nav-accent: var(--nav-accent-computers); }
+.nav-rail__item[data-section='skills']    { --nav-accent: var(--nav-accent-skills); }
+.nav-rail__item:hover { background: color-mix(in srgb, var(--nav-accent, #FFFFFF) 12%, transparent); color: var(--nav-rail-icon-selected); }
+.nav-rail__item.is-active { background: color-mix(in srgb, var(--nav-accent, #FFFFFF) 20%, transparent); color: var(--nav-accent, var(--nav-rail-icon-selected)); }
+.nav-rail__item.is-active:hover { background: color-mix(in srgb, var(--nav-accent, #FFFFFF) 26%, transparent); }
 /* Teams indicator: a 3×24 pill hugging the left edge, vertically centred. */
 .nav-rail__item.is-active::before {
   content: ''; position: absolute; left: 0; top: 50%; transform: translateY(-50%);
   width: 3px; height: 24px; border-radius: 0 3px 3px 0;
-  background: var(--nav-rail-active-bar, var(--accent-500));
+  background: var(--nav-accent, var(--nav-rail-active-bar, var(--accent-500)));
 }
 .nav-rail__label { max-width: 100%; padding: 0 2px; font-size: 10px; line-height: 14px; letter-spacing: -0.2px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .nav-rail__badge {
@@ -109,10 +117,15 @@
 .section-panel__chat { display: flex; flex-direction: column; min-height: 0; height: 100%; }
 .section-panel__chat > .sidebar-island { margin: 0 0 6px; }
 /* The chat list brings its own title row with the New Bot / Group actions, so the panel header
-   keeps only the collapse control, on the right where the list's other controls sit. */
-.section-panel[data-section='chat'] .section-panel__header { height: 32px; padding: 0 8px; justify-content: flex-end; }
+   carries the Tasks control instead, on one row with the collapse button: Tasks takes the space,
+   collapse keeps only its own. The two used to be on separate rows, which left a dead gap between
+   the panel's top edge and the list. */
+.section-panel[data-section='chat'] .section-panel__header { height: 44px; padding: 0 8px; justify-content: space-between; gap: 6px; }
 .section-panel[data-section='chat'] .section-panel__title { display: none; }
+.section-panel[data-section='chat'] .section-panel__header .sidebar-island { flex: 1 1 auto; min-width: 0; height: 32px; margin: 0; padding: 0 8px 0 2px; gap: 8px; border-radius: var(--radius-sm); }
+.section-panel[data-section='chat'] .section-panel__header .sidebar-island__icon { width: 28px; }
 .section-panel[data-section='chat'] .section-panel__body { padding: 0 0 0; }
+.section-panel__collapse { flex: 0 0 28px; width: 28px; height: 28px; }
 .section-panel.is-collapsed .section-panel__header { justify-content: center; padding: 0; height: 48px; }
 .section-panel.is-collapsed .section-panel__body { display: none; }
 
@@ -136,6 +149,17 @@
 .bot-row.is-selected { background: var(--color-bg-nav-active); }
 .bot-row__avatar { position: relative; display: inline-flex; flex-shrink: 0; }
 .bot-row__avatar .status-dot { right: -1px; top: -1px; }
+/* Primary Bot star: bottom-left so it never fights the status dot or the unread count. */
+.primary-star {
+  display: inline-flex; align-items: center; justify-content: center; flex-shrink: 0;
+  position: absolute; left: -4px; bottom: -4px; border-radius: var(--radius-full);
+  background: var(--color-bg-nav); color: var(--primary-star);
+  box-shadow: 0 0 0 1px color-mix(in srgb, var(--primary-star) 55%, transparent);
+}
+.primary-star svg { display: block; fill: currentColor; }
+.primary-star--inline { position: static; background: transparent; box-shadow: none; vertical-align: -2px; }
+.bot-row.is-selected .primary-star { background: var(--color-bg-nav-active); }
+.conv-header__avatar .primary-star, .details__identity .primary-star, .bot-settings__avatar .primary-star { background: var(--color-bg-stage); }
 .bot-row.is-selected .status-dot, .bot-row:hover .status-dot { box-shadow: 0 0 0 2.5px var(--color-bg-nav-active); }
 .bot-row__text { display: flex; flex-direction: column; gap: 0; flex: 1 1 0; min-width: 0; }
 .bot-row__name, .bot-row__preview { display: block; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }

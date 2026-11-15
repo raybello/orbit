@@ -16,6 +16,7 @@ import { startIdleWatcher } from './idle.js';
 import { initEngines, startSubscriptionSync, syncAllManagedAuth } from './engine.js';
 import { recoverComputers, suspendComputers } from './computer-provider-registry.js';
 import { startDockerIdleSuspender } from './docker-provider.js';
+import { renameLegacyPrimary } from './bot-admin.js';
 
 /**
  * Boot: the HTTP app comes from api/app.ts (so a test can build it without any of this), and
@@ -25,6 +26,9 @@ import { startDockerIdleSuspender } from './docker-provider.js';
 if (!desSelfTest()) throw new Error('DES self-test failed');
 initSubagents();
 initRooms();
+// Installs seeded before the coordinator was renamed still carry the old name, and the primary agent
+// is the row every other surface addresses by name.
+renameLegacyPrimary();
 // Approvals wait in memory; whatever was still open when the last process stopped can no longer be answered.
 expireStaleApprovals();
 

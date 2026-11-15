@@ -21,7 +21,7 @@ prints `expected:` / `actual:`, the differing JSON paths, and the server log tai
 Shared preconditions for all six flows:
 
 1. The app is running on <http://localhost:8787> (`pnpm dev`), and you are signed in.
-2. There is a **primary bot** (`Doug` by default) whose Hermes home (`~/.hermes`) has at least one
+2. There is a **primary bot** (`Atlas` by default) whose Hermes home (`~/.hermes`) has at least one
    model credential — an `*_API_KEY=` line in `~/.hermes/.env`, or a provider signed in through
    Bot settings → Engine.
 3. **A managed bot exists** (a second bot; see flow 1). Managed bots run their own Hermes gateway on

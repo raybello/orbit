@@ -7,6 +7,7 @@ import { useConfigUI } from '../configStore';
 import { configApi } from '../lib/configApi';
 import { Icon } from './Icon';
 import { Menu } from './Menu';
+import { PrimaryStar } from './PrimaryStar';
 
 export function ConvHeader({ bot, running, activeTab, onTabChange, onNotice }: {
   bot: Bot;
@@ -46,6 +47,7 @@ export function ConvHeader({ bot, running, activeTab, onTabChange, onNotice }: {
         >
           <span className="conv-header__avatar">
             <BotAvatarFor bot={bot} size={32} />
+            {!isRoom && bot.isPrimary && <PrimaryStar />}
             {!isRoom && <span className={`conv-header__dot${running ? ' is-working' : ''}`} aria-hidden />}
           </span>
           <span className="conv-header__name">{displayName(bot)}</span>

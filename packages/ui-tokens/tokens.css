@@ -76,6 +76,21 @@
   --nav-rail-icon:         rgba(255, 255, 255, 0.72);
   --nav-rail-icon-selected: #FFFFFF;
   --nav-rail-active-bar:   var(--accent-500);
+  /* Section accents: muted pastels instead of the team accent.
+   *
+   * The rail keeps a dark ground in every theme and preset, so one pastel set stays legible in both
+   * light and dark mode; the saturation is what changes. A per-section colour also makes the rail
+   * scannable: the tint says which section is open. Selected/hover washes are derived from the
+   * accent with color-mix so the pill never out-shouts the icon. */
+  --nav-accent-activity:   #A9C9B6;   /* sage */
+  --nav-accent-chat:       #B4BBE6;   /* periwinkle */
+  --nav-accent-calendar:   #E4D0A2;   /* butter */
+  --nav-accent-calls:      #E5B6BB;   /* blush */
+  --nav-accent-files:      #ACC7E4;   /* powder blue */
+  --nav-accent-computers:  #C8B6E4;   /* lavender */
+  --nav-accent-skills:     #E5C2A9;   /* peach */
+  /* The star on a primary Bot: warm, quiet, and readable with white or dark text near it. */
+  --primary-star:          #E8B94F;
 
   /* ── Section panel ── */
   --section-panel-width:   300px;
