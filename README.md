@@ -1,6 +1,4 @@
-<p align="center">
-  <img src="assets/readme-banner.svg" alt="Orbit. Your team. Their own computers." width="100%">
-</p>
+# Orbit
 
 <p align="center">
   A team of AI agents you chat with, each with its own screen on its own computer.<br>
