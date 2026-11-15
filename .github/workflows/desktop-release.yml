@@ -253,15 +253,23 @@ jobs:
         if: matrix.platform == 'mac' && (env.APPLE_TEAM_ID == '' || env.APPLE_ID == '')
         run: |
           echo "::warning::Apple credentials are not configured; building without notarization"
+          # An empty CSC_LINK is read as a path ("apps/desktop not a file"); without a
+          # certificate the variables must be absent. after-pack.cjs then ad-hoc signs.
+          if [ -z "$CSC_LINK" ]; then unset CSC_LINK CSC_KEY_PASSWORD; fi
           pnpm --filter @orbit/desktop exec electron-builder --mac --publish always
 
       - name: Package (Windows)
         if: matrix.platform == 'win'
-        run: pnpm --filter @orbit/desktop exec electron-builder --win --publish always
+        shell: bash
+        run: |
+          unset CSC_LINK CSC_KEY_PASSWORD
+          pnpm --filter @orbit/desktop exec electron-builder --win --publish always
 
       - name: Package (Linux)
         if: matrix.platform == 'linux'
-        run: pnpm --filter @orbit/desktop exec electron-builder --linux --publish always
+        run: |
+          unset CSC_LINK CSC_KEY_PASSWORD
+          pnpm --filter @orbit/desktop exec electron-builder --linux --publish always
 
       - name: Smoke the packaged app (macOS)
         if: matrix.platform == 'mac'

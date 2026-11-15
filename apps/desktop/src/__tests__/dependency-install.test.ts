@@ -15,6 +15,9 @@ import {
 } from '../mac-runtime';
 import { dockerDesktopUrl, dockerSignatureOk, installDockerDesktop, mountPointFromPlist } from '../docker-install';
 
+/** These flows only ever run on macOS, and their fixtures are POSIX paths. */
+const macOnly = { skip: process.platform === 'win32' ? 'macOS-only install flow' : false };
+
 const tmpRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'orbit-deps-'));
 after(() => fs.rmSync(tmpRoot, { recursive: true, force: true }));
 
@@ -52,7 +55,7 @@ describe('Apple container runtime', () => {
     assert.equal(script, 'do shell script "echo \\"hi\\"" with prompt "Why" with administrator privileges');
   });
 
-  test('downloads, checks the signature, installs with admin rights and starts the service', async () => {
+  test('downloads, checks the signature, installs with admin rights and starts the service', macOnly, async () => {
     const calls: string[] = [];
     let downloaded: { url: string; sha: string } | null = null;
     let installed = false;
@@ -77,7 +80,7 @@ describe('Apple container runtime', () => {
     assert.deepEqual(calls, ['pkgutil --check-signature', 'osascript -e', '/usr/local/bin/container system']);
   });
 
-  test('never runs the installer for a package with the wrong signature', async () => {
+  test('never runs the installer for a package with the wrong signature', macOnly, async () => {
     const calls: string[] = [];
     await assert.rejects(
       installContainerRuntime(CONTAINER_RUNTIME_VERSION, () => {}, {
@@ -109,7 +112,7 @@ describe('Docker Desktop install', () => {
     assert.equal(dockerSignatureOk('Authority=Developer ID Application: Not Docker'), false);
   });
 
-  test('mounts, verifies, copies, unmounts and launches on macOS', async () => {
+  test('mounts, verifies, copies, unmounts and launches on macOS', macOnly, async () => {
     const calls: string[] = [];
     const target = await installDockerDesktop(() => {}, {
       platform: 'darwin',
@@ -129,7 +132,7 @@ describe('Docker Desktop install', () => {
     assert.deepEqual(calls, ['hdiutil attach', 'codesign -dvv', 'codesign --verify', 'ditto /Volumes/Docker/Docker.app', 'hdiutil detach', 'open -a']);
   });
 
-  test('refuses an unsigned Docker.app and still unmounts', async () => {
+  test('refuses an unsigned Docker.app and still unmounts', macOnly, async () => {
     const calls: string[] = [];
     await assert.rejects(
       installDockerDesktop(() => {}, {

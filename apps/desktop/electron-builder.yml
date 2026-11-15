@@ -82,6 +82,8 @@ nsis:
 
 linux:
   category: Utility
+  # The package is named @orbit/desktop, which is not a valid file name for the binary.
+  executableName: orbit
   target:
     - target: AppImage
       arch: [x64]
