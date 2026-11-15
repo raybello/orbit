@@ -1,30 +1,72 @@
-/* ---------- window grid: nav rail 48 · section panel 280 · chat · details 360 ---------- */
-.app { display: flex; height: 100%; width: 100%; background: var(--color-bg-canvas); overflow: hidden; }
+/* ---------- window: a title bar across the viewport, then rail · list · main · details ---------- */
+.app { display: flex; flex-direction: column; height: 100%; width: 100%; background: var(--color-bg-canvas); overflow: hidden; }
+.app__body { display: flex; flex: 1 1 0; min-height: 0; width: 100%; overflow: hidden; }
 
-.traffic-lights { position: absolute; left: 10px; top: 10px; display: flex; gap: 8px; }
-.traffic-lights span { width: 12px; height: 12px; border-radius: 50%; box-shadow: #00000026 0 0 0 0.5px inset; }
-.nav-rail .traffic-lights { left: 6px; top: 11px; gap: 5px; }
-.nav-rail .traffic-lights span { width: 10px; height: 10px; }
+/* ---------- title bar: window handle · centered search · account ---------- */
+.titlebar {
+  position: relative; z-index: 30; display: flex; align-items: center; gap: 12px; flex-shrink: 0;
+  height: var(--titlebar-height); padding: 0 12px;
+  background: var(--color-bg-nav); border-bottom: 1px solid var(--color-border-subtle);
+  -webkit-app-region: drag;
+}
+/* macOS draws the real traffic lights over this strip; leave them their corner. */
+.titlebar.has-native-controls { padding-left: 84px; }
+.titlebar__lead { display: flex; align-items: center; min-width: 0; flex: 0 0 auto; }
+.titlebar.has-native-controls .titlebar__lead { display: none; }
+.titlebar__brand { display: inline-flex; align-items: center; gap: 8px; color: var(--accent-500); }
+.titlebar__brand-name { font-size: 14px; font-weight: 600; letter-spacing: -0.1px; color: var(--color-fg-default); }
+.titlebar__search {
+  position: absolute; left: 50%; transform: translateX(-50%);
+  display: flex; align-items: center; gap: 8px; width: clamp(200px, 40vw, 520px); height: 32px; padding: 0 10px;
+  border-radius: var(--radius-sm); border: 1px solid var(--color-border-default);
+  background: var(--color-bg-stage); color: var(--color-fg-muted);
+  font-size: 13px; line-height: 18px; text-align: left;
+  -webkit-app-region: no-drag;
+  transition: background-color 120ms var(--ease-standard), border-color 120ms var(--ease-standard), color 120ms var(--ease-standard);
+}
+.titlebar__search:hover { background: var(--color-bg-overlay); border-color: var(--color-border-stronger); color: var(--color-fg-subtle); }
+.titlebar__search-label { flex: 1 1 0; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.titlebar__search-kbd {
+  flex-shrink: 0; padding: 0 5px; border-radius: 3px; background: var(--color-bg-nav-hover);
+  font-family: var(--font-stack); font-size: 11px; line-height: 16px; color: var(--color-fg-muted);
+}
+.titlebar__actions { display: flex; align-items: center; gap: 4px; margin-left: auto; -webkit-app-region: no-drag; }
+.titlebar__btn {
+  display: flex; align-items: center; justify-content: center; width: 32px; height: 32px;
+  border-radius: var(--radius-sm); color: var(--color-fg-subtle);
+}
+.titlebar__btn:hover { background: var(--color-bg-nav-hover); color: var(--color-fg-default); }
+.titlebar__account { position: relative; display: flex; align-items: center; }
+.titlebar__avatar { display: inline-flex; align-items: center; justify-content: center; padding: 2px; border-radius: var(--radius-full); }
+.titlebar__avatar:hover { background: var(--color-bg-nav-hover); }
+.titlebar__initials {
+  display: inline-flex; align-items: center; justify-content: center; width: 28px; height: 28px; border-radius: var(--radius-full);
+  background: var(--accent-500); color: var(--color-fg-on-accent);
+  font-size: 11px; font-weight: 600; line-height: 12px; letter-spacing: 0.2px;
+}
+@media (max-width: 900px) {
+  .titlebar__search-kbd { display: none; }
+  .titlebar__brand-name { display: none; }
+}
 
-/* ---------- nav rail: the 48px icon strip (dark in both themes, white glyphs) ---------- */
+/* ---------- nav rail: the icon strip (dark in both themes, white glyphs) ---------- */
 .nav-rail {
   position: relative; z-index: 2; display: flex; flex-direction: column; align-items: center;
   flex: 0 0 var(--nav-rail-width); width: var(--nav-rail-width); height: 100%;
   background: var(--nav-rail-bg); color: var(--nav-rail-icon);
 }
-.nav-rail__titlebar { position: relative; width: 100%; height: var(--nav-rail-titlebar, 36px); flex-shrink: 0; }
 /* Dark and HC share the canvas colour, so give the rail a hairline of its own. */
 :root[data-theme='dark'] .nav-rail,
 :root[data-theme='hc'] .nav-rail { border-right: 1px solid var(--color-border-subtle); }
 .nav-rail__items {
-  display: flex; flex-direction: column; align-items: stretch; gap: 0;
-  width: 100%; padding: 2px 0 6px; flex: 1 1 auto; min-height: 0;
+  display: flex; flex-direction: column; align-items: stretch; gap: 2px;
+  width: 100%; padding: 8px 0 12px; flex: 1 1 auto; min-height: 0;
   overflow-y: auto; overflow-x: hidden; scrollbar-width: none;
 }
 .nav-rail__items::-webkit-scrollbar { display: none; }
 .nav-rail__item {
-  position: relative; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 2px;
-  width: 100%; height: 52px; color: var(--nav-rail-icon);
+  position: relative; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 3px;
+  width: 100%; height: 54px; color: var(--nav-rail-icon);
   transition: color 120ms var(--ease-standard), background-color 120ms var(--ease-standard);
 }
 .nav-rail__item:hover { background: rgb(255 255 255 / 0.08); color: var(--nav-rail-icon-selected); }
@@ -36,27 +78,14 @@
   width: 3px; height: 24px; border-radius: 0 3px 3px 0;
   background: var(--nav-rail-active-bar, var(--accent-500));
 }
-.nav-rail__label { max-width: 100%; padding: 0 1px; font-size: 9px; line-height: 12px; letter-spacing: -0.3px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.nav-rail__label { max-width: 100%; padding: 0 2px; font-size: 10px; line-height: 14px; letter-spacing: -0.2px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .nav-rail__badge {
-  position: absolute; top: 6px; left: 50%; margin-left: 6px;
+  position: absolute; top: 7px; left: 50%; margin-left: 7px;
   min-width: 16px; height: 16px; padding: 0 4px; border-radius: var(--radius-full);
   background: var(--color-danger); color: #FFFFFF;
   font-size: 10px; font-weight: 600; line-height: 16px; text-align: center;
 }
-.nav-rail__footer { display: flex; flex-direction: column; align-items: center; gap: 4px; padding: 8px 0 12px; flex-shrink: 0; width: 100%; }
-.nav-rail .account { flex: 0 0 auto; padding: 0; gap: 0; width: 100%; }
-.nav-rail .account__btn--rail { padding: 0; display: flex; align-items: center; justify-content: center; width: 100%; height: 44px; }
-.nav-rail .account__initials {
-  width: 32px; height: 32px; font-size: 12px; line-height: 12px;
-  background: rgb(255 255 255 / 0.14); box-shadow: rgb(255 255 255 / 0.18) 0 0 0 0.5px inset; color: #FFFFFF;
-}
 .nav-rail .menu { left: 6px; }
-.icon-btn--rail {
-  width: 100%; height: 44px; background: transparent; border: 0;
-  color: var(--nav-rail-icon); display: flex; align-items: center; justify-content: center;
-  border-radius: 0;
-}
-.icon-btn--rail:hover { background: rgb(255 255 255 / 0.08); color: var(--nav-rail-icon-selected); }
 
 /* ---------- section panel: the list beside the rail, collapses to 0 ---------- */
 .section-panel {
@@ -80,8 +109,8 @@
 .section-panel__chat { display: flex; flex-direction: column; min-height: 0; height: 100%; }
 .section-panel__chat > .sidebar-island { margin: 0 0 6px; }
 /* The chat list brings its own title row with the New Bot / Group actions, so the panel header
-   keeps only the collapse control. */
-.section-panel[data-section='chat'] .section-panel__header { height: 28px; padding: 0 6px; }
+   keeps only the collapse control, on the right where the list's other controls sit. */
+.section-panel[data-section='chat'] .section-panel__header { height: 32px; padding: 0 8px; justify-content: flex-end; }
 .section-panel[data-section='chat'] .section-panel__title { display: none; }
 .section-panel[data-section='chat'] .section-panel__body { padding: 0 0 0; }
 .section-panel.is-collapsed .section-panel__header { justify-content: center; padding: 0; height: 48px; }
@@ -142,25 +171,19 @@
 }
 
 /* ---------- account ---------- */
-.account { position: relative; display: flex; align-items: center; gap: 8px; flex: 1 1 0; min-width: 0; padding-right: 4px; border-radius: var(--radius-full); }
-.account__btn { display: flex; align-items: center; gap: 8px; min-width: 0; border-radius: var(--radius-full); padding-right: 10px; }
-.account__btn:hover { background: var(--color-msg-bg-hover); }
 .account__initials {
   display: inline-flex; align-items: center; justify-content: center; width: 32px; height: 32px; flex-shrink: 0; border-radius: var(--radius-full);
   background: var(--color-bg-nav-active); box-shadow: 0 0 0 1px var(--color-border-subtle) inset;
   color: var(--color-fg-subtle); font-size: 12px; font-weight: 600; letter-spacing: -0.2px; line-height: 12px;
 }
-.account__name { font-size: 14px; font-weight: 600; line-height: 20px; color: var(--color-fg-default); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 
 /* ---------- the window handle ---------- */
 /*
  * On macOS the desktop window has no title bar of its own (`titleBarStyle: 'hiddenInset'`), so the
- * app's chrome is the only thing that can move the window — and until these rules existed, nothing
- * could: dragging any part of it moved the window's contents not at all. The rail's dots strip and
- * every view's first row now act as the handle; controls inside them opt back out so they stay
- * clickable. `-webkit-app-region` means nothing outside Electron, so a browser is unaffected.
+ * app's chrome is the only thing that can move the window. The title bar and every view's first row
+ * act as the handle; controls inside them opt back out so they stay clickable. `-webkit-app-region`
+ * means nothing outside Electron, so a browser is unaffected.
  */
-.nav-rail__titlebar,
 .section-panel__header,
 .chat-list__header,
 .conv-header,
@@ -172,7 +195,6 @@
 .details__top,
 .viewer__top { -webkit-app-region: drag; }
 
-.nav-rail__titlebar :is(button, a, input, textarea, select, [role='button'], [role='tab']),
 .section-panel__header :is(button, a, input, textarea, select, [role='button'], [role='tab']),
 .chat-list__header :is(button, a, input, textarea, select, [role='button'], [role='tab']),
 .conv-header :is(button, a, input, textarea, select, [role='button'], [role='tab']),

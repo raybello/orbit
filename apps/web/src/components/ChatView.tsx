@@ -30,7 +30,9 @@ export function ChatView() {
     <main className="chat" style={botVars(bot.avatarColor)}>
       <ConvHeader bot={bot} running={!!live?.isRunning} activeTab={chatTab} onTabChange={setChatTab} onNotice={flash} />
       {chatTab === 'files' ? (
-        <FilesView botId={bot.id} />
+        // Keyed by bot: a new conversation must not inherit the previous bot's file list, search or
+        // open preview. The scoped listing starts from the bot it was opened for.
+        <FilesView key={bot.id} botId={bot.id} />
       ) : (
         <>
           <Transcript bot={bot} rows={rows} live={live} loaded={!!transcript?.loaded} />

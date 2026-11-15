@@ -12,7 +12,9 @@ import { env } from './env.js';
 import { emitBot, getBotRow, listRoutines, listTasks } from './store.js';
 import { computerState, readyScreen } from './computer.js';
 import { computerKindFor, providerFor } from './computer-provider-registry.js';
-import { box } from './box.js';
+import { box, type Box } from './box.js';
+import { dockerBox } from './docker/docker-box.js';
+import { getComputer } from './computer-store.js';
 import { orgo } from './orgo.js';
 import { openTerminal } from './desk.js';
 import { asBlock, engineHome, engineInfo, engineKind, forgetEngineOptions, managedHome, readDotenv, readYaml, restartEngine, stopOwnScreen, syncAllManagedAuth, writePrivate, SHARED_ENV } from './engine.js';
@@ -325,34 +327,112 @@ export function parseLs(out: string): LibraryFile[] {
   return files.sort((a, b) => Number(b.isDir) - Number(a.isDir) || b.modifiedAt - a.modifiedAt);
 }
 
+/** A Docker bot's files live on its own computer, at its home folder. */
+const CONTAINER_HOME = '/home/bot';
+
+/**
+ * Where the Library tab reads a bot's filesystem from.
+ *
+ * A Docker bot is browsed through its own container: that is the tree the agent sees, and it is
+ * there while the computer runs (the panel offers to start it). A local-box server reads the
+ * Library folder from its own disk; the shared computer lists the same folder over its box.
+ */
+type LibrarySource =
+  | { kind: 'docker'; box: Box }
+  | { kind: 'local'; root: string }
+  | { kind: 'missing' }
+  | { kind: 'orgo' };
+
+function librarySource(botId: string): LibrarySource {
+  if (computerKindFor(botId) === 'docker') {
+    const container = getComputer(botId)?.container_id;
+    return container ? { kind: 'docker', box: dockerBox(container) } : { kind: 'missing' };
+  }
+  if (box.local) return { kind: 'local', root: `${LIB_ROOT}/${botId}` };
+  return { kind: 'orgo' };
+}
+
+/**
+ * The absolute path of `rel` under `root`, or null when it escapes the root or is not there.
+ * Links are followed before the check, so a link inside the folder cannot point outside it.
+ */
+function resolveUnder(root: string, rel: string): string | null {
+  try {
+    const realRoot = fs.realpathSync(root);
+    const target = fs.realpathSync(rel ? path.join(realRoot, rel) : realRoot);
+    if (target !== realRoot && !target.startsWith(realRoot + path.sep)) return null;
+    return target;
+  } catch {
+    return null;
+  }
+}
+
+/** One directory as the explorer shows it: folders first, then names. */
+function listDirectory(root: string, rel: string): LibraryFile[] {
+  const dir = resolveUnder(root, rel);
+  if (!dir) return [];
+  let entries: fs.Dirent[];
+  try {
+    entries = fs.readdirSync(dir, { withFileTypes: true });
+  } catch {
+    return [];
+  }
+  const files = entries.map((e) => {
+    let size = 0; let modifiedAt = 0; let isDir = e.isDirectory();
+    try {
+      const st = fs.statSync(path.join(dir, e.name));
+      size = st.size; modifiedAt = st.mtimeMs; isDir = st.isDirectory();
+    } catch { /* a link that points nowhere counts as an empty file */ }
+    return { name: e.name, size, modifiedAt, isDir };
+  });
+  return files.sort((a, b) => Number(b.isDir) - Number(a.isDir) || a.name.localeCompare(b.name));
+}
+
+/** One directory inside a Docker bot's computer, through the same box its desk uses. */
+async function listInContainer(b: Box, rel: string): Promise<{ status: 'ok' | 'asleep' | 'error'; files: LibraryFile[]; error?: string }> {
+  const dir = rel ? `${CONTAINER_HOME}/${rel}` : CONTAINER_HOME;
+  try {
+    const r = await b.bash(`ls -la --time-style=+%s -- ${shq(dir)} 2>&1`, 20);
+    if (r.exit_code === 0) return { status: 'ok', files: parseLs(r.output ?? '') };
+    const out = (r.output ?? '').slice(0, 300);
+    // A folder that is gone reads as empty; anything else means the computer is not answering.
+    if (/No such file or directory/.test(out)) return { status: 'ok', files: [] };
+    return { status: 'asleep', files: [] };
+  } catch {
+    // `docker exec` refuses a stopped container: the panel offers to start it.
+    return { status: 'asleep', files: [] };
+  }
+}
+
 configApi.get('/bots/:id/files', async (c) => {
   const user = c.get('user');
   const b = ownBot(user.id, c.req.param('id'));
   if (!b) return c.json({ error: 'not found' }, 404);
   const rel = safeRel(c.req.query('path'));
   if (rel === null) return c.json({ error: 'bad path' }, 400);
+  const wake = c.req.query('wake') === '1';
   try {
-    if (!box.local && computerState(user.id).status !== 'running') return c.json({ status: 'asleep', path: rel, files: [] });
-    const dir = `${LIB_ROOT}/${b.id}${rel ? `/${rel}` : ''}`;
-    if (box.local) {
-      // On this machine the Library is ordinary files: read it directly, so the listing works
-      // whatever `ls` is installed (BSD ls has no --time-style).
-      fs.mkdirSync(`${LIB_ROOT}/${b.id}`, { recursive: true });
-      const files = fs.readdirSync(dir, { withFileTypes: true }).map((e) => {
-        let size = 0; let modifiedAt = 0;
-        try {
-          const st = fs.statSync(path.join(dir, e.name));
-          size = st.size; modifiedAt = st.mtimeMs;
-        } catch { /* a broken link counts as an empty file */ }
-        return { name: e.name, size, modifiedAt, isDir: e.isDirectory() };
-      });
-      return c.json({
-        status: 'ok',
-        path: rel,
-        files: files.sort((a, b) => Number(b.isDir) - Number(a.isDir) || b.modifiedAt - a.modifiedAt),
-      });
+    let source = librarySource(b.id);
+    if ((source.kind === 'missing' || source.kind === 'docker') && wake) {
+      // Starting the computer is what creates the container the browser reads through.
+      await providerFor(b.id).ensureComputer(b.id).catch(() => {});
+      source = librarySource(b.id);
     }
-    const r = await box.bash(`mkdir -p ${shq(`${LIB_ROOT}/${b.id}`)} && ls -la --time-style=+%s ${shq(dir)} 2>&1`, 30);
+    if (source.kind === 'missing') return c.json({ status: 'asleep', path: rel, root: CONTAINER_HOME, files: [] });
+
+    if (source.kind === 'local') {
+      fs.mkdirSync(source.root, { recursive: true });
+      return c.json({ status: 'ok', path: rel, root: source.root, files: listDirectory(source.root, rel) });
+    }
+    if (source.kind === 'docker') {
+      const listed = await listInContainer(source.box, rel);
+      return c.json({ status: listed.status, path: rel, root: CONTAINER_HOME, files: listed.files, ...(listed.error ? { error: listed.error } : {}) });
+    }
+
+    if (computerState(user.id).status !== 'running') return c.json({ status: 'asleep', path: rel, files: [] });
+    const root = `${LIB_ROOT}/${b.id}`;
+    const dir = `${root}${rel ? `/${rel}` : ''}`;
+    const r = await box.bash(`mkdir -p ${shq(root)} && ls -la --time-style=+%s ${shq(dir)} 2>&1`, 30);
     if (r.exit_code !== 0) return c.json({ status: 'error', path: rel, files: [], error: (r.output ?? '').slice(0, 300) });
     return c.json({ status: 'ok', path: rel, files: parseLs(r.output ?? '') });
   } catch (e) {
@@ -367,8 +447,12 @@ configApi.post('/bots/:id/files/download', async (c) => {
   const { path } = await optionalBody(c, FileDownloadSchema, {});
   const rel = safeRel(path);
   if (!rel) return c.json({ error: 'bad path' }, 400);
-  // On the computer itself the file is on our own disk: serve it directly.
-  if (box.local) return c.json({ url: `/api/bots/${b.id}/files/raw?path=${encodeURIComponent(rel)}` });
+  const source = librarySource(b.id);
+  // A computer this server can read (its own disk or the bot's container): serve it directly.
+  if (source.kind === 'docker' || source.kind === 'local') {
+    return c.json({ url: `/api/bots/${b.id}/files/raw?path=${encodeURIComponent(rel)}` });
+  }
+  if (source.kind === 'missing') return c.json({ error: 'computer unavailable' }, 409);
   try {
     if (!env.orgoComputerId) return c.json({ error: 'computer unavailable' }, 409);
     const r = (await orgo.exportFile(env.orgoComputerId, `${LIB_ROOT}/${b.id}/${rel}`)) as
@@ -383,30 +467,51 @@ configApi.post('/bots/:id/files/download', async (c) => {
   }
 });
 
-configApi.get('/bots/:id/files/raw', (c) => {
+/** How a file is served: images, audio, video and PDFs open in the browser, the rest download. */
+function fileHeaders(name: string, size: number): Record<string, string> {
+  const mediaType = mediaTypeFor(name);
+  const inline = mediaType.startsWith('image/') || mediaType.startsWith('audio/') || mediaType.startsWith('video/') || mediaType === 'application/pdf';
+  return {
+    'content-type': mediaType,
+    'content-length': String(size),
+    'content-disposition': `${inline ? 'inline' : 'attachment'}; filename*=UTF-8''${encodeURIComponent(name)}`,
+    'x-content-type-options': 'nosniff',
+  };
+}
+
+configApi.get('/bots/:id/files/raw', async (c) => {
   const b = ownBot(c.get('user').id, c.req.param('id'));
-  if (!b || !box.local) return c.json({ error: 'not found' }, 404);
+  if (!b) return c.json({ error: 'not found' }, 404);
   const rel = safeRel(c.req.query('path'));
   if (!rel) return c.json({ error: 'bad path' }, 400);
-  const root = `${LIB_ROOT}/${b.id}`;
-  let file: string;
+  const name = rel.split('/').pop()!;
+  const source = librarySource(b.id);
+
+  if (source.kind === 'docker') {
+    // Base64 through an exec is the only way out of a container without a copied temp file, so
+    // keep it to files a browser preview can use.
+    const MAX = 32 * 1024 * 1024;
+    const target = `${CONTAINER_HOME}/${rel}`;
+    // -1 means "not a file"; 0 is a real, empty file.
+    const probe = await source.box.bash(`if [ -f ${shq(target)} ]; then stat -c %s -- ${shq(target)}; else echo -1; fi`, 15).catch(() => null);
+    const size = Number((probe?.output ?? '-1').trim());
+    if (!Number.isFinite(size) || size < 0) return c.json({ error: 'not found' }, 404);
+    if (size > MAX) return c.json({ error: 'file is too large to stream from the computer' }, 413);
+    const buf = await source.box.readFile(target).catch(() => null);
+    if (!buf) return c.json({ error: 'not found' }, 404);
+    return new Response(new Uint8Array(buf), { headers: fileHeaders(name, buf.length) });
+  }
+
+  if (source.kind !== 'local') return c.json({ error: 'not found' }, 404);
+  const file = resolveUnder(source.root, rel);
+  if (!file) return c.json({ error: 'not found' }, 404);
   try {
-    // Follow links before checking, so a link inside the library cannot point outside it.
-    file = fs.realpathSync(`${root}/${rel}`);
-    if (!file.startsWith(fs.realpathSync(root) + '/') || !fs.statSync(file).isFile()) throw new Error('outside');
+    if (!fs.statSync(file).isFile()) return c.json({ error: 'not found' }, 404);
   } catch {
     return c.json({ error: 'not found' }, 404);
   }
-  const name = rel.split('/').pop()!;
-  const mediaType = mediaTypeFor(name);
-  const canPreview = mediaType.startsWith('image/') || mediaType.startsWith('audio/') || mediaType.startsWith('video/') || mediaType === 'application/pdf';
   return new Response(Readable.toWeb(fs.createReadStream(file)) as ReadableStream, {
-    headers: {
-      'content-type': mediaType,
-      'content-length': String(fs.statSync(file).size),
-      'content-disposition': `${canPreview ? 'inline' : 'attachment'}; filename*=UTF-8''${encodeURIComponent(name)}`,
-      'x-content-type-options': 'nosniff',
-    },
+    headers: fileHeaders(name, fs.statSync(file).size),
   });
 });
 

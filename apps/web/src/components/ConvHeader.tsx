@@ -21,6 +21,7 @@ export function ConvHeader({ bot, running, activeTab, onTabChange, onNotice }: {
   const loadBots = useStore((s) => s.loadBots);
   const [menu, setMenu] = useState(false);
   const flash = (t: string) => onNotice?.(t);
+  const isRoom = bot.kind === 'room';
 
   const handleDelete = async () => {
     if (!window.confirm(`Delete ${displayName(bot)}? This cannot be undone.`)) return;
@@ -38,19 +39,19 @@ export function ConvHeader({ bot, running, activeTab, onTabChange, onNotice }: {
         <button
           type="button"
           className="conv-header__pill-btn"
-          onClick={() => setMenu(!menu)}
-          aria-haspopup="menu"
-          aria-expanded={menu}
-          title="Bot options"
+          onClick={() => (isRoom ? set({ detailsOpen: true }) : setMenu(!menu))}
+          aria-haspopup={isRoom ? undefined : 'menu'}
+          aria-expanded={isRoom ? undefined : menu}
+          title={isRoom ? 'Group details' : 'Bot options'}
         >
           <span className="conv-header__avatar">
             <BotAvatarFor bot={bot} size={32} />
-            <span className={`conv-header__dot${running ? ' is-working' : ''}`} aria-hidden />
+            {!isRoom && <span className={`conv-header__dot${running ? ' is-working' : ''}`} aria-hidden />}
           </span>
           <span className="conv-header__name">{displayName(bot)}</span>
-          <Icon name="chev_down" size={12} opacity={0.6} />
+          {!isRoom && <Icon name="chev_down" size={12} opacity={0.6} />}
         </button>
-        {menu && (
+        {menu && !isRoom && (
           <Menu
             align="left"
             onClose={() => setMenu(false)}
@@ -87,25 +88,40 @@ export function ConvHeader({ bot, running, activeTab, onTabChange, onNotice }: {
       <div className="conv-header__spacer" />
 
       <div className="conv-header__actions">
-        <button
-          type="button"
-          className="conv-header__icon-btn"
-          onClick={() => useConfigUI.getState().openBotSettings(bot.id)}
-          aria-label="Bot settings"
-          title="Bot settings"
-        >
-          <Icon name="edit" size={16} />
-        </button>
-        <button
-          type="button"
-          className={`conv-header__icon-btn${detailsOpen ? ' is-active' : ''}`}
-          onClick={() => set({ detailsOpen: !detailsOpen })}
-          aria-label={detailsOpen ? 'Hide details' : 'Show details'}
-          aria-pressed={detailsOpen}
-          title={detailsOpen ? 'Hide details (⇧⌘,)' : 'Show details (⇧⌘,)'}
-        >
-          <Icon name="panel" size={16} />
-        </button>
+        {isRoom ? (
+          <button
+            type="button"
+            className={`conv-header__icon-btn${detailsOpen ? ' is-active' : ''}`}
+            onClick={() => set({ detailsOpen: !detailsOpen })}
+            aria-label={detailsOpen ? 'Hide group details' : 'Show group details'}
+            aria-pressed={detailsOpen}
+            title="People in this group"
+          >
+            <Icon name="people" size={16} />
+          </button>
+        ) : (
+          <>
+            <button
+              type="button"
+              className="conv-header__icon-btn"
+              onClick={() => useConfigUI.getState().openBotSettings(bot.id)}
+              aria-label="Bot settings"
+              title="Bot settings"
+            >
+              <Icon name="edit" size={16} />
+            </button>
+            <button
+              type="button"
+              className={`conv-header__icon-btn${detailsOpen ? ' is-active' : ''}`}
+              onClick={() => set({ detailsOpen: !detailsOpen })}
+              aria-label={detailsOpen ? 'Hide details' : 'Show details'}
+              aria-pressed={detailsOpen}
+              title={detailsOpen ? 'Hide details (⇧⌘,)' : 'Show details (⇧⌘,)'}
+            >
+              <Icon name="panel" size={16} />
+            </button>
+          </>
+        )}
       </div>
     </header>
   );

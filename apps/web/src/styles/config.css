@@ -115,6 +115,10 @@
 .lib-crumbs { display: flex; align-items: center; gap: 2px; min-width: 0; overflow: hidden; white-space: nowrap; }
 .lib-crumbs .link-btn { padding: 2px 4px; margin: -2px 0; }
 .lib-crumbs__part { display: inline-flex; align-items: center; gap: 2px; min-width: 0; }
+.lib-crumbs__up { display: inline-flex; align-items: center; justify-content: center; width: 20px; height: 20px; flex-shrink: 0; border-radius: var(--radius-sm); color: var(--color-text-secondary); }
+.lib-crumbs__up:hover:not(:disabled) { background: var(--color-bg-hover); }
+.lib-crumbs__up:disabled { cursor: default; }
+.lib-root { padding: 0 6px 6px; font-family: var(--font-mono-stack); font-size: 11px; line-height: 16px; color: var(--color-text-tertiary); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .lib-row { display: flex; align-items: center; gap: 4px; padding-right: 4px; border-radius: 8px; }
 .lib-row:hover { background: var(--color-bg-hover); }
 .lib-row__main { display: flex; align-items: center; gap: 8px; flex: 1 1 0; min-width: 0; padding: 6px 8px; text-align: left; }

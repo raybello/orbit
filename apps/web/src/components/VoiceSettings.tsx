@@ -284,8 +284,8 @@ export function VoiceSettings({ bot }: { bot: Bot }) {
           : `Not downloaded (${Math.round(local.bytes.have / 1e6)} of ${Math.round(local.bytes.total / 1e6)} MB)`;
 
   const seg = (active: boolean): CSSProperties => ({
-    background: active ? 'var(--color-ink)' : 'transparent',
-    color: active ? '#FFFFFF' : undefined,
+    background: active ? 'var(--accent-500)' : 'transparent',
+    color: active ? 'var(--color-fg-on-accent)' : undefined,
     border: 'none',
     opacity: active ? 1 : undefined,
   });

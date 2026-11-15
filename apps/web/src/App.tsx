@@ -7,6 +7,7 @@ import { ComputerViewer } from './components/ComputerViewer';
 import { DetailsPanel } from './components/DetailsPanel';
 import { NavRail } from './components/NavRail';
 import { SectionPanel } from './components/SectionPanel';
+import { TitleBar } from './components/TitleBar';
 import { ActivityView } from './components/ActivityView';
 import { CalendarView } from './components/CalendarView';
 import { CallsView } from './components/CallsView';
@@ -39,7 +40,6 @@ function SectionView({ section }: { section: NavSection }) {
 }
 
 function Shell() {
-  const detailsOpen = useStore((s) => s.detailsOpen);
   const modal = useStore((s) => s.modal);
   const viewerOpen = useStore((s) => s.viewerOpen);
   const hasBot = useStore((s) => !!s.selectedBotId);
@@ -85,19 +85,22 @@ function Shell() {
   }, []);
 
   return (
-    <div className={`app${showDetails && detailsOpen ? ' has-details' : ''}`}>
-      <NavRail
-        active={navSection}
-        onChange={setNavSection}
-        unreadCounts={unreadChat > 0 ? { chat: unreadChat } : undefined}
-      />
-      {inChat && <SectionPanel section={navSection} collapsed={sectionPanelCollapsed} onToggleCollapsed={toggleSectionPanel} />}
-      <div className="app__main">
-        {inChat
-          ? view === 'tasks' ? <TasksView /> : <ChatView />
-          : <SectionView section={navSection} />}
+    <div className="app">
+      <TitleBar />
+      <div className="app__body">
+        <NavRail
+          active={navSection}
+          onChange={setNavSection}
+          unreadCounts={unreadChat > 0 ? { chat: unreadChat } : undefined}
+        />
+        {inChat && <SectionPanel section={navSection} collapsed={sectionPanelCollapsed} onToggleCollapsed={toggleSectionPanel} />}
+        <div className="app__main">
+          {inChat
+            ? view === 'tasks' ? <TasksView /> : <ChatView />
+            : <SectionView section={navSection} />}
+        </div>
+        {showDetails && <DetailsPanel />}
       </div>
-      {showDetails && <DetailsPanel />}
       {modal === 'create' && <CreateBotModal />}
       {modal === 'group' && <CreateGroupModal />}
       {modal === 'search' && <SearchModal />}

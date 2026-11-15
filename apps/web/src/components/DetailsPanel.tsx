@@ -1,9 +1,10 @@
 import { useEffect, useRef, useState, type KeyboardEvent as ReactKeyboardEvent } from 'react';
-import type { Routine } from '@orbit/contracts';
+import type { Bot, Routine } from '@orbit/contracts';
 import { BotAvatarFor } from '../avatar/BotAvatar';
 import { api, openPopup } from '../lib/api';
 import { botVars } from '../lib/colors';
 import { computerStatusText } from '../lib/computer';
+import { configApi } from '../lib/configApi';
 import { useSelectedBot, useStore } from '../store';
 import { displayName } from '../domain/transcript-utils';
 import { Icon } from './Icon';
@@ -49,6 +50,80 @@ function RoutineRow({ r }: { r: Routine }) {
   );
 }
 
+/**
+ * A group chat's right panel, as Teams arranges it: the group at the top, the people in it, then
+ * the options that only exist inside a group. A one-to-one chat has none of these.
+ */
+function GroupDetails({ bot, open }: { bot: Bot; open: boolean }) {
+  const [people, setPeople] = useState<number | null>(null);
+  const [leaving, setLeaving] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const muted = useStore((s) => s.mutedRooms.includes(bot.id));
+  const toggleMute = useStore((s) => s.toggleMuteRoom);
+  const loadBots = useStore((s) => s.loadBots);
+  const set = useStore((s) => s.set);
+
+  const leave = async () => {
+    if (!window.confirm(`Leave ${displayName(bot)}? The group chat is deleted for everyone.`)) return;
+    setLeaving(true); setError(null);
+    try {
+      await configApi.deleteBot(bot.id);
+      set({ detailsOpen: false });
+      await loadBots();
+    } catch (e) {
+      setError((e as Error).message || 'Could not leave the group');
+      setLeaving(false);
+    }
+  };
+
+  return (
+    <aside className={`details details--group${open ? '' : ' is-closed'}`} style={botVars(bot.avatarColor)} aria-label="Group details" aria-hidden={open ? undefined : true}>
+      {open && (<>
+        <div className="details__top">
+          <button type="button" className="icon-btn icon-btn--bordered" onClick={() => set({ detailsOpen: false })} aria-label="Close details">
+            <Icon name="close" opacity={0.92} />
+          </button>
+        </div>
+        <div className="details__scroll">
+          <div className="group-hero">
+            <BotAvatarFor bot={bot} size={56} />
+            <div className="group-hero__text">
+              <div className="group-hero__name" title={displayName(bot)}>{displayName(bot)}</div>
+              <div className="group-hero__sub">Group chat{people === null ? '' : ` · ${people} ${people === 1 ? 'bot' : 'bots'}`}</div>
+            </div>
+          </div>
+
+          <div className="details__sections">
+            <section>
+              <div className="section-label">People</div>
+              <MembersCard room={bot} onCount={setPeople} />
+              <div className="group-hint">@mention a Bot to ask just them; Bots can also @mention each other to collaborate.</div>
+            </section>
+
+            <section>
+              <div className="section-label">Options</div>
+              <div className="panel-card">
+                <div className="panel-row panel-row--setting">
+                  <span className="panel-row__lead">
+                    <Icon name={muted ? 'bell_off' : 'bell'} size={16} opacity={0.6} />
+                    <span>{muted ? 'Unmute chat' : 'Mute chat'}</span>
+                  </span>
+                  <Toggle on={muted} onChange={() => toggleMute(bot.id)} label={muted ? 'Unmute chat' : 'Mute chat'} />
+                </div>
+                <button type="button" className="panel-row panel-row--action is-danger" onClick={leave} disabled={leaving}>
+                  <Icon name="leave" size={16} opacity={0.7} />
+                  <span>{leaving ? 'Leaving…' : 'Leave'}</span>
+                </button>
+              </div>
+              {error && <div className="cfg-error cfg-error--small">{error}</div>}
+            </section>
+          </div>
+        </div>
+      </>)}
+    </aside>
+  );
+}
+
 export function DetailsPanel() {
   const bot = useSelectedBot();
   const routines = useStore((s) => (bot ? s.routines[bot.id] : undefined));
@@ -61,14 +136,16 @@ export function DetailsPanel() {
   const barRef = useRef<HTMLDivElement>(null);
   if (!bot) return null;
 
-  // Rooms are group chats: they have no engine of their own, so no Engine tab.
-  const isRoom = bot.kind === 'room';
+  // Rooms are group chats: no computer, no engine and no routines of their own, so their panel is
+  // the people and the group options instead of the tabs a Bot has.
+  if (bot.kind === 'room') return <GroupDetails bot={bot} open={open} />;
+
   const tabs: { id: DetailsTab; label: string }[] = [
     { id: 'screen', label: 'Screen' },
     { id: 'activity', label: 'Activity' },
     { id: 'tasks', label: 'Tasks' },
     { id: 'library', label: 'Library' },
-    ...(isRoom ? [] : [{ id: 'engine' as DetailsTab, label: 'Engine' }]),
+    { id: 'engine', label: 'Engine' },
   ];
   // Switching from a bot on Engine to a room (or a vanished tab) lands back on the first tab.
   const shown: DetailsTab = tabs.some((t) => t.id === tab) ? tab : 'screen';
@@ -129,36 +206,23 @@ export function DetailsPanel() {
       </div>
       <div className="details__scroll" id="details-tabpanel" role="tabpanel" aria-labelledby={`details-tab-${shown}`}>
         {shown === 'screen' && (
-          isRoom ? (
-            <div className="details__identity">
-              <BotAvatarFor bot={bot} size={64} />
-              <div className="details__name" title={displayName(bot)}>{displayName(bot)}</div>
-            </div>
-          ) : (
-            <div className="details__hero">
-              <ComputerScreen key={bot.id} bot={bot} variant="panel" paused={viewerOpen} onExpand={openComputer} />
-              <div className="details__who">
-                <BotAvatarFor bot={bot} size={36} />
-                <div className="details__who-text">
-                  <div className="details__who-head">
-                    <span className="details__who-name" title={displayName(bot)}>{displayName(bot)}</span>
-                    {bot.model && <span className="details__model" title={bot.provider ? `${bot.provider} · ${bot.model}` : bot.model}>{bot.model}</span>}
-                  </div>
-                  <div className="details__who-sub">Computer {computerStatusText(computer).toLowerCase()}</div>
+          <div className="details__hero">
+            <ComputerScreen key={bot.id} bot={bot} variant="panel" paused={viewerOpen} onExpand={openComputer} />
+            <div className="details__who">
+              <BotAvatarFor bot={bot} size={36} />
+              <div className="details__who-text">
+                <div className="details__who-head">
+                  <span className="details__who-name" title={displayName(bot)}>{displayName(bot)}</span>
+                  {bot.model && <span className="details__model" title={bot.provider ? `${bot.provider} · ${bot.model}` : bot.model}>{bot.model}</span>}
                 </div>
-                <button type="button" className="btn btn--sm btn--secondary details__open" onClick={() => openComputer('watch')}>Open</button>
+                <div className="details__who-sub">Computer {computerStatusText(computer).toLowerCase()}</div>
               </div>
+              <button type="button" className="btn btn--sm btn--secondary details__open" onClick={() => openComputer('watch')}>Open</button>
             </div>
-          )
+          </div>
         )}
         {shown === 'activity' && (
           <div className="details__sections">
-            {isRoom && (
-              <section>
-                <div className="section-label">Members</div>
-                <MembersCard room={bot} />
-              </section>
-            )}
             <section>
               <div className="section-label section-label--row">
                 <span>Upcoming</span>
@@ -170,7 +234,7 @@ export function DetailsPanel() {
                 )}
               </div>
             </section>
-            {!isRoom && !hideSuggested && (
+            {!hideSuggested && (
               <section>
                 <div className="section-label section-label--row">
                   <span>Suggested</span>
@@ -185,17 +249,15 @@ export function DetailsPanel() {
                 </div>
               </section>
             )}
-            {!isRoom && (
-              <section>
-                <div className="section-label">Voice chat</div>
-                <VoiceSettings bot={bot} />
-              </section>
-            )}
+            <section>
+              <div className="section-label">Voice chat</div>
+              <VoiceSettings bot={bot} />
+            </section>
           </div>
         )}
         {shown === 'tasks' && <BotTasks bot={bot} />}
         {shown === 'library' && <LibraryTab bot={bot} />}
-        {shown === 'engine' && !isRoom && (
+        {shown === 'engine' && (
           <div className="engine-tab-panel">
             <div className="section-label">Engine</div>
             <EngineSettings bot={bot} />

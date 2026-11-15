@@ -5,15 +5,21 @@ import { api, type RoomMember } from '../lib/api';
 import { useStore } from '../store';
 import { Icon } from './Icon';
 
-export function MembersCard({ room }: { room: Bot }) {
+/**
+ * The people in a group chat. Removing a Bot never deletes the group: it stays with the remaining
+ * members (and can be filled again), which is what Teams does too.
+ */
+export function MembersCard({ room, onCount }: { room: Bot; onCount?: (n: number) => void }) {
   const bots = useStore((s) => s.bots);
   const [members, setMembers] = useState<RoomMember[] | null>(null);
   const [adding, setAdding] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
   const load = useCallback(() => {
-    api.roomMembers(room.id).then((r) => setMembers(r.members)).catch((e) => setError((e as Error).message));
-  }, [room.id]);
+    api.roomMembers(room.id)
+      .then((r) => { setMembers(r.members); onCount?.(r.members.length); })
+      .catch((e) => setError((e as Error).message));
+  }, [room.id, onCount]);
   useEffect(load, [load]);
 
   const save = async (ids: string[]) => {
@@ -27,7 +33,7 @@ export function MembersCard({ room }: { room: Bot }) {
   return (
     <div className="panel-card members">
       {members === null ? <div className="panel-empty">Loading…</div> : members.length === 0 ? (
-        <div className="panel-empty">No Bots in this group yet.</div>
+        <div className="panel-empty">No Bots in this group yet. Add one below.</div>
       ) : members.map((m) => {
         const bot = bots.find((b) => b.id === m.id);
         return (
@@ -39,11 +45,10 @@ export function MembersCard({ room }: { room: Bot }) {
             </span>
             <button
               type="button"
-              className="icon-btn members__remove"
+              className="icon-btn icon-btn--plain members__remove"
               aria-label={`Remove ${m.name}`}
               title={`Remove ${m.name}`}
               onClick={() => save(ids.filter((x) => x !== m.id))}
-              disabled={ids.length <= 2}
             >
               <Icon name="close" size={10} opacity={0.56} />
             </button>
@@ -65,7 +70,6 @@ export function MembersCard({ room }: { room: Bot }) {
         </button>
       )}
       {error && <div className="card__error">{error}</div>}
-      <div className="members__hint">@mention a Bot to ask just them; Bots can also @mention each other to collaborate.</div>
     </div>
   );
 }

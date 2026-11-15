@@ -70,15 +70,15 @@
   --color-msg-mine-bar: var(--accent-500);
 
   /* ── Nav rail (dark strip in both light and dark) ── */
-  --nav-rail-width:        48px;
+  --titlebar-height:       48px;
+  --nav-rail-width:        64px;
   --nav-rail-bg:           #1F1F1F;
   --nav-rail-icon:         rgba(255, 255, 255, 0.72);
   --nav-rail-icon-selected: #FFFFFF;
   --nav-rail-active-bar:   var(--accent-500);
-  --nav-rail-titlebar:     36px;
 
   /* ── Section panel ── */
-  --section-panel-width:   280px;
+  --section-panel-width:   300px;
   --section-panel-bg:      var(--color-bg-nav);
   --section-panel-border:  var(--color-border-subtle);
 

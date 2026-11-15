@@ -24,6 +24,7 @@ function GroupRow({ bot, members, selected, running, awaiting, onSelect }: {
   onSelect: (id: string) => void;
 }) {
   const shown = members?.slice(0, 3) ?? [];
+  const muted = useStore((s) => s.mutedRooms.includes(bot.id));
   return (
     <button
       type="button"
@@ -45,11 +46,13 @@ function GroupRow({ bot, members, selected, running, awaiting, onSelect }: {
       </span>
       <span className="bot-row__meta">
         <span className="bot-row__time">{listStamp(bot.lastActivityAt)}</span>
-        {members && members.length > 0 && (
+        {muted ? (
+          <span className="group-row__muted" title="Muted" aria-label="Muted"><Icon name="bell_off" size={12} /></span>
+        ) : members && members.length > 0 ? (
           <span className="group-row__count" title={`${members.length} Bots`} aria-label={`${members.length} Bots in this group`}>
             {members.length}
           </span>
-        )}
+        ) : null}
       </span>
     </button>
   );
@@ -69,6 +72,14 @@ export function ChatListView() {
 
   const rooms = useMemo(() => bots.filter((b) => b.kind === 'room'), [bots]);
   const roomKey = rooms.map((r) => r.id).join(',');
+  const rosterVersion = useStore((s) => s.rosterVersion);
+
+  // Whoever joins or leaves a group invalidates what the list knows about its members, so the
+  // count and avatar stack refetch instead of showing yesterday's roster.
+  useEffect(() => {
+    requested.current.clear();
+    setMemberErrors({});
+  }, [rosterVersion]);
 
   // Member lists are only needed for the avatar stack; fetch each room once, lazily.
   useEffect(() => {
@@ -79,7 +90,7 @@ export function ChatListView() {
         .then((r) => setMembers((prev) => ({ ...prev, [id]: r.members })))
         .catch(() => setMemberErrors((prev) => ({ ...prev, [id]: true })));
     }
-  }, [roomKey]);
+  }, [roomKey, rosterVersion]);
 
   const filter = query.trim().toLowerCase();
   const visible = useMemo(() => {

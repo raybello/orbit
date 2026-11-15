@@ -104,7 +104,6 @@
 
 /* ---------- sign-in ---------- */
 .signin { position: relative; display: flex; align-items: center; justify-content: center; height: 100%; background: var(--color-bg-sidebar); }
-.signin__chrome { position: absolute; inset: 0 auto auto 0; }
 .signin__card { display: flex; flex-direction: column; align-items: center; width: 360px; max-width: calc(100% - 32px); padding: 40px 32px 28px; background: var(--color-bg-elevated); border: 1px solid var(--color-border-secondary); border-radius: var(--radius-lg); box-shadow: var(--shadow-modal); }
 .signin__hero { margin-bottom: 20px; animation: bob 2.4s ease-in-out infinite; }
 .signin__title { margin: 0; font-size: 22px; font-weight: 600; line-height: 28px; letter-spacing: -0.2px; }
