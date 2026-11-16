@@ -7,11 +7,12 @@ import '../../styles/config.css';
 import '../../styles/voice-models.css';
 
 function Progress({ m }: { m: VoiceModelItem }) {
-  const line = m.state === 'ready' ? 'Ready' : m.state === 'error' ? 'Download failed' : m.state === 'downloading' ? `${m.pct}%` : 'Waiting';
+  // Downloads run one model at a time, so a queued one sits at 0% until its turn.
+  const line = m.state === 'ready' ? 'Ready' : m.state === 'error' ? 'Download failed' : m.state === 'downloading' && m.pct ? `${m.pct}%` : 'Waiting';
   return (
     <div className="vsetup__progress" data-model-id={m.id} data-state={m.state}>
       <div className="vsetup__progress-head">
-        <span>{KIND_LABEL[m.kind]} · {formatSize(m.size)}</span>
+        <span>{m.kind === 'tts' ? m.name : KIND_LABEL[m.kind]} · {formatSize(m.size)}</span>
         <span>{line}</span>
       </div>
       <div className="vmodels__bar" role="progressbar" aria-label={`${m.name} download progress`} aria-valuemin={0} aria-valuemax={100} aria-valuenow={m.pct}>

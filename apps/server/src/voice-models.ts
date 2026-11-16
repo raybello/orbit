@@ -153,6 +153,13 @@ export function filesNeededBy(id: string): VoiceModelFile[] {
   return [...own.filter((f) => f.kind !== 'espeak'), ...ESPEAK_FILES];
 }
 
+/** Files more than one model needs. */
+const SHARED_FILES = (() => {
+  const users = new Map<string, number>();
+  for (const spec of VOICE_MODELS) for (const f of filesNeededBy(spec.id)) users.set(f.name, (users.get(f.name) ?? 0) + 1);
+  return new Set([...users].filter(([, n]) => n > 1).map(([name]) => name));
+})();
+
 /** The required files of a kind (for tts that is Piper's files, espeak-ng data included). */
 export function filesForKind(kind: VoiceKind): VoiceModelFile[] {
   return filesNeededBy(REQUIRED_MODEL_FOR[kind]);
@@ -379,8 +386,10 @@ interface ModelScan {
   total: number;
   /** Bytes of those files that are complete. */
   have: number;
-  /** Bytes on disk, partial `.part` downloads included. */
+  /** Bytes on disk, partial `.part` downloads included, of files no other model needs. */
   onDisk: number;
+  /** Bytes on disk of files other models need too (the espeak-ng data). */
+  sharedOnDisk: number;
   files: number;
   missing: number;
   present: boolean;
@@ -410,12 +419,13 @@ function scan(root = modelsRoot(), fresh = false): Scan {
   };
   const byModel: Record<string, ModelScan> = {};
   for (const spec of VOICE_MODELS) {
-    const m: ModelScan = { total: 0, have: 0, onDisk: 0, files: 0, missing: 0, present: false };
+    const m: ModelScan = { total: 0, have: 0, onDisk: 0, sharedOnDisk: 0, files: 0, missing: 0, present: false };
     for (const f of filesNeededBy(spec.id)) {
       const s = sizeOf(f);
       m.total += f.size;
       m.files += 1;
-      m.onDisk += s.bytes;
+      if (SHARED_FILES.has(f.name)) m.sharedOnDisk += s.bytes;
+      else m.onDisk += s.bytes;
       if (s.complete) m.have += f.size;
       else m.missing += 1;
     }
@@ -498,7 +508,10 @@ export function modelItems(): VoiceModelItem[] {
   return VOICE_MODELS.map((spec) => {
     const m = s.byModel[spec.id];
     const state = states[spec.id];
-    const fromDisk = m.total ? Math.min(100, Math.round((m.onDisk / m.total) * 100)) : 100;
+    // Shared data counts for an installed model only: a missing voice next to an installed one
+    // holds nothing of its own, and deleting it would free nothing.
+    const onDisk = m.onDisk + (m.present ? m.sharedOnDisk : 0);
+    const fromDisk = m.total ? Math.min(100, Math.round((onDisk / m.total) * 100)) : 100;
     const pct = state === 'ready' ? 100 : (liveProgress.get(spec.id) ?? fromDisk);
     return {
       id: spec.id,
@@ -506,7 +519,7 @@ export function modelItems(): VoiceModelItem[] {
       name: spec.name,
       rate: spec.rate,
       size: m.total,
-      onDisk: m.onDisk,
+      onDisk,
       state,
       pct,
       tier: spec.tier,
