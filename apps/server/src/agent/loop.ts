@@ -192,7 +192,7 @@ const pendingApprovals = (botId: string) => db.prepare("SELECT * FROM approvals 
 /** Put an approval card in the conversation and wait for the user's answer. */
 export async function requestApproval(
   who: { userId: string; botId: string },
-  pol: { key: string; toolkit?: string; title: string },
+  pol: { key: string; toolkit?: string; title: string; rule?: { id: string; description: string } },
   args: unknown,
   rowSeq: number | null,
 ): Promise<ApprovalDecision> {
@@ -202,6 +202,7 @@ export async function requestApproval(
   const card = appendRow(botId, 'card', {
     type: 'card', card: 'approval', approvalId, title: `Allow ${getBotRow(botId).name} to ${pol.title.split(': ')[1] ?? pol.title}?`,
     detail: describeArgs(args), tool: pol.key, toolkit: pol.toolkit, toolkitName: tk?.name, logo: tk?.logo, args, status: 'pending',
+    ...(pol.rule ? { rule: pol.rule } : {}),
   });
   db.prepare('INSERT INTO approvals(id,bot_id,row_seq,call_id,tool,status,created_at) VALUES (?,?,?,?,?,?,?)').run(approvalId, botId, card.seq, '', pol.key, 'pending', now());
   db.prepare('UPDATE bots SET unread = unread + 1 WHERE id=?').run(botId);

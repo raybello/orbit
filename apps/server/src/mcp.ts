@@ -5,6 +5,8 @@ import { composioTools } from './composio.js';
 import { mcpToken, primaryBotId } from './engine.js';
 import { addPendingFiles, claimToolRow, enqueue, enqueueBotMessage, markSilent, noteToolOutcome, requestApproval, turnDepth, turnGroupDepth } from './agent/loop.js';
 import { policyFor, runComposioTool, toolMap, TOOLS, type ToolCtx } from './agent/tools.js';
+import { strictest } from './domain/rules.js';
+import { blockedByRule, recordReview, reviewToolCall } from './core/rule-service.js';
 
 /**
  * The app's tools, served to the Hermes engines over MCP (streamable HTTP, JSON answers only).
@@ -57,6 +59,35 @@ async function listTools(botId: string | null) {
   return [...own, ...apps];
 }
 
+/**
+ * The gate every call passes before it runs: the user's approval policy ("Always allow" and its
+ * defaults) and the bot's own rules, whichever is stricter. Answers with what to tell the engine
+ * when the call must not run, or null when it may.
+ */
+async function refusal(who: { userId: string; botId: string }, name: string, args: Record<string, unknown>, ownTool: boolean, rowSeq: number | null): Promise<string | null> {
+  const pol = policyFor(who.userId, name, args);
+  const review = await reviewToolCall(who.botId, name, args, ownTool);
+  const rule = review.verdict.decidedBy?.rule;
+  const decision = strictest(pol.decision, review.verdict.decision);
+  if (decision === 'block') {
+    const byRule = review.verdict.decision === 'block' ? rule : undefined;
+    noteToolOutcome(who.botId, rowSeq, { status: 'denied', summary: byRule ? `Blocked by your rule: ${byRule.description}`.slice(0, 200) : 'Not allowed' });
+    recordReview(who.botId, review, 'blocked');
+    return byRule ? blockedByRule(byRule) : DECLINED;
+  }
+  if (decision === 'ask') {
+    // A rule that asks is named on the card, so the person sees why and is not offered "Always allow".
+    const subject = rule ? { ...review.subject, rule: { id: rule.id, description: rule.description } } : pol;
+    const answer = await requestApproval(who, subject, args, rowSeq);
+    if (answer !== 'allow') {
+      recordReview(who.botId, review, answer === 'deny' ? 'denied' : 'expired');
+      return answer === 'deny' ? DECLINED : SKIPPED;
+    }
+  }
+  recordReview(who.botId, review, 'ran');
+  return null;
+}
+
 async function callTool(botId: string | null, rawName: string, args: Record<string, unknown>): Promise<CallResult> {
   const bot = botId ? getBotRow(botId) : null;
   if (!botId || !bot) return text('The team app has no bot for this agent yet. Ask the user to open the app once, then try again.', true);
@@ -66,20 +97,9 @@ async function callTool(botId: string | null, rawName: string, args: Record<stri
   const ctx: ToolCtx = { userId, botId, enqueueBotMessage, enqueue, depth: turnDepth(botId), groupDepth: turnGroupDepth(botId) };
   try {
     const own = toolMap.get(name);
+    const refused = await refusal({ userId, botId }, name, args, own !== undefined, rowSeq);
+    if (refused) return text(refused);
     if (own) {
-      // Tools that require approval (e.g. gmail_send, calendar_create_event) go through the same
-      // approval gate as Composio write tools, so the user stays in control.
-      if (own.policy === 'needs_approval') {
-        const pol = policyFor(userId, name, args);
-        if (pol.decision === 'block') {
-          noteToolOutcome(botId, rowSeq, { status: 'denied', summary: 'Not allowed' });
-          return text(DECLINED);
-        }
-        if (pol.decision === 'ask') {
-          const answer = await requestApproval({ userId, botId }, pol, args, rowSeq);
-          if (answer !== 'allow') return text(answer === 'deny' ? DECLINED : SKIPPED);
-        }
-      }
       const r = await own.impl(args, ctx);
       if (r.endTurn) markSilent(botId);
       noteToolOutcome(botId, rowSeq, { status: 'done', summary: r.summary });
@@ -91,15 +111,6 @@ async function callTool(botId: string | null, rawName: string, args: Record<stri
       return text(r.output);
     }
 
-    const pol = policyFor(userId, name, args);
-    if (pol.decision === 'block') {
-      noteToolOutcome(botId, rowSeq, { status: 'denied', summary: 'Not allowed' });
-      return text(DECLINED);
-    }
-    if (pol.decision === 'ask') {
-      const answer = await requestApproval({ userId, botId }, pol, args, rowSeq);
-      if (answer !== 'allow') return text(answer === 'deny' ? DECLINED : SKIPPED);
-    }
     const r = await runComposioTool(ctx, name, args);
     noteToolOutcome(botId, rowSeq, { status: r.summary === 'failed' ? 'error' : 'done', summary: r.summary === 'failed' ? 'Failed' : undefined });
     return text(r.output);

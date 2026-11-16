@@ -111,6 +111,8 @@ export type CardBody =
       toolkitName?: string;
       logo?: string;
       args: unknown;
+      /** The auto-review rule that raised this card. "Always allow" cannot override a rule, so the card does not offer it. */
+      rule?: { id: string; description: string };
       status: 'pending' | 'allowed' | 'always' | 'denied' | 'expired';
     }
   | {
