@@ -60,6 +60,8 @@ export const env = {
   serverUrl: process.env.SERVER_URL ?? `http://localhost:${process.env.PORT ?? 8787}`,
   xaiKey: process.env.XAI_API_KEY ?? '',
   xaiModel: process.env.XAI_MODEL ?? 'grok-4.7',
+  /** `https://us.api.x.ai/v1` keeps inference in the US. Managed bots receive the raw variable (engine.ts SHARED_ENV). */
+  xaiBaseUrl: (process.env.XAI_BASE_URL?.trim() || 'https://api.x.ai/v1').replace(/\/+$/, ''),
   composioKey: process.env.COMPOSIO_API_KEY ?? '',
   orgoKey: process.env.ORGO_API_KEY ?? (process.env.ORGO_API_KEY_FILE ? fs.readFileSync(process.env.ORGO_API_KEY_FILE, 'utf8').trim() : ''),
   sessionSecret: req('SESSION_SECRET'),

@@ -126,6 +126,8 @@ export const SHARED_ENV = [
   'FIRECRAWL_API_KEY', 'TAVILY_API_KEY', 'EXA_API_KEY', 'PARALLEL_API_KEY',
   // DeepSeek is the default model for managed Bots; its key lives in the primary agent's .env.
   'DEEPSEEK_API_KEY', 'DEEPSEEK_BASE_URL',
+  // Hermes reads it for every xAI call (model, x_search, voice), so the US regional choice holds there too.
+  'XAI_BASE_URL',
 ];
 
 /** Parts of the primary agent's config a managed agent starts from, so it reaches the same models. */
