@@ -1,12 +1,11 @@
-/* Calls: a placeholder panel, centred on the section pane. */
+/* Calls: a placeholder, centred in the page body. */
 .calls {
   display: flex;
   flex-direction: column;
   align-items: center;
   justify-content: center;
   gap: 12px;
-  height: 100%;
-  padding: 32px 28px;
+  flex: 1 1 auto;
   text-align: center;
   color: var(--foreground, inherit);
 }

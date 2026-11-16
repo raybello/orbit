@@ -105,8 +105,15 @@ export const useStore = create<State>((set, get) => ({
     const sel = get().selectedBotId;
     const selectedBotId = sel && bots.some((b) => b.id === sel) ? sel : (bots.find((b) => b.isPrimary) ?? bots[0])?.id ?? null;
     const changed = selectedBotId !== get().selectedBotId;
+    // A chat deleted here or on another device must not linger as feed entries or a mute flag.
+    const kept = new Set(bots.map((b) => b.id));
+    const gone = new Set(get().bots.filter((b) => !kept.has(b.id)).map((b) => b.id));
+    const pruned = gone.size
+      ? { recentActivity: get().recentActivity.filter((a) => !gone.has(a.botId)), mutedRooms: get().mutedRooms.filter((id) => !gone.has(id)) }
+      : {};
+    if (pruned.mutedRooms) lsSet(LS_MUTED, JSON.stringify(pruned.mutedRooms));
     // A deleted last chat must clear the selection too, or the shell keeps pointing at a gone bot.
-    set({ bots, live: liveMap, ...(selectedBotId ? {} : { selectedBotId: null }) });
+    set({ bots, live: liveMap, ...pruned, ...(selectedBotId ? {} : { selectedBotId: null }) });
     if (selectedBotId && (changed || !get().transcripts[selectedBotId])) {
       get().selectBot(selectedBotId);
     }

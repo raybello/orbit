@@ -1,6 +1,7 @@
 import { useConfigUI } from '../configStore';
 import { useStore } from '../store';
 import { Icon } from './Icon';
+import { PageShell } from './PageShell';
 import '../styles/calls.css';
 
 /**
@@ -20,22 +21,24 @@ export function CallsView() {
   };
 
   return (
-    <div className="calls">
-      <div className="calls__badge">
-        <Icon name="mic" size={22} />
+    <PageShell title="Calls">
+      <div className="calls">
+        <div className="calls__badge">
+          <Icon name="mic" size={22} />
+        </div>
+        <h2 className="calls__title">Calls are coming</h2>
+        <p className="calls__text">
+          Voice calls with your Bots are available today from any chat: press the microphone in the message
+          box and talk to the Bot the way you would on a call.
+        </p>
+        <button type="button" className="calls__cta" onClick={openChat} disabled={!primary}>
+          Open {primary ? `${primary.name}'s chat` : 'a chat'}
+        </button>
+        <p className="calls__hint">
+          While a call is live, the voice bar sits above the composer with mute, hang up and the running
+          transcript.
+        </p>
       </div>
-      <h2 className="calls__title">Calls are coming</h2>
-      <p className="calls__text">
-        Voice calls with your Bots are available today from any chat: press the microphone in the message
-        box and talk to the Bot the way you would on a call.
-      </p>
-      <button type="button" className="calls__cta" onClick={openChat} disabled={!primary}>
-        Open {primary ? `${primary.name}'s chat` : 'a chat'}
-      </button>
-      <p className="calls__hint">
-        While a call is live, the voice bar sits above the composer with mute, hang up and the running
-        transcript.
-      </p>
-    </div>
+    </PageShell>
   );
 }

@@ -105,9 +105,9 @@
 /* Collapsed, the panel keeps a narrow strip: the strip is where its expand control lives, so the
    sidebar can always be brought back with the mouse and not only with ⌘B. */
 .section-panel.is-collapsed { width: 34px; }
-.section-panel__header { display: flex; align-items: center; justify-content: space-between; gap: 8px; height: 48px; padding: 0 8px 0 16px; flex-shrink: 0; }
+.section-panel__header { display: flex; align-items: center; justify-content: space-between; gap: 8px; height: var(--page-header-height); padding: 0 8px 0 var(--page-gutter); flex-shrink: 0; }
 .section-panel__title {
-  margin: 0; min-width: 0; font-size: 16px; font-weight: 600; line-height: 24px; letter-spacing: -0.1px;
+  margin: 0; min-width: 0; font-size: var(--page-title-size); font-weight: var(--page-title-weight); line-height: var(--page-title-line); letter-spacing: -0.2px;
   color: var(--color-fg-default); white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
 }
 .section-panel__collapse { flex-shrink: 0; }
@@ -120,13 +120,13 @@
    carries the Tasks control instead, on one row with the collapse button: Tasks takes the space,
    collapse keeps only its own. The two used to be on separate rows, which left a dead gap between
    the panel's top edge and the list. */
-.section-panel[data-section='chat'] .section-panel__header { height: 44px; padding: 0 8px; justify-content: space-between; gap: 6px; }
+.section-panel[data-section='chat'] .section-panel__header { padding: 0 8px; justify-content: space-between; gap: 6px; }
 .section-panel[data-section='chat'] .section-panel__title { display: none; }
 .section-panel[data-section='chat'] .section-panel__header .sidebar-island { flex: 1 1 auto; min-width: 0; height: 32px; margin: 0; padding: 0 8px 0 2px; gap: 8px; border-radius: var(--radius-sm); }
 .section-panel[data-section='chat'] .section-panel__header .sidebar-island__icon { width: 28px; }
 .section-panel[data-section='chat'] .section-panel__body { padding: 0 0 0; }
 .section-panel__collapse { flex: 0 0 28px; width: 28px; height: 28px; }
-.section-panel.is-collapsed .section-panel__header { justify-content: center; padding: 0; height: 48px; }
+.section-panel.is-collapsed .section-panel__header { justify-content: center; padding: 0; }
 .section-panel.is-collapsed .section-panel__body { display: none; }
 
 /* ---------- main content column ---------- */
@@ -211,22 +211,14 @@
 .section-panel__header,
 .chat-list__header,
 .conv-header,
-.activity__header,
-.cal-header,
-.files-view__bar,
-.computers__bar,
-.skills-view__header,
+.page__header,
 .details__top,
 .viewer__top { -webkit-app-region: drag; }
 
 .section-panel__header :is(button, a, input, textarea, select, [role='button'], [role='tab']),
 .chat-list__header :is(button, a, input, textarea, select, [role='button'], [role='tab']),
 .conv-header :is(button, a, input, textarea, select, [role='button'], [role='tab']),
-.activity__header :is(button, a, input, textarea, select, [role='button'], [role='tab']),
-.cal-header :is(button, a, input, textarea, select, [role='button'], [role='tab']),
-.files-view__bar :is(button, a, input, textarea, select, [role='button'], [role='tab']),
-.computers__bar :is(button, a, input, textarea, select, [role='button'], [role='tab']),
-.skills-view__header :is(button, a, input, textarea, select, [role='button'], [role='tab']),
+.page__header :is(button, a, input, textarea, select, [role='button'], [role='tab']),
 .details__top :is(button, a, input, textarea, select, [role='button'], [role='tab']),
 .viewer__top :is(button, a, input, textarea, select, [role='button'], [role='tab']) {
   -webkit-app-region: no-drag;

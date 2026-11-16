@@ -4,6 +4,7 @@ import { api } from '../lib/api';
 import { botVars } from '../lib/colors';
 import { useStore } from '../store';
 import { Icon } from './Icon';
+import { PageShell } from './PageShell';
 import { Segmented } from './config/ui';
 import { CreateCalendarEventModal } from './modals/CreateCalendarEventModal';
 import '../styles/calendar.css';
@@ -175,152 +176,155 @@ export function CalendarView() {
     ? (selected.ev as CalendarEvent & { prompt?: string }).prompt
     : undefined;
 
+  const newEvent = (
+    <button type="button" className="cfg-btn cfg-btn--primary" onClick={() => openCreate(new Date(cursor.getFullYear(), cursor.getMonth(), cursor.getDate(), 9, 0))}>
+      <Icon name="plus" size={12} />
+      New event
+    </button>
+  );
+
   return (
-    <div className="cal" ref={rootRef}>
-      <header className="cal-header">
-        <div className="cal-header__group">
-          <button type="button" className="cfg-btn cfg-btn--secondary" onClick={goToday}>Today</button>
-          <div className="cal-nav">
-            <button type="button" className="cfg-icon-btn" aria-label="Previous" onClick={() => shift(-1)}>
-              <Icon name="chev_right" size={14} style={{ transform: 'rotate(180deg)' }} />
-            </button>
-            <button type="button" className="cfg-icon-btn" aria-label="Next" onClick={() => shift(1)}>
-              <Icon name="chev_right" size={14} />
-            </button>
+    <PageShell title="Calendar" actions={newEvent} className="cal-page">
+      <div className="cal" ref={rootRef}>
+        <div className="cal-toolbar">
+          <div className="cal-toolbar__group">
+            <button type="button" className="cfg-btn cfg-btn--secondary" onClick={goToday}>Today</button>
+            <div className="cal-nav">
+              <button type="button" className="cfg-icon-btn" aria-label="Previous" onClick={() => shift(-1)}>
+                <Icon name="chev_right" size={14} style={{ transform: 'rotate(180deg)' }} />
+              </button>
+              <button type="button" className="cfg-icon-btn" aria-label="Next" onClick={() => shift(1)}>
+                <Icon name="chev_right" size={14} />
+              </button>
+            </div>
+            <div className="cal-range" aria-live="polite">{rangeLabel(mode, range, cursor)}</div>
           </div>
-          <div className="cal-range" aria-live="polite">{rangeLabel(mode, range, cursor)}</div>
-        </div>
-        <div className="cal-header__group">
           <Segmented value={mode} options={MODES} onChange={setMode} label="Calendar range" />
-          <button type="button" className="cfg-btn cfg-btn--primary" onClick={() => openCreate(new Date(cursor.getFullYear(), cursor.getMonth(), cursor.getDate(), 9, 0))}>
-            <Icon name="plus" size={12} />
-            New event
-          </button>
         </div>
-      </header>
 
-      {status === 'error' && (
-        <div className="cal-error" role="alert">
-          <span>{error}</span>
-          <button type="button" className="cfg-btn cfg-btn--secondary" onClick={() => setReload((n) => n + 1)}>Retry</button>
-        </div>
-      )}
-      {status === 'loading' && <div className="cal-loading" role="status">Loading events…</div>}
-
-      <div className={`cal-body is-${mode}`}>
-        {mode === 'month' && (
-          <div className="cal-month" aria-label="Month view">
-            <div className="cal-month__dow">
-              {DOW.map((d) => <div key={d} className="cal-month__dow-cell">{d}</div>)}
-            </div>
-            <div className="cal-month__grid">{range.days.map(dayCell)}</div>
+        {status === 'error' && (
+          <div className="cal-error" role="alert">
+            <span>{error}</span>
+            <button type="button" className="cfg-btn cfg-btn--secondary" onClick={() => setReload((n) => n + 1)}>Retry</button>
           </div>
         )}
+        {status === 'loading' && <div className="cal-loading" role="status">Loading events…</div>}
 
-        {mode === 'week' && (
-          <div className="cal-week" aria-label="Week view">
-            {range.days.map((d) => {
-              const key = dayKey(d);
-              const list = byDay.get(key) ?? [];
-              return (
-                <div
-                  key={key}
-                  className={`cal-week__col${sameDay(d, today) ? ' is-today' : ''}`}
-                  data-date={key}
-                  onClick={() => openCreate(new Date(d.getFullYear(), d.getMonth(), d.getDate(), 9, 0))}
-                >
-                  <div className="cal-week__head">
-                    <span className="cal-week__dow">{DOW[d.getDay()]}</span>
-                    <span className="cal-week__num">{d.getDate()}</span>
-                    <button
-                      type="button"
-                      className="cal-cell__add"
-                      aria-label={`New event on ${fmtLongDay(d)}`}
-                      onClick={(e) => { e.stopPropagation(); openCreate(new Date(d.getFullYear(), d.getMonth(), d.getDate(), 9, 0)); }}
-                    >
-                      <Icon name="plus" size={11} />
-                    </button>
-                  </div>
-                  <div className="cal-week__events">
-                    {list.length === 0
-                      ? <span className="cal-week__empty">—</span>
-                      : list.map((ev) => pill(ev, false))}
-                  </div>
-                </div>
-              );
-            })}
-          </div>
-        )}
-
-        {mode === 'day' && (
-          <div className="cal-day" aria-label="Day view">
-            <div className="cal-day__head">
-              <span className="cal-week__dow">{DOW[cursor.getDay()]}</span>
-              <span className="cal-week__num">{cursor.getDate()}</span>
+        <div className={`cal-body is-${mode}`}>
+          {mode === 'month' && (
+            <div className="cal-month" aria-label="Month view">
+              <div className="cal-month__dow">
+                {DOW.map((d) => <div key={d} className="cal-month__dow-cell">{d}</div>)}
+              </div>
+              <div className="cal-month__grid">{range.days.map(dayCell)}</div>
             </div>
-            <div className="cal-day__rows">
-              {Array.from({ length: 24 }, (_, hour) => {
-                const at = new Date(cursor.getFullYear(), cursor.getMonth(), cursor.getDate(), hour, 0);
-                const list = (byDay.get(dayKey(at)) ?? []).filter((ev) => new Date(ev.start).getHours() === hour);
+          )}
+
+          {mode === 'week' && (
+            <div className="cal-week" aria-label="Week view">
+              {range.days.map((d) => {
+                const key = dayKey(d);
+                const list = byDay.get(key) ?? [];
                 return (
                   <div
-                    key={hour}
-                    className="cal-day__row"
-                    data-hour={hour}
-                    onClick={() => openCreate(at)}
+                    key={key}
+                    className={`cal-week__col${sameDay(d, today) ? ' is-today' : ''}`}
+                    data-date={key}
+                    onClick={() => openCreate(new Date(d.getFullYear(), d.getMonth(), d.getDate(), 9, 0))}
                   >
-                    <span className="cal-day__hour">{pad2(hour)}:00</span>
-                    <div className="cal-day__slot">
-                      {list.map((ev) => pill(ev, false))}
+                    <div className="cal-week__head">
+                      <span className="cal-week__dow">{DOW[d.getDay()]}</span>
+                      <span className="cal-week__num">{d.getDate()}</span>
+                      <button
+                        type="button"
+                        className="cal-cell__add"
+                        aria-label={`New event on ${fmtLongDay(d)}`}
+                        onClick={(e) => { e.stopPropagation(); openCreate(new Date(d.getFullYear(), d.getMonth(), d.getDate(), 9, 0)); }}
+                      >
+                        <Icon name="plus" size={11} />
+                      </button>
+                    </div>
+                    <div className="cal-week__events">
+                      {list.length === 0
+                        ? <span className="cal-week__empty">—</span>
+                        : list.map((ev) => pill(ev, false))}
                     </div>
                   </div>
                 );
               })}
             </div>
+          )}
+
+          {mode === 'day' && (
+            <div className="cal-day" aria-label="Day view">
+              <div className="cal-day__head">
+                <span className="cal-week__dow">{DOW[cursor.getDay()]}</span>
+                <span className="cal-week__num">{cursor.getDate()}</span>
+              </div>
+              <div className="cal-day__rows">
+                {Array.from({ length: 24 }, (_, hour) => {
+                  const at = new Date(cursor.getFullYear(), cursor.getMonth(), cursor.getDate(), hour, 0);
+                  const list = (byDay.get(dayKey(at)) ?? []).filter((ev) => new Date(ev.start).getHours() === hour);
+                  return (
+                    <div
+                      key={hour}
+                      className="cal-day__row"
+                      data-hour={hour}
+                      onClick={() => openCreate(at)}
+                    >
+                      <span className="cal-day__hour">{pad2(hour)}:00</span>
+                      <div className="cal-day__slot">
+                        {list.map((ev) => pill(ev, false))}
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+            </div>
+          )}
+        </div>
+
+        {selected && (
+          <div
+            className="cal-pop"
+            role="dialog"
+            aria-label="Event details"
+            style={{ ...botVars(colorFor(selected.ev.botId)), left: Math.max(8, Math.min(selected.x, 320)), top: Math.max(8, Math.min(selected.y, 240)) }}
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div className="cal-pop__head">
+              <span className="cal-pill__dot cal-pop__dot" aria-hidden />
+              <span className="cal-pop__title">{selected.ev.title}</span>
+              <button type="button" className="cfg-icon-btn" aria-label="Dismiss" onClick={() => setSelected(null)}>
+                <Icon name="close" size={12} />
+              </button>
+            </div>
+            <div className="cal-pop__bot">
+              <span className="cal-pill__dot" aria-hidden />
+              {selected.ev.botName}
+            </div>
+            <div className="cal-pop__when">
+              {selected.ev.eventType === 'one_time'
+                ? new Date(selected.ev.start).toLocaleString('en-US', { weekday: 'short', month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' })
+                : `Repeats · ${selected.ev.recurrenceRule ?? 'scheduled'}`}
+            </div>
+            {selected.ev.completedAt && <div className="cal-pop__done">Completed</div>}
+            {selectedPrompt && <div className="cal-pop__prompt">{selectedPrompt}</div>}
+            <div className="cal-pop__foot">
+              <span className="cal-pop__tag">{selected.ev.eventType === 'one_time' ? 'One-time' : 'Recurring'}</span>
+              <button type="button" className="cfg-btn cfg-btn--secondary" onClick={() => setSelected(null)}>Close</button>
+            </div>
           </div>
         )}
+
+        {creating && (
+          <CreateCalendarEventModal
+            initialDate={creating}
+            onClose={() => setCreating(null)}
+            onSaved={() => { setCreating(null); setReload((n) => n + 1); }}
+          />
+        )}
       </div>
-
-      {selected && (
-        <div
-          className="cal-pop"
-          role="dialog"
-          aria-label="Event details"
-          style={{ ...botVars(colorFor(selected.ev.botId)), left: Math.max(8, Math.min(selected.x, 320)), top: Math.max(8, Math.min(selected.y, 240)) }}
-          onClick={(e) => e.stopPropagation()}
-        >
-          <div className="cal-pop__head">
-            <span className="cal-pill__dot cal-pop__dot" aria-hidden />
-            <span className="cal-pop__title">{selected.ev.title}</span>
-            <button type="button" className="cfg-icon-btn" aria-label="Dismiss" onClick={() => setSelected(null)}>
-              <Icon name="close" size={12} />
-            </button>
-          </div>
-          <div className="cal-pop__bot">
-            <span className="cal-pill__dot" aria-hidden />
-            {selected.ev.botName}
-          </div>
-          <div className="cal-pop__when">
-            {selected.ev.eventType === 'one_time'
-              ? new Date(selected.ev.start).toLocaleString('en-US', { weekday: 'short', month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' })
-              : `Repeats · ${selected.ev.recurrenceRule ?? 'scheduled'}`}
-          </div>
-          {selected.ev.completedAt && <div className="cal-pop__done">Completed</div>}
-          {selectedPrompt && <div className="cal-pop__prompt">{selectedPrompt}</div>}
-          <div className="cal-pop__foot">
-            <span className="cal-pop__tag">{selected.ev.eventType === 'one_time' ? 'One-time' : 'Recurring'}</span>
-            <button type="button" className="cfg-btn cfg-btn--secondary" onClick={() => setSelected(null)}>Close</button>
-          </div>
-        </div>
-      )}
-
-      {creating && (
-        <CreateCalendarEventModal
-          initialDate={creating}
-          onClose={() => setCreating(null)}
-          onSaved={() => { setCreating(null); setReload((n) => n + 1); }}
-        />
-      )}
-    </div>
+    </PageShell>
   );
 }
