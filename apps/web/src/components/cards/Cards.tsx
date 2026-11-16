@@ -39,11 +39,13 @@ export function ApprovalCard({ body }: { body: Card<'approval'> }) {
         </div>
       </div>
       {body.detail && <div className="card__body">{body.detail}</div>}
+      {body.rule && <div className="card__rule">Asked because of your rule “{body.rule.description}”</div>}
       {pending ? (
         <>
           <div className="card__actions">
             <button type="button" className="btn btn--secondary" disabled={!!busy} onClick={() => decide('deny')}>Don't allow</button>
-            <button type="button" className="btn btn--secondary" disabled={!!busy} onClick={() => decide('always')}>Always allow</button>
+            {/* A rule keeps asking whatever the policy says, so "Always allow" would be a promise the app cannot keep. */}
+            {!body.rule && <button type="button" className="btn btn--secondary" disabled={!!busy} onClick={() => decide('always')}>Always allow</button>}
             <button type="button" className="btn btn--primary" disabled={!!busy} onClick={() => decide('allow')}>Allow</button>
           </div>
           {error && <div className="card__error">{error}</div>}

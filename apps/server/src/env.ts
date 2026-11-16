@@ -74,6 +74,8 @@ export const env = {
    */
   contextCompactionThreshold: positiveInt(process.env.CONTEXT_COMPACTION_THRESHOLD, 350_000),
   composioKey: process.env.COMPOSIO_API_KEY ?? '',
+  /** Signing secret of the Composio project webhook. Empty where this server has no public URL to receive one. */
+  composioWebhookSecret: process.env.COMPOSIO_WEBHOOK_SECRET ?? '',
   orgoKey: process.env.ORGO_API_KEY ?? (process.env.ORGO_API_KEY_FILE ? fs.readFileSync(process.env.ORGO_API_KEY_FILE, 'utf8').trim() : ''),
   sessionSecret: req('SESSION_SECRET'),
   devLogin: process.env.DEV_LOGIN === '1',

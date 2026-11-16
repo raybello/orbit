@@ -8,7 +8,7 @@ import { useStore } from './store';
 export type Theme = 'system' | 'light' | 'dark' | 'hc';
 /** A named accent preset, or `custom` once the person picks their own accent. */
 export type Preset = PresetId | 'custom';
-export type BotSettingsTab = 'general' | 'skills' | 'memories' | 'routines';
+export type BotSettingsTab = 'general' | 'skills' | 'memories' | 'routines' | 'rules';
 export type AppSection = 'general' | 'appearance' | 'engine-auth' | 'computer' | 'devices' | 'permissions' | 'apps' | 'account';
 
 /** Every section of the nav rail, in display order. */

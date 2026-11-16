@@ -4,6 +4,8 @@
 export * from './branded-types.js';
 // Bot templates and the starter gallery (F6, F7).
 export * from './templates.js';
+// Auto-review rules (F9).
+export * from './rules.js';
 
 export type AvatarShape =
   | 'blob' | 'pebble' | 'bean' | 'egg' | 'squircle' | 'tablet' | 'capsule' | 'cylinder' | 'hex'
@@ -112,6 +114,8 @@ export type CardBody =
       toolkitName?: string;
       logo?: string;
       args: unknown;
+      /** The auto-review rule that raised this card. "Always allow" cannot override a rule, so the card does not offer it. */
+      rule?: { id: string; description: string };
       status: 'pending' | 'allowed' | 'always' | 'denied' | 'expired';
     }
   | {
@@ -129,6 +133,8 @@ export type CardBody =
       toolkitName: string;
       logo?: string;
       reason: string;
+      /** The app was connected and its sign-in expired: the card asks to reconnect it. */
+      reconnect?: true;
       status: 'pending' | 'connected' | 'skipped';
     }
   | {
@@ -264,6 +270,8 @@ export interface EngineInfo {
 export interface Toolkit {
   slug: string; name: string; logo?: string; description?: string; categories: string[];
   managedAuth: boolean; noAuth: boolean; connected: boolean;
+  /** Set on an app that is not connected because its sign-in expired, never on a connected one. */
+  needsReconnect?: true;
 }
 
 /** One row of App Settings → Engine Auth: a bot's engine plus which shared credentials it has. */
