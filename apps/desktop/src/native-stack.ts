@@ -29,6 +29,7 @@ import {
   serverBundleDir,
 } from './mac-runtime';
 import type { DesktopLocalStackState, StackPhase } from './shared/api';
+import { signalBotEngines, stopBotEngines, type BotEngine } from './bot-engines';
 
 const log = createLogger({ scope: 'native-stack' });
 
@@ -407,6 +408,10 @@ export interface NativeStackOptions {
   portRange?: readonly [number, number];
   /** Set by tests to keep logs out of a real userData tree. */
   logDir?: string;
+  /** Stops the Bots' Hermes gateways under the engines folder once the server is down. */
+  stopEngines?: (enginesDir: string) => Promise<BotEngine[]>;
+  /** Quit-time variant: signal them and return at once. */
+  signalEngines?: (enginesDir: string) => BotEngine[];
 }
 
 const STARTING_PHASES: StackPhase[] = ['starting', 'waiting-healthy'];
@@ -441,6 +446,24 @@ export class NativeStackController implements NativeStack {
 
   private get logDir(): string {
     return this.opts.logDir ?? path.join(this.stackDir, 'logs');
+  }
+
+  /** Where the server keeps each extra Bot's Hermes home (ENGINES_DIR in `stackEnv`). */
+  get enginesDir(): string {
+    return path.join(this.opts.userDataDir, 'engines');
+  }
+
+  /**
+   * The server starts every Bot's gateway detached so a restart can reuse it, which means stopping
+   * the server leaves them running and writing into the engines folder. Stop them with it.
+   */
+  private async stopEngines(): Promise<void> {
+    try {
+      const stopped = await (this.opts.stopEngines ?? ((dir: string) => stopBotEngines(dir)))(this.enginesDir);
+      if (stopped.length) log.info(`stopped ${stopped.length} bot engine(s) under ${this.enginesDir}`);
+    } catch (err) {
+      log.warn('could not stop the bot engines', err);
+    }
   }
 
   state(): DesktopLocalStackState {
@@ -608,11 +631,15 @@ export class NativeStackController implements NativeStack {
     const service = this.api;
     this.api = null;
     if (!service) {
+      // Nothing of ours is running, but gateways a crashed run left behind may be.
+      await this.stopEngines();
       return this.set({ phase: 'stopped', detail: 'Stopped', webUrl: undefined, progress: undefined });
     }
 
     this.set({ phase: 'stopping', detail: 'Stopping the Orbit server' });
     await service.stop();
+    this.set({ phase: 'stopping', detail: 'Stopping the Bots' });
+    await this.stopEngines();
     return this.set({ phase: 'stopped', detail: 'Stopped', webUrl: undefined, progress: undefined });
   }
 
@@ -628,6 +655,12 @@ export class NativeStackController implements NativeStack {
     this.abortController = null;
     this.api?.dispose();
     this.api = null;
+    // No waiting at quit: SIGTERM lets each gateway shut down on its own after we are gone.
+    try {
+      (this.opts.signalEngines ?? ((dir: string) => signalBotEngines(dir)))(this.enginesDir);
+    } catch (err) {
+      log.warn('could not signal the bot engines', err);
+    }
   }
 
   private stopped(): DesktopLocalStackState {
