@@ -23,6 +23,7 @@ import { ConfigLayer } from './components/config/ConfigLayer';
 import { TasksView } from './components/config/TasksView';
 import { useConfigUI } from './configStore';
 import { TemplatesLayer } from './components/TemplatesLayer';
+import { TeamWizard } from './components/TeamWizard';
 import { useDeepLinks } from './lib/deep-links';
 
 /**
@@ -108,6 +109,7 @@ function Shell() {
       {modal === 'group' && <CreateGroupModal />}
       {modal === 'search' && <SearchModal />}
       {modal === 'apps' && <ConnectAppsModal />}
+      {modal === 'team' && <TeamWizard onClose={() => useStore.getState().setModal(null)} />}
       {viewerOpen && <ComputerViewer />}
       <ConfigLayer />
       <TemplatesLayer />

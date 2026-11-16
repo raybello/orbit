@@ -18,6 +18,7 @@ import { skillsApi } from '../routes-skills.js';
 import { rulesApi } from '../routes-rules.js';
 import { webhooksApi } from '../routes-webhooks.js';
 import { vaultApi } from '../routes-vault.js';
+import { teamsApi } from '../routes-teams.js';
 import { mcpApi } from '../mcp.js';
 
 /**
@@ -75,6 +76,7 @@ export function createApp(): Hono {
   app.route('/api', rulesApi);
   // The Bot Vault (saved logins and the secure form).
   app.route('/api', vaultApi);
+  app.route('/api', teamsApi);
   app.route('/api/files', filesApi);
   app.route('/api/computers', computersApi);
 

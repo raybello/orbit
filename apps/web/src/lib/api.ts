@@ -27,6 +27,15 @@ export interface AppsResponse { apps: Toolkit[]; connected: string[]; categories
 
 export interface RoomMember { id: string; name: string; label: string; avatarShape: string; avatarColor: string }
 
+export interface TeamTemplateSummary {
+  slug: string;
+  name: string;
+  tagline: string;
+  description: string;
+  schedule: string;
+  memberCount: number;
+}
+
 export const api = {
   me: () => req<{ user: User | null; devLogin: boolean }>('GET', '/auth/me'),
   devLogin: (email: string, name?: string) => req<{ ok: true }>('POST', '/auth/dev', { email, name }),
@@ -97,6 +106,10 @@ export const api = {
   skills: () => req<SkillsResponse>('GET', '/skills'),
   setSkillEnabled: (botId: string, skillName: string, enabled: boolean) =>
     req<{ skill: SkillEntry }>('PUT', `/skills/${encodeURIComponent(botId)}/${encodeURIComponent(skillName)}`, { enabled }),
+
+  teamTemplates: () => req<{ templates: TeamTemplateSummary[] }>('GET', '/team-templates'),
+  createTeam: (body: { slug: string; name?: string; schedule?: string; timezone?: string }) =>
+    req<{ bots: Bot[]; roomId: string; routineId: string }>('POST', '/teams', body),
 };
 
 export function openPopup(url: string) {

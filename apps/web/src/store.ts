@@ -4,7 +4,7 @@ import { api } from './lib/api';
 import { activityFromRow, activityPreview, botNameFor, mergeActivity, pruneSeen } from './domain/activity-feed';
 import type { Transcript } from './domain/transcript-utils';
 
-export type ModalKind = 'create' | 'search' | 'apps' | 'group' | null;
+export type ModalKind = 'create' | 'search' | 'apps' | 'group' | 'team' | null;
 
 interface State {
   user: User | null;

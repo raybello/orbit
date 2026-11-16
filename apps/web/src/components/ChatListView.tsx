@@ -135,6 +135,10 @@ export function ChatListView() {
             <Icon name="apps" size={12} />
             <span>Group</span>
           </button>
+          <button type="button" className="chat-list__action" onClick={() => setModal('team')} aria-label="New Team" title="New team of bots">
+            <Icon name="grid" size={12} />
+            <span>Team</span>
+          </button>
         </div>
       </div>
 
