@@ -28,7 +28,9 @@ import { relativeShort } from '../../lib/time';
 import { presets } from '@orbit/ui-tokens';
 import { useConfigUI, type AppSection, type Preset, type Theme } from '../../configStore';
 import { useStore } from '../../store';
+import { useVoiceModels } from '../../voice/models-store';
 import { computerStatusText } from '../DetailsPanel';
+import { formatSize } from '../voice/format';
 import { Icon, type IconName } from '../Icon';
 import { ToolkitLogo } from '../ToolkitLogo';
 import { EngineAuthPanel } from './EngineAuthPanel';
@@ -199,8 +201,21 @@ function ThemeTile({ value, label, current, onPick }: { value: Theme; label: str
   );
 }
 
+/** "2 of 4 installed · 263 MB on disk", or why there is nothing to manage. */
+function voiceModelsSummary(status: ReturnType<typeof useVoiceModels.getState>['status'], phase: string): string {
+  if (phase === 'gone' || (status && !status.runtime.addon)) return 'Not available on this server';
+  if (!status) return 'On-device speech recognition and voices';
+  const installed = status.voices.filter((m) => m.state === 'ready').length;
+  const onDisk = status.voices.reduce((n, m) => n + m.onDisk, 0);
+  const busy = status.voices.some((m) => m.state === 'downloading');
+  return `${installed} of ${status.voices.length} installed · ${formatSize(onDisk) || '0 MB'} on disk${busy ? ' · downloading' : ''}`;
+}
+
 function GeneralSection() {
   const open = useConfigUI((s) => s.openAppSettings);
+  const openVoiceModels = useConfigUI((s) => s.openVoiceModels);
+  const voiceStatus = useVoiceModels((s) => s.status);
+  const voicePhase = useVoiceModels((s) => s.phase);
   const theme = useConfigUI((s) => s.theme);
   const preset = useConfigUI((s) => s.preset);
   const label = preset === 'custom' ? 'Custom accent' : presets.find((p) => p.id === preset)?.label ?? 'Orbit Purple';
@@ -212,6 +227,13 @@ function GeneralSection() {
             <div className="cfg-row__text">
               <div className="cfg-row__title">Appearance</div>
               <div className="cfg-row__sub">{theme === 'system' ? 'System theme' : theme === 'hc' ? 'High contrast' : `${theme[0].toUpperCase()}${theme.slice(1)} theme`} · {label}</div>
+            </div>
+            <Glyph name="arrow_left" size={14} style={{ transform: 'rotate(180deg)', opacity: 0.6 }} />
+          </button>
+          <button type="button" className="cfg-row cfg-row--button" onClick={openVoiceModels}>
+            <div className="cfg-row__text">
+              <div className="cfg-row__title">Voice models</div>
+              <div className="cfg-row__sub">{voiceModelsSummary(voiceStatus, voicePhase)}</div>
             </div>
             <Glyph name="arrow_left" size={14} style={{ transform: 'rotate(180deg)', opacity: 0.6 }} />
           </button>

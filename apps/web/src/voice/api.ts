@@ -1,4 +1,4 @@
-import type { Bot, VoiceOption } from '@orbit/contracts';
+import type { Bot, VoiceLocalStatus, VoiceModelItem, VoiceModelState, VoiceModelStateValue, VoiceOption } from '@orbit/contracts';
 
 export interface VoiceSession {
   callId: string;
@@ -27,39 +27,12 @@ async function post<T>(path: string, body: unknown): Promise<T> {
   return res.json() as Promise<T>;
 }
 
-// Types are duplicated from the contract on purpose: the web app must not hard-depend on the
-// parent-owned contracts file adding these in the same change.
+export type LocalModelState = VoiceModelStateValue;
+export type LocalVoiceStatus = VoiceLocalStatus;
+/** One row of the model inventory; `rate` is what the engine produces, `size` its bytes on disk. */
+export type LocalModelItem = VoiceModelItem;
 
-export type LocalModelState = 'missing' | 'downloading' | 'ready' | 'error';
-
-export interface LocalVoiceStatus {
-  available: boolean;
-  reason?: string;
-  runtime: { platform: string; arch: string; provider: 'cpu'; addon: boolean };
-  models: { stt: LocalModelState; tts: LocalModelState; vad: LocalModelState };
-  bytes: { total: number; have: number };
-  download: { active: boolean; pct: number; name: string | null };
-}
-
-export type LocalModelKind = 'stt' | 'tts' | 'vad';
-export type LocalModelTier = 'required' | 'optional';
-
-/**
- * One row of `GET /api/voice/local/models` — the model menu the voice picker renders. `rate` is the
- * rate the engine actually produces (22 050 for Piper, 24 000 for Kokoro), `size` is bytes on disk.
- */
-export interface LocalModelItem {
-  id: string;
-  kind: LocalModelKind;
-  name: string;
-  rate: number;
-  size: number;
-  state: LocalModelState;
-  pct: number;
-  tier: LocalModelTier;
-}
-
-/** `ready` here means the *required* set (stt + vad + Piper); an optional voice never gates it. */
+/** `ready` means a call can run: the required models plus at least one installed voice. */
 export interface LocalModels { items: LocalModelItem[]; ready: boolean }
 
 /** `POST /api/voice/local/models/download`: backgrounded, so `started` only says work was queued. */
@@ -67,7 +40,7 @@ export interface LocalDownloadResult {
   started: boolean;
   model: string | null;
   startedModels: string[];
-  state: LocalVoiceStatus['models'];
+  state: VoiceModelState;
   /** Per-model states — the only place an optional voice's state (or its error) shows up. */
   states: Record<string, LocalModelState>;
 }
@@ -105,19 +78,14 @@ function localStatus(refresh = false): Promise<LocalVoiceStatus> {
   return (statusPromise ??= fetch('/api/voice/local/status', { credentials: 'include' })
     .then(async (r) => {
       if (!r.ok) throw new Error(`HTTP ${r.status}`);
-      return (await r.json()) as LocalVoiceStatus;
+      const s = (await r.json()) as LocalVoiceStatus;
+      // An older server has no inventory in /status; treat it as an empty one.
+      return { ...s, voices: Array.isArray(s.voices) ? s.voices : [] };
     })
     .catch((e) => { statusPromise = null; throw e; }));
 }
 
 let modelsPromise: Promise<LocalModels> | null = null;
-
-/** `POST /api/voice/local/models/download` is idempotent and runs in the background; poll status for progress. */
-function downloadLocalModels(kind?: 'stt' | 'tts' | 'vad'): Promise<{ started: boolean; state: LocalVoiceStatus['models'] }> {
-  statusPromise = null; // the next status read must not be a pre-download snapshot
-  modelsPromise = null;
-  return post<{ started: boolean; state: LocalVoiceStatus['models'] }>('/local/models/download', kind ? { kind } : {});
-}
 
 /**
  * The voice menu. Cached like the status, because the picker polls it while a download runs; pass
@@ -137,10 +105,26 @@ export function localModels(refresh = false): Promise<LocalModels> {
  * Download one model by id (e.g. the optional Kokoro tier). Backgrounded: the caller polls
  * `localModels(true)` until that model's own `state` is `ready`.
  */
-export function downloadLocalModel(model: string): Promise<LocalDownloadResult> {
+export function downloadLocalModel(model: string, opts: { fresh?: boolean } = {}): Promise<LocalDownloadResult> {
   modelsPromise = null; // not a pre-download snapshot
   statusPromise = null;
-  return post<LocalDownloadResult>('/local/models/download', { model });
+  return post<LocalDownloadResult>('/local/models/download', opts.fresh ? { model, fresh: true } : { model });
+}
+
+/** Stop a model's download. What it finished stays on disk, so a later download resumes. */
+export function cancelLocalModel(model: string): Promise<{ cancelled: boolean; items: VoiceModelItem[] }> {
+  modelsPromise = null;
+  statusPromise = null;
+  return post('/local/models/cancel', { model });
+}
+
+/** Delete a model's files from this machine. */
+export async function deleteLocalModel(model: string): Promise<{ removed: number; bytes: number; items: VoiceModelItem[] }> {
+  modelsPromise = null;
+  statusPromise = null;
+  const res = await fetch(`/api/voice/local/models/${encodeURIComponent(model)}`, { method: 'DELETE', credentials: 'include' });
+  if (!res.ok) throw new Error(`HTTP ${res.status}`);
+  return res.json() as Promise<{ removed: number; bytes: number; items: VoiceModelItem[] }>;
 }
 
 /**
@@ -213,9 +197,10 @@ export const voiceApi = {
   },
 
   localStatus,
-  downloadLocalModels,
   localModels,
   downloadLocalModel,
+  cancelLocalModel,
+  deleteLocalModel,
   saveBotVoice,
 
   /** On-device preview through the bot's chosen model: raw PCM16 plus the rate the engine produced. */

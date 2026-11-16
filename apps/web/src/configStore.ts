@@ -17,6 +17,8 @@ export const NAV_SECTIONS: readonly NavSection[] = ['activity', 'chat', 'calenda
 interface ConfigUI {
   botSettings: { botId: string; tab: BotSettingsTab } | null;
   appSettings: AppSection | null;
+  /** The Voice models manager, a dialog of its own over whatever is open. */
+  voiceModels: boolean;
   view: 'chat' | 'tasks';
   theme: Theme;
   /** The named accent preset (Teams purple by default). */
@@ -32,6 +34,8 @@ interface ConfigUI {
   closeBotSettings(): void;
   openAppSettings(section?: AppSection): void;
   closeAppSettings(): void;
+  openVoiceModels(): void;
+  closeVoiceModels(): void;
   setView(v: 'chat' | 'tasks'): void;
   setTheme(t: Theme): void;
   setPreset(p: Preset): void;
@@ -99,6 +103,7 @@ export function applyAccent(hex: string | null) {
 export const useConfigUI = create<ConfigUI>((set, get) => ({
   botSettings: null,
   appSettings: null,
+  voiceModels: false,
   view: 'chat',
   theme: readTheme(),
   preset: readAccent() ? 'custom' : readPreset(),
@@ -110,6 +115,8 @@ export const useConfigUI = create<ConfigUI>((set, get) => ({
   closeBotSettings: () => set({ botSettings: null }),
   openAppSettings: (section = 'general') => set({ appSettings: section }),
   closeAppSettings: () => set({ appSettings: null }),
+  openVoiceModels: () => set({ voiceModels: true }),
+  closeVoiceModels: () => set({ voiceModels: false }),
   setView: (view) => set({ view }),
   setTheme: (theme) => {
     lsSet(LS_THEME, theme);
