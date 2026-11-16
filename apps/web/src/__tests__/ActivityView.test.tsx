@@ -30,7 +30,7 @@ const bot = (id: string, name: string): Bot => ({
   voiceSpeed: 1,
   voiceLanguage: 'auto', voiceProvider: 'cloud' as const, voiceModel: 'piper-lessac-medium',
   model: null,
-  provider: null,
+  provider: null, initiative: 'proactive',
   generation: 1,
   unread: 0,
   lastPreview: null,

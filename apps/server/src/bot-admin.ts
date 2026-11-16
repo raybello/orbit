@@ -108,6 +108,7 @@ const PATCH_COLUMNS: Record<string, string> = {
   voiceLanguage: 'voice_language',
   voiceProvider: 'voice_provider',
   voiceModel: 'voice_model',
+  initiative: 'initiative',
 };
 
 /** One bot of this owner's, or null. */

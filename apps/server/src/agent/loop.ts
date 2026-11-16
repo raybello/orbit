@@ -13,6 +13,7 @@ import { instructionsFor } from './prompt.js';
 import { activityFor, appToolName, humanizeSlug, LIBRARY_ROOT, policyFor } from './tools.js';
 import { MIME_BY_EXTENSION } from '../lib/mime.js';
 import { sendPushNotification } from '../push.js';
+import { recordRoutineOutcome } from '../initiative-store.js';
 
 /**
  * A turn: one message handed to the bot's Hermes engine and streamed back into the conversation.
@@ -642,6 +643,7 @@ async function runTurn(botId: string, trigger: Trigger) {
       if (row?.body.type !== 'tool-call' || (row.body.status !== 'running' && row.body.status !== 'awaiting-approval')) continue;
       patchToolRow(botId, ref.seq, failed ? { status: 'error', summary: ctrl.signal.aborted ? 'Stopped' : 'Did not finish' } : { status: 'done' });
     }
+    if (trigger.type === 'routine') recordRoutineOutcome(trigger.routineId, !failed ? 'ok' : ctrl.signal.aborted ? 'stopped' : 'failed');
     if (aborts.get(botId) === ctrl) aborts.delete(botId);
     if (turns.get(botId) === turn) turns.delete(botId);
     // An approval asked for outside this turn may still be waiting; leave its state alone.

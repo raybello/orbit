@@ -1,6 +1,7 @@
 import type { Context } from 'hono';
 import { HTTPException } from 'hono/http-exception';
 import { z } from 'zod';
+import { INITIATIVE_LEVELS } from '@orbit/contracts';
 
 /**
  * The JSON bodies routes.ts accepts, as zod schemas, and the two helpers that read them.
@@ -77,6 +78,8 @@ export const PatchBotSchema = z
     voiceLanguage: z.string().optional(),
     voiceProvider: z.string().optional(),
     voiceModel: z.string().optional(),
+    // New with F8, so no older client sends anything else: the column only ever holds a real level.
+    initiative: z.enum(INITIATIVE_LEVELS).optional(),
   })
   .loose();
 

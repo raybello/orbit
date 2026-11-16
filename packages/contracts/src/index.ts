@@ -38,6 +38,8 @@ export interface Bot {
   /** Hermes engine: model id and provider for this bot; null = the engine's default. */
   model: string | null;
   provider: string | null;
+  /** How much the Bot reaches out unasked. Only the person's first primary Bot acts on it. */
+  initiative: InitiativeLevel;
   generation: number;
   unread: number;
   lastPreview: string | null;
@@ -473,3 +475,38 @@ export const ORBIT_HEADERS = {
 
 /** Env var that overrides the server the desktop app opens. */
 export const ORBIT_WEB_URL_ENV = 'ORBIT_WEB_URL';
+
+// ------------------------------------------------------------------ deep links (F1)
+
+export * from './deep-link.js';
+
+// ------------------------------------------------------------------ proactive initiative (F8)
+
+/**
+ * `proactive`: check-ins, the morning briefing and every signal. `reactive`: only alerts (a failed
+ * routine, an expired app connection). `off`: nothing unasked.
+ */
+export const INITIATIVE_LEVELS = ['proactive', 'reactive', 'off'] as const;
+export type InitiativeLevel = (typeof INITIATIVE_LEVELS)[number];
+
+export interface MorningBriefingSettings {
+  /** null when the routine was deleted or not seeded yet; turning the briefing on creates one. */
+  routineId: string | null;
+  enabled: boolean;
+  /** Local "HH:MM", or null when the routine was rescheduled to something other than a time of day. */
+  time: string | null;
+  timezone: string;
+}
+
+/** GET /api/initiative */
+export interface InitiativeSettings {
+  /** Hours without a message from the person before the primary Bot may check on them; 0 = never. */
+  idleHours: number;
+  briefing: MorningBriefingSettings;
+}
+
+/** PUT /api/initiative */
+export interface InitiativeSettingsPatch {
+  idleHours?: number;
+  briefing?: { enabled?: boolean; time?: string; timezone?: string };
+}

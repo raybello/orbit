@@ -22,7 +22,7 @@ function bot(over: Partial<Bot> & Pick<Bot, 'id' | 'name'>): Bot {
     mode: 'personal', isPrimary: false, kind: 'agent', pinned: false, effort: 'medium',
     voice: 'ara', voiceSpeed: 1, voiceLanguage: 'auto',
     voiceProvider: 'cloud', voiceModel: 'piper-lessac-medium',
-    model: null, provider: null,
+    model: null, provider: null, initiative: 'proactive',
     generation: 0, unread: 0, lastPreview: null, lastActivityAt: 0, createdAt: 0,
     ...over,
   };

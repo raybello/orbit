@@ -71,6 +71,7 @@ export function toBot(r: BotRow): Bot {
     voiceModel: r.voice_model ?? 'piper-lessac-medium',
     model: r.model ?? null,
     provider: r.provider ?? null,
+    initiative: r.initiative,
     generation: r.generation,
     unread: r.unread,
     lastPreview: lastPreview ? lastPreview.slice(0, 140) : null,

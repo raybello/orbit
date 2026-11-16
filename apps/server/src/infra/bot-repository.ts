@@ -1,4 +1,4 @@
-import type { AvatarColor, AvatarShape } from '@orbit/contracts';
+import type { AvatarColor, AvatarShape, InitiativeLevel } from '@orbit/contracts';
 import { db } from '../db.js';
 
 /**
@@ -45,6 +45,8 @@ export interface BotRow {
   engine: string | null;
   engine_port: number | null;
   handback_at: number | null;
+  /** Proactive initiative (db.ts addColumn); written only through the validated PATCH. */
+  initiative: InitiativeLevel;
   /** Added by initRooms(): 'agent' | 'room'. */
   kind: string | null;
   /** Added by initSubagents(): a hidden child bot's parent, and the hidden flag. */
