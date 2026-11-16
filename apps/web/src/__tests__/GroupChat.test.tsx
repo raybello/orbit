@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { cleanup, render, screen } from '@testing-library/react';
+import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
 import type { Bot } from '@orbit/contracts';
 
 vi.mock('../lib/api', () => ({
@@ -14,10 +14,13 @@ vi.mock('../lib/api', () => ({
     rows: vi.fn(async () => ({ generation: 1, rows: [] })),
     routines: vi.fn(async () => ({ routines: [] })),
     markRead: vi.fn(async () => ({ ok: true })),
+    deleteRoom: vi.fn(async () => ({ ok: true })),
+    bots: vi.fn(async () => ({ bots: [], live: [] })),
   },
 }));
 vi.mock('../lib/configApi', () => ({ configApi: { deleteBot: vi.fn(async () => ({ ok: true })) } }));
 
+import { api } from '../lib/api';
 import { ConvHeader } from '../components/ConvHeader';
 import { DetailsPanel } from '../components/DetailsPanel';
 import { useStore } from '../store';
@@ -66,6 +69,61 @@ describe('group chat details', () => {
 
     toggle.click();
     expect(useStore.getState().mutedRooms).toEqual([ROOM.id]);
+  });
+
+  it('asks before leaving, then deletes the group and lands on another chat', async () => {
+    const confirm = vi.spyOn(window, 'confirm').mockReturnValue(true);
+    vi.mocked(api.bots).mockResolvedValue({ bots: [AGENT], live: [] });
+    render(<DetailsPanel />);
+
+    fireEvent.click(screen.getByRole('button', { name: /Leave/ }));
+
+    expect(confirm).toHaveBeenCalledTimes(1);
+    expect(confirm.mock.calls[0][0]).toContain('Design sync');
+    await waitFor(() => expect(useStore.getState().selectedBotId).toBe(AGENT.id));
+    expect(api.deleteRoom).toHaveBeenCalledWith(ROOM.id);
+    expect(useStore.getState().bots.map((b) => b.id)).toEqual([AGENT.id]);
+    expect(useStore.getState().detailsOpen).toBe(false);
+  });
+
+  it('keeps the group when the person cancels', () => {
+    vi.spyOn(window, 'confirm').mockReturnValue(false);
+    render(<DetailsPanel />);
+
+    fireEvent.click(screen.getByRole('button', { name: /Leave/ }));
+
+    expect(api.deleteRoom).not.toHaveBeenCalled();
+    expect(useStore.getState().selectedBotId).toBe(ROOM.id);
+  });
+
+  it('shows why a delete failed and keeps the group open', async () => {
+    vi.spyOn(window, 'confirm').mockReturnValue(true);
+    vi.mocked(api.deleteRoom).mockRejectedValueOnce(new Error('not found'));
+    render(<DetailsPanel />);
+
+    fireEvent.click(screen.getByRole('button', { name: /Leave/ }));
+
+    expect(await screen.findByText('not found')).toBeTruthy();
+    expect(useStore.getState().selectedBotId).toBe(ROOM.id);
+    expect(screen.getByRole('button', { name: 'Leave' })).toBeTruthy();
+  });
+
+  it('drops a group deleted on another device from the roster, the feed and the mute list', async () => {
+    useStore.setState({
+      mutedRooms: [ROOM.id],
+      recentActivity: [
+        { botId: ROOM.id, botName: 'Design sync', kind: 'message', preview: 'Kickoff notes', at: 2_000, seq: 4 },
+        { botId: AGENT.id, botName: 'Scout', kind: 'message', preview: 'Numbers are in', at: 1_000, seq: 2 },
+      ],
+    });
+    vi.mocked(api.bots).mockResolvedValue({ bots: [AGENT], live: [] });
+
+    useStore.getState().handleEvent({ type: 'roster' });
+
+    await waitFor(() => expect(useStore.getState().selectedBotId).toBe(AGENT.id));
+    const st = useStore.getState();
+    expect(st.recentActivity.map((a) => a.preview)).toEqual(['Numbers are in']);
+    expect(st.mutedRooms).toEqual([]);
   });
 
   it('keeps the bot actions out of a one-to-one chat', () => {

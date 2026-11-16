@@ -5,7 +5,6 @@ import { PrimaryStar } from './PrimaryStar';
 import { api, openPopup } from '../lib/api';
 import { botVars } from '../lib/colors';
 import { computerStatusText } from '../lib/computer';
-import { configApi } from '../lib/configApi';
 import { useSelectedBot, useStore } from '../store';
 import { displayName } from '../domain/transcript-utils';
 import { Icon } from './Icon';
@@ -65,11 +64,12 @@ function GroupDetails({ bot, open }: { bot: Bot; open: boolean }) {
   const set = useStore((s) => s.set);
 
   const leave = async () => {
-    if (!window.confirm(`Leave ${displayName(bot)}? The group chat is deleted for everyone.`)) return;
+    if (!window.confirm(`Leave "${bot.name}"? The group and its messages are deleted for everyone. Its Bots stay on your team.`)) return;
     setLeaving(true); setError(null);
     try {
-      await configApi.deleteBot(bot.id);
+      await api.deleteRoom(bot.id);
       set({ detailsOpen: false });
+      // The group is gone from the roster, so loadBots moves the selection to another chat.
       await loadBots();
     } catch (e) {
       setError((e as Error).message || 'Could not leave the group');
