@@ -48,6 +48,7 @@ export function VoiceSetupModal() {
   const selected = picked ?? voices[0]?.id ?? null;
   const chosenItem = chosen ? voices.find((m) => m.id === chosen) : undefined;
   const done = chosenItem?.state === 'ready' && !pending;
+  const title = done ? 'On-device voice is ready' : 'Choose an on-device voice';
 
   const close = () => {
     dismissVoiceSetup();
@@ -62,9 +63,9 @@ export function VoiceSetupModal() {
   };
 
   return (
-    <Modal onClose={close} className="vsetup" label="Choose an on-device voice">
+    <Modal onClose={close} className="vsetup" label={title}>
       <div className="modal__header">
-        <span className="modal__title">{done ? 'On-device voice is ready' : 'Choose an on-device voice'}</span>
+        <span className="modal__title">{title}</span>
       </div>
       <div className="vmodels__body">
         <p className="vmodels__intro">
