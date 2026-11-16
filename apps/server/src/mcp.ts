@@ -1,7 +1,8 @@
 import crypto from 'node:crypto';
 import { Hono } from 'hono';
 import { getBotRow } from './store.js';
-import { composioTools } from './composio.js';
+import { composioTools, innerToolSlugs } from './composio.js';
+import { connectionWatch, expiredAppNotice } from './core/connection-watch.js';
 import { mcpToken, primaryBotId } from './engine.js';
 import { addPendingFiles, claimToolRow, enqueue, enqueueBotMessage, markSilent, noteToolOutcome, requestApproval, turnDepth, turnGroupDepth } from './agent/loop.js';
 import { policyFor, runComposioTool, toolMap, TOOLS, type ToolCtx } from './agent/tools.js';
@@ -95,8 +96,14 @@ async function callTool(botId: string | null, rawName: string, args: Record<stri
   const name = [...toolMap.keys()].find((k) => k.toLowerCase() === rawName.toLowerCase()) ?? rawName;
   const rowSeq = await claimToolRow(botId, name);
   const ctx: ToolCtx = { userId, botId, enqueueBotMessage, enqueue, depth: turnDepth(botId), groupDepth: turnGroupDepth(botId) };
+  const own = toolMap.get(name);
   try {
-    const own = toolMap.get(name);
+    // An app whose sign-in expired cannot run this, so say so before asking anyone to approve it.
+    const expiredApp = own ? null : await connectionWatch.expiredAppFor(userId, botId, innerToolSlugs(name, args));
+    if (expiredApp) {
+      noteToolOutcome(botId, rowSeq, { status: 'error', summary: `${expiredApp} needs reconnecting` });
+      return text(expiredAppNotice(expiredApp));
+    }
     const refused = await refusal({ userId, botId }, name, args, own !== undefined, rowSeq);
     if (refused) return text(refused);
     if (own) {
@@ -113,10 +120,12 @@ async function callTool(botId: string | null, rawName: string, args: Record<stri
 
     const r = await runComposioTool(ctx, name, args);
     noteToolOutcome(botId, rowSeq, { status: r.summary === 'failed' ? 'error' : 'done', summary: r.summary === 'failed' ? 'Failed' : undefined });
+    if (r.summary === 'failed') connectionWatch.noteFailure(userId, botId);
     return text(r.output);
   } catch (e) {
     const msg = String((e as { message?: unknown } | null)?.message ?? e);
     noteToolOutcome(botId, rowSeq, { status: 'error', summary: msg.slice(0, 200) });
+    if (!own) connectionWatch.noteFailure(userId, botId);
     return text(`Tool error: ${msg}`, true);
   }
 }

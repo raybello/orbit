@@ -61,6 +61,8 @@ export const env = {
   xaiKey: process.env.XAI_API_KEY ?? '',
   xaiModel: process.env.XAI_MODEL ?? 'grok-4.7',
   composioKey: process.env.COMPOSIO_API_KEY ?? '',
+  /** Signing secret of the Composio project webhook. Empty where this server has no public URL to receive one. */
+  composioWebhookSecret: process.env.COMPOSIO_WEBHOOK_SECRET ?? '',
   orgoKey: process.env.ORGO_API_KEY ?? (process.env.ORGO_API_KEY_FILE ? fs.readFileSync(process.env.ORGO_API_KEY_FILE, 'utf8').trim() : ''),
   sessionSecret: req('SESSION_SECRET'),
   devLogin: process.env.DEV_LOGIN === '1',

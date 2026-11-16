@@ -130,6 +130,8 @@ export type CardBody =
       toolkitName: string;
       logo?: string;
       reason: string;
+      /** The app was connected and its sign-in expired: the card asks to reconnect it. */
+      reconnect?: true;
       status: 'pending' | 'connected' | 'skipped';
     }
   | {
@@ -262,6 +264,8 @@ export interface EngineInfo {
 export interface Toolkit {
   slug: string; name: string; logo?: string; description?: string; categories: string[];
   managedAuth: boolean; noAuth: boolean; connected: boolean;
+  /** Set on an app that is not connected because its sign-in expired, never on a connected one. */
+  needsReconnect?: true;
 }
 
 /** One row of App Settings → Engine Auth: a bot's engine plus which shared credentials it has. */

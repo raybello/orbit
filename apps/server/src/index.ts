@@ -8,6 +8,8 @@ import { warmVoiceIfReady } from './voice-local.js';
 import { initRoutines } from './routines.js';
 import { initTriggers } from './triggers.js';
 import { initProactive } from './proactive.js';
+import { composioEnabled } from './composio.js';
+import { connectionWatch } from './core/connection-watch.js';
 import { initSubagents } from './agent/subagents.js';
 import { initRooms } from './agent/rooms.js';
 import { enqueue, expireStaleApprovals } from './agent/loop.js';
@@ -47,6 +49,7 @@ if (process.env.GROKBOT_NO_SCHEDULER !== '1') {
   initRoutines(enqueue);
   void initTriggers(enqueue);
 initProactive(enqueue);
+  if (composioEnabled()) connectionWatch.start();
 } else console.log('[grokbot] scheduler disabled (GROKBOT_NO_SCHEDULER=1)');
 startIdleWatcher();
 // Every managed bot's credentials come from the primary agent, so the sync has to land *before* the

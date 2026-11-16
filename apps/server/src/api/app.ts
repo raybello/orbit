@@ -15,6 +15,7 @@ import { filesApi } from '../routes-files.js';
 import { computersApi } from '../routes-computers.js';
 import { skillsApi } from '../routes-skills.js';
 import { rulesApi } from '../routes-rules.js';
+import { webhooksApi } from '../routes-webhooks.js';
 import { mcpApi } from '../mcp.js';
 
 /**
@@ -60,6 +61,7 @@ export function createApp(): Hono {
 
   // The app's tools for the agent engines (MCP).
   app.route('/mcp', mcpApi);
+  app.route('/webhooks', webhooksApi);
   app.route('/api/checkins', checkinsApi);
   app.route('/api/rooms', roomsApi);
   app.route('/api', api);

@@ -1,6 +1,7 @@
 import { z } from 'zod';
 import type { BotRule, ComposioHint, RuleAction, RulePattern } from '@orbit/contracts';
 import type { Decision } from '../agent/tools.js';
+import { slugInToolkit } from './connections.js';
 
 /**
  * Auto-review rules as a pure function: the rules a person gave a bot, one tool call, and what the
@@ -43,7 +44,7 @@ const CONVERSATION_TOOLS: ReadonlySet<string> = new Set(['ask_user', 'stay_silen
 const globMatches = (glob: string, slug: string) => new RegExp(`^${glob.replace(/\*/g, '.*')}$`, 'i').test(slug);
 
 const inToolkits = (slug: string, toolkits: readonly string[] | undefined) =>
-  !toolkits?.length || toolkits.some((t) => slug.toLowerCase().startsWith(`${t.toLowerCase()}_`));
+  !toolkits?.length || toolkits.some((t) => slugInToolkit(slug, t));
 
 /** A match names the connected-app tool that triggered it, when the pattern looks at one. */
 type Match = { tool: string | null } | null;
