@@ -464,6 +464,7 @@ async function writeHome(botId: string): Promise<{ home: string; key: string; di
   adaptLocalEndpoints(cfg);
   cfg.platform_toolsets = { ...asBlock(cfg.platform_toolsets), api_server: ['hermes-api-server', ...(display ? ['computer_use'] : [])] };
   cfg.terminal = { ...asBlock(cfg.terminal), cwd };
+  cfg.compression = { ...asBlock(cfg.compression), threshold_tokens: env.contextCompactionThreshold };
   if (cdp) cfg.browser = { ...asBlock(cfg.browser), cdp_url: cdp };
   cfg.mcp_servers = {
     ...asBlock(cfg.mcp_servers),

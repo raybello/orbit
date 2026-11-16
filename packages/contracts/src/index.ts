@@ -180,7 +180,10 @@ export interface VoiceLocalStatus {
   download: { active: boolean; pct: number; name: string | null };
 }
 
-export interface NoticeBody { type: 'notice'; text: string; tone?: 'info' | 'warn' | 'error' }
+/** What a notice reports, so a client can style or filter it. A plain notice has none. */
+export type NoticeKind = 'context-compacted';
+
+export interface NoticeBody { type: 'notice'; text: string; tone?: 'info' | 'warn' | 'error'; kind?: NoticeKind }
 
 export type ActivityKind =
   | 'thinking' | 'working' | 'searching_web' | 'reading_web' | 'browsing_web' | 'on_its_computer'

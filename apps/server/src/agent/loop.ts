@@ -525,6 +525,12 @@ async function runTurn(botId: string, trigger: Trigger) {
         }
 
         case 'hermes.status': {
+          // Hermes summarized older turns to stay under its context budget (engine.ts sets a managed bot's).
+          if (d?.kind === 'compacted') {
+            closeMessage();
+            appendRow(botId, 'notice', { type: 'notice', kind: 'context-compacted', text: 'Conversation summarized to save context.', tone: 'info' });
+            break;
+          }
           const status = d?.text;
           if (typeof status === 'string' && status.trim()) caption(status.trim().slice(0, 84), true);
           break;
