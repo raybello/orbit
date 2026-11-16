@@ -306,6 +306,9 @@ function harness(options: HarnessOptions = {}) {
   };
 
   const states: string[] = [];
+  /** Engine cleanups in order, each with how many SIGTERMs the API child had seen at that moment. */
+  const engineCalls: { kind: 'stop' | 'signal'; dir: string; apiSignals: number }[] = [];
+  const apiSignals = () => spawned[0]?.process.signals.length ?? 0;
   let port = 41_000;
   let healthChecks = 0;
   const fetchImpl =
@@ -333,10 +336,13 @@ function harness(options: HarnessOptions = {}) {
     serviceStartedMs: 0,
     stopGraceMs: 1_000,
     env: {},
+    stopEngines: async (dir) => { engineCalls.push({ kind: 'stop', dir, apiSignals: apiSignals() }); return []; },
+    signalEngines: (dir) => { engineCalls.push({ kind: 'signal', dir, apiSignals: apiSignals() }); return []; },
   });
 
   return {
     controller,
+    engineCalls,
     userDataDir,
     bundleDir: bundle.dir,
     execCalls,
@@ -477,5 +483,30 @@ describe('NativeStackController', () => {
     assert.equal(h.controller.matchesDesiredStack(), true);
     assert.equal(h.controller.matchesDesiredStack('http://127.0.0.1:42000'), true);
     assert.equal(h.controller.matchesDesiredStack('http://127.0.0.1:8787'), false);
+  });
+
+  test('stopping stops the Bots\' gateways after the server, so nothing keeps writing to engines/', async () => {
+    const h = harness();
+    await h.controller.start();
+    assert.deepEqual(h.engineCalls, []);
+
+    await h.controller.stop();
+    assert.deepEqual(h.engineCalls, [{ kind: 'stop', dir: path.join(h.userDataDir, 'engines'), apiSignals: 1 }]);
+    assert.equal(h.controller.enginesDir, path.join(h.userDataDir, 'engines'));
+  });
+
+  test('stopping with no server running still clears gateways a crashed run left behind', async () => {
+    const h = harness();
+    const state = await h.controller.stop();
+    assert.equal(state.phase, 'stopped');
+    assert.deepEqual(h.engineCalls.map((c) => c.kind), ['stop']);
+  });
+
+  test('quitting kills the server and signals the gateways without waiting', async () => {
+    const h = harness();
+    await h.controller.start();
+    h.controller.dispose();
+    assert.deepEqual(h.engineCalls.map((c) => c.kind), ['signal']);
+    assert.ok(h.spawned[0].process.signals.length >= 1, 'the API child is killed first');
   });
 });

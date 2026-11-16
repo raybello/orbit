@@ -1,5 +1,5 @@
 // tmp-env must be the FIRST import: it points env.ts at a temp DB and Hermes homes.
-import { cleanupTmpEnv, primaryHome } from './helpers/tmp-env.js';
+import { cleanupTmpEnv, primaryHome, SCRUBBED_ENV } from './helpers/tmp-env.js';
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import path from 'node:path';
@@ -7,7 +7,7 @@ import test, { after } from 'node:test';
 import YAML from 'yaml';
 
 // Loaded dynamically so env.ts (and the db it names) read the temp paths above.
-const { inheritSubscriptions, managedHome, primarySubscriptions, readDotenv, readYaml, subscriptionEnv, syncAllManagedAuth, syncManagedAuth, writePrivate } = await import('../engine.js');
+const { SHARED_ENV, inheritSubscriptions, managedHome, primarySubscriptions, readDotenv, readYaml, subscriptionEnv, syncAllManagedAuth, syncManagedAuth, writePrivate } = await import('../engine.js');
 const { db } = await import('../db.js');
 
 /**
@@ -50,6 +50,11 @@ function managedFiles(botId: string, vars: Record<string, string>, cfg: any = {}
 }
 
 const modeOf = (file: string) => fs.statSync(file).mode & 0o777;
+
+test('the test environment scrubs every credential the server could inherit from its own env', () => {
+  // Otherwise a key set in the developer's shell leaks into the sync tests below.
+  for (const key of SHARED_ENV) assert.ok(SCRUBBED_ENV.includes(key), `add ${key} to SCRUBBED_ENV in helpers/tmp-env.ts`);
+});
 
 test('a key the primary leaves empty is not copied over the managed value', () => {
   resetBots();

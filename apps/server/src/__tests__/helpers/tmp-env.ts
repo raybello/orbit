@@ -17,6 +17,21 @@ const primary = path.join(root, 'primary-home');
 fs.mkdirSync(primary, { recursive: true });
 fs.mkdirSync(path.join(root, 'engines'), { recursive: true });
 
+/**
+ * Model credentials the server falls back to from its own environment when the primary agent's .env
+ * lacks them (engine.ts SHARED_ENV). A developer shell often has some set (ANTHROPIC_BASE_URL, say),
+ * which leaked into the credential-sync tests and made them pass under turbo, which filters the
+ * environment, but fail when run directly. Tests that want one set it themselves.
+ * engine-auth.test.ts checks this list still covers SHARED_ENV.
+ */
+export const SCRUBBED_ENV = [
+  'ANTHROPIC_API_KEY', 'ANTHROPIC_BASE_URL', 'ANTHROPIC_TOKEN', 'CLAUDE_CODE_OAUTH_TOKEN',
+  'OPENAI_API_KEY', 'OPENAI_BASE_URL', 'OPENROUTER_API_KEY', 'XAI_API_KEY', 'GEMINI_API_KEY', 'GOOGLE_API_KEY', 'NOUS_API_KEY',
+  'FIRECRAWL_API_KEY', 'TAVILY_API_KEY', 'EXA_API_KEY', 'PARALLEL_API_KEY',
+  'DEEPSEEK_API_KEY', 'DEEPSEEK_BASE_URL',
+];
+for (const key of SCRUBBED_ENV) delete process.env[key];
+
 process.env.DB_PATH = path.join(root, 'test.db');
 process.env.ENGINES_DIR = path.join(root, 'engines');
 process.env.HERMES_HOME_PRIMARY = primary;
