@@ -22,6 +22,7 @@ import { SearchModal } from './components/modals/SearchModal';
 import { ConfigLayer } from './components/config/ConfigLayer';
 import { TasksView } from './components/config/TasksView';
 import { useConfigUI } from './configStore';
+import { TemplatesLayer } from './components/TemplatesLayer';
 
 /**
  * The main-area view for each rail section. Chat is the exception: its list lives in the 280px
@@ -107,6 +108,7 @@ function Shell() {
       {modal === 'apps' && <ConnectAppsModal />}
       {viewerOpen && <ComputerViewer />}
       <ConfigLayer />
+      <TemplatesLayer />
     </div>
   );
 }
