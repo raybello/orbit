@@ -34,10 +34,23 @@ export interface TeamTemplateSummary {
   description: string;
   schedule: string;
   memberCount: number;
+  memberNames: string[];
 }
 
 export const api = {
   me: () => req<{ user: User | null; devLogin: boolean }>('GET', '/auth/me'),
+  updateMe: (patch: { avatarUrl?: string | null }) => req<{ user: User }>('PATCH', '/auth/me', patch),
+  uploadAvatar: async (file: File): Promise<{ url: string }> => {
+    const form = new FormData();
+    form.append('file', file);
+    const res = await fetch('/api/auth/avatar', { method: 'POST', credentials: 'include', body: form });
+    if (!res.ok) {
+      let msg = res.statusText;
+      try { msg = ((await res.json()) as { error?: string }).error ?? msg; } catch { /* not json */ }
+      throw new ApiError(res.status, msg);
+    }
+    return res.json() as Promise<{ url: string }>;
+  },
   devLogin: (email: string, name?: string) => req<{ ok: true }>('POST', '/auth/dev', { email, name }),
   logout: () => req<{ ok: true }>('POST', '/auth/logout'),
 

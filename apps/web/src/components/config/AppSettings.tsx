@@ -802,14 +802,57 @@ function AppsSection() {
 
 function AccountSection() {
   const user = useStore((s) => s.user);
+  const updateUser = useStore((s) => s.updateUser);
   const [busy, setBusy] = useState(false);
+  const [avatarUrl, setAvatarUrl] = useState(user?.avatarUrl ?? '');
+  const [avatarSaving, setAvatarSaving] = useState(false);
+  const [avatarError, setAvatarError] = useState<string | null>(null);
+  const fileRef = useRef<HTMLInputElement>(null);
   const initials = initialsOf(user?.name, user?.email);
+
+  const saveAvatarUrl = async (url: string | null) => {
+    setAvatarSaving(true); setAvatarError(null);
+    try {
+      const { api } = await import('../../lib/api');
+      const { user: updated } = await api.updateMe({ avatarUrl: url });
+      updateUser({ avatarUrl: updated.avatarUrl });
+      setAvatarUrl(updated.avatarUrl ?? '');
+    } catch (e) {
+      setAvatarError((e as Error).message);
+    } finally {
+      setAvatarSaving(false);
+    }
+  };
+
+  const handleFile = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    setAvatarSaving(true); setAvatarError(null);
+    try {
+      const { api } = await import('../../lib/api');
+      const { url } = await api.uploadAvatar(file);
+      updateUser({ avatarUrl: url });
+      setAvatarUrl(url);
+    } catch (err) {
+      setAvatarError((err as Error).message);
+    } finally {
+      setAvatarSaving(false);
+      if (fileRef.current) fileRef.current.value = '';
+    }
+  };
+
   return (
     <>
       <section className="cfg-section">
         <div className="cfg-card">
           <div className="cfg-row">
-            <span className="account__initials">{initials}</span>
+            <div className="account__avatar-wrap">
+              {user?.avatarUrl ? (
+                <img className="account__avatar-img" src={user.avatarUrl} alt={user.name} />
+              ) : (
+                <span className="account__initials">{initials}</span>
+              )}
+            </div>
             <div className="cfg-row__text">
               <div className="cfg-row__title">{user?.name}</div>
               <div className="cfg-row__sub">{user?.email}</div>
@@ -817,6 +860,63 @@ function AccountSection() {
             <button type="button" className="cfg-btn cfg-btn--secondary" disabled={busy} onClick={async () => { setBusy(true); await configApi.logout().catch(() => {}); location.reload(); }}>
               {busy ? 'Signing out…' : 'Sign out'}
             </button>
+          </div>
+        </div>
+      </section>
+
+      <section className="cfg-section">
+        <div className="cfg-section__title">Profile picture</div>
+        <div className="cfg-card">
+          <div className="cfg-row cfg-row--col">
+            <div className="account__avatar-preview">
+              {user?.avatarUrl ? (
+                <img className="account__avatar-lg" src={user.avatarUrl} alt="Your avatar" />
+              ) : (
+                <span className="account__initials account__initials--lg">{initials}</span>
+              )}
+            </div>
+            <div className="account__avatar-actions">
+              <input
+                ref={fileRef}
+                type="file"
+                accept="image/png,image/jpeg,image/gif,image/webp,image/svg+xml"
+                style={{ display: 'none' }}
+                onChange={handleFile}
+              />
+              <button
+                type="button"
+                className="cfg-btn cfg-btn--secondary"
+                disabled={avatarSaving}
+                onClick={() => fileRef.current?.click()}
+              >
+                Upload image
+              </button>
+              {user?.avatarUrl && (
+                <button
+                  type="button"
+                  className="cfg-btn cfg-btn--secondary"
+                  disabled={avatarSaving}
+                  onClick={() => saveAvatarUrl(null)}
+                >
+                  Remove
+                </button>
+              )}
+            </div>
+            <div className="account__avatar-url-row">
+              <input
+                type="url"
+                className="text-input"
+                placeholder="Or paste an image URL…"
+                value={avatarUrl}
+                onChange={(e) => setAvatarUrl(e.target.value)}
+                onBlur={() => {
+                  const val = avatarUrl.trim();
+                  if (val !== (user?.avatarUrl ?? '')) saveAvatarUrl(val || null);
+                }}
+              />
+            </div>
+            {avatarError && <p className="cfg-error">{avatarError}</p>}
+            <p className="cfg-hint">Use an image, not a bot shape, to keep your avatar distinct from bot avatars.</p>
           </div>
         </div>
       </section>

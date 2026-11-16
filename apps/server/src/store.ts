@@ -63,6 +63,7 @@ export function toBot(r: BotRow): Bot {
     mode: r.mode,
     isPrimary: !!r.is_primary,
     kind: r.kind === 'room' ? 'room' : 'agent',
+    isTeam: r.kind === 'room' ? !!r.is_team : undefined,
     pinned: !!r.pinned,
     effort: r.effort as Bot['effort'],
     voice: r.voice ?? 'luna',

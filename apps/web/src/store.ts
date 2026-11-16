@@ -14,6 +14,10 @@ interface State {
   bots: Bot[];
   live: Record<string, LiveState>;
   selectedBotId: string | null;
+  /** Navigation history: past bot ids (most recent last). */
+  navHistory: string[];
+  /** Navigation future: forward stack (most recent last). */
+  navFuture: string[];
   transcripts: Record<string, Transcript>;
   routines: Record<string, Routine[]>;
   computer: ComputerState | null;
@@ -43,6 +47,9 @@ interface State {
   checkAuth(): Promise<void>;
   loadBots(): Promise<void>;
   selectBot(id: string): void;
+  goBack(): void;
+  goForward(): void;
+  updateUser(patch: Partial<User>): void;
   loadRows(id: string): Promise<void>;
   loadRoutines(id: string): Promise<void>;
   loadComputer(): Promise<void>;
@@ -68,6 +75,8 @@ export const useStore = create<State>((set, get) => ({
   bots: [],
   live: {},
   selectedBotId: lsGet(LS_SELECTED),
+  navHistory: [],
+  navFuture: [],
   transcripts: {},
   routines: {},
   computer: null,
@@ -120,6 +129,10 @@ export const useStore = create<State>((set, get) => ({
   },
 
   selectBot(id) {
+    const prev = get().selectedBotId;
+    if (prev && prev !== id) {
+      set((s) => ({ navHistory: [...s.navHistory, prev].slice(-50), navFuture: [] }));
+    }
     set({ selectedBotId: id });
     lsSet(LS_SELECTED, id);
     const t = get().transcripts[id];
@@ -261,6 +274,40 @@ export const useStore = create<State>((set, get) => ({
         set((st) => ({ connectionsVersion: st.connectionsVersion + 1 }));
         return;
     }
+  },
+
+  goBack() {
+    const { navHistory, selectedBotId } = get();
+    if (!navHistory.length) return;
+    const target = navHistory[navHistory.length - 1];
+    const next = navHistory.slice(0, -1);
+    if (selectedBotId) set((s) => ({ navFuture: [...s.navFuture, selectedBotId] }));
+    set({ navHistory: next, selectedBotId: target });
+    lsSet(LS_SELECTED, target);
+    const t = get().transcripts[target];
+    if (!t?.loaded) get().loadRows(target).catch(console.error);
+    get().loadRoutines(target).catch(console.error);
+    const bot = get().bots.find((b) => b.id === target);
+    if (bot?.unread) api.markRead(target).catch(() => {});
+  },
+
+  goForward() {
+    const { navFuture, selectedBotId } = get();
+    if (!navFuture.length) return;
+    const target = navFuture[navFuture.length - 1];
+    const next = navFuture.slice(0, -1);
+    if (selectedBotId) set((s) => ({ navHistory: [...s.navHistory, selectedBotId] }));
+    set({ navFuture: next, selectedBotId: target });
+    lsSet(LS_SELECTED, target);
+    const t = get().transcripts[target];
+    if (!t?.loaded) get().loadRows(target).catch(console.error);
+    get().loadRoutines(target).catch(console.error);
+    const bot = get().bots.find((b) => b.id === target);
+    if (bot?.unread) api.markRead(target).catch(() => {});
+  },
+
+  updateUser(patch) {
+    set((s) => ({ user: s.user ? { ...s.user, ...patch } : s.user }));
   },
 
   setModal(modal) { set({ modal }); },

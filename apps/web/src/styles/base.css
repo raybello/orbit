@@ -96,6 +96,7 @@ a { color: inherit; }
   box-shadow: var(--shadow-popover);
   animation: rise 100ms var(--ease-standard);
   max-height: 320px; overflow-y: auto;
+  -webkit-app-region: no-drag;
 }
 .menu.is-below { top: calc(100% + 6px); }
 .menu.is-above { bottom: calc(100% + 6px); }
