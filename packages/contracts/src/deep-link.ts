@@ -7,6 +7,8 @@
  * disagree on how a custom scheme's host and path split.
  */
 
+import type { Bot } from './index.js';
+
 export interface DeepLinkPrompt {
   kind: 'prompt';
   /** null opens the person's primary Bot. */
@@ -39,6 +41,12 @@ export function parseOrbitDeepLink(raw: string): DeepLink | null {
   const text = params.get('text') ?? '';
   if (text.length > MAX_DEEP_LINK_TEXT) return null;
   return { kind: 'prompt', botId: id || null, text };
+}
+
+/** The Bot a link opens: the one it names, else the primary (also when the named one is gone). */
+export function deepLinkTarget(bots: readonly Pick<Bot, 'id' | 'isPrimary'>[], link: DeepLink): string | null {
+  const named = link.botId ? bots.find((b) => b.id === link.botId) : undefined;
+  return (named ?? bots.find((b) => b.isPrimary) ?? bots[0])?.id ?? null;
 }
 
 /** Form-encoded pairs. A repeated key is ambiguous, so it fails the whole link. */

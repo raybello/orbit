@@ -62,8 +62,9 @@ function toBlocks(rows: Row[]): Block[] {
 }
 
 export default function ThreadScreen() {
-  const params = useLocalSearchParams<{ botId: string }>();
+  const params = useLocalSearchParams<{ botId: string; initialText?: string }>();
   const botId = Array.isArray(params.botId) ? params.botId[0] : (params.botId ?? '');
+  const initialText = Array.isArray(params.initialText) ? params.initialText[0] : params.initialText;
   const tokens = useMobileTokens();
   const insets = useSafeAreaInsets();
 
@@ -74,6 +75,11 @@ export default function ThreadScreen() {
 
   const [draft, setDraft] = useState('');
   const inputRef = useRef<TextInput>(null);
+
+  // A deep link's text (app/prompt.tsx) waits in the composer, and only while nothing is typed there.
+  useEffect(() => {
+    if (initialText) setDraft((current) => (current.trim() ? current : initialText));
+  }, [botId, initialText]);
 
   const rowsQuery = useRowsQuery(botId);
   const send = useSendMessage(botId);

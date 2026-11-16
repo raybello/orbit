@@ -202,6 +202,7 @@ export default function RootLayout() {
           <Stack.Screen name="server" options={{ presentation: 'modal', headerShown: true, title: 'Server' }} />
           <Stack.Screen name="sign-out" options={{ presentation: 'modal', headerShown: true, title: 'Sign out' }} />
           <Stack.Screen name="thread/[botId]" options={{ headerShown: false }} />
+          <Stack.Screen name="prompt" options={{ headerShown: false, animation: 'none' }} />
           <Stack.Screen name="skills/index" options={{ headerShown: true, title: 'Skills' }} />
           <Stack.Screen
             name="computer/[botId]"

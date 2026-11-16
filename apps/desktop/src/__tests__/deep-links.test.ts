@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
-import { MAX_DEEP_LINK_TEXT, parseOrbitDeepLink } from '@orbit/contracts';
+import { deepLinkTarget, MAX_DEEP_LINK_TEXT, parseOrbitDeepLink } from '@orbit/contracts';
 import { createDeepLinkInbox, deepLinkFromArgv } from '../deep-links';
 
 test('a prompt link names its bot and decodes its text', () => {
@@ -55,4 +55,13 @@ test('the inbox hands over the newest link once', () => {
   inbox.put({ kind: 'prompt', botId: 'b', text: 'second' });
   assert.deepEqual(inbox.take(), { kind: 'prompt', botId: 'b', text: 'second' });
   assert.equal(inbox.take(), null, 'taken links are gone');
+});
+
+test('a link opens the Bot it names, else the primary', () => {
+  const bots = [{ id: 'scout', isPrimary: false }, { id: 'atlas', isPrimary: true }];
+  const link = (botId: string | null) => ({ kind: 'prompt' as const, botId, text: '' });
+  assert.equal(deepLinkTarget(bots, link('scout')), 'scout');
+  assert.equal(deepLinkTarget(bots, link(null)), 'atlas');
+  assert.equal(deepLinkTarget(bots, link('gone')), 'atlas', 'a deleted Bot falls back to the primary');
+  assert.equal(deepLinkTarget([], link(null)), null);
 });

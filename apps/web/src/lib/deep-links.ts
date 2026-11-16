@@ -1,5 +1,5 @@
 import { useEffect } from 'react';
-import type { Bot, DeepLink } from '@orbit/contracts';
+import { deepLinkTarget, type DeepLink } from '@orbit/contracts';
 import { useStore } from '../store';
 import { useConfigUI } from '../configStore';
 import { prefillDraft } from './composer-drafts';
@@ -15,12 +15,6 @@ declare global {
     /** The desktop preload bridge; only the part this module uses, which older builds lack. */
     orbitDesktop?: { onDeepLink?: (cb: (link: DeepLink) => void) => () => void };
   }
-}
-
-/** The Bot a link opens: the one it names, else the primary (also when the named one is gone). */
-export function deepLinkTarget(bots: readonly Bot[], link: DeepLink): string | null {
-  const named = link.botId ? bots.find((b) => b.id === link.botId) : undefined;
-  return (named ?? bots.find((b) => b.isPrimary) ?? bots[0])?.id ?? null;
 }
 
 export async function openDeepLink(link: DeepLink): Promise<void> {
