@@ -17,6 +17,20 @@ function secret(name: string): string {
   throw new Error(`Missing env ${name} (or ${name}_FILE)`);
 }
 
+/** Like `secret`, for a key the server can run without: '' when neither NAME nor NAME_FILE is set. */
+function optionalSecret(name: string): string {
+  const direct = process.env[name];
+  if (direct) return direct.trim();
+  const file = process.env[`${name}_FILE`];
+  return file ? fs.readFileSync(file, 'utf8').trim() : '';
+}
+
+/** AUDIT_RETENTION_DAYS as a whole number of days; anything that is not one keeps the 90-day default. */
+function retentionDays(raw: string | undefined): number {
+  const days = Number((raw ?? '').trim() || 90);
+  return Number.isInteger(days) && days >= 0 ? days : 90;
+}
+
 const hermesHome = process.env.HERMES_HOME_PRIMARY ?? path.join(os.homedir(), '.hermes');
 
 /** Hosts a container uses to name another container; the host itself cannot resolve them. */
@@ -163,4 +177,13 @@ export const env = {
   googleClientId: process.env.GOOGLE_CLIENT_ID ?? '',
   /** OAuth2 client secret from your Google Cloud Console project. */
   googleClientSecret: process.env.GOOGLE_CLIENT_SECRET ?? '',
+
+  // ---- Bot Vault and audit log ----
+  /**
+   * Seals Vault secrets at rest: 32 random bytes as 64 hex characters. Empty turns the Vault off;
+   * no other secret stands in for it (lib/secret-box.ts). The desktop app generates it per stack.
+   */
+  dbEncryptionKey: optionalSecret('DB_ENCRYPTION_KEY'),
+  /** How many days back a bot's audit log and its export reach. 0 = no limit. */
+  auditRetentionDays: retentionDays(process.env.AUDIT_RETENTION_DAYS),
 };
