@@ -158,7 +158,7 @@ export function TemplateDetail({ templateId, from }: { templateId: string; from:
               <section className="template-detail__section">
                 <h3>Routines</h3>
                 <ul className="template-detail__routines">
-                  {template.routines.map((r) => <li key={r.name}><strong>{r.name}</strong>: {r.prompt}</li>)}
+                  {template.routines.map((r, i) => <li key={i}><strong>{r.name}</strong>: {r.prompt}</li>)}
                 </ul>
                 <p className="template-detail__hint">Routines start paused. Turn them on from the Bot&apos;s settings once its apps are connected.</p>
               </section>
