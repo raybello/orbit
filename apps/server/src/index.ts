@@ -13,7 +13,7 @@ import { initRooms } from './agent/rooms.js';
 import { enqueue, expireStaleApprovals } from './agent/loop.js';
 import { desSelfTest } from './lib/des.js';
 import { startIdleWatcher } from './idle.js';
-import { initEngines, startSubscriptionSync, syncAllManagedAuth } from './engine.js';
+import { initEngines, startPrimaryHqSync, startSubscriptionSync, syncAllManagedAuth } from './engine.js';
 import { recoverComputers, suspendComputers } from './computer-provider-registry.js';
 import { startDockerIdleSuspender } from './docker-provider.js';
 import { renameLegacyPrimary } from './bot-admin.js';
@@ -62,6 +62,10 @@ initEngines();
 // Subscription sign-ins are inherited as access tokens, so they have to be re-read as the primary
 // agent refreshes its own. A bot's gateway picks the new token up from auth.json without a restart.
 startSubscriptionSync();
+// Keep the primary bot's hq MCP entry current. Runs immediately (catches a changed URL or rotated
+// token from startup) and then every 2 minutes (recovers from the Hermes desktop app overwriting
+// the config when the user saves any setting).
+startPrimaryHqSync();
 // Containers left "running" by a crash are paused, not trusted: each bot's home folder on the host
 // is what survives, and the next open starts its container again.
 void recoverComputers().catch((e) => console.warn(`[docker] startup recovery failed: ${e?.message ?? e}`));

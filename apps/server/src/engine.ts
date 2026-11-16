@@ -916,21 +916,85 @@ export async function removeEngine(botId: string): Promise<void> {
  * The URL must be the one the *host* can dial (env.primaryMcpBaseUrl), not the container-facing
  * MCP_BASE_URL: a config pointing at host.docker.internal:8787 leaves the primary agent without a
  * single app tool, and it then tells the user it cannot message other Bots.
+ *
+ * Returns true when the config was changed on disk (URL or authorization token differed), so callers
+ * know whether to signal the primary gateway to reload.
  */
-export function syncPrimaryHqConfig(botId: string, { force = false } = {}) {
+export function syncPrimaryHqConfig(botId: string): boolean {
   const cfgFile = path.join(env.hermesHome, 'config.yaml');
-  if (!fs.existsSync(cfgFile)) return;
+  if (!fs.existsSync(cfgFile)) return false;
   const cfg = readYaml(cfgFile);
   const hqUrl = `${env.primaryMcpBaseUrl}/mcp/${botId}`;
+  const expectedAuth = `Bearer ${mcpToken(botId)}`;
   const current = asBlock(asBlock(cfg.mcp_servers).hq);
-  if (!force && current.url === hqUrl) return; // already up-to-date
+  const currentAuth = String(asBlock(current.headers).Authorization ?? '');
+  // A URL-only check misses token staleness: when the session secret rotates the URL stays the same
+  // but the token is wrong, so the primary agent gets Unauthorized on every MCP call and loses all
+  // team tools. Check both so a rotated secret is caught without needing force=true.
+  if (current.url === hqUrl && currentAuth === expectedAuth) return false;
   const headers = asBlock(current.headers);
   const keep = Object.fromEntries(Object.entries(headers).filter(([k]) => k.toLowerCase() !== 'authorization'));
   cfg.mcp_servers = {
     ...asBlock(cfg.mcp_servers),
-    hq: { ...current, url: hqUrl, headers: { ...keep, Authorization: `Bearer ${mcpToken(botId)}` }, timeout: 1800, connect_timeout: 30 },
+    hq: { ...current, url: hqUrl, headers: { ...keep, Authorization: expectedAuth }, timeout: 1800, connect_timeout: 30 },
   };
   fs.writeFileSync(cfgFile, YAML.stringify(cfg), 'utf8');
+  return true;
+}
+
+/**
+ * Ask the primary Hermes gateway to reload its config by sending it SIGHUP.
+ *
+ * Python's default SIGHUP handler terminates the process; the Hermes supervisor detects the exit and
+ * restarts the gateway, which then re-reads config.yaml and re-connects every MCP server. This is
+ * the lightest path to picking up a changed hq URL or token without a full manual restart.
+ *
+ * Returns true when the signal was delivered (the gateway was running), false when it was not (a
+ * fresh install where Hermes has not started yet, or one that crashed). The caller may log but
+ * should not treat false as an error: the gateway will pick up the config on its next start.
+ */
+function signalPrimaryGateway(): boolean {
+  const pid = gatewayPid(env.hermesHome);
+  if (!pid) return false;
+  try {
+    process.kill(pid, 'SIGHUP');
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+/**
+ * Keep the primary bot's hq MCP entry current on a timer.
+ *
+ * Two races make a one-shot sync at startup insufficient:
+ *   1. The Hermes desktop app rewrites config.yaml when the user saves any setting, restoring
+ *      whatever the gateway has in memory — which may be a stale URL or token from before this
+ *      server's last update.
+ *   2. The session secret can rotate between server restarts, invalidating the token without
+ *      changing the URL (so the old URL-only check silently left a 401 in place forever).
+ *
+ * Every interval this function re-reads config.yaml, compares both URL and token, and writes+signals
+ * only when something changed — so a healthy install never touches the config and never restarts
+ * the gateway needlessly.
+ */
+export function startPrimaryHqSync(intervalMs = 2 * 60_000): NodeJS.Timeout {
+  const run = () => {
+    const primaryBot = db.prepare("SELECT id FROM bots WHERE engine='primary' LIMIT 1").get() as { id: string } | undefined;
+    if (!primaryBot) return;
+    try {
+      const changed = syncPrimaryHqConfig(primaryBot.id);
+      if (!changed) return;
+      const signaled = signalPrimaryGateway();
+      console.log(`[engine] primary hq config refreshed (url/token updated)${signaled ? '; gateway signaled to reload' : '; gateway not running yet'}`);
+    } catch (e) {
+      console.warn(`[engine] primary hq sync failed: ${messageOf(e)}`);
+    }
+  };
+  run();
+  const timer = setInterval(run, intervalMs);
+  timer.unref?.();
+  return timer;
 }
 
 /** On server start: give older bots an engine, then bring the managed gateways up. */
@@ -944,7 +1008,13 @@ export function initEngines() {
   const bots = db.prepare("SELECT id, is_primary FROM bots WHERE engine IS NULL AND COALESCE(kind,'agent') <> 'room' AND COALESCE(hidden,0)=0 ORDER BY is_primary DESC, created_at ASC").all() as { id: string }[];
   for (const b of bots) assignEngine(b.id);
   const primaryBot = db.prepare("SELECT id FROM bots WHERE engine='primary' LIMIT 1").get() as { id: string } | undefined;
-  if (primaryBot) syncPrimaryHqConfig(primaryBot.id);
+  if (primaryBot) {
+    const changed = syncPrimaryHqConfig(primaryBot.id);
+    if (changed) {
+      const signaled = signalPrimaryGateway();
+      console.log(`[engine] primary hq config written${signaled ? '; gateway signaled to reload' : '; gateway not running yet'}`);
+    }
+  }
   for (const b of db.prepare("SELECT id FROM bots WHERE engine='managed'").all() as { id: string }[]) provisionEngine(b.id);
 }
 
