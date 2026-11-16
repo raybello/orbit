@@ -39,6 +39,12 @@ extraResources:
   - from: resources/server-bundle.json
     to: server-bundle.json
 
+# The orbit:// deep link scheme (CFBundleURLTypes on macOS, x-scheme-handler in the Linux .desktop
+# file). main.ts also registers it at runtime, which is what Windows uses.
+protocols:
+  - name: Orbit
+    schemes: [orbit]
+
 asar: true
 # Ad-hoc signs the macOS bundle when no Developer ID is configured (see the script).
 afterPack: scripts/after-pack.cjs

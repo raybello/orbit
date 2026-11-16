@@ -8,7 +8,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 import { app, BrowserWindow, Menu, dialog, ipcMain, nativeImage, systemPreferences, type IpcMainEvent, type IpcMainInvokeEvent, type MediaAccessPermissionRequest, type Session } from 'electron';
-import { ORBIT_HEADERS, ORBIT_WEB_URL_ENV } from '@orbit/contracts';
+import { DEEP_LINK_SCHEME, ORBIT_HEADERS, ORBIT_WEB_URL_ENV, type DeepLink } from '@orbit/contracts';
 import { createLogger } from '@orbit/logger';
 import type { DesktopSetup, DesktopLocalStackState, ServerProbe } from './shared/api';
 import { IPC } from './shared/api';
@@ -34,6 +34,7 @@ import { detectHermes, ensureHermesApiKey, installHermes } from './hermes-setup'
 import { runHermesSetup, wireMcpForServer } from './hermes-setup-window';
 import { DEFAULT_OWNER_EMAIL, ensureDesktopSession } from './desktop-session';
 import { describeSender, isTrustedPage } from './ipc-guard';
+import { createDeepLinkInbox, deepLinkFromArgv } from './deep-links';
 
 const log = createLogger({ scope: 'main' });
 const here = path.dirname(fileURLToPath(import.meta.url));
@@ -68,6 +69,7 @@ let currentUrl: string | null = null;
 let booted = false;
 /** Set once `boot()` has picked a controller, so re-activating the app does not re-ask. */
 let stackSelected = false;
+const deepLinks = createDeepLinkInbox();
 
 function onStackState(state: DesktopLocalStackState): void {
   broadcast(IPC.stackState, state);
@@ -740,6 +742,16 @@ async function boot(): Promise<void> {
   await openAppWindow(target.url);
 }
 
+let bootInFlight: Promise<void> | null = null;
+
+/** A Dock click and a link can both ask for a window at once; they share one boot. */
+function bootOnce(): Promise<void> {
+  bootInFlight ??= boot().finally(() => {
+    bootInFlight = null;
+  });
+  return bootInFlight;
+}
+
 // ------------------------------------------------------------------ IPC
 
 /** The setup window's document: the only `file://` page whose calls we trust. */
@@ -873,6 +885,8 @@ function registerIpc(): void {
   // Only closes the in-app update bar: harmless wherever the page came from, and the bar
   // itself lives in the app window, so guarding it would leave it stuck open.
   ipcMain.on(IPC.noticeDismiss, () => dismissUpdateBar());
+  // Only the app window's page may take a link: the setup window and the update bar have no use for one.
+  ipcMain.handle(IPC.deepLinkTake, (event) => (mainWindow && !mainWindow.isDestroyed() && event.sender === mainWindow.webContents ? deepLinks.take() : null));
   ipcMain.handle(IPC.openExternal, (event, url: string) => {
     assertSender(event);
     return openExternalSafely(String(url ?? ''));
@@ -1043,16 +1057,58 @@ process.on('unhandledRejection', (reason) => {
 });
 
 
+// ------------------------------------------------------------------ deep links
+
+/**
+ * Become the handler for `orbit://`. A second profile (ORBIT_USER_DATA_DIR, the smoke harness) skips
+ * it: registering would take the person's links away from their real install.
+ */
+function registerProtocolClient(): void {
+  if (userDataOverride || process.env.ORBIT_SMOKE === '1') return;
+  // Unpackaged, the binary is Electron itself, so the OS must be told which app to start with it.
+  const registered = process.defaultApp && process.argv[1]
+    ? app.setAsDefaultProtocolClient(DEEP_LINK_SCHEME, process.execPath, [path.resolve(process.argv[1])])
+    : app.setAsDefaultProtocolClient(DEEP_LINK_SCHEME);
+  if (!registered) log.warn(`could not register as the ${DEEP_LINK_SCHEME}:// handler`);
+}
+
+/** Keep the link for the app window and bring the window up; its page takes the link when it can. */
+function receiveDeepLink(link: DeepLink | null): void {
+  if (!link) return;
+  // The text can be private; the log says only where the link points.
+  log.info(`deep link for ${link.botId ?? 'the primary bot'}`);
+  deepLinks.put(link);
+  if (mainWindow && !mainWindow.isDestroyed()) {
+    if (mainWindow.isMinimized()) mainWindow.restore();
+    mainWindow.show();
+    mainWindow.focus();
+    mainWindow.webContents.send(IPC.deepLinkReady);
+  } else if (app.isReady() && BrowserWindow.getAllWindows().length === 0) {
+    // macOS keeps the app alive with no window; a link should open one, as a Dock click does.
+    void bootOnce();
+  }
+}
+
 if (!app.requestSingleInstanceLock()) {
   quitApp('another Orbit instance holds the single-instance lock');
 } else {
-  app.on('second-instance', () => {
+  registerProtocolClient();
+  // macOS delivers a link that launched the app before `ready`, so this listener goes on first.
+  app.on('open-url', (event, url) => {
+    event.preventDefault();
+    receiveDeepLink(deepLinkFromArgv([url]));
+  });
+  // Windows and Linux pass the link as an argument, to the first launch or to a second instance.
+  receiveDeepLink(deepLinkFromArgv(process.argv));
+
+  app.on('second-instance', (_event, argv) => {
     if (mainWindow && !mainWindow.isDestroyed()) {
       if (mainWindow.isMinimized()) mainWindow.restore();
       mainWindow.focus();
     } else if (setupWindow && !setupWindow.isDestroyed()) {
       setupWindow.focus();
     }
+    receiveDeepLink(deepLinkFromArgv(argv));
   });
 
   app.whenReady().then(
@@ -1092,7 +1148,7 @@ if (!app.requestSingleInstanceLock()) {
   );
 
   app.on('activate', () => {
-    if (BrowserWindow.getAllWindows().length === 0) void boot();
+    if (BrowserWindow.getAllWindows().length === 0) void bootOnce();
   });
 
   app.on('window-all-closed', () => {

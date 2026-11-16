@@ -7,6 +7,8 @@
  * literally, so a change here needs the same change there.
  */
 
+import type { DeepLink } from '@orbit/contracts';
+
 export type SetupMode = 'new' | 'existing';
 
 /** The contents of `userData/setup.json`. */
@@ -118,6 +120,12 @@ export interface OrbitDesktopAPI {
   dismissUpdateNotice(): void;
   /** Opens an https URL in the system browser; other schemes are refused in main. */
   openExternal(url: string): Promise<void>;
+  // Deep links
+  /**
+   * Calls `cb` with each `orbit://` link the OS hands the app, including one that arrived before this
+   * page subscribed. Each link is delivered once, to the app window only.
+   */
+  onDeepLink(cb: (link: DeepLink) => void): () => void;
   // Platform
   platform: 'darwin' | 'win32' | 'linux';
   version: string;
@@ -143,4 +151,6 @@ export const IPC = {
   updateInstall: 'orbit:update:install',
   noticeDismiss: 'orbit:notice:dismiss',
   openExternal: 'orbit:shell:open-external',
+  deepLinkReady: 'orbit:deeplink:ready',
+  deepLinkTake: 'orbit:deeplink:take',
 } as const;

@@ -28,6 +28,8 @@ const IPC = {
   updateInstall: 'orbit:update:install',
   noticeDismiss: 'orbit:notice:dismiss',
   openExternal: 'orbit:shell:open-external',
+  deepLinkReady: 'orbit:deeplink:ready',
+  deepLinkTake: 'orbit:deeplink:take',
 };
 
 /**
@@ -72,6 +74,17 @@ contextBridge.exposeInMainWorld('orbitDesktop', {
   dismissUpdateNotice: () => ipcRenderer.send(IPC.noticeDismiss),
   // Shell
   openExternal: (url) => ipcRenderer.invoke(IPC.openExternal, url),
+  // Deep links: main only says one is waiting; taking it is what hands it over, so a link that
+  // arrived before this page subscribed is delivered too, and none is delivered twice.
+  onDeepLink: (cb) => {
+    const take = () =>
+      ipcRenderer.invoke(IPC.deepLinkTake).then((link) => {
+        if (link) cb(link);
+      }, () => {});
+    const off = subscribe(IPC.deepLinkReady, take);
+    take();
+    return off;
+  },
   // Platform
   platform: process.platform,
   version: process.versions.electron,
