@@ -74,7 +74,6 @@ export function createApp(): Hono {
   app.route('/api', calendarApi);
   app.route('/api', skillsApi);
   app.route('/api', rulesApi);
-  // The Bot Vault (saved logins and the secure form).
   app.route('/api', vaultApi);
   app.route('/api', teamsApi);
   app.route('/api/files', filesApi);

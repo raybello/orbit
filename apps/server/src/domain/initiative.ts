@@ -1,13 +1,5 @@
 import type { CardBody, InitiativeLevel } from '@orbit/contracts';
 
-/**
- * What the primary Bot may do without being asked, and how each thing is described to it.
- *
- * The person picks one initiative level; every unsolicited act names the lowest level that allows it
- * (MIN_LEVEL), so a new kind of signal is one table entry and one case below, never another condition
- * in the scheduler. Pure: proactive.ts reads the database and calls these.
- */
-
 export type InitiativeSignal =
   | { kind: 'routine_failed'; routineId: string; routineName: string; botName: string; ranAt: number }
   | { kind: 'card_waiting'; botId: string; botName: string; generation: number; seq: number; title: string; since: number }
@@ -44,7 +36,7 @@ export function signalKey(s: InitiativeSignal): string {
   }
 }
 
-const hoursSince = (from: number, at: number) => Math.max(1, Math.floor((at - from) / 3_600_000));
+const hoursSince = (from: number, at: number) => Math.max(1, Math.round((at - from) / 3_600_000));
 
 function signalLine(s: InitiativeSignal, at: number): string {
   switch (s.kind) {
@@ -76,8 +68,6 @@ export function cardTitle(card: CardBody): string {
     case 'secure-form': return `Enter credentials for ${card.label}`;
   }
 }
-
-// ------------------------------------------------------------------ morning briefing
 
 export const BRIEFING_NAME = 'Morning Briefing';
 export const DEFAULT_BRIEFING_TIME = '08:00';
@@ -111,7 +101,6 @@ export function briefingSchedule(cron: string): { time: string; days: string } |
   return { time: `${String(hour).padStart(2, '0')}:${String(minute).padStart(2, '0')}`, days: f[4] };
 }
 
-/** The live facts appended to the briefing prompt at run time, so the Bot does not have to guess them. */
 export function briefingContext(input: {
   tasks: readonly { botName: string; title: string; state: 'working' | 'needs_input' }[];
   waiting: readonly { botName: string; title: string }[];

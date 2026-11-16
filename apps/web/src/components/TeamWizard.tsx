@@ -5,7 +5,6 @@ import { Modal } from './modals/Modal';
 
 type Step = 'pick' | 'configure' | 'done';
 
-/** Three-step wizard: pick a preset → configure name + schedule → create. */
 export function TeamWizard({ onClose }: { onClose: () => void }) {
   const [step, setStep] = useState<Step>('pick');
   const [templates, setTemplates] = useState<TeamTemplateSummary[]>([]);

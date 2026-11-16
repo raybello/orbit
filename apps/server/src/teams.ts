@@ -5,27 +5,12 @@ import { templateIdForSlug, installTemplate } from './templates.js';
 import { primaryBotOf } from './initiative-store.js';
 import type { Bot } from '@orbit/contracts';
 
-/**
- * Teams of Bots (F11).
- *
- * A team is a named set of bots assembled from template slugs plus a group room and an orchestrating
- * routine on the user's primary bot. Each member bot gets its own agent and screen. The primary bot
- * drives the team by sending messages to the room on the routine's trigger.
- *
- * Data model: teams are transient – they are just the bots they create and the room that links them.
- * This module does not own a `teams` table because the room row already names the members, and the
- * orchestrating routine already belongs to the primary bot. A `teamId` label on the room row lets
- * the UI group the members.
- */
-
-/** One preset team template. Members reference template slugs from the starter gallery. */
 export interface TeamTemplateSeed {
   slug: string;
   name: string;
   description: string;
   /** Short summary shown in the gallery. */
   tagline: string;
-  /** BCP-47 schedule: a cron expression for the orchestrating routine's default cadence. */
   schedule: string;
   /** Members in execution order. The primary bot orchestrates; these are the workers. */
   members: TeamMemberSeed[];
@@ -95,13 +80,10 @@ export const TEAM_TEMPLATES: readonly TeamTemplateSeed[] = [
   },
 ];
 
-/** The in-memory index built once from TEAM_TEMPLATES. */
 const BY_SLUG = new Map(TEAM_TEMPLATES.map((t) => [t.slug, t]));
 
-/** All team template slugs (for the gallery). */
 export function listTeamTemplates(): readonly TeamTemplateSeed[] { return TEAM_TEMPLATES; }
 
-/** One team template by slug. */
 export function getTeamTemplate(slug: string): TeamTemplateSeed | undefined { return BY_SLUG.get(slug); }
 
 export interface CreateTeamResult {
@@ -110,12 +92,7 @@ export interface CreateTeamResult {
   routineId: string;
 }
 
-/**
- * Atomically create a team: install each member bot, create the group room, and add the
- * orchestrating routine to the user's primary bot.
- *
- * All database writes are wrapped in a transaction so a partial failure leaves nothing behind.
- */
+/** Atomically install each member bot, create the group room, and add the orchestrating routine to the user's primary bot. */
 export function createTeam(userId: string, teamSlug: string, opts: { schedule?: string; timezone?: string; name?: string } = {}): CreateTeamResult {
   const seed = BY_SLUG.get(teamSlug);
   if (!seed) throw new Error(`Unknown team template: ${teamSlug}`);
@@ -129,7 +106,7 @@ export function createTeam(userId: string, teamSlug: string, opts: { schedule?: 
 
   return db.transaction((): CreateTeamResult => {
     const bots: Bot[] = [];
-    for (const member of seed!.members) {
+    for (const member of seed.members) {
       const tid = templateIdForSlug(member.templateSlug);
       const bot = installTemplate(tid, userId, { name: member.name, timezone: tz });
       bots.push(bot);
@@ -140,7 +117,7 @@ export function createTeam(userId: string, teamSlug: string, opts: { schedule?: 
     const routine = createRoutine({
       botId: primaryBot.id,
       title: `${teamName} orchestration`,
-      prompt: seed!.orchestratorPrompt,
+      prompt: seed.orchestratorPrompt,
       eventType: 'recurring',
       schedule,
       timezone: tz,
