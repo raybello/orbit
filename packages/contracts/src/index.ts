@@ -146,7 +146,8 @@ export type CardBody =
       text: string;
       approvalId: string;
       status: 'pending' | 'sent' | 'discarded';
-    };
+    }
+  | SecureFormCardBody;
 
 export interface EventBody {
   type: 'event';
@@ -410,6 +411,91 @@ export interface SkillEntry {
 
 /** GET /api/skills */
 export interface SkillsResponse { skills: SkillEntry[] }
+
+// ------------------------------------------------------------------ vault (F12)
+
+/** A saved login as the app shows it. The secret is write-only: no response ever carries it. */
+export interface VaultEntry {
+  id: string;
+  label: string;
+  username: string | null;
+  /** The site it belongs to (`https://github.com`, `https://*.amazon.com/ap`), or null for any page. */
+  urlPattern: string | null;
+  createdAt: number;
+  updatedAt: number;
+}
+
+/** GET /api/vault. `configured` is false when the server has no usable DB_ENCRYPTION_KEY. */
+export interface VaultResponse { configured: boolean; entries: VaultEntry[] }
+
+/** POST /api/vault. */
+export interface CreateVaultEntryRequest { label: string; username?: string | null; secret: string; urlPattern?: string | null }
+
+/** PATCH /api/vault/:id. An omitted `secret` keeps the stored one; null clears a username or pattern. */
+export interface UpdateVaultEntryRequest { label?: string; username?: string | null; secret?: string; urlPattern?: string | null }
+
+/** One input of a secure form: `secret` is the masked one, and every form has exactly one. */
+export interface SecureFormField { key: 'username' | 'secret'; label: string }
+
+/**
+ * A bot asking for a login it does not have. What the person types goes straight to
+ * POST /api/bots/:id/cards/:seq/secure-form and into the Vault: it is never part of this row, a
+ * message, or anything the bot reads.
+ */
+export interface SecureFormCardBody {
+  type: 'card';
+  card: 'secure-form';
+  /** What the login is for; it becomes the Vault label the bot fills it in by. */
+  label: string;
+  reason: string;
+  fields: SecureFormField[];
+  /** The site the bot wants it for, when it named one. */
+  urlPattern?: string;
+  status: 'pending' | 'submitted' | 'dismissed';
+  /** Set on submit: whether the person kept it in the Vault or let it expire after this use. */
+  saved?: boolean;
+}
+
+/** POST /api/bots/:id/cards/:seq/secure-form */
+export interface SecureFormSubmitRequest { values: { username?: string; secret: string }; save: boolean }
+
+// ------------------------------------------------------------------ audit log (F13)
+
+/**
+ * How a tool call got to run, or did not: `allowed` after the person approved it, `auto-allowed`
+ * when nothing asked, `denied` when the person, a policy or an expired approval stopped it, and
+ * `pending` while an approval is still open.
+ */
+export type AuditOutcome = 'allowed' | 'auto-allowed' | 'denied' | 'pending';
+
+export const AUDIT_OUTCOMES: readonly AuditOutcome[] = ['allowed', 'auto-allowed', 'denied', 'pending'];
+
+/** One tool call a bot made, with the approval decision that belongs to it. */
+export interface AuditEntry {
+  botId: string;
+  generation: number;
+  seq: number;
+  /** Unix ms the call started. */
+  at: number;
+  tool: string;
+  label: string;
+  args: unknown;
+  status: ToolCallBody['status'];
+  summary: string | null;
+  outcome: AuditOutcome;
+  approval: { decision: 'pending' | 'allowed' | 'always' | 'denied' | 'expired'; decidedAt: number | null } | null;
+}
+
+/** GET /api/bots/:id/audit?from=&to=&tool=&outcome=&q=&format=json|csv */
+export interface AuditResponse {
+  entries: AuditEntry[];
+  /** How many entries matched before `limit` cut the list. */
+  total: number;
+  /** Every tool name in the date range, for the filter. */
+  tools: string[];
+  /** AUDIT_RETENTION_DAYS: how far back the log reaches; 0 = no limit. */
+  retentionDays: number;
+}
 
 // ------------------------------------------------------------------ aliases
 // The implementation plan names some of these differently (BotRow / MessageRow /

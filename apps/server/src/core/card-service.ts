@@ -11,8 +11,8 @@ import { type CardEvent, type CardState, transitionCard } from '../domain/card-w
  * So this adapter does two jobs:
  *  - `cardStateOf` derives a CardState from a stored body, so legality can be asked of a real row;
  *  - `decideCard` runs the transition and rebuilds the row by spreading the original body and
- *    applying only the new status (plus the answer, when the new state carries one). Nothing the
- *    card said is lost, and no field is invented.
+ *    applying only the new status (plus the answer, or whether a secure form was kept, when the new
+ *    state carries one). Nothing the card said is lost, and no field is invented.
  *
  * It also fixes one real bug: routes.ts wrote `dismissed` on every non-connect card it dismissed,
  * which is not a legal draft status. A dismissed draft is `discarded` here; the UI treats any
@@ -23,6 +23,7 @@ type ApprovalBody = Extract<CardBody, { card: 'approval' }>;
 type QuestionBody = Extract<CardBody, { card: 'question' }>;
 type ConnectBody = Extract<CardBody, { card: 'connect' }>;
 type DraftBody = Extract<CardBody, { card: 'draft' }>;
+type SecureFormBody = Extract<CardBody, { card: 'secure-form' }>;
 
 /**
  * A decided card's timestamps and author are not part of CardBody, so a state derived from a stored
@@ -47,7 +48,7 @@ export class IllegalCardMoveError extends Error {
   }
 }
 
-/** A body whose `card` is not one of the four kinds (a corrupted row, or a new kind this module predates). */
+/** A body whose `card` is not a kind this module knows (a corrupted row, or a new kind it predates). */
 export class UnknownCardError extends Error {
   readonly card: unknown;
 
@@ -151,6 +152,27 @@ export function cardStateOf(body: CardBody, cardId: string): CardState {
       }
     }
 
+    case 'secure-form': {
+      const content = {
+        card: 'secure-form' as const,
+        cardId,
+        label: body.label,
+        reason: body.reason,
+        fields: body.fields,
+        urlPattern: body.urlPattern,
+      };
+      switch (body.status) {
+        case 'pending':
+          return { status: 'pending', ...content };
+        case 'submitted':
+          return { ...content, status: 'submitted', decidedAt: DECIDED_AT_UNKNOWN, decidedBy: DECIDED_BY_UNKNOWN, saved: body.saved ?? false };
+        case 'dismissed':
+          return { ...content, status: 'dismissed', decidedAt: DECIDED_AT_UNKNOWN, decidedBy: DECIDED_BY_UNKNOWN };
+        default:
+          throw new UnknownCardError(`secure-form/${(body as { status?: unknown }).status}`);
+      }
+    }
+
     default:
       // Only reachable at runtime: CardBody's union has no other member.
       throw new UnknownCardError((body as { card?: unknown }).card);
@@ -174,6 +196,9 @@ export function decideCard(body: CardBody, event: CardEvent, cardId: string): Ca
   // is a contract status because the machine only reaches contract statuses.
   if (next.card === 'question' && next.status === 'answered') {
     return { ...(body as QuestionBody), status: 'answered', answer: next.answer };
+  }
+  if (next.card === 'secure-form' && next.status === 'submitted') {
+    return { ...(body as SecureFormBody), status: 'submitted', saved: next.saved };
   }
   const status: CardBody['status'] = next.status;
   return { ...body, status } as CardBody;

@@ -1,4 +1,4 @@
-import type { BashResult, Box } from '../box.js';
+import { TYPE_FROM_STDIN, type BashResult, type Box } from '../box.js';
 import { execInContainer, writeFileInContainer } from './exec.js';
 
 /**
@@ -18,13 +18,16 @@ const BASE_ENV = {
   NO_AT_BRIDGE: '1',
 };
 
+function screenEnv(screenId?: string | null): Record<string, string> {
+  const display = !screenId || screenId === 'default' ? ':1' : `:${screenId.replace('screen-', '')}`;
+  return { ...BASE_ENV, DISPLAY: display, HQ_SCREEN: display.slice(1) };
+}
+
 export function dockerBox(containerId: string): Box {
   return {
     local: false,
     async bash(command: string, timeoutSec = 60, screenId?: string | null): Promise<BashResult> {
-      const display = !screenId || screenId === 'default' ? ':1' : `:${screenId.replace('screen-', '')}`;
-      const env = { ...BASE_ENV, DISPLAY: display, HQ_SCREEN: display.slice(1) };
-      const r = await execInContainer(containerId, ['bash', '-c', command], env, timeoutSec * 1000);
+      const r = await execInContainer(containerId, ['bash', '-c', command], screenEnv(screenId), timeoutSec * 1000);
       return { output: `${r.stdout}${r.stderr}`, exit_code: r.code };
     },
 
@@ -43,6 +46,11 @@ export function dockerBox(containerId: string): Box {
       const out = r.stdout.trim();
       if (!out || out.endsWith('__missing__')) return null;
       return Buffer.from(out, 'base64');
+    },
+
+    async typeSecret(secret, screenId): Promise<void> {
+      const r = await execInContainer(containerId, TYPE_FROM_STDIN, screenEnv(screenId), 60_000, Buffer.from(secret.reveal(), 'utf8'));
+      if (r.code !== 0) throw new Error(secret.redact(`typing failed (exit ${r.code}): ${`${r.stderr}${r.stdout}`.trim().slice(-200)}`));
     },
 
     quote: q,

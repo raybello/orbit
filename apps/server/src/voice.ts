@@ -117,7 +117,7 @@ function recentMessages(botId: string, count: number) {
     const m = messageText(body);
     if (m) out.push({ seq: r.seq, at: r.created_at, who: m.role === 'user' ? `User${m.via ? ` (${m.via})` : ''}` : b.name, text: m.text });
     else if (body.type === 'event' && body.event === 'voice-call' && body.call?.phase === 'ended') out.push({ seq: r.seq, at: r.created_at, who: 'Call record', text: body.text });
-    else if (body.type === 'card' && body.status === 'pending') out.push({ seq: r.seq, at: r.created_at, who: 'Waiting for the user', text: body.card === 'approval' ? body.title : body.card === 'question' ? body.question : body.card === 'connect' ? `Connect ${body.toolkitName}` : 'Draft to review' });
+    else if (body.type === 'card' && body.status === 'pending') out.push({ seq: r.seq, at: r.created_at, who: 'Waiting for the user', text: body.card === 'approval' ? body.title : body.card === 'question' ? body.question : body.card === 'connect' ? `Connect ${body.toolkitName}` : body.card === 'secure-form' ? `Enter the login for ${body.label}` : 'Draft to review' });
     if (out.length >= count) break;
   }
   return out.reverse();
@@ -140,7 +140,7 @@ function activitySnapshot(botId: string) {
   else if (live.isRunning) lines.push(`Busy right now: ${ACTIVITY_WORDS[live.activity?.kind ?? 'working'] ?? 'working'}${live.activity?.detail ? ` (${live.activity.detail})` : ''}, started ${live.startedAt ? ago(live.startedAt) : 'recently'}.`);
   else lines.push('Idle: not working on anything right now.');
   if (tasks.length) lines.push(`Open tasks:\n${tasks.map((t) => `- ${t.title} [${t.state === 'needs_input' ? 'needs input' : 'in progress'}]${t.note ? `: ${clip(t.note, 120)}` : ''}`).join('\n')}`);
-  if (pending.length) lines.push(`Waiting on the user in chat:\n${pending.map((b) => `- ${b.card === 'approval' ? b.title : b.card === 'question' ? b.question : b.card === 'connect' ? `Connect ${b.toolkitName}` : 'A draft to review'}`).join('\n')}`);
+  if (pending.length) lines.push(`Waiting on the user in chat:\n${pending.map((b) => `- ${b.card === 'approval' ? b.title : b.card === 'question' ? b.question : b.card === 'connect' ? `Connect ${b.toolkitName}` : b.card === 'secure-form' ? `Enter the login for ${b.label}` : 'A draft to review'}`).join('\n')}`);
   const comp = computerState(getBotRow(botId).user_id);
   lines.push(`Computer: ${comp.status === 'running' ? 'awake' : comp.status === 'absent' ? 'not set up yet' : comp.status}.`);
   return lines.join('\n');

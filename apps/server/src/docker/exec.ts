@@ -36,30 +36,41 @@ export interface ExecResult { stdout: string; stderr: string; code: number }
 /**
  * Run a command inside the container. With `timeoutMs` the command runs under coreutils `timeout`
  * so a stuck desktop tool cannot hold the request forever (exit code 124 means it ran out).
+ *
+ * `stdin` is how a value reaches the command without being part of `cmd`: Docker keeps an exec's
+ * command line (exec inspect, the daemon's events) and the container's process list shows it, while
+ * what is written to stdin is in neither.
  */
 export async function execInContainer(
   containerId: string,
   cmd: string[],
   env: Record<string, string> = {},
   timeoutMs = 60_000,
+  stdin?: Buffer,
 ): Promise<ExecResult> {
   const c = await container(containerId);
   const argv = timeoutMs > 0
     ? ['timeout', '-k', '5', String(Math.max(1, Math.ceil(timeoutMs / 1000))), ...cmd]
     : cmd;
+  const piped = stdin !== undefined;
   const exec = await c.exec({
     Cmd: argv,
+    AttachStdin: piped,
     AttachStdout: true,
     AttachStderr: true,
     Env: Object.entries(env).map(([k, v]) => `${k}=${v}`),
     WorkingDir: '/home/bot',
   });
-  const stream = (await exec.start({ hijack: true, stdin: false })) as NodeJS.ReadableStream;
+  const stream = (await exec.start({ hijack: true, stdin: piped })) as NodeJS.ReadableStream & NodeJS.WritableStream;
   const chunks: Buffer[] = [];
   await new Promise<void>((resolve, reject) => {
     stream.on('data', (d: Buffer | string) => chunks.push(Buffer.isBuffer(d) ? d : Buffer.from(d)));
     stream.on('end', resolve);
     stream.on('error', reject);
+    if (piped) {
+      stream.write(stdin);
+      stream.end();
+    }
   });
   const output = demuxOutput(Buffer.concat(chunks));
   const inspect = await exec.inspect();

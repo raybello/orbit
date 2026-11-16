@@ -16,6 +16,7 @@ import { Cron } from 'croner';
 import { COMPUTER_TOOLS } from '../computer-tools.js';
 import { RESEARCH_TOOLS } from '../computer-research.js';
 import { BOT_TOOLS } from './bot-tools.js';
+import { VAULT_TOOLS } from '../vault-tools.js';
 
 /** Tool arguments as the model sent them: a JSON object, read field by field. */
 type ToolArgs = Record<string, unknown>;
@@ -388,6 +389,9 @@ export const TOOLS: ToolDef[] = [
 
   // The team itself: list, create, edit, remove and promote Bots. Only a primary Bot may write.
   ...(BOT_TOOLS as unknown as ToolDef[]),
+
+  // Saved logins: filled in on the Bot's screen, or asked for in a secure form. See vault-tools.ts.
+  ...(VAULT_TOOLS as unknown as ToolDef[]),
 ];
 
 export const toolMap = new Map(TOOLS.map((t) => [t.name, t]));
