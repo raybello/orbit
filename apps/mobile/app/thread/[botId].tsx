@@ -67,7 +67,8 @@ export default function ThreadScreen() {
   const tokens = useMobileTokens();
   const insets = useSafeAreaInsets();
 
-  const bot = useOrbitStore((s) => s.bots.find((b) => b.id === botId));
+  const bots = useOrbitStore((s) => s.bots);
+  const bot = bots.find((b) => b.id === botId);
   const rows = useOrbitStore((s) => s.threads[botId]);
   const live = useOrbitStore((s) => s.live[botId]);
 
@@ -169,7 +170,7 @@ export default function ThreadScreen() {
           item.kind === 'tools' ? (
             <ToolRunChip rows={item.rows} tokens={tokens} />
           ) : (
-            <RowView row={item.row} botId={botId} tokens={tokens} bot={bot} follow={item.follow} />
+            <RowView row={item.row} botId={botId} tokens={tokens} bot={bot} bots={bots} follow={item.follow} />
           )
         }
       />
@@ -282,19 +283,23 @@ function RowView({
   botId,
   tokens,
   bot,
+  bots,
   follow,
 }: {
   row: Row;
   botId: string;
   tokens: MobileTokens;
   bot: Bot | undefined;
+  bots: Bot[];
   /** Not the first message of a run: no avatar, no name, just the text. */
   follow?: boolean;
 }) {
   const body = row.body;
 
   switch (body.type) {
-    case 'message':
+    case 'message': {
+      // When a message comes from another bot, use that bot's avatar instead of the channel owner's.
+      const senderBot = body.from?.kind === 'bot' ? (bots.find((b) => b.id === body.from!.id) ?? bot) : bot;
       return (
         <MessageBubble
           role={body.role}
@@ -303,10 +308,11 @@ function RowView({
           streaming={body.streaming}
           from={body.from}
           files={body.files}
-          bot={bot}
+          bot={senderBot}
           follow={follow}
         />
       );
+    }
     case 'card':
       return <CardView body={body} seq={row.seq} botId={botId} tokens={tokens} />;
     case 'tool-call':

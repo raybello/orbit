@@ -96,6 +96,41 @@ describe('ChatView', () => {
     expect(screen.queryByText('Keeps the release train on time.')).toBeNull();
   });
 
+  it("shows the sender bot’s avatar (not the channel owner’s) for inter-bot messages", () => {
+    // Jeff is viewing his own thread. Atlas sends him a message via send_to_bot.
+    const JEFF = bot({ id: "jeff", name: "Jeff", avatarColor: "green", avatarShape: "cloud" });
+    const ATLAS = bot({ id: "atlas", name: "Atlas", avatarColor: "violet", avatarShape: "star" });
+    useStore.setState({
+      bots: [JEFF, ATLAS],
+      selectedBotId: "jeff",
+      transcripts: {
+        jeff: {
+          generation: 1,
+          loaded: true,
+          bySeq: {
+            1: row(1, {
+              type: "message",
+              role: "user",
+              text: "Hey Jeff, what is your role on the team?",
+              from: { kind: "bot", id: "atlas", name: "Atlas" },
+            }),
+          },
+        },
+      },
+    });
+
+    const { container } = render(<ChatView />);
+
+    expect(screen.getByText("Hey Jeff, what is your role on the team?")).toBeTruthy();
+    // The avatar inside the message bubble must be Atlas’s (the actual sender).
+    // Jeff’s avatar may appear in the conv header; scope the query to the message area only.
+    const msgAvatars = container.querySelectorAll(".msg-row__avatar [role=img]");
+    const atlasInMsg = Array.from(msgAvatars).find((el) => el.getAttribute("title") === "Atlas");
+    const jeffInMsg = Array.from(msgAvatars).find((el) => el.getAttribute("title") === "Jeff");
+    expect(atlasInMsg).toBeTruthy();
+    expect(jeffInMsg).toBeFalsy();
+  });
+
   it('shows only the selected bot’s files after switching chats on the Files tab', async () => {
     const RUBY = bot({ id: 'b', name: 'Ruby', isPrimary: false });
     useStore.setState({
