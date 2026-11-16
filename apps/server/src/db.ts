@@ -2,6 +2,7 @@ import Database from 'better-sqlite3';
 import fs from 'node:fs';
 import path from 'node:path';
 import { env } from './env.js';
+import { migrateUnsetVoiceProviders } from './infra/voice-provider-migration.js';
 
 fs.mkdirSync(path.dirname(env.dbPath), { recursive: true });
 export const db = new Database(env.dbPath);
@@ -176,6 +177,7 @@ addColumn('bots', 'voice_language', "TEXT NOT NULL DEFAULT 'auto'");
 // in which case the client falls back on its own (the server never silently proxies to xAI).
 addColumn('bots', 'voice_provider', "TEXT NOT NULL DEFAULT 'cloud'");
 addColumn('bots', 'voice_model', "TEXT NOT NULL DEFAULT 'piper-lessac-medium'");
+migrateUnsetVoiceProviders(db);
 // Hermes engine: per-bot model choice, which engine runs the bot ('primary' = the existing agent,
 // 'managed' = a gateway we start), and the managed gateway's port.
 addColumn('bots', 'model', 'TEXT');

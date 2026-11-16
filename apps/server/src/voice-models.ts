@@ -23,7 +23,8 @@
  *    instead of a crashed request.
  *  - Files are written as `<dest>.part` and renamed only after their sha256 matches, so a reader can
  *    never load a half-written ONNX file.
- *  - Optional models never gate `available`: modelsReady() is the required set only.
+ *  - Speech recognition and VAD are required and fetched automatically. Voices are the person's
+ *    choice: none is fetched implicitly, and a call needs at least one (see voiceReadiness).
  */
 import crypto from 'node:crypto';
 import fs from 'node:fs';
@@ -31,7 +32,7 @@ import fsp from 'node:fs/promises';
 import path from 'node:path';
 import { env } from './env.js';
 import { VOICE_MODEL_FILES, type VoiceModelFile } from './voice-model-files.js';
-import type { VoiceModelState, VoiceModelStateValue } from '@orbit/contracts';
+import { voiceReadiness, type VoiceModelItem, type VoiceModelState, type VoiceModelStateValue } from '@orbit/contracts';
 
 export type VoiceKind = 'stt' | 'tts' | 'vad';
 /** The three groups `/status` reports. espeak-ng data belongs to TTS and lives under tts/. */
@@ -58,8 +59,8 @@ export interface VoiceModelSpec {
 }
 
 /**
- * The voice menu. Required models are what `available` means; the optional tier is downloaded on
- * demand from `POST /local/models/download { model }` and is never fetched automatically.
+ * The voice menu. Required models are fetched automatically; the voices (the optional tier) are
+ * downloaded on demand from `POST /local/models/download { model }`.
  */
 export const VOICE_MODELS: VoiceModelSpec[] = [
   {
@@ -86,7 +87,7 @@ export const VOICE_MODELS: VoiceModelSpec[] = [
     name: 'Piper lessac-medium',
     engine: 'vits',
     rate: 22050,
-    tier: 'required',
+    tier: 'optional',
     note: 'Fast and clear: 10–17× real-time, ~200 ms to first audio.',
   },
   {
@@ -102,12 +103,12 @@ export const VOICE_MODELS: VoiceModelSpec[] = [
 
 const MODEL_BY_ID = new Map<string, VoiceModelSpec>(VOICE_MODELS.map((m) => [m.id, m]));
 
-/** The voice used whenever a bot has no (ready) choice of its own. */
+/** The voice a bot starts with, and the one a kind-level `{ kind: 'tts' }` download fetches. */
 export const DEFAULT_TTS_MODEL: VoiceModelId = 'piper-lessac-medium';
 export const TTS_MODELS: VoiceModelSpec[] = VOICE_MODELS.filter((m) => m.kind === 'tts');
 export const REQUIRED_MODELS: VoiceModelSpec[] = VOICE_MODELS.filter((m) => m.tier === 'required');
 
-/** The model id that satisfies `kind` for the required set (tts → Piper, never Kokoro). */
+/** The model a kind-level request means (tts → the default voice, never Kokoro). */
 export const REQUIRED_MODEL_FOR: Record<VoiceKind, VoiceModelId> = {
   stt: 'zipformer-bilingual-int8',
   tts: 'piper-lessac-medium',
@@ -139,14 +140,27 @@ export function filesForModel(id: string): VoiceModelFile[] {
   return FILES_BY_MODEL.get(id) ?? [];
 }
 
+/**
+ * Both voices phonemise with the espeak-ng data, which the manifest lists under Piper. Kokoro ships
+ * no copy, so a Kokoro-only install still needs these files on disk.
+ */
+const ESPEAK_FILES = VOICE_MODEL_FILES.filter((f) => f.kind === 'espeak');
+
+/** Every file a model needs to load: its own, plus the shared espeak-ng data for a voice. */
+export function filesNeededBy(id: string): VoiceModelFile[] {
+  const own = filesForModel(id);
+  if (MODEL_BY_ID.get(id)?.kind !== 'tts') return own;
+  return [...own.filter((f) => f.kind !== 'espeak'), ...ESPEAK_FILES];
+}
+
 /** The required files of a kind (for tts that is Piper's files, espeak-ng data included). */
 export function filesForKind(kind: VoiceKind): VoiceModelFile[] {
-  return filesForModel(REQUIRED_MODEL_FOR[kind]);
+  return filesNeededBy(REQUIRED_MODEL_FOR[kind]);
 }
 
 export function modelSize(id?: string): number {
   if (id === undefined) return REQUIRED_BYTES;
-  return filesForModel(id).reduce((n, f) => n + f.size, 0);
+  return filesNeededBy(id).reduce((n, f) => n + f.size, 0);
 }
 
 const KIND_DIR: Record<VoiceModelFile['kind'], VoiceKind> = { stt: 'stt', tts: 'tts', espeak: 'tts', vad: 'vad' };
@@ -361,8 +375,12 @@ function present(file: VoiceModelFile, root = modelsRoot()): boolean {
 }
 
 interface ModelScan {
+  /** Bytes of every file the model needs. */
   total: number;
+  /** Bytes of those files that are complete. */
   have: number;
+  /** Bytes on disk, partial `.part` downloads included. */
+  onDisk: number;
   files: number;
   missing: number;
   present: boolean;
@@ -370,11 +388,7 @@ interface ModelScan {
 
 interface Scan {
   at: number;
-  have: number;
-  total: number;
-  missing: VoiceModelFile[];
   byModel: Record<string, ModelScan>;
-  byKind: Record<VoiceKind, { total: number; have: number; missing: number }>;
 }
 
 let scanCache: { at: number; root: string; value: Scan } | null = null;
@@ -382,46 +396,38 @@ let scanCache: { at: number; root: string; value: Scan } | null = null;
 function scan(root = modelsRoot(), fresh = false): Scan {
   if (!fresh && scanCache && scanCache.root === root && Date.now() - scanCache.at < 750) return scanCache.value;
   ensureMigrated(root);
-  const byKind: Scan['byKind'] = {
-    stt: { total: 0, have: 0, missing: 0 },
-    tts: { total: 0, have: 0, missing: 0 },
-    vad: { total: 0, have: 0, missing: 0 },
+  // Shared files (the espeak-ng data) are stat'ed once and counted for every model that needs them.
+  const sizes = new Map<string, { complete: boolean; bytes: number }>();
+  const sizeOf = (f: VoiceModelFile) => {
+    let s = sizes.get(f.name);
+    if (!s) {
+      const dest = destFor(f, root);
+      const size = fileSize(dest);
+      s = size === f.size ? { complete: true, bytes: size } : { complete: false, bytes: Math.max(0, fileSize(`${dest}.part`)) };
+      sizes.set(f.name, s);
+    }
+    return s;
   };
   const byModel: Record<string, ModelScan> = {};
-  for (const spec of VOICE_MODELS) byModel[spec.id] = { total: 0, have: 0, files: 0, missing: 0, present: false };
-  const missing: VoiceModelFile[] = [];
-  let have = 0;
-  let total = 0;
-  for (const f of VOICE_MODEL_FILES) {
-    const kind = KIND_DIR[f.kind];
-    const size = fileSize(destFor(f, root));
-    const ok = size === f.size;
-    const m = (byModel[f.model] ??= { total: 0, have: 0, files: 0, missing: 0, present: false });
-    m.total += f.size;
-    m.files += 1;
-    byKind[kind].total += f.size;
-    total += f.size;
-    if (ok) {
-      m.have += f.size;
-      byKind[kind].have += f.size;
-      have += Math.min(size, f.size);
-    } else {
-      m.missing += 1;
-      byKind[kind].missing += 1;
-      missing.push(f);
-      if (size > 0) have += Math.min(size, f.size);
-    }
-  }
   for (const spec of VOICE_MODELS) {
-    const m = byModel[spec.id];
+    const m: ModelScan = { total: 0, have: 0, onDisk: 0, files: 0, missing: 0, present: false };
+    for (const f of filesNeededBy(spec.id)) {
+      const s = sizeOf(f);
+      m.total += f.size;
+      m.files += 1;
+      m.onDisk += s.bytes;
+      if (s.complete) m.have += f.size;
+      else m.missing += 1;
+    }
     m.present = m.files > 0 && m.missing === 0;
+    byModel[spec.id] = m;
   }
-  const value: Scan = { at: Date.now(), have, total, missing, byModel, byKind };
+  const value: Scan = { at: Date.now(), byModel };
   scanCache = { at: Date.now(), root, value };
   return value;
 }
 
-/** Bytes of the *required* set already on disk vs. its 263 MB total, for the progress bar. */
+/** Bytes of the *required* set (speech recognition and VAD) already on disk vs. its total. */
 export function modelBytes(): { total: number; have: number } {
   const s = scan();
   let total = 0;
@@ -433,7 +439,7 @@ export function modelBytes(): { total: number; have: number } {
   return { total, have };
 }
 
-/** Total bytes of the required set (stt + vad + piper, espeak-ng data included). */
+/** Total bytes of the required set (stt + vad). */
 export const REQUIRED_BYTES = REQUIRED_MODELS.reduce((n, m) => n + modelSize(m.id), 0);
 
 /** Every model's state, required and optional: the menu needs all four. */
@@ -453,61 +459,60 @@ export function modelStatesById(): Record<VoiceModelId, VoiceModelStateValue> {
   return out;
 }
 
+/** The best state among several models: one ready voice makes the kind ready. */
+const STATE_RANK: VoiceModelStateValue[] = ['ready', 'downloading', 'error', 'missing'];
+
 /**
- * Per-kind state for `/status` and `VoiceModelState` in the contracts: the required model of each
- * kind. Kokoro is reported by modelStatesById()/`/models` instead — a kind-level row cannot say
- * "Piper ready, Kokoro missing", and `models` is the shape the phase-1/2 client already reads.
+ * Per-kind state for `/status` and `VoiceModelState` in the contracts. stt and vad are their one
+ * model; tts is the best of the voices, so it reads `ready` as soon as any voice is installed.
  */
 export function modelStates(): VoiceModelState {
   const states = modelStatesById();
   const out = {} as VoiceModelState;
-  for (const kind of VOICE_KINDS) out[kind] = states[REQUIRED_MODEL_FOR[kind]];
+  for (const kind of VOICE_KINDS) {
+    const ofKind = VOICE_MODELS.filter((m) => m.kind === kind).map((m) => states[m.id]);
+    out[kind] = STATE_RANK.find((s) => ofKind.includes(s)) ?? 'missing';
+  }
   return out;
 }
 
-/** True when every *required* model is on disk. Optional models never gate availability. */
+/** True when a call can run on-device: the required models and at least one voice are on disk. */
 export function modelsReady(): boolean {
-  const s = scan();
-  return REQUIRED_MODELS.every((m) => s.byModel[m.id].present);
+  return voiceReadiness({ provider: 'local', addon: true, models: modelItems() }).status === 'ready';
 }
 
 export function modelReady(id: string): boolean {
   return scan().byModel[id]?.present === true;
 }
 
-/** Whether one kind's required model is complete; used by the router before it loads an engine. */
+/** Whether a kind can run: its required model, or for tts any installed voice. */
 export function kindReady(kind: VoiceKind): boolean {
+  if (kind === 'tts') return TTS_MODELS.some((m) => modelReady(m.id));
   return modelReady(REQUIRED_MODEL_FOR[kind]);
-}
-
-export interface VoiceModelItem {
-  id: string;
-  kind: VoiceKind;
-  name: string;
-  /** Engine rate: input for stt/vad, output for tts. */
-  rate: number;
-  size: number;
-  have: number;
-  files: number;
-  state: VoiceModelStateValue;
-  tier: VoiceTier;
 }
 
 /** One row per model for `GET /local/models` and the `voices` array in `/status`. */
 export function modelItems(): VoiceModelItem[] {
   const s = scan();
   const states = modelStatesById();
-  return VOICE_MODELS.map((spec) => ({
-    id: spec.id,
-    kind: spec.kind,
-    name: spec.name,
-    rate: spec.rate,
-    size: s.byModel[spec.id].total,
-    have: s.byModel[spec.id].have,
-    files: s.byModel[spec.id].files,
-    state: states[spec.id],
-    tier: spec.tier,
-  }));
+  return VOICE_MODELS.map((spec) => {
+    const m = s.byModel[spec.id];
+    const state = states[spec.id];
+    const fromDisk = m.total ? Math.min(100, Math.round((m.onDisk / m.total) * 100)) : 100;
+    const pct = state === 'ready' ? 100 : (liveProgress.get(spec.id) ?? fromDisk);
+    return {
+      id: spec.id,
+      kind: spec.kind,
+      name: spec.name,
+      rate: spec.rate,
+      size: m.total,
+      onDisk: m.onDisk,
+      state,
+      pct,
+      tier: spec.tier,
+      note: spec.note,
+    };
+  });
 }
 
 // ---------- downloader ----------
@@ -542,6 +547,8 @@ export interface VoiceDownloadOptions {
   concurrency?: number;
   fetchImpl?: typeof fetch;
   log?: (message: string) => void;
+  /** Aborting stops the run between and inside files; finished files and `.part` files stay. */
+  signal?: AbortSignal;
 }
 
 /**
@@ -621,7 +628,9 @@ export async function downloadVoiceFiles(opts: VoiceDownloadOptions): Promise<Vo
     let headers: Record<string, string> = {};
     if (start > 0) headers = { Range: `bytes=${start}-` };
     if (start < file.size) {
-      const res = await fetchImpl(urlFor(file), { headers, signal: AbortSignal.timeout(120_000) });
+      const timeout = AbortSignal.timeout(120_000);
+      const signal = opts.signal ? AbortSignal.any([opts.signal, timeout]) : timeout;
+      const res = await fetchImpl(urlFor(file), { headers, signal });
       if (!res.ok) throw new Error(`HTTP ${res.status} for ${file.name}`);
       if (start > 0 && res.status !== 206) start = 0; // server ignored the Range: rewrite from scratch
       if (!res.body) throw new Error(`empty response for ${file.name}`);
@@ -663,6 +672,7 @@ export async function downloadVoiceFiles(opts: VoiceDownloadOptions): Promise<Vo
   let index = 0;
   const worker = async (): Promise<void> => {
     for (;;) {
+      if (opts.signal?.aborted) return;
       const i = index++;
       if (i >= todo.length) return;
       try {
@@ -670,7 +680,7 @@ export async function downloadVoiceFiles(opts: VoiceDownloadOptions): Promise<Vo
       } catch (e) {
         const message = String((e as { message?: string })?.message ?? e);
         failure ??= message;
-        log(`[voice-models] download failed: ${message}`);
+        if (!opts.signal?.aborted) log(`[voice-models] download failed: ${message}`);
         // Keep the .part file: the next attempt resumes from it.
       }
     }
@@ -689,8 +699,16 @@ export async function downloadVoiceFiles(opts: VoiceDownloadOptions): Promise<Vo
 
 // ---------- background jobs ----------
 
-/** Models queued or being downloaded right now; drives the 'downloading' state. */
-const busyModels = new Set<string>();
+/**
+ * Models queued or being downloaded, each with the token of the request that queued it. A cancel
+ * drops the entry; a queued job whose token no longer matches has been cancelled (or superseded by
+ * a newer request) and does nothing.
+ */
+const busyModels = new Map<string, symbol>();
+/** The running download's abort handle and the promise that settles when it has stopped. */
+const running = new Map<string, { controller: AbortController; settled: Promise<void> }>();
+/** Live percentage of each running download, from the downloader's progress events. */
+const liveProgress = new Map<string, number>();
 let queue: Promise<void> = Promise.resolve();
 let live: { pct: number; name: string | null } = { pct: 0, name: null };
 
@@ -700,7 +718,7 @@ export function downloadProgress(): { active: boolean; pct: number; name: string
 }
 
 export function downloading(): string[] {
-  return [...busyModels];
+  return [...busyModels.keys()];
 }
 
 export interface EnsureOptions {
@@ -724,8 +742,8 @@ export function __setDownloadUrlForTests(urlFor: ((file: VoiceModelFile) => stri
 
 /**
  * Resolve `kindOrModel` to the models it names.
- *  - nothing → the required set (stt + vad + piper); the optional tier is never fetched implicitly
- *  - a kind → that kind's required model (tts → Piper)
+ *  - nothing → the required set (stt + vad); a voice is never fetched implicitly
+ *  - a kind → that kind's model (tts → the default voice, Piper)
  *  - a model id → that model, optional tiers included
  */
 export function modelsForTarget(kindOrModel?: VoiceKind | string): VoiceModelSpec[] {
@@ -744,46 +762,138 @@ export function modelsForTarget(kindOrModel?: VoiceKind | string): VoiceModelSpe
  * An unknown `kindOrModel` does throw — that is a caller bug, not a network condition.
  */
 export function ensureModels(kindOrModel?: VoiceKind | string, opts: EnsureOptions = {}): Promise<void> {
-  const targets = modelsForTarget(kindOrModel);
-  const needed = targets.filter((m) => !modelReady(m.id));
-  if (!needed.length) return Promise.resolve();
-  for (const m of needed) busyModels.add(m.id);
+  const targets = modelsForTarget(kindOrModel).filter((m) => !modelReady(m.id));
+  if (!targets.length) return Promise.resolve();
+  // A model already queued keeps its place; the caller waits for the queue it is in.
+  const needed = targets.filter((m) => !busyModels.has(m.id));
+  if (!needed.length) return queue;
+  const jobs = needed.map((model) => {
+    const token = Symbol(model.id);
+    busyModels.set(model.id, token);
+    return { model, token };
+  });
   live = { pct: 0, name: null };
 
   queue = queue
     .then(async () => {
-      for (const model of needed) {
-        try {
-          if (modelReady(model.id)) {
-            clearError(model.id);
-            continue;
-          }
-          const files = filesForModel(model.id);
-          const result = await downloadVoiceFiles({
-            dir: modelsRoot(),
-            files,
-            urlFor: opts.urlFor ?? testUrlFor ?? undefined,
-            fetchImpl: opts.fetchImpl,
-            concurrency: opts.concurrency ?? 4,
-            onProgress: (p) => {
-              live = { pct: p.pct, name: p.name };
-              opts.onProgress?.(p);
-            },
-          });
-          if (result.ok) clearError(model.id);
-          else recordError(model.id, result.error ?? 'download failed');
-        } catch (e) {
-          recordError(model.id, String((e as { message?: string })?.message ?? e));
-        } finally {
-          scan(modelsRoot(), true);
-          busyModels.delete(model.id);
-          live = { pct: 0, name: null };
-        }
-      }
+      for (const job of jobs) await runDownload(job.model, job.token, opts);
     })
     // Keep the chain alive: one failed job must not reject every later ensureModels().
     .catch((e) => console.warn('[voice-models] background download error:', e?.message));
   return queue;
+}
+
+async function runDownload(model: VoiceModelSpec, token: symbol, opts: EnsureOptions): Promise<void> {
+  if (busyModels.get(model.id) !== token) return;
+  const controller = new AbortController();
+  let settle!: () => void;
+  running.set(model.id, { controller, settled: new Promise<void>((r) => (settle = r)) });
+  try {
+    if (modelReady(model.id)) {
+      clearError(model.id);
+      return;
+    }
+    const result = await downloadVoiceFiles({
+      dir: modelsRoot(),
+      files: filesNeededBy(model.id),
+      urlFor: opts.urlFor ?? testUrlFor ?? undefined,
+      fetchImpl: opts.fetchImpl,
+      concurrency: opts.concurrency ?? 4,
+      signal: controller.signal,
+      onProgress: (p) => {
+        live = { pct: p.pct, name: p.name };
+        liveProgress.set(model.id, p.pct);
+        opts.onProgress?.(p);
+      },
+    });
+    // A cancelled download is the person's choice, not a failure worth reporting.
+    if (result.ok || controller.signal.aborted) clearError(model.id);
+    else recordError(model.id, result.error ?? 'download failed');
+  } catch (e) {
+    recordError(model.id, String((e as { message?: string })?.message ?? e));
+  } finally {
+    scan(modelsRoot(), true);
+    if (busyModels.get(model.id) === token) busyModels.delete(model.id);
+    running.delete(model.id);
+    liveProgress.delete(model.id);
+    live = { pct: 0, name: null };
+    settle();
+  }
+}
+
+/**
+ * Stop a queued or running download. The files it finished and its `.part` stay on disk, so a later
+ * download resumes; deleteModel() is what reclaims the space. Resolves once nothing is writing.
+ * Returns false when the model was not downloading.
+ */
+export async function cancelDownload(id: string): Promise<boolean> {
+  if (!busyModels.has(id)) return false;
+  busyModels.delete(id);
+  const job = running.get(id);
+  job?.controller.abort();
+  await job?.settled;
+  scan(modelsRoot(), true);
+  return true;
+}
+
+function pruneEmptyDirs(dir: string, stopAt: string): void {
+  for (let d = dir; d.startsWith(stopAt + path.sep); d = path.dirname(d)) {
+    try {
+      fs.rmdirSync(d);
+    } catch {
+      return; // not empty, or already gone
+    }
+  }
+}
+
+export interface DeleteResult {
+  removed: number;
+  bytes: number;
+}
+
+/**
+ * Remove a model's files from disk, `.part` downloads included, cancelling its download first.
+ * Files another installed (or downloading) model still needs stay: deleting Piper keeps the
+ * espeak-ng data while Kokoro is installed. Idempotent: deleting a missing model removes nothing.
+ */
+export async function deleteModel(id: VoiceModelId, root = modelsRoot()): Promise<DeleteResult> {
+  await cancelDownload(id);
+  const states = modelStatesById();
+  const keep = new Set<string>();
+  for (const spec of VOICE_MODELS) {
+    if (spec.id === id || (states[spec.id] !== 'ready' && states[spec.id] !== 'downloading')) continue;
+    for (const f of filesNeededBy(spec.id)) keep.add(f.name);
+  }
+  const result: DeleteResult = { removed: 0, bytes: 0 };
+  const state = readState(root);
+  const files = { ...state.files };
+  const dirs = new Set<string>();
+  for (const f of filesNeededBy(id)) {
+    if (keep.has(f.name)) continue;
+    const dest = destFor(f, root);
+    for (const p of [dest, `${dest}.part`]) {
+      const size = fileSize(p);
+      if (size < 0) continue;
+      fs.rmSync(p, { force: true });
+      result.removed += 1;
+      result.bytes += size;
+    }
+    delete files[f.name];
+    dirs.add(path.dirname(dest));
+    // The phase-1/2 compatibility link at the flat path now points at nothing.
+    const legacy = path.join(root, KIND_DIR[f.kind], f.path);
+    try {
+      if (fs.lstatSync(legacy).isSymbolicLink() && !fs.existsSync(legacy)) fs.unlinkSync(legacy);
+    } catch {
+      // no link there
+    }
+  }
+  for (const d of [...dirs].sort((a, b) => b.length - a.length)) pruneEmptyDirs(d, root);
+  const errors = { ...state.errors };
+  delete errors[id];
+  writeState({ ...state, files, errors }, root);
+  scan(root, true);
+  return result;
 }
 
 /** Test/desktop helper: forget the scan, state and migration caches after files appear or vanish. */

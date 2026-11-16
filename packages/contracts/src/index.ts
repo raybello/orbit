@@ -2,6 +2,8 @@
 // Everything here is type-only or plain constants: no runtime dependencies.
 
 export * from './branded-types.js';
+export * from './voice.js';
+import type { VoiceModelItem } from './voice.js';
 
 export type AvatarShape =
   | 'blob' | 'pebble' | 'bean' | 'egg' | 'squircle' | 'tablet' | 'capsule' | 'cylinder' | 'hex'
@@ -178,6 +180,8 @@ export interface VoiceLocalStatus {
   models: VoiceModelState;
   bytes: { total: number; have: number };
   download: { active: boolean; pct: number; name: string | null };
+  /** Every model, required and optional, with its state and size on disk. */
+  voices: VoiceModelItem[];
 }
 
 export interface NoticeBody { type: 'notice'; text: string; tone?: 'info' | 'warn' | 'error' }

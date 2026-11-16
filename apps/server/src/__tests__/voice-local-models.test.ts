@@ -160,15 +160,17 @@ test('GET /models lists both TTS tiers with tier, size, rate and the real state'
   const byId = new Map(list.items.map((i) => [i.id, i]));
   const piper = byId.get('piper-lessac-medium')!;
   const kokoro = byId.get('kokoro-multi-lang')!;
-  assert.equal(piper.tier, 'required', 'Piper is the default, required tier');
+  assert.equal(piper.tier, 'optional', 'Piper is a voice: the person picks it, nothing fetches it implicitly');
   assert.equal(piper.rate, 22050, `Piper lessac-medium is 22 050 Hz, menu says ${piper.rate}`);
   assert.equal(piper.state, 'ready', `Piper should be ready with the cache linked in: ${JSON.stringify(piper)}`);
   assert.ok(piper.size > 60e6 && piper.size < 70e6, `Piper's files are ~64 MB, menu says ${mb(piper.size)}`);
 
   assert.equal(kokoro.tier, 'optional', 'Kokoro is the optional tier');
   assert.equal(kokoro.rate, 24000, `Kokoro is 24 000 Hz, menu says ${kokoro.rate}`);
-  const kokoroBytes = KOKORO_FILES.reduce((n, f) => n + f.size, 0);
-  assert.equal(kokoro.size, kokoroBytes, `Kokoro's size must be its four files (${mb(kokoroBytes)}), menu says ${mb(kokoro.size)}`);
+  // Kokoro phonemises with the espeak-ng data listed under Piper, so a Kokoro-only install needs it.
+  const espeakBytes = VOICE_MODEL_FILES.filter((f) => f.kind === 'espeak').reduce((n, f) => n + f.size, 0);
+  const kokoroBytes = KOKORO_FILES.reduce((n, f) => n + f.size, 0) + espeakBytes;
+  assert.equal(kokoro.size, kokoroBytes, `Kokoro's size must be its four files plus espeak-ng (${mb(kokoroBytes)}), menu says ${mb(kokoro.size)}`);
   assert.ok(kokoro.size > 350e6 && kokoro.size < 370e6, `Kokoro is ~360 MB, menu says ${mb(kokoro.size)}`);
   // The optional voice is not linked in, so this is the honest not-downloaded state.
   assert.equal(kokoro.state, 'missing', `Kokoro must start missing (nothing linked it in), got ${kokoro.state}`);
@@ -196,7 +198,7 @@ test('GET /models lists both TTS tiers with tier, size, rate and the real state'
   );
 });
 
-test('modelsReady() is the required set: the optional voice does not gate it', { skip: skipModels }, async (t) => {
+test('modelsReady() needs one installed voice, not every voice', { skip: skipModels }, async (t) => {
   models.resetVoiceModelCaches();
   const states = models.modelStatesById();
   assert.equal(states['piper-lessac-medium'], 'ready', `Piper: ${states['piper-lessac-medium']}`);
@@ -206,7 +208,7 @@ test('modelsReady() is the required set: the optional voice does not gate it', {
   assert.deepEqual(
     models.modelStates(),
     { stt: 'ready', tts: 'ready', vad: 'ready' },
-    `kind-level states (the contract the phase-1/2 client reads) must cover the required set: ${JSON.stringify(models.modelStates())}`,
+    `kind-level states (the contract the phase-1/2 client reads): tts is ready once any voice is: ${JSON.stringify(models.modelStates())}`,
   );
   t.diagnostic(`states by model: ${JSON.stringify(states)}; modelsReady()=${models.modelsReady()}`);
 });
