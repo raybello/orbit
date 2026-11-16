@@ -2,6 +2,7 @@
 // Everything here is type-only or plain constants: no runtime dependencies.
 
 export * from './branded-types.js';
+export * from './rules.js';
 
 export type AvatarShape =
   | 'blob' | 'pebble' | 'bean' | 'egg' | 'squircle' | 'tablet' | 'capsule' | 'cylinder' | 'hex'
