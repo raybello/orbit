@@ -18,6 +18,29 @@ export const botNameFor = (bots: Bot[], botId: string) => bots.find((b) => b.id 
 export const activityKey = (item: ActivityItem): string =>
   item.seq === undefined ? `live:${item.botId}:${item.kind}:${item.at}` : `row:${item.botId}:${item.seq}`;
 
+/** A run of consecutive feed entries from one bot, newest first: `items[0]` is its latest status. */
+export interface ActivityGroup {
+  /** The oldest entry's key, so a run keeps its identity (and its open state) as newer entries join it. */
+  key: string;
+  botId: string;
+  items: ActivityItem[];
+}
+
+/** Fold a newest-first feed into runs per bot. Another bot's entry in between starts a new run. */
+export function groupActivity(feed: readonly ActivityItem[]): ActivityGroup[] {
+  const groups: ActivityGroup[] = [];
+  for (const item of feed) {
+    const run = groups[groups.length - 1];
+    if (run?.botId === item.botId) {
+      run.items.push(item);
+      run.key = activityKey(item);
+    } else {
+      groups.push({ key: activityKey(item), botId: item.botId, items: [item] });
+    }
+  }
+  return groups;
+}
+
 export function mergeActivity(prev: ActivityItem[], incoming: ActivityItem[], max = ACTIVITY_LIMIT): ActivityItem[] {
   if (incoming.length === 0) return prev;
   const keys = new Set(incoming.map(activityKey));
