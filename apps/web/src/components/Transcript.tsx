@@ -217,6 +217,7 @@ export function Transcript({ bot, rows, live, loaded }: Props) {
   const [showJump, setShowJump] = useState(false);
   const items = useMemo(() => buildItems(rows), [rows]);
 
+  const bots = useStore((s) => s.bots);
   const running = !!live?.isRunning;
   const waiting = isWaitingForYou(live);
   const last = rows[rows.length - 1];
@@ -277,11 +278,14 @@ export function Transcript({ bot, rows, live, loaded }: Props) {
             case 'group': {
               const mine = it.side === 'right';
               const name = mine ? 'You' : it.from?.kind === 'bot' ? it.from.name : displayName(bot);
+              // When a message comes from another bot, look it up by id so the avatar matches the
+              // actual sender rather than always showing the channel owner's avatar.
+              const senderBot = it.from?.kind === 'bot' ? (bots.find((b) => b.id === it.from!.id) ?? bot) : bot;
               return (
                 <div key={it.key} className="msg-group">
                   {it.from && <OriginLabel from={it.from} />}
                   {it.rows.map((r, i) => (
-                    <Fragment key={r.seq}><MsgRow row={r} bot={bot} name={name} mine={mine} follow={i > 0} /></Fragment>
+                    <Fragment key={r.seq}><MsgRow row={r} bot={senderBot} name={name} mine={mine} follow={i > 0} /></Fragment>
                   ))}
                 </div>
               );
