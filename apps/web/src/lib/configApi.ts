@@ -1,4 +1,4 @@
-import type { Bot, BotEngineAuthRow, ComputerState, EngineAuthResponse, EngineInfo, LibraryFile, Memory, Routine, Skill, Task, Toolkit } from '@orbit/contracts';
+import type { Bot, BotEngineAuthRow, ComputerState, EngineAuthResponse, EngineInfo, InitiativeSettings, InitiativeSettingsPatch, LibraryFile, Memory, Routine, Skill, Task, Toolkit } from '@orbit/contracts';
 import { ApiError } from './api';
 
 async function req<T>(method: string, path: string, body?: unknown): Promise<T> {
@@ -32,7 +32,7 @@ export interface ComputerDetails {
   hibernation: { idleMinutes: number; viewers: number; dryRun: boolean };
 }
 
-export type BotPatch = Partial<Pick<Bot, 'name' | 'label' | 'description' | 'instructions' | 'avatarShape' | 'avatarColor' | 'effort' | 'mode'>>;
+export type BotPatch = Partial<Pick<Bot, 'name' | 'label' | 'description' | 'instructions' | 'avatarShape' | 'avatarColor' | 'effort' | 'mode' | 'initiative'>>;
 
 export const configApi = {
   settings: (botId: string) => req<BotSettingsBundle>('GET', `/bots/${botId}/settings`),
@@ -41,6 +41,9 @@ export const configApi = {
   /** Promote a Bot to primary, or restore it to default. At most three primaries, at least one. */
   setPrimary: (botId: string, primary: boolean) => req<{ ok: true; primaries: string[] }>('POST', `/bots/${botId}/primary${primary ? '' : '/restore'}`),
   fresh: (botId: string) => req<{ ok: true }>('POST', `/bots/${botId}/fresh`),
+  /** The primary Bot's morning briefing and idle check, which belong to the person rather than a Bot. */
+  initiative: () => req<InitiativeSettings>('GET', '/initiative'),
+  setInitiative: (p: InitiativeSettingsPatch) => req<InitiativeSettings>('PUT', '/initiative', p),
 
   deleteMemory: (id: string) => req<{ ok: true }>('DELETE', `/memories/${id}`),
 

@@ -332,3 +332,6 @@
 @media (max-width: 760px) {
   .device-grid { grid-template-columns: 1fr; }
 }
+
+/* Initiative: the briefing time and the idle select sit at the end of a settings row. */
+.cfg-initiative__input { flex: 0 0 auto; width: 120px; height: 30px; padding: 4px 8px; }
