@@ -8,8 +8,10 @@ import { useStore } from '../../store';
 import { Icon } from '../Icon';
 import { PrimaryStar } from '../PrimaryStar';
 import { Modal } from '../modals/Modal';
+import { RulesPanel } from '../RulesPanel';
 import { Glyph } from './glyphs';
 import { ConfirmButton, Field, Segmented, Switch, nextRunLabel, shortDate } from './ui';
+import { InitiativeSection } from './InitiativeSettings';
 
 const EFFORTS: { value: Bot['effort']; label: string }[] = [
   { value: 'low', label: 'Low' },
@@ -53,6 +55,7 @@ export function BotSettingsModal() {
     { id: 'skills', label: 'Skills', count: data?.skills.length },
     { id: 'memories', label: 'Memories', count: data?.memories.length },
     { id: 'routines', label: 'Routines', count: (routines ?? data?.routines)?.length },
+    { id: 'rules', label: 'Rules' },
   ];
 
   return (
@@ -82,6 +85,7 @@ export function BotSettingsModal() {
           {target.tab === 'skills' && <SkillsTab bot={bot} skills={data?.skills} onChange={reload} />}
           {target.tab === 'memories' && <MemoriesTab bot={bot} data={data} onChange={reload} />}
           {target.tab === 'routines' && <RoutinesTab bot={bot} routines={routines ?? data?.routines} />}
+          {target.tab === 'rules' && <RulesPanel bot={bot} />}
         </div>
       </div>
     </Modal>
@@ -100,6 +104,8 @@ function openEngineCredentials() {
 
 function GeneralTab({ bot, onClose }: { bot: Bot; onClose: () => void }) {
   const primaryCount = useStore((s) => s.bots.filter((b) => b.isPrimary).length);
+  // Check-ins, briefings and signals all go to the first primary (the roster lists primaries oldest first).
+  const coordinates = useStore((s) => s.bots.find((b) => b.isPrimary)?.id === bot.id);
   const [draft, setDraft] = useState<Draft>(() => draftOf(bot));
   const [picker, setPicker] = useState(false);
   const [saving, setSaving] = useState(false);
@@ -173,6 +179,8 @@ function GeneralTab({ bot, onClose }: { bot: Bot; onClose: () => void }) {
         <button type="button" className="cfg-btn cfg-btn--secondary" disabled={!dirty || saving} onClick={() => setDraft(draftOf(bot))}>Discard</button>
         <button type="button" className="cfg-btn cfg-btn--primary" disabled={!dirty || saving || !nameOk} onClick={save}>{saving ? 'Saving…' : 'Save changes'}</button>
       </div>
+
+      {coordinates && <InitiativeSection bot={bot} onNote={flash} />}
 
       <section className="cfg-section">
         <div className="cfg-section__label">Engine</div>

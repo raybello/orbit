@@ -2,16 +2,21 @@
 // API that speaks as the bot and relays real work to the bot's main text agent (send_task). Results come
 // back through the normal transcript stream and are injected into the call as [work_landed] notes.
 import { create } from 'zustand';
-import type { Row } from '@orbit/contracts';
+import type { Row, VoiceReadiness } from '@orbit/contracts';
 import { useStore } from '../store';
 import { sortedRows } from '../domain/transcript-utils';
 import { voiceApi, type VoiceSession } from './api';
 import { MicCapture, PcmPlayer, base64ToPcm, createAudioContext, micErrorMessage, openMic, pcmToBase64 } from './audio';
 import { endLocalCall, isLocalCallActive, localLevels, setLocalMuted, startLocalCall } from './local-call';
+import { readinessFor, refreshVoiceModels, useVoiceModels } from './models-store';
 
 export interface Caption { id: string; role: 'user' | 'assistant'; text: string; final: boolean }
 
-export type CallStatus = 'idle' | 'connecting' | 'live' | 'ending' | 'error';
+/** `blocked`: the bot is set to on-device and a model it needs is missing or still downloading. */
+export type CallStatus = 'idle' | 'connecting' | 'live' | 'ending' | 'error' | 'blocked';
+
+/** Why a call did not start: the readiness that stopped it. */
+export type CallBlock = Extract<VoiceReadiness, { status: 'needs-model' | 'preparing' }>;
 
 interface VoiceState {
   status: CallStatus;
@@ -29,62 +34,27 @@ interface VoiceState {
   captions: Caption[];
   error: string | null;
   startedAt: number | null;
+  blocked: CallBlock | null;
 }
 
 export const useVoice = create<VoiceState>(() => ({
   status: 'idle', botId: null, callId: null, muted: false, speaking: false, listening: false, thinking: false,
-  working: [], captions: [], error: null, startedAt: null,
+  working: [], captions: [], error: null, startedAt: null, blocked: null,
 }));
 
 const setV = (p: Partial<VoiceState>) => useVoice.setState(p);
 
 let current: VoiceCall | null = null;
 
-/**
- * `null` until asked: whether this server can run a call on-device. Read from the same cached
- * `/local/status` the settings panel polls, so it costs one request per page and never throws.
- */
-let localSupport: boolean | null = null;
-/** Why the probe said no, so the fallback message can be actionable instead of vague. */
-let localReason: string | undefined;
-let localCheckedAt = 0;
-
-interface LocalProbe { available: boolean; reason?: string }
-
-async function probeLocal(refresh = false): Promise<LocalProbe> {
-  if (!refresh && localSupport !== null) return { available: localSupport, reason: localReason };
-  try {
-    const s = await voiceApi.localStatus(refresh);
-    localSupport = s.available;
-    localReason = s.reason;
-  } catch {
-    localSupport = false; // no local endpoints (older server, offline): cloud only
-    localReason = 'unreachable';
-  }
-  localCheckedAt = Date.now();
-  return { available: localSupport, reason: localReason };
-}
-
 const NO_LOCAL_VOICE: Record<string, string> = {
   'unsupported-runtime': 'this build of the server can’t load the speech engine',
-  'models-missing': 'the on-device models aren’t downloaded yet',
   unreachable: 'the server didn’t answer',
 };
 
-/** What the caller is told when the bot asked for on-device and the call had to go to the cloud. */
+/** What the caller is told when the bot asked for on-device and this server cannot run it at all. */
 function localFallbackNote(reason?: string): string {
   const why = reason ? (NO_LOCAL_VOICE[reason] ?? reason) : 'it isn’t available on this server';
-  const fix = reason === 'models-missing' ? ' Download them under Voice settings to switch back.' : '';
-  return `On-device voice isn’t available — ${why}. This call is using the cloud voice.${fix}`;
-}
-
-/**
- * Models can finish downloading mid-page; re-probe (throttled) so the next call goes on-device
- * instead of staying on the cloud answer cached before the download.
- */
-function reconsiderLocal() {
-  if (localSupport !== false || Date.now() - localCheckedAt < 15_000) return;
-  void probeLocal(true);
+  return `On-device voice isn’t available — ${why}. This call is using the cloud voice.`;
 }
 
 function startCloud(botId: string) {
@@ -101,27 +71,49 @@ function startCloudFallback(botId: string, reason: string | undefined) {
   // VoiceCall.start() clears `error` synchronously before it awaits the mic, so setting it after
   // the call is constructed is what the call bar and the next render read. The next call clears it.
   setV({ error: localFallbackNote(reason) });
-  reconsiderLocal();
 }
 
-/** Start a call with a bot. Must be called from a user gesture (click) so audio can start. */
+/**
+ * Start a call with a bot. Must be called from a user gesture (click) so audio can start.
+ *
+ * The bot's own `voiceProvider` decides, through voiceReadiness(). On-device with a model missing
+ * or still downloading does not start a call at all: the call bar shows what is needed instead, so
+ * audio never goes to the cloud for a bot set to stay on this device.
+ */
 export function startCall(botId: string) {
   if ((current && !current.ended) || isLocalCallActive()) {
     if ((current?.botId ?? useVoice.getState().botId) === botId) return;
     endCall();
   }
-  const wantsLocal = useStore.getState().bots.find((b) => b.id === botId)?.voiceProvider === 'local';
-  // 'cloud', or a bot row from before the field existed: exactly today's path, no probing at all.
-  if (!wantsLocal) { startCloud(botId); return; }
-  if (localSupport === true) { startLocalCall(botId); return; }
-  if (localSupport === false) { startCloudFallback(botId, localReason); return; }
-  // First call in this page: the status probe decides. It is cached from here on, so every later
-  // click dispatches synchronously and keeps the click's user activation for the AudioContext.
-  void probeLocal().then((probe) => {
+  const bot = useStore.getState().bots.find((b) => b.id === botId);
+  if (!bot || bot.voiceProvider === 'cloud') { startCloud(botId); return; }
+  const ready = readinessFor(bot);
+  if (ready) { dispatch(botId, ready); return; }
+  // The inventory has not loaded yet: the probe decides. It is cached from here on, so later clicks
+  // dispatch synchronously and keep the click's user activation for the AudioContext.
+  void refreshVoiceModels().then(() => {
     if ((current && !current.ended) || isLocalCallActive()) return; // a call already took over
-    if (probe.available) startLocalCall(botId);
-    else startCloudFallback(botId, probe.reason);
+    const latest = useStore.getState().bots.find((b) => b.id === botId);
+    if (latest) dispatch(botId, readinessFor(latest) ?? { status: 'unsupported' });
   });
+}
+
+function dispatch(botId: string, ready: VoiceReadiness) {
+  switch (ready.status) {
+    case 'cloud': startCloud(botId); return;
+    case 'ready': setV({ blocked: null }); startLocalCall(botId); return;
+    case 'unsupported':
+      startCloudFallback(botId, useVoiceModels.getState().phase === 'gone' ? 'unreachable' : 'unsupported-runtime');
+      return;
+    case 'needs-model':
+    case 'preparing':
+      setV({ status: 'blocked', botId, blocked: ready, error: null, captions: [], working: [], startedAt: null });
+  }
+}
+
+/** Close the call bar's "needs a model" prompt. */
+export function dismissBlockedCall() {
+  if (useVoice.getState().status === 'blocked') setV({ status: 'idle', botId: null, blocked: null });
 }
 
 export function endCall() {
@@ -208,7 +200,7 @@ class VoiceCall {
   micLevel() { return useVoice.getState().muted ? 0 : this.mic?.level ?? 0; }
 
   async start() {
-    setV({ status: 'connecting', botId: this.botId, callId: null, muted: false, speaking: false, listening: false, thinking: false, working: [], captions: [], error: null, startedAt: null });
+    setV({ status: 'connecting', botId: this.botId, callId: null, muted: false, speaking: false, listening: false, thinking: false, working: [], captions: [], error: null, startedAt: null, blocked: null });
     window.addEventListener('pagehide', this.onUnload);
     let stream: MediaStream;
     try {
@@ -541,7 +533,7 @@ function landedNote(request: string, replies: Row[], after: Row[]): string {
   const waiting = after
     .map((r) => r.body)
     .filter((b) => b.type === 'card' && b.status === 'pending')
-    .map((b) => (b.type === 'card' ? (b.card === 'approval' ? b.title : b.card === 'question' ? `a question: ${b.question}` : b.card === 'connect' ? `connecting ${b.toolkitName}` : 'a draft to review') : ''));
+    .map((b) => (b.type === 'card' ? (b.card === 'approval' ? b.title : b.card === 'question' ? `a question: ${b.question}` : b.card === 'connect' ? `connecting ${b.toolkitName}` : b.card === 'secure-form' ? `entering the login for ${b.label}` : 'a draft to review') : ''));
   return `The work you handed off just finished. Request: "${clip(request, 200)}". ${text ? `Your text agent replied:\n"""\n${clip(text, 1800)}\n"""` : 'It finished without a written reply.'}${waiting.length ? `\nStill waiting on the user in the chat: ${waiting.join('; ')}.` : ''}`;
 }
 

@@ -3,6 +3,7 @@ import { OpenAIResponsesProvider } from '@composio/openai';
 import { db } from './db.js';
 import { env } from './env.js';
 import type { Toolkit } from './types.js';
+import { connectionHealth, type ConnectionAccount, type ConnectionHealth } from './domain/connections.js';
 
 /**
  * Constructed on first use: an empty COMPOSIO_API_KEY must not stop the server booting —
@@ -100,11 +101,18 @@ export async function connectedToolkits(userId: string): Promise<Set<string>> {
   return new Set(items.map((i) => i.toolkit?.slug ?? i.toolkitSlug).filter((s): s is string => Boolean(s)));
 }
 
-export async function connectionsDetail(userId: string) {
+/** Every connected account of the user, whatever its status. An entry that names no app or status is dropped: nothing can act on it. */
+export async function connectionsDetail(userId: string): Promise<ConnectionAccount[]> {
   if (!composioEnabled()) return [];
   const r = (await composio.connectedAccounts.list({ userIds: [userId] })) as unknown as ConnectedAccountPage;
-  return (r.items ?? []).map((i) => ({ id: i.id, toolkit: i.toolkit?.slug ?? i.toolkitSlug, status: i.status }));
+  return (r.items ?? []).flatMap((i) => {
+    const toolkit = i.toolkit?.slug ?? i.toolkitSlug;
+    return toolkit && i.status ? [{ id: i.id, toolkit, status: i.status }] : [];
+  });
 }
+
+/** Which of the user's apps are connected, and which need reconnecting because their sign-in expired. */
+export const connectionHealthOf = async (userId: string): Promise<ConnectionHealth> => connectionHealth(await connectionsDetail(userId));
 
 export async function disconnect(userId: string, toolkit: string) {
   for (const c of await connectionsDetail(userId)) {

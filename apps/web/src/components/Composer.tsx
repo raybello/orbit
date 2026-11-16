@@ -8,13 +8,13 @@ import { Icon } from './Icon';
 import { Menu } from './Menu';
 import { endCall, isCallActive, startCall, useVoice } from '../voice/call';
 import { useDictation } from '../voice/dictation';
+import { draftFor, onDraftPrefill, saveDraft } from '../lib/composer-drafts';
 
 const MAX_H = 200;
-const drafts = new Map<string, string>();
 const QUICK_EMOJI = ['👍', '🙂', '🎉', '✅', '👀', '🔥', '🙏', '💡'];
 
 export function Composer({ bot, running }: { bot: Bot; running: boolean }) {
-  const [text, setText] = useState(() => drafts.get(bot.id) ?? '');
+  const [text, setText] = useState(() => draftFor(bot.id));
   const [sending, setSending] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [menu, setMenu] = useState<'attach' | 'emoji' | null>(null);
@@ -24,8 +24,9 @@ export function Composer({ bot, running }: { bot: Bot; running: boolean }) {
   const fileInputRef = useRef<HTMLInputElement>(null);
   const setModal = useStore((s) => s.setModal);
 
-  useEffect(() => { setText(drafts.get(bot.id) ?? ''); setError(null); setPendingFiles([]); ref.current?.focus(); }, [bot.id]);
-  useEffect(() => { drafts.set(bot.id, text); }, [bot.id, text]);
+  useEffect(() => { setText(draftFor(bot.id)); setError(null); setPendingFiles([]); ref.current?.focus(); }, [bot.id]);
+  useEffect(() => { saveDraft(bot.id, text); }, [bot.id, text]);
+  useEffect(() => onDraftPrefill((id) => { if (id === bot.id) { setText(draftFor(id)); ref.current?.focus(); } }), [bot.id]);
 
   useLayoutEffect(() => {
     const el = ref.current;
@@ -49,7 +50,7 @@ export function Composer({ bot, running }: { bot: Bot; running: boolean }) {
       await api.send(bot.id, t || '​', pendingFiles.length > 0 ? pendingFiles : undefined);
       setText('');
       setPendingFiles([]);
-      drafts.delete(bot.id);
+      saveDraft(bot.id, '');
     } catch (e) {
       setError((e as Error).message || 'Message failed to send');
     } finally {

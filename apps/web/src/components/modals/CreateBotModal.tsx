@@ -5,6 +5,7 @@ import { api } from '../../lib/api';
 import { COLOR_ORDER, palette } from '../../lib/colors';
 import { configApi } from '../../lib/configApi';
 import { useStore } from '../../store';
+import { useTemplatesUI } from '../../templatesStore';
 import { Icon } from '../Icon';
 import { Modal } from './Modal';
 
@@ -90,6 +91,9 @@ export function CreateBotModal() {
             </button>
           </div>
           {error && <div className="card__error">{error}</div>}
+          <button type="button" className="link-btn link-btn--small" onClick={() => { close(); useTemplatesUI.getState().open({ kind: 'gallery' }); }}>
+            Or start from a template
+          </button>
         </div>
         <div className="modal__footer">
           <button type="button" className="link-btn link-btn--small" style={{ marginRight: 'auto' }} onClick={() => setModal('group')}>New group chat instead</button>

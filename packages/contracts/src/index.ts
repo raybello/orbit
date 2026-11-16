@@ -2,6 +2,13 @@
 // Everything here is type-only or plain constants: no runtime dependencies.
 
 export * from './branded-types.js';
+// Bot templates and the starter gallery (F6, F7).
+export * from './templates.js';
+// Auto-review rules (F9).
+export * from './rules.js';
+// Voice model management (F, on-device default).
+export * from './voice.js';
+import type { VoiceModelItem } from './voice.js';
 
 export type AvatarShape =
   | 'blob' | 'pebble' | 'bean' | 'egg' | 'squircle' | 'tablet' | 'capsule' | 'cylinder' | 'hex'
@@ -38,6 +45,9 @@ export interface Bot {
   /** Hermes engine: model id and provider for this bot; null = the engine's default. */
   model: string | null;
   provider: string | null;
+  /** How much the Bot reaches out unasked. Only the person's first primary Bot acts on it. */
+  /** Defaults to 'proactive' for the primary bot; 'reactive' for all others. Optional so old rows without the column still deserialise. */
+  initiative?: InitiativeLevel;
   generation: number;
   unread: number;
   lastPreview: string | null;
@@ -110,6 +120,8 @@ export type CardBody =
       toolkitName?: string;
       logo?: string;
       args: unknown;
+      /** The auto-review rule that raised this card. "Always allow" cannot override a rule, so the card does not offer it. */
+      rule?: { id: string; description: string };
       status: 'pending' | 'allowed' | 'always' | 'denied' | 'expired';
     }
   | {
@@ -127,6 +139,8 @@ export type CardBody =
       toolkitName: string;
       logo?: string;
       reason: string;
+      /** The app was connected and its sign-in expired: the card asks to reconnect it. */
+      reconnect?: true;
       status: 'pending' | 'connected' | 'skipped';
     }
   | {
@@ -138,7 +152,8 @@ export type CardBody =
       text: string;
       approvalId: string;
       status: 'pending' | 'sent' | 'discarded';
-    };
+    }
+  | SecureFormCardBody;
 
 export interface EventBody {
   type: 'event';
@@ -178,9 +193,14 @@ export interface VoiceLocalStatus {
   models: VoiceModelState;
   bytes: { total: number; have: number };
   download: { active: boolean; pct: number; name: string | null };
+  /** Every model, required and optional, with its state and size on disk. */
+  voices: VoiceModelItem[];
 }
 
-export interface NoticeBody { type: 'notice'; text: string; tone?: 'info' | 'warn' | 'error' }
+/** What a notice reports, so a client can style or filter it. A plain notice has none. */
+export type NoticeKind = 'context-compacted';
+
+export interface NoticeBody { type: 'notice'; text: string; tone?: 'info' | 'warn' | 'error'; kind?: NoticeKind }
 
 export type ActivityKind =
   | 'thinking' | 'working' | 'searching_web' | 'reading_web' | 'browsing_web' | 'on_its_computer'
@@ -259,6 +279,8 @@ export interface EngineInfo {
 export interface Toolkit {
   slug: string; name: string; logo?: string; description?: string; categories: string[];
   managedAuth: boolean; noAuth: boolean; connected: boolean;
+  /** Set on an app that is not connected because its sign-in expired, never on a connected one. */
+  needsReconnect?: true;
 }
 
 /** One row of App Settings → Engine Auth: a bot's engine plus which shared credentials it has. */
@@ -398,6 +420,91 @@ export interface SkillEntry {
 /** GET /api/skills */
 export interface SkillsResponse { skills: SkillEntry[] }
 
+// ------------------------------------------------------------------ vault (F12)
+
+/** A saved login as the app shows it. The secret is write-only: no response ever carries it. */
+export interface VaultEntry {
+  id: string;
+  label: string;
+  username: string | null;
+  /** The site it belongs to (`https://github.com`, `https://*.amazon.com/ap`), or null for any page. */
+  urlPattern: string | null;
+  createdAt: number;
+  updatedAt: number;
+}
+
+/** GET /api/vault. `configured` is false when the server has no usable DB_ENCRYPTION_KEY. */
+export interface VaultResponse { configured: boolean; entries: VaultEntry[] }
+
+/** POST /api/vault. */
+export interface CreateVaultEntryRequest { label: string; username?: string | null; secret: string; urlPattern?: string | null }
+
+/** PATCH /api/vault/:id. An omitted `secret` keeps the stored one; null clears a username or pattern. */
+export interface UpdateVaultEntryRequest { label?: string; username?: string | null; secret?: string; urlPattern?: string | null }
+
+/** One input of a secure form: `secret` is the masked one, and every form has exactly one. */
+export interface SecureFormField { key: 'username' | 'secret'; label: string }
+
+/**
+ * A bot asking for a login it does not have. What the person types goes straight to
+ * POST /api/bots/:id/cards/:seq/secure-form and into the Vault: it is never part of this row, a
+ * message, or anything the bot reads.
+ */
+export interface SecureFormCardBody {
+  type: 'card';
+  card: 'secure-form';
+  /** What the login is for; it becomes the Vault label the bot fills it in by. */
+  label: string;
+  reason: string;
+  fields: SecureFormField[];
+  /** The site the bot wants it for, when it named one. */
+  urlPattern?: string;
+  status: 'pending' | 'submitted' | 'dismissed';
+  /** Set on submit: whether the person kept it in the Vault or let it expire after this use. */
+  saved?: boolean;
+}
+
+/** POST /api/bots/:id/cards/:seq/secure-form */
+export interface SecureFormSubmitRequest { values: { username?: string; secret: string }; save: boolean }
+
+// ------------------------------------------------------------------ audit log (F13)
+
+/**
+ * How a tool call got to run, or did not: `allowed` after the person approved it, `auto-allowed`
+ * when nothing asked, `denied` when the person, a policy or an expired approval stopped it, and
+ * `pending` while an approval is still open.
+ */
+export type AuditOutcome = 'allowed' | 'auto-allowed' | 'denied' | 'pending';
+
+export const AUDIT_OUTCOMES: readonly AuditOutcome[] = ['allowed', 'auto-allowed', 'denied', 'pending'];
+
+/** One tool call a bot made, with the approval decision that belongs to it. */
+export interface AuditEntry {
+  botId: string;
+  generation: number;
+  seq: number;
+  /** Unix ms the call started. */
+  at: number;
+  tool: string;
+  label: string;
+  args: unknown;
+  status: ToolCallBody['status'];
+  summary: string | null;
+  outcome: AuditOutcome;
+  approval: { decision: 'pending' | 'allowed' | 'always' | 'denied' | 'expired'; decidedAt: number | null } | null;
+}
+
+/** GET /api/bots/:id/audit?from=&to=&tool=&outcome=&q=&format=json|csv */
+export interface AuditResponse {
+  entries: AuditEntry[];
+  /** How many entries matched before `limit` cut the list. */
+  total: number;
+  /** Every tool name in the date range, for the filter. */
+  tools: string[];
+  /** AUDIT_RETENTION_DAYS: how far back the log reaches; 0 = no limit. */
+  retentionDays: number;
+}
+
 // ------------------------------------------------------------------ aliases
 // The implementation plan names some of these differently (BotRow / MessageRow /
 // RoutineRow / TaskRow / EventPayload). Keep both spellings so clients can pick.
@@ -473,3 +580,38 @@ export const ORBIT_HEADERS = {
 
 /** Env var that overrides the server the desktop app opens. */
 export const ORBIT_WEB_URL_ENV = 'ORBIT_WEB_URL';
+
+// ------------------------------------------------------------------ deep links (F1)
+
+export * from './deep-link.js';
+
+// ------------------------------------------------------------------ proactive initiative (F8)
+
+/**
+ * `proactive`: check-ins, the morning briefing and every signal. `reactive`: only alerts (a failed
+ * routine, an expired app connection). `off`: nothing unasked.
+ */
+export const INITIATIVE_LEVELS = ['proactive', 'reactive', 'off'] as const;
+export type InitiativeLevel = (typeof INITIATIVE_LEVELS)[number];
+
+export interface MorningBriefingSettings {
+  /** null when the routine was deleted or not seeded yet; turning the briefing on creates one. */
+  routineId: string | null;
+  enabled: boolean;
+  /** Local "HH:MM", or null when the routine was rescheduled to something other than a time of day. */
+  time: string | null;
+  timezone: string;
+}
+
+/** GET /api/initiative */
+export interface InitiativeSettings {
+  /** Hours without a message from the person before the primary Bot may check on them; 0 = never. */
+  idleHours: number;
+  briefing: MorningBriefingSettings;
+}
+
+/** PUT /api/initiative */
+export interface InitiativeSettingsPatch {
+  idleHours?: number;
+  briefing?: { enabled?: boolean; time?: string; timezone?: string };
+}

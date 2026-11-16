@@ -62,8 +62,9 @@ function toBlocks(rows: Row[]): Block[] {
 }
 
 export default function ThreadScreen() {
-  const params = useLocalSearchParams<{ botId: string }>();
+  const params = useLocalSearchParams<{ botId: string; initialText?: string }>();
   const botId = Array.isArray(params.botId) ? params.botId[0] : (params.botId ?? '');
+  const initialText = Array.isArray(params.initialText) ? params.initialText[0] : params.initialText;
   const tokens = useMobileTokens();
   const insets = useSafeAreaInsets();
 
@@ -74,6 +75,11 @@ export default function ThreadScreen() {
 
   const [draft, setDraft] = useState('');
   const inputRef = useRef<TextInput>(null);
+
+  // A deep link's text (app/prompt.tsx) waits in the composer, and only while nothing is typed there.
+  useEffect(() => {
+    if (initialText) setDraft((current) => (current.trim() ? current : initialText));
+  }, [botId, initialText]);
 
   const rowsQuery = useRowsQuery(botId);
   const send = useSendMessage(botId);
@@ -411,9 +417,9 @@ function CardView({ body, seq, botId, tokens }: { body: Extract<CardBody, { type
   if (body.card === 'approval') return <ApprovalCard body={body} tokens={tokens} botId={botId} />;
   if (body.card === 'question') return <QuestionCard body={body} seq={seq} botId={botId} tokens={tokens} />;
 
-  // Connect and draft cards are informational on the phone: the work happens on the web app.
-  const title = body.card === 'connect' ? `Connect ${body.toolkitName}` : `Draft ${body.channel}`;
-  const text = body.card === 'connect' ? body.reason : body.subject ? `${body.subject}\n\n${body.text}` : body.text;
+  // Connect, secure-form and draft cards are informational on the phone: the work happens on the web app.
+  const title = body.card === 'connect' ? `Connect ${body.toolkitName}` : body.card === 'secure-form' ? `Enter the login for ${body.label}` : `Draft ${body.channel}`;
+  const text = body.card === 'connect' || body.card === 'secure-form' ? body.reason : body.subject ? `${body.subject}\n\n${body.text}` : body.text;
   return (
     <View style={cardStyle(tokens)}>
       <Text style={{ color: tokens.colors.fg, fontSize: tokens.fontSizes.message, fontWeight: '600' }}>{title}</Text>

@@ -22,6 +22,9 @@ import { SearchModal } from './components/modals/SearchModal';
 import { ConfigLayer } from './components/config/ConfigLayer';
 import { TasksView } from './components/config/TasksView';
 import { useConfigUI } from './configStore';
+import { TemplatesLayer } from './components/TemplatesLayer';
+import { TeamWizard } from './components/TeamWizard';
+import { useDeepLinks } from './lib/deep-links';
 
 /**
  * The main-area view for each rail section. Chat is the exception: its list lives in the 280px
@@ -52,6 +55,7 @@ function Shell() {
   const inChat = navSection === 'chat';
   // The panel stays mounted so it can slide shut; it renders its body only while open.
   const showDetails = hasBot && inChat && view === 'chat';
+  useDeepLinks();
 
   useEffect(() => {
     const st = useStore.getState();
@@ -105,8 +109,10 @@ function Shell() {
       {modal === 'group' && <CreateGroupModal />}
       {modal === 'search' && <SearchModal />}
       {modal === 'apps' && <ConnectAppsModal />}
+      {modal === 'team' && <TeamWizard onClose={() => useStore.getState().setModal(null)} />}
       {viewerOpen && <ComputerViewer />}
       <ConfigLayer />
+      <TemplatesLayer />
     </div>
   );
 }

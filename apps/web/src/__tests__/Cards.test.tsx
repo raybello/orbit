@@ -154,6 +154,15 @@ describe('approval card', () => {
 
     await waitFor(() => expect(screen.getByText('Approval expired')).toBeTruthy());
   });
+
+  it('names the rule that raised it, and does not offer a decision the rule would override', () => {
+    render(<ApprovalCard body={approval({ rule: { id: 'rule_1', description: 'Ask before sending messages' } })} />);
+
+    expect(screen.getByText('Asked because of your rule “Ask before sending messages”')).toBeTruthy();
+    expect(screen.getByRole('button', { name: 'Allow' })).toBeTruthy();
+    expect(screen.getByRole('button', { name: "Don't allow" })).toBeTruthy();
+    expect(screen.queryByRole('button', { name: 'Always allow' })).toBeNull();
+  });
 });
 
 describe('question card', () => {

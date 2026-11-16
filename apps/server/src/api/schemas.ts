@@ -1,6 +1,7 @@
 import type { Context } from 'hono';
 import { HTTPException } from 'hono/http-exception';
 import { z } from 'zod';
+import { INITIATIVE_LEVELS } from '@orbit/contracts';
 
 /**
  * The JSON bodies routes.ts accepts, as zod schemas, and the two helpers that read them.
@@ -75,8 +76,11 @@ export const PatchBotSchema = z
     voice: z.string().optional(),
     voiceSpeed: z.number().optional(),
     voiceLanguage: z.string().optional(),
-    voiceProvider: z.string().optional(),
+    // An explicit choice: anything else would be stored and read back as on-device.
+    voiceProvider: z.enum(['cloud', 'local']).optional(),
     voiceModel: z.string().optional(),
+    // New with F8, so no older client sends anything else: the column only ever holds a real level.
+    initiative: z.enum(INITIATIVE_LEVELS).optional(),
   })
   .loose();
 
@@ -190,7 +194,12 @@ export const VoiceEndSchema = z
   .loose();
 
 /** POST /api/voice/local/models/download — `{ model }`, `{ kind }`, or no body for the whole set. */
-export const VoiceModelDownloadSchema = z.object({ model: z.string().optional(), kind: z.string().optional() }).loose();
+export const VoiceModelDownloadSchema = z
+  .object({ model: z.string().optional(), kind: z.string().optional(), fresh: z.boolean().optional() })
+  .loose();
+
+/** POST /api/voice/local/models/cancel — the model whose download stops. */
+export const VoiceModelTargetSchema = z.object({ model: z.string() }).loose();
 
 /** POST /api/voice/local/session — the bot whose voice the call speaks with. */
 export const LocalVoiceSessionSchema = z.object({ botId: z.string().optional() }).loose();

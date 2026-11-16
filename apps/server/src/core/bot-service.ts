@@ -1,4 +1,4 @@
-import type { AvatarColor, AvatarShape, BotId, UserId } from '@orbit/contracts';
+import { resolveVoiceProvider, type AvatarColor, type AvatarShape, type BotId, type UserId } from '@orbit/contracts';
 import { type BotState, type EngineKind, transition } from '../domain/bot-lifecycle.js';
 
 /**
@@ -87,8 +87,8 @@ export function planBotCreation(input: BotCreationInput, deps: BotCreationDeps):
     // Only the exact word means teammate; anything else is a personal bot.
     mode: input.mode === 'teammate' ? 'teammate' : 'personal',
     isPrimary: Boolean(input.isPrimary),
-    // A bot can be created straight into on-device voice; both default to the cloud path and Piper.
-    voiceProvider: input.voiceProvider === 'local' ? 'local' : 'cloud',
+    // Voice runs on-device unless the request explicitly asks for the cloud path.
+    voiceProvider: resolveVoiceProvider(input.voiceProvider),
     voiceModel: String(input.voiceModel ?? '').slice(0, 80) || DEFAULT_VOICE_MODEL,
     state: { status: 'created', botId },
   };

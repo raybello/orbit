@@ -30,7 +30,7 @@ const bot = (id: string, name: string): Bot => ({
   voiceSpeed: 1,
   voiceLanguage: 'auto', voiceProvider: 'cloud' as const, voiceModel: 'piper-lessac-medium',
   model: null,
-  provider: null,
+  provider: null, initiative: 'proactive',
   generation: 1,
   unread: 0,
   lastPreview: null,
@@ -52,6 +52,10 @@ const messageRow = (over: Partial<Row> & Pick<Row, 'seq'>, text: string, role: '
 });
 
 const rows = (botId: string, list: Row[]) => ({ type: 'rows' as const, botId, generation: 1, rows: list });
+
+/** The entries a person can see, top to bottom. */
+const previews = (container: HTMLElement) =>
+  Array.from(container.querySelectorAll('.activity-item__preview')).map((el) => el.textContent);
 
 beforeEach(() => {
   useStore.setState({
@@ -79,15 +83,97 @@ describe('ActivityView', () => {
     const items: ActivityItem[] = [
       { botId: 'a', botName: 'Scout', kind: 'message', preview: 'older note', at: 1_000, seq: 1 },
       { botId: 'b', botName: 'Marlow', kind: 'completed', preview: 'Finished working', at: 3_000 },
-      { botId: 'b', botName: 'Marlow', kind: 'message', preview: 'newest note', at: 5_000, seq: 2 },
+      { botId: 'a', botName: 'Scout', kind: 'message', preview: 'newest note', at: 5_000, seq: 2 },
     ];
     useStore.setState({ recentActivity: items });
 
     const { container } = render(<ActivityView />);
-    const previews = Array.from(container.querySelectorAll('.activity-item__preview')).map((el) => el.textContent);
 
-    expect(previews).toEqual(['newest note', 'Finished working', 'older note']);
-    expect(container.querySelectorAll('.activity-item')).toHaveLength(3);
+    expect(previews(container)).toEqual(['newest note', 'Finished working', 'older note']);
+  });
+
+  it('folds a run from one bot into a collapsed group showing its latest status and size', () => {
+    useStore.setState({
+      recentActivity: [
+        { botId: 'b', botName: 'Marlow', kind: 'message', preview: 'Drafted the vendor brief', at: 1_000, seq: 1 },
+        { botId: 'b', botName: 'Marlow', kind: 'message', preview: 'Sent it to legal', at: 2_000, seq: 2 },
+        { botId: 'b', botName: 'Marlow', kind: 'working', preview: 'Reading the reply', at: 3_000 },
+        { botId: 'a', botName: 'Scout', kind: 'message', preview: 'Numbers are in', at: 4_000, seq: 3 },
+      ],
+    });
+
+    const { container } = render(<ActivityView />);
+
+    expect(previews(container)).toEqual(['Numbers are in', 'Reading the reply']);
+    expect(screen.getByText('Working')).toBeTruthy();
+    const toggle = screen.getByRole('button', { name: 'Show 2 earlier from Marlow' });
+    expect(toggle.getAttribute('aria-expanded')).toBe('false');
+    expect(toggle.textContent).toBe('3');
+    expect(container.querySelector('.page__meta')?.textContent).toBe('4');
+
+    fireEvent.click(toggle);
+    expect(toggle.getAttribute('aria-expanded')).toBe('true');
+    expect(previews(container)).toEqual(['Numbers are in', 'Reading the reply', 'Sent it to legal', 'Drafted the vendor brief']);
+
+    fireEvent.click(screen.getByRole('button', { name: 'Hide 2 earlier from Marlow' }));
+    expect(previews(container)).toEqual(['Numbers are in', 'Reading the reply']);
+  });
+
+  it('starts a new group when another bot interleaves', () => {
+    useStore.setState({
+      recentActivity: [
+        { botId: 'a', botName: 'Scout', kind: 'message', preview: 'first', at: 1_000, seq: 1 },
+        { botId: 'b', botName: 'Marlow', kind: 'message', preview: 'between', at: 2_000, seq: 2 },
+        { botId: 'a', botName: 'Scout', kind: 'message', preview: 'second', at: 3_000, seq: 3 },
+        { botId: 'a', botName: 'Scout', kind: 'message', preview: 'third', at: 4_000, seq: 4 },
+      ],
+    });
+
+    const { container } = render(<ActivityView />);
+
+    expect(previews(container)).toEqual(['third', 'between', 'first']);
+    expect(screen.getByRole('button', { name: 'Show 1 earlier from Scout' })).toBeTruthy();
+    expect(screen.queryAllByRole('button', { name: /earlier from/ })).toHaveLength(1);
+  });
+
+  it('groups what the filter shows and counts entries, not groups', () => {
+    useStore.setState({
+      recentActivity: [
+        { botId: 'a', botName: 'Scout', kind: 'card', preview: 'Approve the spend?', at: 1_000, seq: 1 },
+        { botId: 'a', botName: 'Scout', kind: 'message', preview: 'Spend is ready', at: 2_000, seq: 2 },
+        { botId: 'a', botName: 'Scout', kind: 'card', preview: 'Pick a vendor', at: 3_000, seq: 3 },
+      ],
+    });
+
+    const { container } = render(<ActivityView />);
+    const count = () => container.querySelector('.page__meta')?.textContent;
+    expect(count()).toBe('3');
+    expect(screen.getByRole('button', { name: 'Show 2 earlier from Scout' })).toBeTruthy();
+
+    fireEvent.click(screen.getByRole('button', { name: 'Needs attention' }));
+    expect(count()).toBe('2');
+    expect(previews(container)).toEqual(['Pick a vendor']);
+    fireEvent.click(screen.getByRole('button', { name: 'Show 1 earlier from Scout' }));
+    expect(previews(container)).toEqual(['Pick a vendor', 'Approve the spend?']);
+  });
+
+  it('opens the bot from a group and from an earlier entry in it', () => {
+    useStore.setState({
+      recentActivity: [
+        { botId: 'b', botName: 'Marlow', kind: 'message', preview: 'Earlier update', at: 1_000, seq: 1 },
+        { botId: 'b', botName: 'Marlow', kind: 'message', preview: 'Latest update', at: 2_000, seq: 2 },
+      ],
+    });
+    render(<ActivityView />);
+
+    fireEvent.click(screen.getByText('Latest update'));
+    expect(useStore.getState().selectedBotId).toBe('b');
+    expect(useConfigUI.getState().navSection).toBe('chat');
+
+    useStore.setState({ selectedBotId: null });
+    fireEvent.click(screen.getByRole('button', { name: 'Show 1 earlier from Marlow' }));
+    fireEvent.click(screen.getByText('Earlier update'));
+    expect(useStore.getState().selectedBotId).toBe('b');
   });
 
   it('shows a pending card by its question, and filters the feed', () => {

@@ -56,7 +56,16 @@ const draftPending: CardState = {
   approvalId: 'ap_2',
 };
 
-const pendingCards: CardState[] = [approvalPending, questionPending, connectPending, draftPending];
+const secureFormPending: CardState = {
+  status: 'pending',
+  card: 'secure-form',
+  cardId: 'card_sf',
+  label: 'AWS Console',
+  reason: 'I need to sign in to read the bill.',
+  fields: [{ key: 'username', label: 'Username' }, { key: 'secret', label: 'Password' }],
+};
+
+const pendingCards: CardState[] = [approvalPending, questionPending, connectPending, draftPending, secureFormPending];
 
 const allEvents: CardEvent[] = [
   { type: 'approve', userId, at },
@@ -68,6 +77,8 @@ const allEvents: CardEvent[] = [
   { type: 'connect', userId, at },
   { type: 'skip', userId, at },
   { type: 'send', userId, at },
+  { type: 'submit', userId, at, saved: true },
+  { type: 'submit', userId, at, saved: false },
   { type: 'expire', at },
 ];
 
@@ -83,6 +94,8 @@ const terminals: CardState[] = [
   { status: 'skipped', card: 'connect', cardId: 'card_cn', decidedAt: at, decidedBy: userId },
   { status: 'sent', card: 'draft', cardId: 'card_dr', decidedAt: at, decidedBy: userId },
   { status: 'discarded', card: 'draft', cardId: 'card_dr', decidedAt: at, decidedBy: userId },
+  { status: 'submitted', card: 'secure-form', cardId: 'card_sf', decidedAt: at, decidedBy: userId, saved: true },
+  { status: 'dismissed', card: 'secure-form', cardId: 'card_sf', decidedAt: at, decidedBy: userId },
 ];
 
 function expectStatus<S extends CardStatus>(state: CardState, status: S): Extract<CardState, { status: S }> {
@@ -143,6 +156,15 @@ describe('card workflow: each card has its own decisions', () => {
     assert.equal(sent.cardId, 'card_dr');
     const discarded = expectStatus(transitionCard(draftPending, { type: 'dismiss', userId, at }), 'discarded');
     assert.equal(discarded.card, 'draft');
+  });
+
+  test('a secure form is submitted, kept or not, or dismissed, and never carries what was typed', () => {
+    const kept = expectStatus(transitionCard(secureFormPending, { type: 'submit', userId, at, saved: true }), 'submitted');
+    assert.deepEqual(kept, { status: 'submitted', card: 'secure-form', cardId: 'card_sf', decidedAt: at, decidedBy: userId, saved: true });
+    const once = expectStatus(transitionCard(secureFormPending, { type: 'submit', userId, at, saved: false }), 'submitted');
+    assert.equal(once.saved, false);
+    const dismissed = expectStatus(transitionCard(secureFormPending, { type: 'dismiss', userId, at }), 'dismissed');
+    assert.equal(dismissed.card, 'secure-form');
   });
 
   test('decisions stamp the event time and user, never a local clock', () => {
@@ -206,6 +228,7 @@ describe('card workflow: the status table is the contract', () => {
       question: ['pending', 'answered', 'dismissed'],
       connect: ['pending', 'connected', 'skipped'],
       draft: ['pending', 'sent', 'discarded'],
+      'secure-form': ['pending', 'submitted', 'dismissed'],
     });
   });
 
@@ -247,6 +270,7 @@ describe('card workflow: the status table is the contract', () => {
     assert.deepEqual(legalEvents(questionPending), ['answer', 'dismiss']);
     assert.deepEqual(legalEvents(connectPending), ['connect', 'skip']);
     assert.deepEqual(legalEvents(draftPending), ['send', 'dismiss']);
+    assert.deepEqual(legalEvents(secureFormPending), ['submit', 'dismiss']);
   });
 
   test('isTerminal is true exactly for decided cards', () => {

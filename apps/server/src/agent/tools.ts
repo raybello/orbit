@@ -3,6 +3,7 @@ import { newId } from '../lib/ids.js';
 import { hub } from '../lib/hub.js';
 import { box } from '../box.js';
 import { env } from '../env.js';
+import { safetyIdentifier } from '../lib/xai.js';
 import { appendRow, getBotRow, listRoutines, toRoutine, describeCron, type RoutineRow } from '../store.js';
 import type { Trigger } from './loop.js';
 import { executeComposio, innerToolSlugs, isReadOnlySlug, toolkitInfo } from '../composio.js';
@@ -15,6 +16,7 @@ import { Cron } from 'croner';
 import { COMPUTER_TOOLS } from '../computer-tools.js';
 import { RESEARCH_TOOLS } from '../computer-research.js';
 import { BOT_TOOLS } from './bot-tools.js';
+import { VAULT_TOOLS } from '../vault-tools.js';
 
 /** Tool arguments as the model sent them: a JSON object, read field by field. */
 type ToolArgs = Record<string, unknown>;
@@ -66,7 +68,7 @@ function botByName(userId: string, name: string) {
 }
 
 /** Live X research through xAI's search tool. Returns the answer text followed by the posts it cites. */
-async function xSearch(a: ToolArgs): Promise<string> {
+async function xSearch(a: ToolArgs, userId: string): Promise<string> {
   const clean = (v: unknown) => (Array.isArray(v) ? v.map((h) => String(h).replace(/^@/, '').trim()).filter(Boolean).slice(0, 10) : []);
   const tool: Record<string, unknown> = { type: 'x_search' };
   const only = clean(a.handles);
@@ -76,13 +78,14 @@ async function xSearch(a: ToolArgs): Promise<string> {
   const day = /^\d{4}-\d{2}-\d{2}$/;
   if (day.test(String(a.from_date ?? ''))) tool.from_date = a.from_date;
   if (day.test(String(a.to_date ?? ''))) tool.to_date = a.to_date;
-  const res = await fetch('https://api.x.ai/v1/responses', {
+  const res = await fetch(`${env.xaiBaseUrl}/responses`, {
     method: 'POST',
     headers: { Authorization: `Bearer ${env.xaiKey}`, 'Content-Type': 'application/json' },
     signal: AbortSignal.timeout(240_000),
     body: JSON.stringify({
       model: env.xaiModel,
       store: false,
+      safety_identifier: safetyIdentifier(userId),
       tools: [tool],
       input: [
         { role: 'system', content: 'You are a research tool used by another AI agent. Search X and answer the question precisely. For each post you rely on give the author handle, the date, engagement numbers when you can see them, and the link. No preamble and no advice.' },
@@ -167,8 +170,8 @@ export const TOOLS: ToolDef[] = [
     }, ['query']),
     activity: 'searching_web',
     label: 'Searching X',
-    impl: async (a) => {
-      const r = await xSearch(a);
+    impl: async (a, ctx) => {
+      const r = await xSearch(a, ctx.userId);
       return { output: r, summary: 'Searched X' };
     },
   },
@@ -386,6 +389,9 @@ export const TOOLS: ToolDef[] = [
 
   // The team itself: list, create, edit, remove and promote Bots. Only a primary Bot may write.
   ...(BOT_TOOLS as unknown as ToolDef[]),
+
+  // Saved logins: filled in on the Bot's screen, or asked for in a secure form. See vault-tools.ts.
+  ...(VAULT_TOOLS as unknown as ToolDef[]),
 ];
 
 export const toolMap = new Map(TOOLS.map((t) => [t.name, t]));

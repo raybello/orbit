@@ -36,7 +36,13 @@ const draft: CardBody = {
   text: 'Any plans to support more seats?', approvalId: 'apr_2', status: 'pending',
 };
 
-const pending: Record<CardKind, CardBody> = { approval, question, connect, draft };
+const secureForm: CardBody = {
+  type: 'card', card: 'secure-form', label: 'AWS Console', reason: 'I need to sign in to read the bill.',
+  fields: [{ key: 'username', label: 'Username' }, { key: 'secret', label: 'Password' }],
+  urlPattern: 'https://console.aws.amazon.com', status: 'pending',
+};
+
+const pending: Record<CardKind, CardBody> = { approval, question, connect, draft, 'secure-form': secureForm };
 
 /** The events each card accepts, and the contract status each one produces. */
 const LEGAL: Record<CardKind, Partial<Record<EventType, CardStatus>>> = {
@@ -44,6 +50,7 @@ const LEGAL: Record<CardKind, Partial<Record<EventType, CardStatus>>> = {
   question: { answer: 'answered', dismiss: 'dismissed' },
   connect: { connect: 'connected', skip: 'skipped' },
   draft: { send: 'sent', dismiss: 'discarded' },
+  'secure-form': { submit: 'submitted', dismiss: 'dismissed' },
 };
 
 /** Every terminal status of each card, written out rather than derived from the machine. */
@@ -52,9 +59,10 @@ const TERMINAL: Record<CardKind, CardStatus[]> = {
   question: ['answered', 'dismissed'],
   connect: ['connected', 'skipped'],
   draft: ['sent', 'discarded'],
+  'secure-form': ['submitted', 'dismissed'],
 };
 
-const ALL_EVENTS: EventType[] = ['approve', 'deny', 'answer', 'dismiss', 'connect', 'skip', 'send', 'expire'];
+const ALL_EVENTS: EventType[] = ['approve', 'deny', 'answer', 'dismiss', 'connect', 'skip', 'send', 'submit', 'expire'];
 
 function event(type: EventType): CardEvent {
   const base = { userId, at };
@@ -66,6 +74,7 @@ function event(type: EventType): CardEvent {
     case 'connect': return { type, ...base };
     case 'skip': return { type, ...base };
     case 'send': return { type, ...base };
+    case 'submit': return { type, ...base, saved: true };
     case 'expire': return { type, at };
   }
 }
@@ -167,7 +176,7 @@ describe('decideCard — the rebuilt body', () => {
 
   test('answering does not leak an answer onto any other card kind', () => {
     // 'answer' is illegal everywhere else, so the only road to an answer field is a question.
-    for (const card of ['approval', 'connect', 'draft'] as CardKind[]) {
+    for (const card of ['approval', 'connect', 'draft', 'secure-form'] as CardKind[]) {
       assert.throws(() => decideCard(pending[card], event('answer'), cardId), IllegalCardMoveError);
     }
   });
@@ -187,6 +196,15 @@ describe('decideCard — the rebuilt body', () => {
     const skipped = decideCard(connect, event('skip'), cardId) as Extract<CardBody, { card: 'connect' }>;
     assert.equal(skipped.status, 'skipped');
     assert.equal(skipped.reason, 'I need Slack to post the digest.');
+  });
+
+  test('a submitted secure form records whether it was kept, and gains no field for what was typed', () => {
+    for (const saved of [true, false]) {
+      const next = decideCard(secureForm, { type: 'submit', userId, at, saved }, cardId) as Extract<CardBody, { card: 'secure-form' }>;
+      assert.deepEqual(next, { ...secureForm, status: 'submitted', saved });
+    }
+    const dismissed = decideCard(secureForm, event('dismiss'), cardId);
+    assert.deepEqual(dismissed, { ...secureForm, status: 'dismissed' });
   });
 
   test('the input body is not mutated by a legal move', () => {

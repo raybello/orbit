@@ -13,6 +13,7 @@ import { instructionsFor } from './prompt.js';
 import { activityFor, appToolName, humanizeSlug, LIBRARY_ROOT, policyFor } from './tools.js';
 import { MIME_BY_EXTENSION } from '../lib/mime.js';
 import { sendPushNotification } from '../push.js';
+import { recordRoutineOutcome } from '../initiative-store.js';
 
 /**
  * A turn: one message handed to the bot's Hermes engine and streamed back into the conversation.
@@ -192,7 +193,7 @@ const pendingApprovals = (botId: string) => db.prepare("SELECT * FROM approvals 
 /** Put an approval card in the conversation and wait for the user's answer. */
 export async function requestApproval(
   who: { userId: string; botId: string },
-  pol: { key: string; toolkit?: string; title: string },
+  pol: { key: string; toolkit?: string; title: string; rule?: { id: string; description: string } },
   args: unknown,
   rowSeq: number | null,
 ): Promise<ApprovalDecision> {
@@ -202,6 +203,7 @@ export async function requestApproval(
   const card = appendRow(botId, 'card', {
     type: 'card', card: 'approval', approvalId, title: `Allow ${getBotRow(botId).name} to ${pol.title.split(': ')[1] ?? pol.title}?`,
     detail: describeArgs(args), tool: pol.key, toolkit: pol.toolkit, toolkitName: tk?.name, logo: tk?.logo, args, status: 'pending',
+    ...(pol.rule ? { rule: pol.rule } : {}),
   });
   db.prepare('INSERT INTO approvals(id,bot_id,row_seq,call_id,tool,status,created_at) VALUES (?,?,?,?,?,?,?)').run(approvalId, botId, card.seq, '', pol.key, 'pending', now());
   db.prepare('UPDATE bots SET unread = unread + 1 WHERE id=?').run(botId);
@@ -525,6 +527,12 @@ async function runTurn(botId: string, trigger: Trigger) {
         }
 
         case 'hermes.status': {
+          // Hermes summarized older turns to stay under its context budget (engine.ts sets a managed bot's).
+          if (d?.kind === 'compacted') {
+            closeMessage();
+            appendRow(botId, 'notice', { type: 'notice', kind: 'context-compacted', text: 'Conversation summarized to save context.', tone: 'info' });
+            break;
+          }
           const status = d?.text;
           if (typeof status === 'string' && status.trim()) caption(status.trim().slice(0, 84), true);
           break;
@@ -642,6 +650,7 @@ async function runTurn(botId: string, trigger: Trigger) {
       if (row?.body.type !== 'tool-call' || (row.body.status !== 'running' && row.body.status !== 'awaiting-approval')) continue;
       patchToolRow(botId, ref.seq, failed ? { status: 'error', summary: ctrl.signal.aborted ? 'Stopped' : 'Did not finish' } : { status: 'done' });
     }
+    if (trigger.type === 'routine') recordRoutineOutcome(trigger.routineId, !failed ? 'ok' : ctrl.signal.aborted ? 'stopped' : 'failed');
     if (aborts.get(botId) === ctrl) aborts.delete(botId);
     if (turns.get(botId) === turn) turns.delete(botId);
     // An approval asked for outside this turn may still be waiting; leave its state alone.

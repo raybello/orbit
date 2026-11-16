@@ -1,27 +1,18 @@
 /* ---------- Skills view: skill list on the left, per-Bot switches on the right ---------- */
 
-.skills-view {
-  display: flex; flex-direction: column; flex: 1 1 0; min-width: 0; height: 100%;
-  background: var(--color-bg-chrome); overflow: hidden;
-}
-.skills-view__header {
-  display: flex; align-items: center; justify-content: space-between; gap: 12px; flex-shrink: 0;
-  height: 60px; padding: 12px 20px; border-bottom: 1px solid var(--color-border-tertiary);
-}
-.skills-view__title { margin: 0; font-size: 17px; font-weight: 600; line-height: 24px; color: var(--color-text-primary); }
-.skills-view__sub { margin: 2px 0 0; font-size: 12px; line-height: 16px; letter-spacing: 0.12px; color: var(--color-text-tertiary); }
 .skills-view__body { display: flex; flex: 1 1 0; min-height: 0; container-type: inline-size; }
 .skills-view__panes { display: flex; flex: 1 1 0; min-height: 0; min-width: 0; }
 
 /* ---------- left: the skills ---------- */
 
+/* The pane's 8px plus a row's 8px put the skill names on the page gutter. */
 .skills-list {
   display: flex; flex-direction: column; gap: 2px; flex: 0 0 300px; width: 300px; min-width: 0;
-  padding: 10px 8px; overflow-y: auto; scrollbar-width: thin;
+  padding: var(--space-2); overflow-y: auto; scrollbar-width: thin;
   border-right: 1px solid var(--color-border-tertiary);
 }
 .skills-row {
-  display: flex; flex-direction: column; gap: 3px; width: 100%; padding: 8px 10px; text-align: left;
+  display: flex; flex-direction: column; gap: 3px; width: 100%; padding: var(--space-2); text-align: left;
   border-radius: var(--radius-md); transition: background-color 120ms var(--ease-out);
 }
 .skills-row:hover { background: var(--color-bg-hover); }
@@ -48,7 +39,7 @@
 
 /* ---------- right: the selected skill ---------- */
 
-.skills-detail { flex: 1 1 0; min-width: 0; overflow-y: auto; scrollbar-width: thin; padding: 18px 22px 40px; }
+.skills-detail { flex: 1 1 0; min-width: 0; overflow-y: auto; scrollbar-width: thin; padding: var(--page-gutter); }
 .skills-detail__inner { display: flex; flex-direction: column; gap: 18px; max-width: 560px; }
 .skills-detail__head { display: flex; flex-direction: column; gap: 4px; min-width: 0; }
 .skills-detail__name {
@@ -98,5 +89,5 @@
     flex: 0 0 auto; width: 100%; max-height: 45%; overflow-y: auto;
     border-right: 0; border-bottom: 1px solid var(--color-border-tertiary);
   }
-  .skills-detail { flex: 1 1 auto; overflow: visible; padding: 14px 14px 32px; }
+  .skills-detail { flex: 1 1 auto; overflow: visible; padding: var(--page-gutter); }
 }

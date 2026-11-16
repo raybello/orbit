@@ -3,7 +3,7 @@ import { db, now } from './db.js';
 import { hub } from './lib/hub.js';
 import { requireUser, type AuthVars } from './lib/auth.js';
 import { appendRow } from './store.js';
-import { roomMembers } from './agent/rooms.js';
+import { deleteRoom, roomMembers } from './agent/rooms.js';
 import { requireBody, CreateRoomSchema, RoomMembersSchema } from './api/schemas.js';
 import type { BotRow } from './infra/bot-repository.js';
 
@@ -35,6 +35,10 @@ roomsApi.post('/', async (c) => {
   const id = createRoom(user.id, name.trim(), [...new Set(valid)]);
   return c.json({ id });
 });
+
+/** The owner leaving a group deletes it for everyone; its member Bots stay on the team. */
+roomsApi.delete('/:id', (c) =>
+  deleteRoom(c.get('user').id, c.req.param('id')) ? c.json({ ok: true }) : c.json({ error: 'not found' }, 404));
 
 roomsApi.put('/:id/members', async (c) => {
   const user = c.get('user');

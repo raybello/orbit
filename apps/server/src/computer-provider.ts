@@ -4,6 +4,8 @@
  * Nothing above this line knows which one a bot has.
  */
 
+import type { Secret } from './lib/secret-box.js';
+
 /**
  * The relay's upstream: a connected, bidirectional byte stream to a VNC server. Orgo's is a
  * WebSocket (websockify); a container's x11vnc speaks raw RFB over TCP, so both are wrapped here
@@ -61,6 +63,12 @@ export interface ComputerProvider {
 
   /** Run a bash command on the bot's screen. */
   bash(botId: string, command: string, timeoutSec?: number, screenId?: string | null): Promise<BashResult>;
+
+  /**
+   * Type a secret into whatever has focus on the bot's screen, without it ever being part of a
+   * command line (see Box.typeSecret). The Vault's only way onto a bot's computer.
+   */
+  typeSecret(botId: string, secret: Secret, screenId?: string | null): Promise<void>;
 
   /** Write a file to the bot's computer. */
   writeFile(botId: string, file: string, content: string | Buffer, mode?: string): Promise<void>;

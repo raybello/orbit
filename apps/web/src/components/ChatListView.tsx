@@ -5,6 +5,7 @@ import { api, type RoomMember } from '../lib/api';
 import { useStore } from '../store';
 import { BotRow, previewFor } from './BotRow';
 import { Icon } from './Icon';
+import { ExploreTemplatesCta } from './TemplatesLayer';
 import { listStamp } from '../lib/time';
 import '../styles/chatlist.css';
 
@@ -134,6 +135,10 @@ export function ChatListView() {
             <Icon name="apps" size={12} />
             <span>Group</span>
           </button>
+          <button type="button" className="chat-list__action" onClick={() => setModal('team')} aria-label="New Team" title="New team of bots">
+            <Icon name="grid" size={12} />
+            <span>Team</span>
+          </button>
         </div>
       </div>
 
@@ -169,6 +174,7 @@ export function ChatListView() {
           {filter ? `No chats match “${query.trim()}”.` : 'No chats yet. Start a Bot or a group.'}
         </div>
       )}
+      {!filter && bots.filter((b) => b.kind !== 'room').length <= 1 && <ExploreTemplatesCta />}
     </div>
   );
 }

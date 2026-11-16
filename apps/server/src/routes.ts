@@ -19,7 +19,8 @@ import { computerState, ensureComputer, refreshComputer, suspendComputer } from 
 import { computerKindFor, providerFor } from './computer-provider-registry.js';
 import { deleteMemory, listMemories, memoryBot } from './engine-memory.js';
 import { orgo } from './orgo.js';
-import { catalog, composioEnabled, connectedToolkits, deleteConnection, disconnect, googleProfile, startConnect, startGoogleLogin, toolkitInfo } from './composio.js';
+import { catalog, composioEnabled, connectedToolkits, connectionHealthOf, deleteConnection, disconnect, googleProfile, startConnect, startGoogleLogin, toolkitInfo } from './composio.js';
+import { connectionWatch } from './core/connection-watch.js';
 import { libraryRoot, safeRel } from './files.js';
 import { mediaTypeFor } from './lib/mime.js';
 import { generateAuthUrl, exchangeCode, hasGoogleAccess, googleEmail, revokeGoogle } from './google-oauth.js';
@@ -27,6 +28,7 @@ import { runRoutine, scheduleRoutine, unscheduleRoutine } from './routines.js';
 import { deleteEventTrigger } from './triggers.js';
 import { dispatchRoomMessage } from './agent/rooms.js';
 import { voiceApi } from './voice.js';
+import { templatesApi } from './routes-templates.js';
 import type { Toolkit } from './types.js';
 import { TeamFullError } from './core/bot-service.js';
 import { BotAdminError, createBotFor, deleteBotFor, setBotPrimary, updateBotFor } from './bot-admin.js';
@@ -185,6 +187,9 @@ api.get('/auth/link/:token', (c) => {
 });
 
 api.post('/auth/logout', (c) => { destroySession(c); return c.json({ ok: true }); });
+
+// Ahead of the sign-in middleware: a template share link is readable before signing in.
+api.route('/', templatesApi);
 
 api.use('/*', async (c, next) => {
   // /api/desktop/probe is authenticated by the stack token itself (see its handler).
@@ -460,6 +465,7 @@ api.post('/bots/:id/cards/:seq/dismiss', async (c) => {
   const body = decideCardRow(row.body, event, String(row.seq));
   updateRow(b.id, row.seq, body);
   if (row.body.card === 'connect') enqueue(b.id, { type: 'system', text: `The user skipped connecting ${row.body.toolkitName}. Continue without it.` });
+  if (row.body.card === 'secure-form') enqueue(b.id, { type: 'system', text: `The user closed the secure form for "${row.body.label}" without entering anything. Continue without that login, or ask them how they want to proceed.` });
   return c.json({ ok: true });
 });
 
@@ -593,13 +599,17 @@ api.get('/apps', async (c) => {
   const user = c.get('user');
   const search = (c.req.query('search') ?? '').toLowerCase();
   const category = c.req.query('category') ?? '';
-  const [all, connected] = await Promise.all([catalog().catch(() => []), connectedToolkits(user.id).catch(() => new Set<string>())]);
-  let items: Toolkit[] = all.map((t) => ({ ...t, connected: connected.has(t.slug) }));
+  const [all, { connected, expired }] = await Promise.all([
+    catalog().catch(() => []),
+    connectionHealthOf(user.id).catch(() => ({ connected: new Set<string>(), expired: new Set<string>() })),
+  ]);
+  let items: Toolkit[] = all.map((t) => ({ ...t, connected: connected.has(t.slug), ...(expired.has(t.slug) ? { needsReconnect: true as const } : {}) }));
   if (search) items = items.filter((t) => t.name.toLowerCase().includes(search) || t.slug.includes(search) || t.description?.toLowerCase().includes(search));
   if (category) items = items.filter((t) => t.categories.some((x) => x.toLowerCase() === category.toLowerCase()));
   const categories = [...new Set(all.flatMap((t) => t.categories))].sort();
   const connectedApps = all.filter((t) => connected.has(t.slug)).map((t) => ({ ...t, connected: true }));
-  return c.json({ apps: items.slice(0, Number(c.req.query('limit') ?? 120)), connected: [...connected], connectedApps, categories, total: items.length });
+  const expiredApps: Toolkit[] = all.filter((t) => expired.has(t.slug)).map((t) => ({ ...t, connected: false, needsReconnect: true }));
+  return c.json({ apps: items.slice(0, Number(c.req.query('limit') ?? 120)), connected: [...connected], connectedApps, expiredApps, categories, total: items.length });
 });
 
 api.post('/apps/:slug/connect', async (c) => {
@@ -625,6 +635,8 @@ api.get('/apps/callback', async (c) => {
     const connected = await connectedToolkits(userId).catch(() => new Set<string>());
     if (connected.has(slug)) {
       hub.emit(userId, { type: 'connections' });
+      // A reconnect made from anywhere closes the reconnect cards that were waiting on it.
+      void connectionWatch.check(userId).catch(() => {});
       if (botId && ownBot(userId, botId)) {
         const info = await toolkitInfo(slug);
         if (seq) {

@@ -8,12 +8,17 @@ import { env } from '../env.js';
 import { api } from '../routes.js';
 import { stackTokenMatches } from '../lib/stack.js';
 import { checkinsApi } from '../routes-proactive.js';
+import { initiativeApi } from '../routes-initiative.js';
 import { roomsApi } from '../routes-rooms.js';
 import { configApi } from '../routes-config.js';
 import { calendarApi } from '../routes-calendar.js';
 import { filesApi } from '../routes-files.js';
 import { computersApi } from '../routes-computers.js';
 import { skillsApi } from '../routes-skills.js';
+import { rulesApi } from '../routes-rules.js';
+import { webhooksApi } from '../routes-webhooks.js';
+import { vaultApi } from '../routes-vault.js';
+import { teamsApi } from '../routes-teams.js';
 import { mcpApi } from '../mcp.js';
 
 /**
@@ -59,13 +64,18 @@ export function createApp(): Hono {
 
   // The app's tools for the agent engines (MCP).
   app.route('/mcp', mcpApi);
+  app.route('/webhooks', webhooksApi);
   app.route('/api/checkins', checkinsApi);
+  app.route('/api/initiative', initiativeApi);
   app.route('/api/rooms', roomsApi);
   app.route('/api', api);
   app.route('/api', configApi);
   // Calendar (routines + occurrences), Skills (MCP servers) and the two routers that own a prefix.
   app.route('/api', calendarApi);
   app.route('/api', skillsApi);
+  app.route('/api', rulesApi);
+  app.route('/api', vaultApi);
+  app.route('/api', teamsApi);
   app.route('/api/files', filesApi);
   app.route('/api/computers', computersApi);
 

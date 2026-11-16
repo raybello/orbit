@@ -71,7 +71,7 @@ class LocalCall {
   }
 
   async start() {
-    setV({ status: 'connecting', botId: this.botId, callId: null, muted: false, speaking: false, listening: false, thinking: false, working: [], captions: [], error: null, startedAt: null });
+    setV({ status: 'connecting', botId: this.botId, callId: null, muted: false, speaking: false, listening: false, thinking: false, working: [], captions: [], error: null, startedAt: null, blocked: null });
     window.addEventListener('pagehide', this.onUnload);
     window.addEventListener('beforeunload', this.onUnload);
     let stream: MediaStream;

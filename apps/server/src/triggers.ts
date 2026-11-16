@@ -1,6 +1,7 @@
 import { db, now } from './db.js';
 import { composio } from './composio.js';
 import { appendRow } from './store.js';
+import { hub } from './lib/hub.js';
 import type { Trigger } from './agent/loop.js';
 
 /**
@@ -19,14 +20,15 @@ export const isEventSchedule = (schedule: string) => schedule.startsWith('event:
 const asRecord = (v: unknown): Record<string, unknown> | null =>
   v && typeof v === 'object' && !Array.isArray(v) ? (v as Record<string, unknown>) : null;
 
-function migrate() {
+/** The two routines columns event routines live in. Idempotent; run by anything that writes one. */
+export function ensureTriggerColumns() {
   for (const col of ['trigger_id TEXT', 'trigger_config TEXT']) {
     try { db.exec(`ALTER TABLE routines ADD COLUMN ${col}`); } catch { /* already there */ }
   }
 }
 
 export async function initTriggers(enqueue: (botId: string, t: Trigger) => void) {
-  migrate();
+  ensureTriggerColumns();
   enqueueFn = enqueue;
   const count = (db.prepare("SELECT COUNT(*) n FROM routines WHERE schedule LIKE 'event:%'").get() as { n: number }).n;
   if (count > 0) await ensureSubscribed();
@@ -85,15 +87,21 @@ export async function listTriggerTypes(toolkit: string) {
   });
 }
 
-export async function createEventRoutine(userId: string, botId: string, a: { name: string; prompt: string; trigger_slug: string; config?: Record<string, unknown> }) {
-  migrate();
-  const slug = a.trigger_slug.toUpperCase();
-  const res = (await composio.triggers.create(userId, slug, { triggerConfig: a.config ?? {} } as Parameters<typeof composio.triggers.create>[2])) as
+/** A new Composio trigger for this user, and its id. Throws when the app is not connected. */
+async function createTrigger(userId: string, slug: string, config: Record<string, unknown>): Promise<string> {
+  const res = (await composio.triggers.create(userId, slug, { triggerConfig: config } as Parameters<typeof composio.triggers.create>[2])) as
     | { triggerId?: string; trigger_id?: string; id?: string }
     | null
     | undefined;
   const triggerId = res?.triggerId ?? res?.trigger_id ?? res?.id;
   if (!triggerId) throw new Error(`Composio did not return a trigger id: ${JSON.stringify(res).slice(0, 200)}`);
+  return triggerId;
+}
+
+export async function createEventRoutine(userId: string, botId: string, a: { name: string; prompt: string; trigger_slug: string; config?: Record<string, unknown> }) {
+  ensureTriggerColumns();
+  const slug = a.trigger_slug.toUpperCase();
+  const triggerId = await createTrigger(userId, slug, a.config ?? {});
   const id = `rt_${Math.random().toString(36).slice(2, 12)}`;
   db.prepare('INSERT INTO routines(id,bot_id,name,prompt,schedule,timezone,enabled,created_at,trigger_id,trigger_config) VALUES (?,?,?,?,?,?,1,?,?,?)')
     .run(id, botId, a.name, a.prompt, `event:${slug}`, 'UTC', now(), triggerId, JSON.stringify(a.config ?? {}));
@@ -104,12 +112,39 @@ export async function createEventRoutine(userId: string, botId: string, a: { nam
 /** Called by the routine scheduler when an event routine is enabled/disabled/deleted. */
 export async function setEventRoutineEnabled(routineId: string, enabled: boolean) {
   const r = db.prepare('SELECT trigger_id FROM routines WHERE id=?').get(routineId) as { trigger_id: string | null } | undefined;
-  if (!r?.trigger_id) return;
+  if (!r) return;
+  if (!r.trigger_id) {
+    if (enabled) await armEventRoutine(routineId);
+    return;
+  }
   try {
     if (enabled) { await composio.triggers.enable(r.trigger_id); await ensureSubscribed(); }
     else await composio.triggers.disable(r.trigger_id);
   } catch (e) {
     console.warn('[triggers] toggle failed', routineId, (e as Error).message);
+  }
+}
+
+/**
+ * Give an event routine with no trigger of its own (a duplicated or template-installed copy) one now.
+ * Copies never share their source's trigger: deleting either would silently kill the other. When the
+ * app is not connected yet, the routine goes back to paused and its Bot's chat says why.
+ */
+async function armEventRoutine(routineId: string) {
+  const r = db.prepare('SELECT r.bot_id, r.name, r.schedule, r.trigger_config, b.user_id FROM routines r JOIN bots b ON b.id=r.bot_id WHERE r.id=?').get(routineId) as
+    | { bot_id: string; name: string; schedule: string; trigger_config: string | null; user_id: string }
+    | undefined;
+  if (!r || !isEventSchedule(r.schedule)) return;
+  try {
+    const config = asRecord(JSON.parse(r.trigger_config ?? '{}')) ?? {};
+    const triggerId = await createTrigger(r.user_id, r.schedule.slice(6), config);
+    db.prepare('UPDATE routines SET trigger_id=? WHERE id=?').run(triggerId, routineId);
+    await ensureSubscribed();
+  } catch (e) {
+    console.warn('[triggers] arm failed', routineId, (e as Error).message);
+    db.prepare('UPDATE routines SET enabled=0 WHERE id=?').run(routineId);
+    appendRow(r.bot_id, 'event', { type: 'event', event: 'routine-updated', text: `Routine paused: ${r.name} needs its app connected first (${describeEvent(r.schedule)}).`, ref: routineId });
+    hub.emit(r.user_id, { type: 'routines', botId: r.bot_id });
   }
 }
 

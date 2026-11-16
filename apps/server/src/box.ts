@@ -1,9 +1,10 @@
-import { execFile } from 'node:child_process';
+import { execFile, spawn } from 'node:child_process';
 import fs from 'node:fs/promises';
 import path from 'node:path';
 import { env } from './env.js';
 import { orgo } from './orgo.js';
 import { dockerBox } from './docker/docker-box.js';
+import type { Secret } from './lib/secret-box.js';
 
 /**
  * The box: where a bot's desktop commands run. The primary bot works on the one Orgo computer
@@ -23,9 +24,18 @@ export interface Box {
   writeFile(file: string, content: string | Buffer, mode?: string): Promise<void>;
   /** Read a file, or null if it is not there. Meant for small files. */
   readFile(file: string): Promise<Buffer | null>;
+  /**
+   * Type a secret into whatever has focus on that screen. Unlike `bash`, the value is never part of a
+   * command line: it would sit in the process list, in Docker's record of the exec, or in the
+   * provider's log of the command for as long as those are kept.
+   */
+  typeSecret(secret: Secret, screenId?: string | null): Promise<void>;
   /** A path safe to put inside single quotes in a shell command. */
   quote(s: string): string;
 }
+
+/** xdotool typing what it reads on stdin, so the text is in no argument. */
+export const TYPE_FROM_STDIN = ['xdotool', 'type', '--clearmodifiers', '--delay', '12', '--file', '-'];
 
 /** Which computer a box talks to. */
 export type BoxTarget =
@@ -58,6 +68,22 @@ function localBash(command: string, timeoutSec: number, screenId?: string | null
   });
 }
 
+function localTypeSecret(secret: Secret, screenId?: string | null): Promise<void> {
+  return new Promise((resolve, reject) => {
+    const child = spawn(TYPE_FROM_STDIN[0], TYPE_FROM_STDIN.slice(1), { env: shellEnv(screenId), stdio: ['pipe', 'ignore', 'pipe'], timeout: 60_000 });
+    let stderr = '';
+    child.stderr.on('data', (d) => { stderr += String(d); });
+    child.on('error', (e) => reject(new Error(`could not type on this computer: ${e.message}`)));
+    child.on('close', (code) => {
+      if (code === 0) resolve();
+      else reject(new Error(secret.redact(`typing failed (exit ${code}): ${stderr.trim().slice(-200)}`)));
+    });
+    // xdotool exiting early closes the pipe under the write; the exit code above is the report.
+    child.stdin.on('error', () => {});
+    child.stdin.end(secret.reveal());
+  });
+}
+
 /** A path safe to put inside single quotes in a shell command. */
 export const quotePath = (s: string) => `'${s.replace(/'/g, "'\\''")}'`;
 
@@ -77,6 +103,7 @@ function localBox(): Box {
     async readFile(file) {
       try { return await fs.readFile(file); } catch { return null; }
     },
+    typeSecret: localTypeSecret,
     quote: q,
   };
 }
@@ -105,6 +132,15 @@ export function orgoBox(computerId: string): Box {
       const out = r.output.trim();
       if (!out || out.endsWith('__missing__')) return null;
       return Buffer.from(out, 'base64');
+    },
+    async typeSecret(secret, screenId) {
+      // Orgo's own typing endpoint, not `bash`: there is no stdin to an Orgo command, so a shell
+      // version would put the value in the command it runs and records.
+      try {
+        await orgo.type(computerId, screenId ?? undefined, secret.reveal());
+      } catch (e) {
+        throw new Error(secret.redact(String((e as { message?: unknown } | null)?.message ?? e)));
+      }
     },
     quote: q,
   };
@@ -138,6 +174,10 @@ export const box: Box = env.localBox
       async readFile(file) {
         if (!env.orgoComputerId) throw new Error('ORGO_COMPUTER_ID is not set');
         return orgoBox(env.orgoComputerId).readFile(file);
+      },
+      async typeSecret(secret, screenId) {
+        if (!env.orgoComputerId) throw new Error('ORGO_COMPUTER_ID is not set');
+        return orgoBox(env.orgoComputerId).typeSecret(secret, screenId);
       },
       quote: q,
     };

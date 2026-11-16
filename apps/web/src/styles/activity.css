@@ -1,16 +1,7 @@
 /* ---------- cross-bot Activity feed (rail → Activity, in the main area) ---------- */
 
-.activity { display: flex; flex-direction: column; min-height: 100%; }
-
-.activity__header { display: flex; align-items: baseline; justify-content: space-between; gap: 8px; padding: 2px 4px 8px; }
-.activity__title {
-  margin: 0; min-width: 0; font-size: 17px; font-weight: 600; line-height: 24px; letter-spacing: -0.2px;
-  color: var(--color-ink); white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
-}
-.activity__count { flex-shrink: 0; font-size: 12px; line-height: 16px; color: var(--color-text-tertiary); font-variant-numeric: tabular-nums; }
-
 /* ---------- filter chips ---------- */
-.activity__filters { display: flex; flex-wrap: wrap; gap: 6px; padding: 0 4px 10px; }
+.activity__filters { display: flex; flex-wrap: wrap; gap: 6px; flex-shrink: 0; }
 .activity__filter {
   height: 26px; padding: 0 10px; border-radius: var(--radius-full);
   background: var(--color-bg-tertiary); color: var(--color-text-secondary);
@@ -60,6 +51,26 @@
   content: ''; display: inline-block; width: 5px; height: 5px; margin-right: 5px; border-radius: 50%;
   background: currentColor; vertical-align: middle;
 }
+
+/* ---------- a run from one bot: latest entry + toggle, earlier entries under it ---------- */
+.activity-group__head { display: flex; align-items: center; gap: 4px; }
+.activity-group__head > .activity-item { flex: 1 1 0; min-width: 0; }
+.activity-group__toggle {
+  display: inline-flex; flex-shrink: 0; align-items: center; gap: 4px; height: 24px; padding: 0 6px 0 8px;
+  border-radius: var(--radius-full); background: var(--color-bg-tertiary); color: var(--color-text-secondary);
+  font-size: 11px; font-weight: 600; line-height: 24px; font-variant-numeric: tabular-nums;
+  transition: background-color 120ms var(--ease-out), color 120ms var(--ease-out);
+}
+.activity-group__toggle:hover { background: var(--color-bg-hover); color: var(--color-text-primary); }
+.activity-group__toggle svg { transition: transform 160ms var(--ease-out); }
+.activity-group.is-open .activity-group__toggle svg { transform: rotate(180deg); }
+/* The rule runs under the avatar's centre (8px row padding + 14px), and the earlier entries' text
+   lands on the latest one's text column (8px + 28px avatar + 10px gap, less the 1px rule). */
+.activity-group__items {
+  display: flex; flex-direction: column; gap: 2px; margin: 0 0 4px 22px; padding-left: 15px;
+  border-left: 1px solid var(--color-border-tertiary);
+}
+.activity-item--nested { gap: 8px; padding: 6px 8px; }
 
 /* ---------- empty ---------- */
 .activity__empty {

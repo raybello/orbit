@@ -4,6 +4,7 @@ import { api } from '../lib/api';
 import { useStore } from '../store';
 import { ComputerCard } from './ComputerCard';
 import { Icon } from './Icon';
+import { PageShell } from './PageShell';
 import '../styles/computers.css';
 
 /** How often the grid re-reads /api/computers while it is on screen. */
@@ -58,24 +59,21 @@ export function ComputersView() {
   const without = (computers ?? []).length - withComputer.length;
   const count = withComputer.length;
 
-  return (
-    <div className="computers">
-      <div className="computers__bar">
-        <span className="computers__count">
-          {count} {count === 1 ? 'computer' : 'computers'}
-        </span>
-        <button
-          type="button"
-          className="computers__refresh"
-          onClick={() => void load(true)}
-          disabled={loading}
-          aria-label="Refresh computers"
-        >
-          <Icon name="refresh" size={14} />
-          <span>{loading ? 'Refreshing…' : 'Refresh'}</span>
-        </button>
-      </div>
+  const refresh = (
+    <button
+      type="button"
+      className="computers__refresh"
+      onClick={() => void load(true)}
+      disabled={loading}
+      aria-label="Refresh computers"
+    >
+      <Icon name="refresh" size={14} />
+      <span>{loading ? 'Refreshing…' : 'Refresh'}</span>
+    </button>
+  );
 
+  return (
+    <PageShell title="Screens" meta={`${count} ${count === 1 ? 'computer' : 'computers'}`} actions={refresh}>
       {error && (
         <div className="computers__error" role="alert">
           <span className="computers__error-text">{error}</span>
@@ -106,6 +104,6 @@ export function ComputersView() {
           {without} {without === 1 ? 'Bot has' : 'Bots have'} no computer
         </p>
       )}
-    </div>
+    </PageShell>
   );
 }

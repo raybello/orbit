@@ -1,0 +1,10 @@
+.rule-checks { display: flex; flex-wrap: wrap; gap: 6px 16px; }
+.rule-check { display: inline-flex; align-items: center; gap: 6px; font-size: 13px; line-height: 18px; color: var(--color-text-primary); cursor: pointer; }
+.rule-regex { font-family: var(--font-mono, ui-monospace, SFMono-Regular, Menlo, monospace); }
+
+.rule-log { min-height: 44px; }
+.rule-log__outcome { flex-shrink: 0; }
+.rule-log__outcome.is-blocked, .rule-log__outcome.is-denied { background: var(--color-danger-bg); color: var(--color-danger-text); }
+.rule-log__outcome.is-expired { background: var(--color-bg-tertiary); color: var(--color-text-tertiary); }
+.rule-log__detail { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.rule-log__when { flex-shrink: 0; font-size: 12px; line-height: 16px; color: var(--color-text-tertiary); }

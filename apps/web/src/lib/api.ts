@@ -7,7 +7,7 @@ export class ApiError extends Error {
   constructor(public status: number, message: string) { super(message); }
 }
 
-async function req<T>(method: string, path: string, body?: unknown): Promise<T> {
+export async function req<T>(method: string, path: string, body?: unknown): Promise<T> {
   const res = await fetch(`/api${path}`, {
     method,
     credentials: 'include',
@@ -26,6 +26,15 @@ async function req<T>(method: string, path: string, body?: unknown): Promise<T> 
 export interface AppsResponse { apps: Toolkit[]; connected: string[]; categories: string[]; total: number }
 
 export interface RoomMember { id: string; name: string; label: string; avatarShape: string; avatarColor: string }
+
+export interface TeamTemplateSummary {
+  slug: string;
+  name: string;
+  tagline: string;
+  description: string;
+  schedule: string;
+  memberCount: number;
+}
 
 export const api = {
   me: () => req<{ user: User | null; devLogin: boolean }>('GET', '/auth/me'),
@@ -74,6 +83,7 @@ export const api = {
   roomMembers: (id: string) => req<{ members: RoomMember[] }>('GET', `/rooms/${id}/members`),
   setRoomMembers: (id: string, botIds: string[]) => req<{ ok: true; members: string[] }>('PUT', `/rooms/${id}/members`, { botIds }),
   createRoom: (name: string, botIds: string[]) => req<{ id: string }>('POST', '/rooms', { name, botIds }),
+  deleteRoom: (id: string) => req<{ ok: true }>('DELETE', `/rooms/${id}`),
 
   calendar: (from: string, to: string) => req<CalendarResponse>('GET', `/calendar?from=${encodeURIComponent(from)}&to=${encodeURIComponent(to)}`),
   createRoutine: (r: CreateRoutineRequest) => req<{ routine: Routine }>('POST', '/routines', r),
@@ -96,6 +106,10 @@ export const api = {
   skills: () => req<SkillsResponse>('GET', '/skills'),
   setSkillEnabled: (botId: string, skillName: string, enabled: boolean) =>
     req<{ skill: SkillEntry }>('PUT', `/skills/${encodeURIComponent(botId)}/${encodeURIComponent(skillName)}`, { enabled }),
+
+  teamTemplates: () => req<{ templates: TeamTemplateSummary[] }>('GET', '/team-templates'),
+  createTeam: (body: { slug: string; name?: string; schedule?: string; timezone?: string }) =>
+    req<{ bots: Bot[]; roomId: string; routineId: string }>('POST', '/teams', body),
 };
 
 export function openPopup(url: string) {

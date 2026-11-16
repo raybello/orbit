@@ -10,6 +10,7 @@ import { checkpointWorkspace, ensureHomeDir, homeDirFor, restoreWorkspace, wipeW
 import { claimScreen, dockerComputers, ensureComputerRow, getComputer, getScreen, saveScreen, setComputerState, setControlToken, touchScreen, deleteComputerRow, deleteScreen, type ScreenRow } from './computer-store.js';
 import { dressScreen, resetScreen as resetDesk, type DeskBot } from './desk.js';
 import type { BashResult, ComputerProvider, ComputerRef, ScreenShot, VncStream } from './computer-provider.js';
+import type { Secret } from './lib/secret-box.js';
 
 /**
  * One Docker container per managed bot. The container is a small Linux desktop (Xvfb + x11vnc +
@@ -227,6 +228,11 @@ export class DockerComputerProvider implements ComputerProvider {
   async bash(botId: string, command: string, timeoutSec = 60, screenId?: string | null): Promise<BashResult> {
     await this.ensureComputer(botId);
     return dockerBox(this.containerId(botId)).bash(command, timeoutSec, screenId);
+  }
+
+  async typeSecret(botId: string, secret: Secret, screenId?: string | null): Promise<void> {
+    await this.ensureComputer(botId);
+    await dockerBox(this.containerId(botId)).typeSecret(secret, screenId);
   }
 
   async writeFile(botId: string, file: string, content: string | Buffer, mode = '0644'): Promise<void> {

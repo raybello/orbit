@@ -3,10 +3,10 @@
 .chat-list { display: flex; flex-direction: column; gap: 4px; padding: 0 0 8px; }
 
 /* header: section title on the left, labeled action buttons on the right */
-.chat-list__header { display: flex; align-items: center; justify-content: space-between; gap: 8px; height: 44px; padding: 0 12px 0 16px; }
+.chat-list__header { display: flex; align-items: center; justify-content: space-between; gap: 8px; height: 44px; padding: 0 12px 0 var(--page-gutter); }
 .chat-list__title {
   margin: 0; min-width: 0; display: inline-flex; align-items: center; gap: 4px;
-  font-size: 16px; font-weight: 600; line-height: 24px; letter-spacing: -0.1px;
+  font-size: var(--page-title-size); font-weight: var(--page-title-weight); line-height: var(--page-title-line); letter-spacing: -0.2px;
   color: var(--color-fg-default); white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
 }
 .chat-list__actions { display: flex; align-items: center; gap: 2px; flex-shrink: 0; }

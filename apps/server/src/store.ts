@@ -3,6 +3,7 @@ import { hub } from './lib/hub.js';
 import type { Bot, LiveState, Row, RowBody, RowKind, Routine, Task } from './types.js';
 import type { BotRow } from './infra/bot-repository.js';
 import { Cron } from 'croner';
+import { resolveVoiceProvider } from '@orbit/contracts';
 
 /** A `rows` table row, before its JSON body is parsed. */
 interface RowRecord {
@@ -49,7 +50,7 @@ export function toBot(r: BotRow): Bot {
   if (last) {
     const b = JSON.parse(last.body) as RowBody;
     lastPreview =
-      b.type === 'message' ? b.text : b.type === 'card' ? (b.card === 'approval' ? `Waiting for you: ${b.title}` : b.card === 'question' ? b.question : b.card === 'connect' ? `Connect ${b.toolkitName}` : 'Draft') : b.type === 'event' ? b.text : null;
+      b.type === 'message' ? b.text : b.type === 'card' ? (b.card === 'approval' ? `Waiting for you: ${b.title}` : b.card === 'question' ? b.question : b.card === 'connect' ? `${b.reconnect ? 'Reconnect' : 'Connect'} ${b.toolkitName}` : b.card === 'secure-form' ? `Enter the login for ${b.label}` : 'Draft') : b.type === 'event' ? b.text : null;
   }
   return {
     id: r.id,
@@ -67,10 +68,11 @@ export function toBot(r: BotRow): Bot {
     voice: r.voice ?? 'luna',
     voiceSpeed: r.voice_speed ?? 1,
     voiceLanguage: r.voice_language ?? 'auto',
-    voiceProvider: r.voice_provider === 'local' ? 'local' : 'cloud',
+    voiceProvider: resolveVoiceProvider(r.voice_provider),
     voiceModel: r.voice_model ?? 'piper-lessac-medium',
     model: r.model ?? null,
     provider: r.provider ?? null,
+    initiative: r.initiative,
     generation: r.generation,
     unread: r.unread,
     lastPreview: lastPreview ? lastPreview.slice(0, 140) : null,
