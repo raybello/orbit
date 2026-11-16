@@ -36,6 +36,9 @@ CREATE UNIQUE INDEX IF NOT EXISTS vault_entries_label ON vault_entries(user_id, 
 /** How long a login from a secure form lasts when the person does not keep it. */
 export const ONE_TIME_TTL_MS = 15 * 60_000;
 
+/** A one-time login has a name of its own, so it never stands in for (or replaces) a kept one. */
+export const oneTimeLabel = (label: string) => `${label} (one-time)`;
+
 export const VAULT_LIMITS = { label: 80, username: 256, secret: 1024 } as const;
 
 export interface VaultEntryRow {

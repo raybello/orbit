@@ -5,6 +5,7 @@ import { orgo, OrgoError, type OrgoScreen } from './orgo.js';
 import { cdpPortFor, dressScreen, resetScreen, undressScreen, type DeskBot } from './desk.js';
 import { box } from './box.js';
 import type { ComputerProvider, ComputerRef, ScreenShot, VncStream } from './computer-provider.js';
+import type { Secret } from './lib/secret-box.js';
 import type { ComputerState } from './types.js';
 import { websocketVncStream } from './lib/vnc-stream.js';
 
@@ -352,6 +353,10 @@ export class OrgoComputerProvider implements ComputerProvider {
 
   async bash(botId: string, command: string, timeoutSec = 60, screenId?: string | null) {
     return box.bash(command, timeoutSec, screenId);
+  }
+
+  async typeSecret(_botId: string, secret: Secret, screenId?: string | null): Promise<void> {
+    await box.typeSecret(secret, screenId);
   }
 
   async writeFile(botId: string, file: string, content: string | Buffer, mode = '0644'): Promise<void> {

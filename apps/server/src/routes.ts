@@ -460,6 +460,7 @@ api.post('/bots/:id/cards/:seq/dismiss', async (c) => {
   const body = decideCardRow(row.body, event, String(row.seq));
   updateRow(b.id, row.seq, body);
   if (row.body.card === 'connect') enqueue(b.id, { type: 'system', text: `The user skipped connecting ${row.body.toolkitName}. Continue without it.` });
+  if (row.body.card === 'secure-form') enqueue(b.id, { type: 'system', text: `The user closed the secure form for "${row.body.label}" without entering anything. Continue without that login, or ask them how they want to proceed.` });
   return c.json({ ok: true });
 });
 

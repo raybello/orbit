@@ -14,6 +14,7 @@ import { calendarApi } from '../routes-calendar.js';
 import { filesApi } from '../routes-files.js';
 import { computersApi } from '../routes-computers.js';
 import { skillsApi } from '../routes-skills.js';
+import { vaultApi } from '../routes-vault.js';
 import { mcpApi } from '../mcp.js';
 
 /**
@@ -66,6 +67,8 @@ export function createApp(): Hono {
   // Calendar (routines + occurrences), Skills (MCP servers) and the two routers that own a prefix.
   app.route('/api', calendarApi);
   app.route('/api', skillsApi);
+  // The Bot Vault (saved logins and the secure form).
+  app.route('/api', vaultApi);
   app.route('/api/files', filesApi);
   app.route('/api/computers', computersApi);
 
