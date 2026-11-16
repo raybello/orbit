@@ -7,7 +7,7 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
-import { app, BrowserWindow, Menu, dialog, ipcMain, systemPreferences, type IpcMainEvent, type IpcMainInvokeEvent, type MediaAccessPermissionRequest, type Session } from 'electron';
+import { app, BrowserWindow, Menu, dialog, ipcMain, nativeImage, systemPreferences, type IpcMainEvent, type IpcMainInvokeEvent, type MediaAccessPermissionRequest, type Session } from 'electron';
 import { ORBIT_HEADERS, ORBIT_WEB_URL_ENV } from '@orbit/contracts';
 import { createLogger } from '@orbit/logger';
 import type { DesktopSetup, DesktopLocalStackState, ServerProbe } from './shared/api';
@@ -39,6 +39,17 @@ const log = createLogger({ scope: 'main' });
 const here = path.dirname(fileURLToPath(import.meta.url));
 
 app.setName('Orbit');
+
+/**
+ * Returns the app icon for use in BrowserWindow on Windows/Linux dev builds.
+ * Packaged builds get the icon from the .exe / AppImage automatically; macOS
+ * uses `app.dock.setIcon` instead, so this returns `undefined` there.
+ */
+function devWindowIcon(): Electron.NativeImage | undefined {
+  if (app.isPackaged || process.platform === 'darwin') return undefined;
+  const icon = nativeImage.createFromPath(path.join(here, '..', 'assets', 'icon.png'));
+  return icon.isEmpty() ? undefined : icon;
+}
 
 // A second profile on one machine (the smoke harness, a test run, a support check) must not
 // fight the running app for the single-instance lock, which is keyed on userData, nor share its
@@ -147,6 +158,7 @@ function openSetupWindow(): void {
     frame: process.platform !== 'darwin',
     titleBarStyle: process.platform === 'darwin' ? 'hidden' : 'default',
     trafficLightPosition: process.platform === 'darwin' ? { x: 14, y: 12 } : undefined,
+    icon: devWindowIcon(),
     show: false,
     webPreferences: {
       preload: path.join(here, 'preload.cjs'),
@@ -233,6 +245,7 @@ async function openAppWindow(url: string, initialUrl?: string): Promise<void> {
   appSession = await createAppWindow({
     url,
     initialUrl,
+    icon: devWindowIcon(),
     onClosed: () => {
       mainWindow = null;
       appSession = null;
@@ -1045,6 +1058,15 @@ if (!app.requestSingleInstanceLock()) {
   app.whenReady().then(
     () => {
       registerIpc();
+
+      // In dev (not packaged) the binary is Electron itself, so the macOS Dock shows the
+      // Electron icon. Set our icon explicitly so it appears correctly during development.
+      // Windows/Linux use the BrowserWindow `icon` option set in devWindowIcon().
+      if (!app.isPackaged && process.platform === 'darwin') {
+        const icon = nativeImage.createFromPath(path.join(here, '..', 'assets', 'icon.png'));
+        if (!icon.isEmpty()) app.dock?.setIcon(icon);
+      }
+
       if (process.env.ORBIT_SMOKE === '1') {
         void runSmokeTest();
         return;

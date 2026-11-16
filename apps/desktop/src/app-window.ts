@@ -8,7 +8,7 @@
 
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { BrowserWindow, session, shell, type Session } from 'electron';
+import { BrowserWindow, session, shell, type NativeImage, type Session } from 'electron';
 import { ORBIT_HEADERS } from '@orbit/contracts';
 import { createLogger } from '@orbit/logger';
 import { normalizeServerUrl, sessionPartitionForServerUrl } from './setup-config';
@@ -40,6 +40,8 @@ export interface CreateAppWindowOptions {
   initialUrl?: string;
   preload?: string;
   show?: boolean;
+  /** Dev-mode window icon (Windows/Linux only; packaged builds use the exe/AppImage icon). */
+  icon?: NativeImage;
   onClosed?: () => void;
 }
 
@@ -112,6 +114,7 @@ export async function createAppWindow(options: CreateAppWindowOptions): Promise<
     backgroundColor: '#1c1c1c',
     titleBarStyle: process.platform === 'darwin' ? 'hiddenInset' : 'default',
     trafficLightPosition: process.platform === 'darwin' ? { x: 14, y: 14 } : undefined,
+    icon: options.icon,
     webPreferences: {
       preload: options.preload ?? preloadPath(),
       partition,
