@@ -36,8 +36,10 @@ export function InitiativeSection({ bot, onNote }: { bot: Bot; onNote: (text: st
     configApi.initiative().then((s) => { setSettings(s); setTime(s.briefing.time ?? ''); }).catch((e) => onNote((e as Error).message, 'error'));
   }, [bot.id]); // eslint-disable-line react-hooks/exhaustive-deps
 
+  const level: InitiativeLevel = bot.initiative ?? 'reactive';
+
   const setLevel = async (initiative: InitiativeLevel) => {
-    const before = bot.initiative;
+    const before = level;
     const apply = (level: InitiativeLevel) => useStore.setState((s) => ({ bots: s.bots.map((b) => (b.id === bot.id ? { ...b, initiative: level } : b)) }));
     apply(initiative);
     try {
@@ -60,12 +62,12 @@ export function InitiativeSection({ bot, onNote }: { bot: Bot; onNote: (text: st
   };
 
   const briefing = settings?.briefing;
-  const quiet = bot.initiative !== 'proactive';
+  const quiet = level !== 'proactive';
   return (
     <section className="cfg-section">
       <div className="cfg-section__label">Initiative</div>
-      <Field label="Reaches out" hint={LEVEL_HINT[bot.initiative](bot.name)}>
-        <Segmented label="Initiative" value={bot.initiative} options={LEVELS} onChange={(v) => { if (v !== bot.initiative) void setLevel(v); }} />
+      <Field label="Reaches out" hint={LEVEL_HINT[level](bot.name)}>
+        <Segmented label="Initiative" value={level} options={LEVELS} onChange={(v) => { if (v !== level) void setLevel(v); }} />
       </Field>
       <div className="cfg-card">
         <div className="cfg-row">

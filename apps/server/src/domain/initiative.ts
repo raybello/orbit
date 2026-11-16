@@ -73,6 +73,7 @@ export function cardTitle(card: CardBody): string {
     case 'question': return card.question;
     case 'connect': return `Connect ${card.toolkitName}`;
     case 'draft': return `Review a ${card.channel} draft to ${card.to}`;
+    case 'secure-form': return `Enter credentials for ${card.label}`;
   }
 }
 

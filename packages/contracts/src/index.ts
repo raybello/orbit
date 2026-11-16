@@ -46,7 +46,8 @@ export interface Bot {
   model: string | null;
   provider: string | null;
   /** How much the Bot reaches out unasked. Only the person's first primary Bot acts on it. */
-  initiative: InitiativeLevel;
+  /** Defaults to 'proactive' for the primary bot; 'reactive' for all others. Optional so old rows without the column still deserialise. */
+  initiative?: InitiativeLevel;
   generation: number;
   unread: number;
   lastPreview: string | null;
