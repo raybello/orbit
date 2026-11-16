@@ -1,4 +1,6 @@
+import fs from 'node:fs';
 import { db, now } from '../db.js';
+import { libraryRoot } from '../files.js';
 import { newId } from '../lib/ids.js';
 import { hub } from '../lib/hub.js';
 import { appendRow } from '../store.js';
@@ -70,6 +72,20 @@ export function createRoom(userId: string, name: string, memberIds: string[]) {
   ).run(id, userId, name.slice(0, 60), 'Group', `Group chat with ${memberIds.length} Bots`, 'cloud', 'gray', JSON.stringify(memberIds), now(), now());
   hub.emit(userId, { type: 'roster' });
   return id;
+}
+
+/**
+ * Delete one of the owner's group chats for everyone. Its rows and other per-chat tables go with the
+ * bots row (ON DELETE CASCADE); the files attached in it live on disk, so they are removed here.
+ * The member Bots are untouched. False when the id is not a room this owner has.
+ */
+export function deleteRoom(userId: string, roomId: string): boolean {
+  const room = db.prepare("SELECT id FROM bots WHERE id=? AND user_id=? AND kind='room'").get(roomId, userId) as { id: string } | undefined;
+  if (!room) return false;
+  db.prepare('DELETE FROM bots WHERE id=?').run(room.id);
+  fs.rmSync(libraryRoot(room.id), { recursive: true, force: true });
+  hub.emit(userId, { type: 'roster' });
+  return true;
 }
 
 /**
