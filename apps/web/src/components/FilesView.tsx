@@ -7,6 +7,7 @@ import { Icon, type IconName } from './Icon';
 import { ImageViewer } from './ImageViewer';
 import { Modal } from './modals/Modal';
 import { formatBytes, shortDate } from './config/ui';
+import { PageShell } from './PageShell';
 import '../styles/files.css';
 
 type FileType = 'all' | 'library' | 'attachment' | 'workspace';
@@ -279,8 +280,8 @@ export function FilesView({ botId: scopedBotId }: { botId?: string } = {}) {
 
   const hasMore = files.length < total;
 
-  return (
-    <div className={`files-view is-${view}`}>
+  const content = (
+    <div className={`files-view is-${view}${scopedBotId ? ' is-scoped' : ''}`}>
       <div className="files-view__bar">
         <div className="files-view__search">
           <Icon name="search" size={13} opacity={0.5} />
@@ -420,4 +421,7 @@ export function FilesView({ botId: scopedBotId }: { botId?: string } = {}) {
       {text && <TextPreview entry={text} onClose={closeText} />}
     </div>
   );
+
+  // Inside a chat the conversation header is the page header; on its own the Files page has one.
+  return scopedBotId ? content : <PageShell title="Files">{content}</PageShell>;
 }

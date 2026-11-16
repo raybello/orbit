@@ -8,7 +8,7 @@
 /* ---------- conversation header: identity · tabs · actions ---------- */
 .conv-header {
   display: flex; align-items: center; gap: 0;
-  height: 48px; flex-shrink: 0; padding: 0 8px 0 12px;
+  height: var(--page-header-height); flex-shrink: 0; padding: 0 8px 0 12px;
   background: var(--color-bg-stage);
   border-bottom: 1px solid var(--color-border-subtle);
 }

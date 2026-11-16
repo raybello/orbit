@@ -2,70 +2,61 @@
 
 .cal {
   position: relative;
-  display: flex; flex-direction: column; flex: 1 1 0; min-width: 0; height: 100%;
-  background: var(--color-bg-stage); color: var(--color-fg-default);
-  overflow: hidden;
+  display: flex; flex-direction: column; gap: var(--page-stack-gap); flex: 1 1 0; min-width: 0; min-height: 0;
+  color: var(--color-fg-default);
 }
 
-/* ---------- toolbar ---------- */
-.cal-header {
-  display: flex; align-items: center; justify-content: space-between; gap: var(--space-3);
-  height: 48px; padding: 0 var(--space-4); flex-shrink: 0;
-  background: var(--color-bg-stage); border-bottom: 1px solid var(--color-border-subtle);
-}
-.cal-header__group { display: flex; align-items: center; gap: var(--space-2); min-width: 0; }
-.cal-header__group:last-child { flex-shrink: 0; }
+/* ---------- toolbar: where the range is, and how much of it to show ---------- */
+.cal-toolbar { display: flex; align-items: center; justify-content: space-between; gap: var(--space-3); flex-shrink: 0; }
+.cal-toolbar__group { display: flex; align-items: center; gap: var(--space-2); min-width: 0; }
 .cal-nav { display: inline-flex; align-items: center; gap: 2px; }
 .cal-range {
   font-size: 15px; font-weight: 600; line-height: 20px; letter-spacing: 0;
   color: var(--color-fg-default); white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
 }
 
-/* buttons inside the calendar: 32px, 4px radius, accent primary */
-.cal .cfg-btn {
+/* buttons on the calendar page (its header included): 32px, 4px radius, accent primary */
+.cal-page .cfg-btn {
   height: 32px; padding: 0 var(--space-3); border-radius: var(--radius-sm);
   font-size: 14px; font-weight: 400; line-height: 20px; letter-spacing: 0;
   transition: background-color var(--duration-fast) var(--ease-standard), color var(--duration-fast) var(--ease-standard);
 }
-.cal .cfg-btn--secondary {
+.cal-page .cfg-btn--secondary {
   background: var(--color-bg-stage); color: var(--color-fg-default);
   box-shadow: inset 0 0 0 1px var(--color-border-default);
 }
-.cal .cfg-btn--secondary:hover:not(:disabled) { background: var(--color-bg-nav-hover); }
-.cal .cfg-btn--primary {
+.cal-page .cfg-btn--secondary:hover:not(:disabled) { background: var(--color-bg-nav-hover); }
+.cal-page .cfg-btn--primary {
   background: var(--accent-500); color: var(--color-fg-on-accent); font-weight: 600; box-shadow: none;
 }
-.cal .cfg-btn--primary:hover:not(:disabled) { background: var(--accent-600); }
-.cal .cfg-icon-btn {
+.cal-page .cfg-btn--primary:hover:not(:disabled) { background: var(--accent-600); }
+.cal-page .cfg-icon-btn {
   width: 32px; height: 32px; border-radius: var(--radius-sm); color: var(--color-fg-subtle);
 }
-.cal .cfg-icon-btn:hover:not(:disabled) { background: var(--color-bg-nav-hover); color: var(--color-fg-default); }
-.cal .cfg-seg {
+.cal-page .cfg-icon-btn:hover:not(:disabled) { background: var(--color-bg-nav-hover); color: var(--color-fg-default); }
+.cal-page .cfg-seg {
   height: 32px; padding: 2px; gap: 2px; border-radius: var(--radius-sm);
   background: var(--color-bg-canvas); box-shadow: inset 0 0 0 1px var(--color-border-subtle);
 }
-.cal .cfg-seg button {
+.cal-page .cfg-seg button {
   height: 26px; padding: 0 var(--space-3); border-radius: 2px;
   font-size: 13px; line-height: 18px; color: var(--color-fg-subtle);
 }
-.cal .cfg-seg button:hover { color: var(--color-fg-default); }
-.cal .cfg-seg button.is-active {
+.cal-page .cfg-seg button:hover { color: var(--color-fg-default); }
+.cal-page .cfg-seg button.is-active {
   background: var(--color-bg-stage); color: var(--color-fg-default); box-shadow: var(--shadow-card);
 }
 
 /* status strip */
 .cal-error {
   display: flex; align-items: center; justify-content: space-between; gap: var(--space-3);
-  margin: var(--space-2) var(--space-4) 0; padding: var(--space-2) var(--space-3);
+  padding: var(--space-2) var(--space-3);
   border-radius: var(--radius-sm); background: var(--color-danger-bg); color: var(--color-danger);
   font-size: 13px; line-height: 18px;
 }
-.cal-loading { padding: var(--space-2) var(--space-4) 0; font-size: 13px; line-height: 18px; color: var(--color-fg-subtle); }
+.cal-loading { font-size: 13px; line-height: 18px; color: var(--color-fg-subtle); }
 
-.cal-body {
-  flex: 1 1 0; min-height: 0; display: flex; overflow: hidden;
-  padding: var(--space-3) var(--space-4) var(--space-4);
-}
+.cal-body { flex: 1 1 0; min-height: 0; display: flex; overflow: hidden; }
 
 /* ---------- month ---------- */
 .cal-month { display: flex; flex-direction: column; flex: 1 1 0; min-width: 0; min-height: 0; }

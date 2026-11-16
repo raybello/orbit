@@ -6,6 +6,7 @@ import { groupActivity, type ActivityGroup } from '../domain/activity-feed';
 import { clock, relativeShort } from '../lib/time';
 import { useStore } from '../store';
 import { Icon } from './Icon';
+import { PageShell } from './PageShell';
 import '../styles/activity.css';
 
 type Filter = 'all' | 'message' | 'card';
@@ -119,12 +120,7 @@ export function ActivityView() {
   });
 
   return (
-    <div className="activity">
-      <header className="activity__header">
-        <h2 className="activity__title">Activity</h2>
-        {shown.length > 0 && <span className="activity__count">{shown.length}</span>}
-      </header>
-
+    <PageShell title="Activity" meta={shown.length > 0 ? shown.length : undefined}>
       <div className="activity__filters" role="group" aria-label="Filter activity">
         {FILTERS.map((f) => (
           <button
@@ -152,6 +148,6 @@ export function ActivityView() {
           ))}
         </div>
       )}
-    </div>
+    </PageShell>
   );
 }

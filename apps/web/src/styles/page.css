@@ -1,0 +1,40 @@
+/* ---------- page layout: one header and one inset for every top-level view ---------- */
+
+:root {
+  /* The inset every page uses: its header's sides and its body's padding. Panels beside the main
+     column (the chat list) indent their headers by the same amount so titles line up. */
+  --page-gutter: var(--space-4);
+  /* Between blocks stacked in a page body: a toolbar, a status strip, the list. */
+  --page-stack-gap: var(--space-3);
+  /* Every first row in the window (page headers, the conversation header, panel headers). */
+  --page-header-height: 48px;
+  --page-title-size: 17px;
+  --page-title-line: 24px;
+  --page-title-weight: 600;
+}
+
+.page {
+  display: flex; flex-direction: column; min-width: 0; min-height: 0; height: 100%;
+  background: var(--color-bg-stage); overflow: hidden;
+}
+.page__header {
+  display: flex; align-items: center; justify-content: space-between; gap: var(--space-3); flex-shrink: 0;
+  height: var(--page-header-height); padding: 0 var(--page-gutter);
+  border-bottom: 1px solid var(--color-border-subtle);
+}
+.page__heading { display: flex; align-items: baseline; gap: var(--space-2); min-width: 0; }
+.page__title {
+  margin: 0; flex-shrink: 0; font-size: var(--page-title-size); font-weight: var(--page-title-weight);
+  line-height: var(--page-title-line); letter-spacing: -0.2px; color: var(--color-fg-default); white-space: nowrap;
+}
+.page__meta {
+  min-width: 0; font-size: 12px; line-height: 16px; color: var(--color-fg-muted);
+  white-space: nowrap; overflow: hidden; text-overflow: ellipsis; font-variant-numeric: tabular-nums;
+}
+.page__actions { display: flex; align-items: center; gap: var(--space-2); flex-shrink: 0; }
+.page__body {
+  display: flex; flex-direction: column; gap: var(--page-stack-gap); flex: 1 1 0; min-height: 0;
+  overflow-y: auto; overflow-x: hidden; padding: var(--page-gutter);
+}
+/* Master-detail pages draw their own panes edge to edge, so the body adds no inset of its own. */
+.page__body--flush { gap: 0; padding: 0; overflow: hidden; }

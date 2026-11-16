@@ -1,16 +1,7 @@
 /* ---------- cross-bot Activity feed (rail → Activity, in the main area) ---------- */
 
-.activity { display: flex; flex-direction: column; min-height: 100%; }
-
-.activity__header { display: flex; align-items: baseline; justify-content: space-between; gap: 8px; padding: 2px 4px 8px; }
-.activity__title {
-  margin: 0; min-width: 0; font-size: 17px; font-weight: 600; line-height: 24px; letter-spacing: -0.2px;
-  color: var(--color-ink); white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
-}
-.activity__count { flex-shrink: 0; font-size: 12px; line-height: 16px; color: var(--color-text-tertiary); font-variant-numeric: tabular-nums; }
-
 /* ---------- filter chips ---------- */
-.activity__filters { display: flex; flex-wrap: wrap; gap: 6px; padding: 0 4px 10px; }
+.activity__filters { display: flex; flex-wrap: wrap; gap: 6px; flex-shrink: 0; }
 .activity__filter {
   height: 26px; padding: 0 10px; border-radius: var(--radius-full);
   background: var(--color-bg-tertiary); color: var(--color-text-secondary);
@@ -73,13 +64,13 @@
 .activity-group__toggle:hover { background: var(--color-bg-hover); color: var(--color-text-primary); }
 .activity-group__toggle svg { transition: transform 160ms var(--ease-out); }
 .activity-group.is-open .activity-group__toggle svg { transform: rotate(180deg); }
-/* Earlier entries line up with the latest one's text column: 8px row padding + 28px avatar + 10px gap. */
+/* The rule runs under the avatar's centre (8px row padding + 14px), and the earlier entries' text
+   lands on the latest one's text column (8px + 28px avatar + 10px gap, less the 1px rule). */
 .activity-group__items {
-  display: flex; flex-direction: column; gap: 2px; margin: 0 0 4px 46px; padding-left: 8px;
+  display: flex; flex-direction: column; gap: 2px; margin: 0 0 4px 22px; padding-left: 15px;
   border-left: 1px solid var(--color-border-tertiary);
 }
 .activity-item--nested { gap: 8px; padding: 6px 8px; }
-.activity-item--nested .activity-item__preview { flex: 1 1 0; }
 
 /* ---------- empty ---------- */
 .activity__empty {

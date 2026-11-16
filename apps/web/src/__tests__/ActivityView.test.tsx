@@ -109,7 +109,7 @@ describe('ActivityView', () => {
     const toggle = screen.getByRole('button', { name: 'Show 2 earlier from Marlow' });
     expect(toggle.getAttribute('aria-expanded')).toBe('false');
     expect(toggle.textContent).toBe('3');
-    expect(container.querySelector('.activity__count')?.textContent).toBe('4');
+    expect(container.querySelector('.page__meta')?.textContent).toBe('4');
 
     fireEvent.click(toggle);
     expect(toggle.getAttribute('aria-expanded')).toBe('true');
@@ -146,7 +146,7 @@ describe('ActivityView', () => {
     });
 
     const { container } = render(<ActivityView />);
-    const count = () => container.querySelector('.activity__count')?.textContent;
+    const count = () => container.querySelector('.page__meta')?.textContent;
     expect(count()).toBe('3');
     expect(screen.getByRole('button', { name: 'Show 2 earlier from Scout' })).toBeTruthy();
 

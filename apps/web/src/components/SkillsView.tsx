@@ -3,6 +3,7 @@ import type { SkillEntry } from '@orbit/contracts';
 import { api } from '../lib/api';
 import { useStore } from '../store';
 import { Switch } from './config/ui';
+import { PageShell } from './PageShell';
 import '../styles/skills.css';
 
 /** A skill's transport, as a badge. Unknown types keep a neutral chip rather than guessing. */
@@ -185,15 +186,13 @@ export function SkillsView() {
   }
 
   return (
-    <main className="skills-view">
-      <header className="skills-view__header">
-        <div>
-          <h1 className="skills-view__title">Skills</h1>
-          <p className="skills-view__sub">MCP servers from the primary agent’s config. Turn one on or off per Bot.</p>
-        </div>
-        {skills && skills.length > 0 && <span className="cfg-chip cfg-chip--muted">{skills.length} total</span>}
-      </header>
+    <PageShell
+      title="Skills"
+      meta="MCP servers from the primary agent’s config. Turn one on or off per Bot."
+      actions={skills && skills.length > 0 ? <span className="cfg-chip cfg-chip--muted">{skills.length} total</span> : undefined}
+      flush
+    >
       <div className="skills-view__body">{body}</div>
-    </main>
+    </PageShell>
   );
 }
