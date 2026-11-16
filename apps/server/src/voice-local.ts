@@ -20,13 +20,14 @@
  * `model` for the same reason: it previews a model the user is about to pick, not "the" model.
  */
 import { Hono, type Context } from 'hono';
+import { voiceReadiness, type VoiceLocalStatus } from '@orbit/contracts';
 import { requireUser, type AuthVars } from './lib/auth.js';
 import { newId } from './lib/ids.js';
 import { getBotRow } from './store.js';
 import * as models from './voice-models.js';
 import * as runtime from './voice-runtime.js';
 import { CALL_SAMPLE_RATE, createLocalCall } from './voice-local-session.js';
-import { optionalBody, VoiceModelDownloadSchema, LocalVoiceSessionSchema } from './api/schemas.js';
+import { optionalBody, VoiceModelDownloadSchema, VoiceModelTargetSchema, LocalVoiceSessionSchema } from './api/schemas.js';
 
 export const localVoiceApi = new Hono<AuthVars>();
 
@@ -41,7 +42,8 @@ export const localVoiceApi = new Hono<AuthVars>();
 export async function warmVoiceIfReady(): Promise<boolean> {
   try {
     if (!runtime.runtimeInfo().addon || !models.modelsReady()) return false;
-    const result = await runtime.warmUp();
+    const voice = models.modelItems().find((m) => m.kind === 'tts' && m.state === 'ready');
+    const result = await runtime.warmUp({ model: voice?.id });
     console.log(`[voice] warmed up: recognizer ${result.recognizerMs} ms, voice ${result.ttsMs} ms`);
     return true;
   } catch (e) {
@@ -79,73 +81,29 @@ function audioRate(header: string | undefined): number {
 const unavailable = (c: Context<AuthVars>) => c.json({ available: false, reason: 'unsupported-runtime' }, 503);
 const missingModels = (c: Context<AuthVars>) => c.json({ available: false, reason: 'models-missing' }, 503);
 
-export interface VoiceMenuItem {
-  id: string;
-  kind: models.VoiceKind;
-  name: string;
-  /** The engine's rate: input for stt/vad, output for tts (22 050 Piper, 24 000 Kokoro). */
-  rate: number;
-  size: number;
-  state: string;
-  pct: number;
-  tier: models.VoiceTier;
-}
-
-/**
- * The menu rows, shared by `GET /models` and the `voices` array in `/status` so the UI needs one
- * call to render "Speech recognition · Ready" and the two voices with their sizes and rates.
- */
-function menu(): VoiceMenuItem[] {
-  return models.modelItems().map((m) => ({
-    id: m.id,
-    kind: m.kind,
-    name: m.name,
-    rate: m.rate,
-    size: m.size,
-    state: m.state,
-    pct: m.size ? Math.min(100, Math.round((m.have / m.size) * 100)) : 100,
-    tier: m.tier,
-  }));
-}
-
-/** `/status` starts the download on first call so a fresh install is usable without a button,
- * unless VOICE_AUTO_DOWNLOAD=0 (CI, or a user who wants to choose). Only the required set is
- * fetched: the optional voice is a deliberate, user-initiated 360 MB download. */
+/** `/status` starts the download on first call so speech recognition is in place without a
+ * button, unless VOICE_AUTO_DOWNLOAD=0 (CI, or a user who wants to choose). Only the required set
+ * is fetched: a voice is the person's pick, from the first-run chooser or the model manager. */
 let autoDownloadStarted = false;
 
 localVoiceApi.get('/status', (c) => {
   const info = runtime.runtimeInfo();
-  const bytes = models.modelBytes();
-  const voices = menu();
-
-  if (!info.addon) {
-    return c.json({
-      available: false,
-      reason: 'unsupported-runtime',
-      runtime: info,
-      models: models.modelStates(),
-      bytes,
-      download: models.downloadProgress(),
-      voices,
-    });
-  }
-
-  // `available` is the addon plus the *required* models; the optional voice never gates it.
-  const ready = models.modelsReady();
-  if (!ready && process.env.VOICE_AUTO_DOWNLOAD !== '0' && !autoDownloadStarted) {
+  if (info.addon && !models.modelsReady() && process.env.VOICE_AUTO_DOWNLOAD !== '0' && !autoDownloadStarted) {
     autoDownloadStarted = true;
     void models.ensureModels();
   }
-
-  return c.json({
+  // `available` is the addon plus the required models plus at least one installed voice.
+  const ready = info.addon && models.modelsReady();
+  const status: VoiceLocalStatus = {
     available: ready,
-    ...(ready ? {} : { reason: 'models-missing' }),
+    ...(ready ? {} : { reason: info.addon ? 'models-missing' : 'unsupported-runtime' }),
     runtime: info,
     models: models.modelStates(),
     bytes: models.modelBytes(),
     download: models.downloadProgress(),
-    voices,
-  });
+    voices: models.modelItems(),
+  };
+  return c.json(status);
 });
 
 localVoiceApi.post('/stt', async (c) => {
@@ -218,11 +176,12 @@ localVoiceApi.post('/preview', async (c) => {
   }
 });
 
-localVoiceApi.get('/models', (c) => c.json({ items: menu(), ready: models.modelsReady() }));
+localVoiceApi.get('/models', (c) => c.json({ items: models.modelItems(), ready: models.modelsReady() }));
 
 /**
- * Download one model (`{ model }`), a kind's required model (`{ kind }`), or the whole required set
- * (no body). Idempotent and backgrounded: `started:false` means it was already complete.
+ * Download one model (`{ model }`), a kind's model (`{ kind }`), or the whole required set (no
+ * body). Idempotent and backgrounded: `started:false` means it was already complete.
+ * `{ model, fresh: true }` is a redownload: the model's files are deleted first.
  *
  * `state` is the kind-level shape the phase-1/2 client polls; `states` is per model, which is the
  * only place an optional voice's state (or its error) can be read.
@@ -243,6 +202,11 @@ localVoiceApi.post('/models/download', async (c) => {
     target = p.kind as models.VoiceKind;
   }
 
+  if (p.fresh === true && p.model !== undefined) {
+    await models.deleteModel(p.model as models.VoiceModelId);
+    runtime.resetRuntimeCaches();
+  }
+
   const wanted = models.modelsForTarget(target);
   const before = models.modelStatesById();
   const started = wanted.some((m) => before[m.id] !== 'ready');
@@ -260,6 +224,26 @@ localVoiceApi.post('/models/download', async (c) => {
   });
 });
 
+/** Stop a queued or running download. What it finished stays on disk until the model is deleted. */
+localVoiceApi.post('/models/cancel', async (c) => {
+  const p = await optionalBody(c, VoiceModelTargetSchema, { model: '' });
+  if (!models.isVoiceModelId(p.model)) return c.json({ error: 'unknown model', model: p.model }, 400);
+  const cancelled = await models.cancelDownload(p.model);
+  return c.json({ cancelled, items: models.modelItems() });
+});
+
+/**
+ * Delete a model's files from disk. Loaded engines are dropped too, so nothing keeps speaking with
+ * a model the person removed; the next call loads what is still installed.
+ */
+localVoiceApi.delete('/models/:model', async (c) => {
+  const id = c.req.param('model');
+  if (!models.isVoiceModelId(id)) return c.json({ error: 'unknown model', model: id }, 400);
+  const result = await models.deleteModel(id);
+  runtime.resetRuntimeCaches();
+  return c.json({ ...result, items: models.modelItems() });
+});
+
 /**
  * Mint a call id for a local voice call. The browser then opens
  * `ws(s)://<host>/api/voice/local/call/<callId>` (see attachLocalCallRelay) and the session is
@@ -268,8 +252,9 @@ localVoiceApi.post('/models/download', async (c) => {
  * The voice is the bot's own choice (`Bot.voiceModel`, the menu's ids): `model` in the response is
  * the one the session will speak with and `ttsSampleRate` is that engine's rate, so a Kokoro bot
  * gets 24 000 Hz and a Piper bot 22 050 Hz — never resampled. A bot whose chosen voice is not
- * downloaded falls back to the default instead of failing the call, and says so (`requestedModel`)
- * so the UI can offer the download rather than silently sounding like someone else.
+ * downloaded speaks with an installed one instead of failing the call, and says so
+ * (`requestedModel`) so the UI can offer the download rather than silently sounding like someone
+ * else. voiceReadiness() is the same rule the web client applies before it asks.
  */
 localVoiceApi.post('/session', async (c) => {
   const user = c.get('user');
@@ -277,13 +262,16 @@ localVoiceApi.post('/session', async (c) => {
   const bot = ownBot(user.id, p.botId);
   if (!bot) return c.json({ error: 'not found' }, 404);
 
-  const info = runtime.runtimeInfo();
-  if (!info.addon) return unavailable(c);
-  if (!models.modelsReady()) return missingModels(c);
-
   const requested = String(bot.voice_model ?? models.DEFAULT_TTS_MODEL);
-  const spec = models.ttsModel(requested);
-  const model = spec && models.modelReady(spec.id) ? spec.id : models.DEFAULT_TTS_MODEL;
+  const readiness = voiceReadiness({
+    provider: 'local',
+    addon: runtime.runtimeInfo().addon,
+    models: models.modelItems(),
+    voiceModel: requested,
+  });
+  if (readiness.status === 'unsupported') return unavailable(c);
+  if (readiness.status !== 'ready') return missingModels(c);
+  const model = readiness.voice;
 
   const callId = newId('call');
   createLocalCall(callId, bot.id, { model });

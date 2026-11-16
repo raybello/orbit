@@ -6,6 +6,9 @@ export * from './branded-types.js';
 export * from './templates.js';
 // Auto-review rules (F9).
 export * from './rules.js';
+// Voice model management (F, on-device default).
+export * from './voice.js';
+import type { VoiceModelItem } from './voice.js';
 
 export type AvatarShape =
   | 'blob' | 'pebble' | 'bean' | 'egg' | 'squircle' | 'tablet' | 'capsule' | 'cylinder' | 'hex'
@@ -187,6 +190,8 @@ export interface VoiceLocalStatus {
   models: VoiceModelState;
   bytes: { total: number; have: number };
   download: { active: boolean; pct: number; name: string | null };
+  /** Every model, required and optional, with its state and size on disk. */
+  voices: VoiceModelItem[];
 }
 
 /** What a notice reports, so a client can style or filter it. A plain notice has none. */

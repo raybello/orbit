@@ -87,7 +87,7 @@ describe('planBotCreation', () => {
     assert.equal(filled.instructions, 'i');
   });
 
-  test('only the exact word "teammate" makes a teammate, and only exact "local" on-device voice', () => {
+  test('only the exact word "teammate" makes a teammate, and only exact "cloud" keeps cloud voice', () => {
     const mode = (m?: string) => planBotCreation(input({ mode: m }), deps()).mode;
     assert.equal(mode('teammate'), 'teammate');
     assert.equal(mode('personal'), 'personal');
@@ -98,8 +98,8 @@ describe('planBotCreation', () => {
     const provider = (p?: string) => planBotCreation(input({ voiceProvider: p }), deps()).voiceProvider;
     assert.equal(provider('local'), 'local');
     assert.equal(provider('cloud'), 'cloud');
-    assert.equal(provider('LOCAL'), 'cloud');
-    assert.equal(provider(undefined), 'cloud');
+    assert.equal(provider('CLOUD'), 'local');
+    assert.equal(provider(undefined), 'local');
   });
 
   test('the voice model is stringified, sliced to 80, and defaults to Piper', () => {

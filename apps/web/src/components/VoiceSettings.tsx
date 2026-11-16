@@ -1,10 +1,13 @@
-import { useCallback, useEffect, useRef, useState, type CSSProperties } from 'react';
+import { useCallback, useEffect, useState, type CSSProperties } from 'react';
 import type { Bot } from '@orbit/contracts';
+import { useConfigUI } from '../configStore';
 import { useStore } from '../store';
-import { voiceApi, type LocalModelItem, type LocalModels, type LocalVoiceStatus, type VoiceOptions } from '../voice/api';
+import { voiceApi, type LocalModels, type LocalVoiceStatus, type VoiceOptions } from '../voice/api';
 import { PcmPlayer, RATE, createAudioContext } from '../voice/audio';
 import { endCall, isCallActive, startCall, useVoice } from '../voice/call';
+import { useVoiceModels } from '../voice/models-store';
 import { Icon } from './Icon';
+import { formatSize, latencyHint } from './voice/format';
 
 const FALLBACK: VoiceOptions = {
   voices: ['ara', 'eve', 'leo', 'luna', 'rex', 'sal'].map((id) => ({ id, name: id[0].toUpperCase() + id.slice(1) })),
@@ -39,22 +42,6 @@ function formatRate(rate: number): string {
   return `${Number((rate / 1000).toFixed(2))} kHz`;
 }
 
-function formatSize(size: number): string {
-  if (!Number.isFinite(size) || size <= 0) return '';
-  const mb = size / 1e6;
-  return `${mb >= 100 ? Math.round(mb) : Number(mb.toFixed(1))} MB`;
-}
-
-/**
- * How a voice feels in a live call, from the measured real-time factors in
- * docs/voice-local-conventions.md: Piper 10–17× real time, Kokoro ~1×.
- */
-function latencyHint(m: LocalModelItem): string {
-  if (/piper/i.test(m.id)) return 'Fast';
-  if (/kokoro/i.test(m.id)) return 'Best · slower';
-  return '';
-}
-
 function NativeSelect<T extends string | number>({ label, value, options, onChange }: { label: string; value: T; options: { value: T; label: string }[]; onChange: (v: T) => void }) {
   const current = options.find((o) => o.value === value)?.label ?? String(value);
   return (
@@ -81,7 +68,6 @@ export function VoiceSettings({ bot }: { bot: Bot }) {
   const [error, setError] = useState<string | null>(null);
   const [local, setLocal] = useState<LocalVoiceStatus | null>(null);
   const [localPhase, setLocalPhase] = useState<'loading' | 'ok' | 'gone'>('loading');
-  const [downloading, setDownloading] = useState(false);
   const [menu, setMenu] = useState<LocalModels | null>(null);
   const [watching, setWatching] = useState<string | null>(null);
   const inCall = useVoice((s) => isCallActive(s) && s.botId === bot.id);
@@ -104,7 +90,10 @@ export function VoiceSettings({ bot }: { bot: Bot }) {
     return () => { alive = false; };
   }, []);
 
-  useEffect(() => loadLocal(true), [loadLocal]);
+  // The Voice models manager and the first-run chooser change the inventory through the shared
+  // store; re-read this panel's copy whenever a model there changes state.
+  const inventory = useVoiceModels((s) => s.status?.voices.map((m) => `${m.id}:${m.state}`).join() ?? '');
+  useEffect(() => loadLocal(true), [loadLocal, inventory]);
 
   // The menu is a separate call from the status: it carries per-model size, rate and state.
   useEffect(() => {
@@ -113,28 +102,19 @@ export function VoiceSettings({ bot }: { bot: Bot }) {
       .then((m) => { if (alive) setMenu(m); })
       .catch(() => { /* older server: no menu, the picker stays empty */ });
     return () => { alive = false; };
-  }, []);
+  }, [inventory]);
 
   // A download runs in the background on the server, so the only progress signal is the status call.
-  const polling = downloading || (local ? modelBusy(local) : false);
-  // The POST can return before the background job shows up in /status; require two quiet polls
-  // before we stop polling, so the bar doesn't vanish on the first tick.
-  const quietTicks = useRef(0);
+  const polling = local ? modelBusy(local) : false;
   useEffect(() => {
     if (!polling) return;
     const t = setInterval(() => {
       voiceApi.localStatus(true)
-        .then((s) => {
-          setLocal(s);
-          setLocalPhase('ok');
-          if (!downloading) return;
-          if (modelBusy(s)) quietTicks.current = 0;
-          else if (++quietTicks.current >= 2) setDownloading(false);
-        })
+        .then((s) => { setLocal(s); setLocalPhase('ok'); })
         .catch(() => { /* keep the last known state; the next tick retries */ });
     }, 2000);
     return () => clearInterval(t);
-  }, [polling, downloading]);
+  }, [polling]);
 
   // One model's download: poll the menu every 2 s until that model says `ready` (or fails), because
   // `/status` only reports kind-level state and would hide an optional voice's completion.
@@ -232,24 +212,6 @@ export function VoiceSettings({ bot }: { bot: Bot }) {
     }
   };
 
-  const download = async () => {
-    if (downloading) return;
-    setDownloading(true);
-    quietTicks.current = 0;
-    setError(null);
-    try {
-      const r = await voiceApi.downloadLocalModels();
-      setLocal((s) => (s ? { ...s, models: r.state } : s));
-      if (!r.started) { setDownloading(false); return; }
-      // Pick up the server's progress right away instead of waiting a poll interval.
-      voiceApi.localStatus(true).then((s) => { setLocal(s); setLocalPhase('ok'); }).catch(() => {});
-      voiceApi.localModels(true).then(setMenu).catch(() => {});
-    } catch (e) {
-      setDownloading(false);
-      setError((e as Error).message || 'Couldn’t start the download');
-    }
-  };
-
   const downloadVoice = async (id: string) => {
     if (watching === id) return;
     setError(null);
@@ -281,7 +243,9 @@ export function VoiceSettings({ bot }: { bot: Bot }) {
         ? `Downloading ${pct}%`
         : modelsReady(local)
           ? 'Ready'
-          : `Not downloaded (${Math.round(local.bytes.have / 1e6)} of ${Math.round(local.bytes.total / 1e6)} MB)`;
+          : local.models.stt === 'ready' && local.models.vad === 'ready'
+            ? 'Needs a voice model'
+            : `Not downloaded (${Math.round(local.bytes.have / 1e6)} of ${Math.round(local.bytes.total / 1e6)} MB)`;
 
   const seg = (active: boolean): CSSProperties => ({
     background: active ? 'var(--accent-500)' : 'transparent',
@@ -389,14 +353,14 @@ export function VoiceSettings({ bot }: { bot: Bot }) {
           </div>
         );
       })}
-      {local && supported(local) && !modelsReady(local) && (downloading || modelBusy(local)) && (
+      {local && supported(local) && !modelsReady(local) && modelBusy(local) && (
         <div role="progressbar" aria-valuemin={0} aria-valuemax={100} aria-valuenow={pct} aria-label="Model download progress" style={{ height: 4, margin: '2px 8px 6px', borderRadius: 2, background: '#1C1C1C14', overflow: 'hidden' }}>
           <div style={{ width: `${pct}%`, height: '100%', background: 'var(--color-ink)', transition: 'width 240ms linear' }} />
         </div>
       )}
-      {local && supported(local) && !modelsReady(local) && (
-        <button type="button" className="panel-row panel-row--action" onClick={download} disabled={downloading || modelBusy(local)}>
-          <Icon name="arrow_down" size={14} opacity={0.56} /> {downloading || modelBusy(local) ? `Downloading ${pct}%` : 'Download on-device models · 263 MB'}
+      {local && supported(local) && (
+        <button type="button" className="panel-row panel-row--action" onClick={() => useConfigUI.getState().openVoiceModels()}>
+          <Icon name="arrow_down" size={14} opacity={0.56} /> Voice models…
         </button>
       )}
       {error && <div className="voice-error">{error}</div>}

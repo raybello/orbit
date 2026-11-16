@@ -1,8 +1,12 @@
 import { useEffect, useLayoutEffect, useRef, useState } from 'react';
+import type { Bot, VoiceReadiness } from '@orbit/contracts';
 import { BotAvatarFor } from '../avatar/BotAvatar';
+import { useConfigUI } from '../configStore';
 import { botVars } from '../lib/colors';
 import { useStore } from '../store';
-import { callLevels, endCall, toggleMute, useVoice } from '../voice/call';
+import { callLevels, dismissBlockedCall, endCall, startCall, toggleMute, useVoice, type CallBlock } from '../voice/call';
+import { readinessFor, useVoiceModels } from '../voice/models-store';
+import '../styles/voice-models.css';
 
 function MicGlyph({ off }: { off?: boolean }) {
   return (
@@ -19,6 +23,50 @@ function HangUpGlyph() {
     <svg width="18" height="18" viewBox="0 0 24 24" aria-hidden>
       <path fill="currentColor" d="M12 9.5c-2.6 0-5.1.5-7.3 1.6-.7.3-1.2 1-1.2 1.8v2.3c0 .8.7 1.4 1.5 1.3l3-.4c.7-.1 1.2-.7 1.2-1.4v-1.6c1.8-.5 3.8-.5 5.6 0v1.6c0 .7.5 1.3 1.2 1.4l3 .4c.8.1 1.5-.5 1.5-1.3v-2.3c0-.8-.5-1.5-1.2-1.8-2.2-1.1-4.7-1.6-7.3-1.6Z" />
     </svg>
+  );
+}
+
+/**
+ * The prompt shown instead of a call when on-device voice is not ready. Read live from the shared
+ * inventory, so a download finishing turns it into a Start button without another click elsewhere.
+ */
+function blockedPrompt(r: VoiceReadiness | CallBlock): { text: string; action: string; start: boolean } {
+  switch (r.status) {
+    case 'ready':
+    case 'cloud':
+      return { text: 'Voice is ready.', action: 'Start call', start: true };
+    case 'preparing':
+      return { text: `Downloading on-device voice… ${r.pct}%`, action: 'Downloads', start: false };
+    case 'needs-model':
+      return r.missing.includes('tts')
+        ? { text: 'On-device voice needs a voice model. Choose one to talk.', action: 'Choose a voice', start: false }
+        : { text: 'On-device voice needs speech recognition, which isn’t downloaded.', action: 'Voice models', start: false };
+    case 'unsupported':
+      return { text: 'This server can’t run on-device voice.', action: 'Voice models', start: false };
+  }
+}
+
+function BlockedBar({ bot, block }: { bot: Bot; block: CallBlock }) {
+  const status = useVoiceModels((s) => s.status);
+  const prompt = blockedPrompt(readinessFor(bot, status) ?? block);
+  return (
+    <div className="vcall is-blocked" style={botVars(bot.avatarColor)} role="region" aria-label={`Voice call with ${bot.name}`}>
+      <div className="vcall__main">
+        <span className="vcall__avatar"><BotAvatarFor bot={bot} size={36} /></span>
+        <div className="vcall__info">
+          <div className="vcall__title"><span className="vcall__name">{bot.name}</span></div>
+          <div className="vcall__status" aria-live="polite">{prompt.text}</div>
+        </div>
+        <div className="vcall__actions">
+          <button
+            type="button"
+            className="vcall__prompt-btn"
+            onClick={() => (prompt.start ? startCall(bot.id) : useConfigUI.getState().openVoiceModels())}
+          >{prompt.action}</button>
+          <button type="button" className="vcall__btn" onClick={dismissBlockedCall} aria-label="Dismiss">✕</button>
+        </div>
+      </div>
+    </div>
   );
 }
 
@@ -65,6 +113,7 @@ export function VoiceCallBar() {
   }, [expanded, v.captions]);
 
   if (v.status === 'idle' || v.status === 'ending' || !bot) return null;
+  if (v.status === 'blocked' && v.blocked) return <BlockedBar bot={bot} block={v.blocked} />;
 
   const working = v.working.length > 0;
   const status =

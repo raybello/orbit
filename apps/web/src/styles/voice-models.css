@@ -1,0 +1,28 @@
+/* ---------- Voice models manager and the first-run voice chooser ---------- */
+.vmodels { width: 560px; max-width: 100%; }
+.vsetup { width: 480px; max-width: 100%; }
+.vmodels__body { display: flex; flex-direction: column; gap: 16px; padding: 16px; overflow-y: auto; min-height: 0; }
+.vmodels__intro { margin: 0; font-size: 13px; line-height: 18px; color: var(--color-text-secondary); }
+.vmodels__empty { margin: 0; font-size: 13px; line-height: 18px; color: var(--color-text-tertiary); }
+.vmodels__group { gap: 8px; }
+.vmodels__row { align-items: flex-start; }
+.vmodels__detail { color: var(--color-text-tertiary); }
+.vmodels__actions { display: flex; align-items: center; gap: 6px; flex-shrink: 0; padding-top: 2px; }
+.vmodels__bar { height: 4px; margin-top: 6px; border-radius: 2px; background: var(--color-bg-tertiary); overflow: hidden; }
+.vmodels__bar > div { height: 100%; background: var(--accent-500); transition: width 240ms linear; }
+.vmodels__footer { justify-content: space-between; }
+.vmodels__total { font-size: 12px; color: var(--color-text-tertiary); }
+
+.vsetup__voice { cursor: pointer; align-items: flex-start; }
+.vsetup__voice input { margin-top: 3px; accent-color: var(--accent-500); }
+.vsetup__downloads { display: flex; flex-direction: column; gap: 10px; }
+.vsetup__progress-head { display: flex; justify-content: space-between; gap: 12px; font-size: 12px; line-height: 16px; color: var(--color-text-secondary); }
+.vsetup__progress[data-state='error'] .vsetup__progress-head { color: var(--color-danger-text); }
+
+/* The call bar's "needs a model" prompt sits on the bar's dark surface. */
+.vcall__prompt-btn {
+  display: inline-flex; align-items: center; height: 32px; padding: 0 12px; border-radius: var(--radius-full);
+  background: #FFFFFF; color: #1C1C1C; font-size: 13px; font-weight: 500; white-space: nowrap;
+}
+.vcall__prompt-btn:hover { background: #FFFFFFE0; }
+.vcall.is-blocked .vcall__status { white-space: normal; }
