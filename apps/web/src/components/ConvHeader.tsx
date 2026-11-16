@@ -5,6 +5,8 @@ import { useStore } from '../store';
 import { displayName } from '../domain/transcript-utils';
 import { useConfigUI } from '../configStore';
 import { configApi } from '../lib/configApi';
+import { templatesApi } from '../lib/templatesApi';
+import { openNewBot, useTemplatesUI } from '../templatesStore';
 import { Icon } from './Icon';
 import { Menu } from './Menu';
 import { PrimaryStar } from './PrimaryStar';
@@ -59,6 +61,8 @@ export function ConvHeader({ bot, running, activeTab, onTabChange, onNotice }: {
             onClose={() => setMenu(false)}
             items={[
               { label: 'Edit bot', onSelect: () => useConfigUI.getState().openBotSettings(bot.id) },
+              { label: 'Duplicate bot', onSelect: () => templatesApi.duplicate(bot.id).then(({ bot: copy }) => openNewBot(copy)).catch((e: Error) => flash(e.message)) },
+              { label: 'Share as template', onSelect: () => useTemplatesUI.getState().open({ kind: 'share', botId: bot.id }) },
               { label: 'Clear chat', onSelect: () => configApi.fresh(bot.id).then(() => flash('Started a new conversation')).catch((e: Error) => flash(e.message)) },
               { label: 'Delete bot', danger: true, onSelect: handleDelete },
             ]}
