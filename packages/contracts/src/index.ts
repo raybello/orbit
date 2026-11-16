@@ -2,6 +2,8 @@
 // Everything here is type-only or plain constants: no runtime dependencies.
 
 export * from './branded-types.js';
+// Bot templates and the starter gallery (F6, F7).
+export * from './templates.js';
 
 export type AvatarShape =
   | 'blob' | 'pebble' | 'bean' | 'egg' | 'squircle' | 'tablet' | 'capsule' | 'cylinder' | 'hex'

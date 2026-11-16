@@ -27,6 +27,7 @@ import { runRoutine, scheduleRoutine, unscheduleRoutine } from './routines.js';
 import { deleteEventTrigger } from './triggers.js';
 import { dispatchRoomMessage } from './agent/rooms.js';
 import { voiceApi } from './voice.js';
+import { templatesApi } from './routes-templates.js';
 import type { Toolkit } from './types.js';
 import { TeamFullError } from './core/bot-service.js';
 import { BotAdminError, createBotFor, deleteBotFor, setBotPrimary, updateBotFor } from './bot-admin.js';
@@ -185,6 +186,9 @@ api.get('/auth/link/:token', (c) => {
 });
 
 api.post('/auth/logout', (c) => { destroySession(c); return c.json({ ok: true }); });
+
+// Ahead of the sign-in middleware: a template share link is readable before signing in.
+api.route('/', templatesApi);
 
 api.use('/*', async (c, next) => {
   // /api/desktop/probe is authenticated by the stack token itself (see its handler).
