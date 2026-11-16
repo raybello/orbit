@@ -9,7 +9,9 @@ export type IconName =
   // inline extras not in the icon font export
   | 'arrow_up' | 'stop' | 'more' | 'monitor' | 'refresh'
   // inline outline glyphs
-  | 'eye' | 'pointer' | 'expand' | 'shrink' | 'panel' | 'emoji' | 'people' | 'bell' | 'bell_off' | 'leave';
+  | 'eye' | 'pointer' | 'expand' | 'shrink' | 'panel' | 'emoji' | 'people' | 'bell' | 'bell_off' | 'leave'
+  // settings nav
+  | 'sliders' | 'palette' | 'key' | 'shield' | 'person';
 
 const INLINE: Partial<Record<IconName, string>> = {
   arrow_up: 'M12 4.5a1 1 0 0 1 .7.3l6 6a1 1 0 0 1-1.4 1.4L13 7.9V19a1 1 0 1 1-2 0V7.9l-4.3 4.3a1 1 0 1 1-1.4-1.4l6-6a1 1 0 0 1 .7-.3Z',
@@ -32,6 +34,11 @@ const OUTLINE: Partial<Record<IconName, string>> = {
   bell: 'M12 3.6a5.6 5.6 0 0 0-5.6 5.6v4.1l-1.6 2.8h14.4l-1.6-2.8V9.2A5.6 5.6 0 0 0 12 3.6Z M10 19a2 2 0 0 0 4 0',
   bell_off: 'M4 4l16 16 M18.4 13.6V9.2A6.4 6.4 0 0 0 11 2.9 M7.6 7.7A5.6 5.6 0 0 0 6.4 9.2v4.1l-1.6 2.8h11 M10 19a2 2 0 0 0 4 0',
   leave: 'M14 4.2h3.6a2 2 0 0 1 2 2v11.6a2 2 0 0 1-2 2H14 M9.4 8.2 5.6 12l3.8 3.8 M5.6 12h9.2',
+  sliders: 'M4.5 7h9 M17.5 7h2 M15.5 5v4 M4.5 17h3 M11.5 17h8 M9.5 15v4',
+  palette: 'M12 3.8a8.2 8.2 0 0 0 0 16.4c1.2 0 1.9-.8 1.9-1.8 0-.5-.2-.9-.5-1.2-.3-.3-.5-.7-.5-1.2 0-1 .8-1.8 1.8-1.8h2.1a3.4 3.4 0 0 0 3.4-3.4c0-3.9-3.7-7-8.2-7Z M7.6 11.2h.01 M9.8 7.9h.01 M14.2 7.9h.01 M16.6 11.2h.01',
+  key: 'M7.8 8.4a3.6 3.6 0 1 0 0 7.2 3.6 3.6 0 0 0 0-7.2Z M11.4 12h8.6 M17.2 12v3 M20 12v2.2',
+  shield: 'M12 3.6 5.4 6.1v5.3c0 4.2 2.8 7.6 6.6 9 3.8-1.4 6.6-4.8 6.6-9V6.1L12 3.6Z M9.2 12.1l2 2 3.6-3.8',
+  person: 'M12 11.6a3.8 3.8 0 1 0 0-7.6 3.8 3.8 0 0 0 0 7.6Z M4.8 20.2c.6-3.4 3.6-5.6 7.2-5.6s6.6 2.2 7.2 5.6',
 };
 
 interface Props { name: IconName; size?: number; opacity?: number; className?: string; style?: CSSProperties; color?: string }
