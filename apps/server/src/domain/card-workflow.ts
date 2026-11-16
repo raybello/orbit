@@ -15,7 +15,7 @@
  * reach — and a test pins it to LEGAL_EVENTS, so the two cannot drift.
  */
 
-export type CardKind = 'approval' | 'question' | 'connect' | 'draft';
+export type CardKind = 'approval' | 'question' | 'connect' | 'draft' | 'secure-form';
 
 export type CardStatus =
   | 'pending'
@@ -32,7 +32,9 @@ export type CardStatus =
   | 'skipped'
   // draft
   | 'sent'
-  | 'discarded';
+  | 'discarded'
+  // secure-form
+  | 'submitted';
 
 /** The statuses each card really has. This is the one place the per-card sets are written down. */
 export const CARD_STATUSES = {
@@ -40,6 +42,7 @@ export const CARD_STATUSES = {
   question: ['pending', 'answered', 'dismissed'],
   connect: ['pending', 'connected', 'skipped'],
   draft: ['pending', 'sent', 'discarded'],
+  'secure-form': ['pending', 'submitted', 'dismissed'],
 } as const satisfies Record<CardKind, readonly CardStatus[]>;
 
 /** Both question and draft can be dismissed; the event type is shared, the result is not. */
@@ -48,6 +51,7 @@ const LEGAL_EVENTS: Record<CardKind, readonly CardEvent['type'][]> = {
   question: ['answer', 'dismiss'],
   connect: ['connect', 'skip'],
   draft: ['send', 'dismiss'],
+  'secure-form': ['submit', 'dismiss'],
 };
 
 export type CardEvent =
@@ -59,6 +63,8 @@ export type CardEvent =
   | { type: 'connect'; userId: string; at: number }
   | { type: 'skip'; userId: string; at: number }
   | { type: 'send'; userId: string; at: number }
+  /** A secure form was filled in. What was typed is not part of the event: only whether it was kept. */
+  | { type: 'submit'; userId: string; at: number; saved: boolean }
   /** Expiry is the server giving up waiting for a person, so it has no user. */
   | { type: 'expire'; at: number };
 
@@ -105,6 +111,13 @@ export type CardState =
       text: string;
       approvalId: string;
     })
+  | (PendingCard & {
+      card: 'secure-form';
+      label: string;
+      reason: string;
+      fields: { key: 'username' | 'secret'; label: string }[];
+      urlPattern?: string;
+    })
   | (DecidedCard & { status: 'allowed'; card: 'approval' })
   | (DecidedCard & { status: 'always'; card: 'approval' })
   | (DecidedCard & { status: 'denied'; card: 'approval'; reason?: string })
@@ -114,7 +127,9 @@ export type CardState =
   | (DecidedCard & { status: 'connected'; card: 'connect' })
   | (DecidedCard & { status: 'skipped'; card: 'connect' })
   | (DecidedCard & { status: 'sent'; card: 'draft' })
-  | (DecidedCard & { status: 'discarded'; card: 'draft' });
+  | (DecidedCard & { status: 'discarded'; card: 'draft' })
+  | (DecidedCard & { status: 'submitted'; card: 'secure-form'; saved: boolean })
+  | (DecidedCard & { status: 'dismissed'; card: 'secure-form' });
 
 export function isTerminal(state: CardState): state is Exclude<CardState, { status: 'pending' }> {
   return state.status !== 'pending';
@@ -122,7 +137,7 @@ export function isTerminal(state: CardState): state is Exclude<CardState, { stat
 
 /**
  * What a UI may offer for this state. Takes the state rather than a bare status because `pending` is
- * shared by all four cards and the legal set depends on the card; every terminal status is card-specific.
+ * shared by every card and the legal set depends on the card; every terminal status is card-specific.
  * transitionCard is pinned to this table by a test, so the offer and the machine cannot drift.
  */
 export function legalEvents(state: Pick<CardState, 'card' | 'status'>): CardEvent['type'][] {
@@ -183,6 +198,17 @@ export function transitionCard(state: CardState, event: CardEvent): CardState {
         case 'dismiss':
           // routes.ts stores 'dismissed' for non-connect cards; on a draft the contract's status is 'discarded'.
           return { ...base, status: 'discarded', decidedBy: event.userId };
+        default:
+          return state;
+      }
+    }
+    case 'secure-form': {
+      const base = { card: 'secure-form', cardId: state.cardId, decidedAt: event.at } as const;
+      switch (event.type) {
+        case 'submit':
+          return { ...base, status: 'submitted', decidedBy: event.userId, saved: event.saved };
+        case 'dismiss':
+          return { ...base, status: 'dismissed', decidedBy: event.userId };
         default:
           return state;
       }
