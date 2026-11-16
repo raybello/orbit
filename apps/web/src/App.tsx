@@ -23,6 +23,7 @@ import { ConfigLayer } from './components/config/ConfigLayer';
 import { TasksView } from './components/config/TasksView';
 import { useConfigUI } from './configStore';
 import { TemplatesLayer } from './components/TemplatesLayer';
+import { useDeepLinks } from './lib/deep-links';
 
 /**
  * The main-area view for each rail section. Chat is the exception: its list lives in the 280px
@@ -53,6 +54,7 @@ function Shell() {
   const inChat = navSection === 'chat';
   // The panel stays mounted so it can slide shut; it renders its body only while open.
   const showDetails = hasBot && inChat && view === 'chat';
+  useDeepLinks();
 
   useEffect(() => {
     const st = useStore.getState();

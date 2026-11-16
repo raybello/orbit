@@ -194,4 +194,43 @@ addColumn('routines', 'event_date', 'TEXT');
 addColumn('routines', 'assigned_bot_id', 'TEXT');
 addColumn('routines', 'completed_at', 'TEXT');
 
+// ---- Proactive initiative (F8) ----
+// `proactivity` used to be created by initProactive, which only runs with the scheduler; created here,
+// every process that opens the database can read check-in settings.
+// `initiative_signals` is an outbox keyed by occurrence, so a signal is delivered at most once across
+// restarts. `morning_briefings` records the briefing seeded for each person: a row whose routine_id
+// went NULL means they deleted it, and it is not seeded again.
+db.exec(`
+CREATE TABLE IF NOT EXISTS proactivity (
+  user_id TEXT PRIMARY KEY,
+  enabled INTEGER NOT NULL DEFAULT 0,
+  times TEXT NOT NULL DEFAULT '["09:00","16:30"]',
+  timezone TEXT NOT NULL DEFAULT 'UTC',
+  last_fired TEXT,
+  silent_streak INTEGER NOT NULL DEFAULT 0,
+  updated_at INTEGER NOT NULL
+);
+CREATE TABLE IF NOT EXISTS initiative_signals (
+  user_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  key TEXT NOT NULL,
+  kind TEXT NOT NULL,
+  payload TEXT NOT NULL,
+  state TEXT NOT NULL DEFAULT 'pending' CHECK (state IN ('pending', 'delivered', 'suppressed')),
+  created_at INTEGER NOT NULL,
+  settled_at INTEGER,
+  PRIMARY KEY (user_id, key)
+);
+CREATE TABLE IF NOT EXISTS morning_briefings (
+  user_id TEXT PRIMARY KEY REFERENCES users(id) ON DELETE CASCADE,
+  bot_id TEXT NOT NULL REFERENCES bots(id) ON DELETE CASCADE,
+  routine_id TEXT REFERENCES routines(id) ON DELETE SET NULL,
+  created_at INTEGER NOT NULL
+);
+`);
+addColumn('proactivity', 'idle_hours', 'INTEGER NOT NULL DEFAULT 24');
+addColumn('bots', 'initiative', "TEXT NOT NULL DEFAULT 'proactive'");
+// 'running' | 'ok' | 'failed' | 'stopped' for the run that started at last_run_at.
+addColumn('routines', 'last_run_status', 'TEXT');
+// ---- end F8 ----
+
 export const now = () => Date.now();

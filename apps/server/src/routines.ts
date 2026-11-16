@@ -5,6 +5,7 @@ import { newId } from './lib/ids.js';
 import type { Routine } from './types.js';
 import type { Trigger } from './agent/loop.js';
 import { isEventSchedule, setEventRoutineEnabled } from './triggers.js';
+import { routinePrompt, scheduledRunAllowed } from './initiative-store.js';
 
 const jobs = new Map<string, Cron>();
 let enqueueFn: ((botId: string, t: Trigger) => void) | null = null;
@@ -25,7 +26,8 @@ export function scheduleRoutine(r: Pick<Routine, 'id' | 'botId' | 'name' | 'prom
   if (isEventSchedule(r.schedule)) { void setEventRoutineEnabled(r.id, true); return; }
   unscheduleRoutine(r.id);
   try {
-    const job = new Cron(r.schedule, { timezone: r.timezone || 'UTC', protect: true }, () => runRoutine(r.id));
+    // A scheduled briefing is unsolicited, so its Bot's initiative can hold it back; Run now always runs.
+    const job = new Cron(r.schedule, { timezone: r.timezone || 'UTC', protect: true }, () => { if (scheduledRunAllowed(r.id)) runRoutine(r.id); });
     jobs.set(r.id, job);
   } catch (e) {
     console.warn('[routines] bad schedule', r.id, r.schedule, (e as Error).message);
@@ -42,10 +44,11 @@ export function unscheduleRoutine(id: string) {
 export function runRoutine(id: string) {
   const r = db.prepare('SELECT * FROM routines WHERE id=?').get(id) as RoutineRow | undefined;
   if (!r || !enqueueFn) return;
-  db.prepare('UPDATE routines SET last_run_at=? WHERE id=?').run(now(), id);
+  const at = now();
+  db.prepare("UPDATE routines SET last_run_at=?, last_run_status='running' WHERE id=?").run(at, id);
   appendRow(r.bot_id, 'event', { type: 'event', event: 'routine-run', text: `Running routine: ${r.name}`, ref: id });
   // A calendar event can be assigned to another bot; it still logs on the bot that owns it.
-  enqueueFn(r.assigned_bot_id || r.bot_id, { type: 'routine', routineId: id, name: r.name, prompt: r.prompt });
+  enqueueFn(r.assigned_bot_id || r.bot_id, { type: 'routine', routineId: id, name: r.name, prompt: routinePrompt(r, at) });
   // A one-time event is done once it has run: record it, stop it, and leave it on the calendar as
   // completed rather than deleting it.
   if (r.event_type === 'one_time') {
@@ -63,6 +66,8 @@ export interface CreateRoutineInput {
   eventDate?: string;
   timezone?: string;
   description?: string;
+  /** Defaults to on; a seeded routine starts off until the person turns it on. */
+  enabled?: boolean;
 }
 
 /** The date's wall-clock fields in `timeZone`, so a one-shot cron fires at the instant asked for. */
@@ -115,10 +120,10 @@ export function createRoutine(input: CreateRoutineInput): Routine {
   const id = newId('rtn');
   db.prepare(
     `INSERT INTO routines(id,bot_id,name,prompt,schedule,timezone,enabled,created_at,calendar_title,event_type,event_date,assigned_bot_id,completed_at)
-     VALUES (?,?,?,?,?,?,1,?,?,?,?,NULL,NULL)`,
-  ).run(id, input.botId, title, prompt, schedule, timezone, now(), title, eventType, eventDate);
+     VALUES (?,?,?,?,?,?,?,?,?,?,?,NULL,NULL)`,
+  ).run(id, input.botId, title, prompt, schedule, timezone, input.enabled === false ? 0 : 1, now(), title, eventType, eventDate);
 
   const routine = toRoutine(db.prepare('SELECT * FROM routines WHERE id=?').get(id) as RoutineRow);
-  scheduleRoutine(routine);
+  if (routine.enabled) scheduleRoutine(routine);
   return routine;
 }

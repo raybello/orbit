@@ -17,7 +17,7 @@ const BOT_A: Bot = {
   id: 'bot-ada', name: 'Ada', label: '', description: '', instructions: '',
   avatarShape: 'blob', avatarColor: 'blue', mode: 'personal', isPrimary: true, kind: 'agent',
   pinned: false, effort: 'medium', voice: '', voiceSpeed: 1, voiceLanguage: 'auto', voiceProvider: 'cloud' as const, voiceModel: 'piper-lessac-medium',
-  model: null, provider: null, generation: 0, unread: 0, lastPreview: null, lastActivityAt: 0, createdAt: 0,
+  model: null, provider: null, initiative: 'proactive', generation: 0, unread: 0, lastPreview: null, lastActivityAt: 0, createdAt: 0,
 };
 
 const BOT_B: Bot = { ...BOT_A, id: 'bot-grace', name: 'Grace', avatarColor: 'green', isPrimary: false };

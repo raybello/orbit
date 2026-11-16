@@ -8,6 +8,7 @@ import { env } from '../env.js';
 import { api } from '../routes.js';
 import { stackTokenMatches } from '../lib/stack.js';
 import { checkinsApi } from '../routes-proactive.js';
+import { initiativeApi } from '../routes-initiative.js';
 import { roomsApi } from '../routes-rooms.js';
 import { configApi } from '../routes-config.js';
 import { calendarApi } from '../routes-calendar.js';
@@ -64,6 +65,7 @@ export function createApp(): Hono {
   app.route('/mcp', mcpApi);
   app.route('/webhooks', webhooksApi);
   app.route('/api/checkins', checkinsApi);
+  app.route('/api/initiative', initiativeApi);
   app.route('/api/rooms', roomsApi);
   app.route('/api', api);
   app.route('/api', configApi);
