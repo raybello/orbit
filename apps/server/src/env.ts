@@ -17,6 +17,12 @@ function secret(name: string): string {
   throw new Error(`Missing env ${name} (or ${name}_FILE)`);
 }
 
+/** A whole number above zero, or `fallback` for anything else (unset, empty, zero, garbage). */
+function positiveInt(value: string | undefined, fallback: number): number {
+  const n = Math.floor(Number(value));
+  return n > 0 ? n : fallback;
+}
+
 const hermesHome = process.env.HERMES_HOME_PRIMARY ?? path.join(os.homedir(), '.hermes');
 
 /** Hosts a container uses to name another container; the host itself cannot resolve them. */
@@ -60,6 +66,13 @@ export const env = {
   serverUrl: process.env.SERVER_URL ?? `http://localhost:${process.env.PORT ?? 8787}`,
   xaiKey: process.env.XAI_API_KEY ?? '',
   xaiModel: process.env.XAI_MODEL ?? 'grok-4.7',
+  /** `https://us.api.x.ai/v1` keeps inference in the US. Managed bots receive the raw variable (engine.ts SHARED_ENV). */
+  xaiBaseUrl: (process.env.XAI_BASE_URL?.trim() || 'https://api.x.ai/v1').replace(/\/+$/, ''),
+  /**
+   * Context size in tokens at which a managed bot's Hermes summarizes older turns (its
+   * `compression.threshold_tokens`). Hermes uses the lower of this and its own share of the window.
+   */
+  contextCompactionThreshold: positiveInt(process.env.CONTEXT_COMPACTION_THRESHOLD, 350_000),
   composioKey: process.env.COMPOSIO_API_KEY ?? '',
   orgoKey: process.env.ORGO_API_KEY ?? (process.env.ORGO_API_KEY_FILE ? fs.readFileSync(process.env.ORGO_API_KEY_FILE, 'utf8').trim() : ''),
   sessionSecret: req('SESSION_SECRET'),
