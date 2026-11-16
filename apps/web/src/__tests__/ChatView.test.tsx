@@ -99,7 +99,7 @@ describe('ChatView', () => {
   it("shows the sender bot’s avatar (not the channel owner’s) for inter-bot messages", () => {
     // Jeff is viewing his own thread. Atlas sends him a message via send_to_bot.
     const JEFF = bot({ id: "jeff", name: "Jeff", avatarColor: "green", avatarShape: "cloud" });
-    const ATLAS = bot({ id: "atlas", name: "Atlas", avatarColor: "purple", avatarShape: "star" });
+    const ATLAS = bot({ id: "atlas", name: "Atlas", avatarColor: "violet", avatarShape: "star" });
     useStore.setState({
       bots: [JEFF, ATLAS],
       selectedBotId: "jeff",
