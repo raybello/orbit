@@ -355,14 +355,26 @@ test('syncPrimaryHqConfig writes the hq entry when the config has none', () => {
   assert.match(String(hq.headers?.Authorization ?? ''), /^Bearer [0-9a-f]{64}$/, 'Authorization should be a bearer token');
 });
 
-test('syncPrimaryHqConfig is a no-op when URL and token already match', async () => {
+test('syncPrimaryHqConfig is a no-op when URL, token and type already match', async () => {
   resetBots();
   const botId = addBot('bot_hq_noop', 'primary');
   const { env } = await import('../env.js');
   const hqUrl = `${env.primaryMcpBaseUrl}/mcp/${botId}`;
-  primaryFiles({}, { mcp_servers: { hq: { url: hqUrl, headers: { Authorization: `Bearer ${mcpToken(botId)}` }, timeout: 1800, connect_timeout: 30 } } });
+  primaryFiles({}, { mcp_servers: { hq: { type: 'http', url: hqUrl, headers: { Authorization: `Bearer ${mcpToken(botId)}` }, timeout: 1800, connect_timeout: 30 } } });
   const changed = syncPrimaryHqConfig(botId);
   assert.ok(!changed, 'should not report a change when already up-to-date');
+});
+
+test('syncPrimaryHqConfig updates when type: http is missing (Hermes silently skips typeless entries)', async () => {
+  resetBots();
+  const botId = addBot('bot_hq_notype', 'primary');
+  const { env } = await import('../env.js');
+  const hqUrl = `${env.primaryMcpBaseUrl}/mcp/${botId}`;
+  primaryFiles({}, { mcp_servers: { hq: { url: hqUrl, headers: { Authorization: `Bearer ${mcpToken(botId)}` }, timeout: 1800, connect_timeout: 30 } } });
+  const changed = syncPrimaryHqConfig(botId);
+  assert.ok(changed, 'should update when type is missing');
+  const cfg = readYaml(path.join(primaryHome, 'config.yaml'));
+  assert.equal((cfg as any).mcp_servers?.hq?.type, 'http', 'type: http should be written');
 });
 
 test('syncPrimaryHqConfig updates when only the token is stale (session secret rotation)', async () => {
@@ -371,7 +383,7 @@ test('syncPrimaryHqConfig updates when only the token is stale (session secret r
   const { env } = await import('../env.js');
   const hqUrl = `${env.primaryMcpBaseUrl}/mcp/${botId}`;
   const staleToken = 'Bearer deadbeefdeadbeefdeadbeefdeadbeefdeadbeefdeadbeefdeadbeefdeadbeef';
-  primaryFiles({}, { mcp_servers: { hq: { url: hqUrl, headers: { Authorization: staleToken }, timeout: 1800, connect_timeout: 30 } } });
+  primaryFiles({}, { mcp_servers: { hq: { type: 'http', url: hqUrl, headers: { Authorization: staleToken }, timeout: 1800, connect_timeout: 30 } } });
   const changed = syncPrimaryHqConfig(botId);
   assert.ok(changed, 'should update when the token is stale even if the URL matches');
   const cfg = readYaml(path.join(primaryHome, 'config.yaml'));
@@ -384,7 +396,7 @@ test('syncPrimaryHqConfig updates when the URL changed (port or bot id)', async 
   resetBots();
   const botId = addBot('bot_hq_url', 'primary');
   const staleUrl = 'http://127.0.0.1:8787/mcp/bot_old_id';
-  primaryFiles({}, { mcp_servers: { hq: { url: staleUrl, headers: { Authorization: `Bearer ${mcpToken(botId)}` }, timeout: 1800, connect_timeout: 30 } } });
+  primaryFiles({}, { mcp_servers: { hq: { type: 'http', url: staleUrl, headers: { Authorization: `Bearer ${mcpToken(botId)}` }, timeout: 1800, connect_timeout: 30 } } });
   const changed = syncPrimaryHqConfig(botId);
   assert.ok(changed, 'should update when the URL changed');
   const cfg = readYaml(path.join(primaryHome, 'config.yaml'));

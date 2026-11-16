@@ -466,7 +466,7 @@ async function writeHome(botId: string): Promise<{ home: string; key: string; di
   cfg.mcp_servers = {
     ...asBlock(cfg.mcp_servers),
     ...extraMcpServers(),
-    hq: { url: managedMcpUrl(botId), headers: { Authorization: `Bearer ${mcpToken(botId)}` }, timeout: 1800, connect_timeout: 30 },
+    hq: { type: 'http', url: managedMcpUrl(botId), headers: { Authorization: `Bearer ${mcpToken(botId)}` }, timeout: 1800, connect_timeout: 30 },
   };
   writePrivate(cfgFile, YAML.stringify(cfg));
 
@@ -928,15 +928,15 @@ export function syncPrimaryHqConfig(botId: string): boolean {
   const expectedAuth = `Bearer ${mcpToken(botId)}`;
   const current = asBlock(asBlock(cfg.mcp_servers).hq);
   const currentAuth = String(asBlock(current.headers).Authorization ?? '');
-  // A URL-only check misses token staleness: when the session secret rotates the URL stays the same
-  // but the token is wrong, so the primary agent gets Unauthorized on every MCP call and loses all
-  // team tools. Check both so a rotated secret is caught without needing force=true.
-  if (current.url === hqUrl && currentAuth === expectedAuth) return false;
+  // Check URL, token, AND type. A URL-only check misses token staleness (rotated SESSION_SECRET) and
+  // the missing-type problem: Hermes silently skips an HTTP MCP entry without `type: http`, so the
+  // primary agent sees no team tools at all even when the URL and token are correct.
+  if (current.url === hqUrl && currentAuth === expectedAuth && current.type === 'http') return false;
   const headers = asBlock(current.headers);
   const keep = Object.fromEntries(Object.entries(headers).filter(([k]) => k.toLowerCase() !== 'authorization'));
   cfg.mcp_servers = {
     ...asBlock(cfg.mcp_servers),
-    hq: { ...current, url: hqUrl, headers: { ...keep, Authorization: expectedAuth }, timeout: 1800, connect_timeout: 30 },
+    hq: { ...current, type: 'http', url: hqUrl, headers: { ...keep, Authorization: expectedAuth }, timeout: 1800, connect_timeout: 30 },
   };
   fs.writeFileSync(cfgFile, YAML.stringify(cfg), 'utf8');
   return true;
