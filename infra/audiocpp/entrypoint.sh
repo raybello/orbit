@@ -13,8 +13,15 @@ rm -f "$MODELS_DIR/.orbit-download.lock"  # a lock left by a container that was 
 # Orbit from, e.g. AUDIOCPP_TLS_HOSTS="localhost 10.0.0.92". The CA lives on the data volume, so the
 # certificate warning is accepted once, not after every container recreate.
 CADDYFILE=/tmp/Caddyfile
+# A browser that opens https://10.0.0.92:8444 sends no SNI (TLS has no SNI for IP addresses), and
+# without one Caddy cannot pick a certificate and drops the handshake. default_sni names the
+# certificate to use then: the first non-loopback host, which is the LAN address people type.
+DEFAULT_SNI=localhost
+for h in ${AUDIOCPP_TLS_HOSTS:-localhost 127.0.0.1}; do
+  case "$h" in localhost|127.*|::1) ;; *) DEFAULT_SNI="$h"; break ;; esac
+done
 {
-  printf '{\n\tadmin off\n\tskip_install_trust\n}\n\n'
+  printf '{\n\tadmin off\n\tskip_install_trust\n\tdefault_sni %s\n}\n\n' "$DEFAULT_SNI"
   sites=""
   for h in ${AUDIOCPP_TLS_HOSTS:-localhost 127.0.0.1}; do sites="$sites${sites:+, }https://$h:8443"; done
   printf '%s {\n\ttls internal\n\treverse_proxy 127.0.0.1:8080 {\n\t\tflush_interval -1\n\t}\n}\n\n' "$sites"
