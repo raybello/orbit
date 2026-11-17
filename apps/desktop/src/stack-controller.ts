@@ -1,3 +1,4 @@
+import type { DesktopGpuVoice } from '@orbit/contracts';
 /**
  * The thing `main.ts` holds: whichever stack controller this machine ended up with.
  *
@@ -43,6 +44,10 @@ export interface DockerStack extends StackBase {
    */
   sessionSecret(): string | null;
   resourceDir(): string;
+  /** GPU voice (the audio.cpp sidecar): can it run here, is it on, what is it doing. */
+  gpuVoiceStatus(): Promise<DesktopGpuVoice>;
+  /** Install (pull + start) or remove the sidecar; the person's choice. */
+  setGpuVoice(on: boolean): Promise<DesktopGpuVoice>;
 }
 
 /** The Docker-free stack: Orbit's server as supervised Node processes. */

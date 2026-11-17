@@ -39,7 +39,7 @@ def endpoints(match: re.Match) -> str:
 
 def build(i: int) -> str:
     fname, title, desc = PAGES[i]
-    body = (SRC / fname).read_text()
+    body = (SRC / fname).read_text(encoding="utf-8")
     body = re.sub(r"<!--endpoints\n(.*?)-->", endpoints, body, flags=re.S)
     toc = re.findall(r'<h2 id="([^"]+)">(.*?)</h2>', body)
     current = ' aria-current="page"'
@@ -114,5 +114,4 @@ def build(i: int) -> str:
 
 
 for i, (fname, *_rest) in enumerate(PAGES):
-    (OUT / fname).write_text(build(i))
-    print("wrote", OUT / fname)
+    (OUT / fname).write_text(build(i), encoding="utf-8", newline="\n")

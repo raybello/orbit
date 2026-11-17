@@ -1,5 +1,6 @@
 import fs from 'node:fs/promises';
 import path from 'node:path';
+import { fileURLToPath } from 'node:url';
 import { env } from '../env.js';
 import { docker, type DockerError } from './client.js';
 
@@ -9,7 +10,7 @@ export const COMPUTER_IMAGE = env.computerImage;
 const BUILD_CONTEXT_FILES = ['Dockerfile', 'entrypoint.sh'];
 
 /** Build context in the repo: server/docker/computer, next to src/ and dist/ alike. */
-export const IMAGE_CONTEXT = new URL('../../docker/computer', import.meta.url).pathname;
+export const IMAGE_CONTEXT = fileURLToPath(new URL('../../docker/computer', import.meta.url));
 
 /** Docker's rule for a name that carries its registry (host with a dot/colon/localhost). */
 export function isRegistryImage(image: string): boolean {

@@ -1,4 +1,4 @@
-import type { AvatarColor, AvatarShape, InitiativeLevel } from '@orbit/contracts';
+import type { AvatarColor, AvatarShape, InitiativeLevel, VoiceProvider } from '@orbit/contracts';
 import { db } from '../db.js';
 
 /**
@@ -39,6 +39,10 @@ export interface BotRow {
   voice_language: string;
   voice_provider: string;
   voice_model: string;
+  /** audio.cpp GPU voice (db.ts addColumn). */
+  audiocpp_voice: string | null;
+  avatar_enabled: number | null;
+  avatar_portrait_path: string | null;
   /** Hermes engine (db.ts addColumn). */
   model: string | null;
   provider: string | null;
@@ -70,7 +74,7 @@ export interface NewBotValues {
   avatarColor: AvatarColor;
   mode: 'personal' | 'teammate';
   isPrimary: boolean;
-  voiceProvider: 'cloud' | 'local';
+  voiceProvider: VoiceProvider;
   voiceModel: string;
   createdAt: number;
   updatedAt: number;

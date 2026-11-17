@@ -62,6 +62,11 @@ services:
       # able to point it at a folder the mount does not cover.
       HERMES_HOME_PRIMARY: /host-hermes
       LOG_LEVEL: ${LOG_LEVEL:-info}
+      # GPU voice (audio.cpp). The desktop app writes this: http://audiocpp:8080 once the person
+      # installs the GPU sidecar below (ORBIT_GPU_VOICE=1, compose --profile gpu), `off` on macOS.
+      # Otherwise an audiocpp_server on the host; unreachable just means GPU voice is unavailable.
+      AUDIOCPP_URL: ${AUDIOCPP_URL:-http://host.docker.internal:8080}
+      AUDIOCPP_MODELS_DIR: /data/audiocpp-models
     ports:
       # Loopback only. ORBIT_API_PORT=0 in .env.images.example is the "let the OS pick" case the
       # desktop controller uses when 8787 is taken; this port is the one the app loads.
@@ -122,6 +127,46 @@ services:
       - orbit-data:/data
       - /var/run/docker.sock:/var/run/docker.sock
       # - ${ORBIT_HOST_DATA}:${ORBIT_HOST_DATA}
+
+  audiocpp:
+    # GPU voice: OWSM ASR, LFM3-Audio TTS and SoulX-FlashHead avatar video on an NVIDIA GPU
+    # (infra/audiocpp/Dockerfile). Opt-in twice over: the profile keeps it out of a plain `up`, and
+    # the desktop app adds `--profile gpu` only after the person clicks Install in the GPU voice
+    # settings (Windows and Linux with an NVIDIA GPU; never macOS). By hand:
+    #   docker compose -f docker-compose.yml --env-file .env --profile gpu up -d
+    profiles: [gpu]
+    image: ghcr.io/raybello/orbit/audiocpp:${ORBIT_IMAGE_TAG:-edge}
+    restart: unless-stopped
+    labels:
+      # The api finds this container by label to run the model download in it.
+      orbit.role: audiocpp
+    environment:
+      AUDIOCPP_MODELS_DIR: /data/audiocpp-models
+      HF_TOKEN: ${HF_TOKEN:-}
+      AUDIOCPP_AUTO_DOWNLOAD: ${AUDIOCPP_AUTO_DOWNLOAD:-0}
+      AUDIOCPP_AVATAR_VAE: ${AUDIOCPP_AVATAR_VAE:-cudnn}
+      # The HTTPS front door (Caddy, internal CA) for using Orbit's microphone from another device on
+      # the LAN: add that device-facing address here and set AUDIOCPP_HTTPS_BIND=0.0.0.0.
+      AUDIOCPP_TLS_HOSTS: ${AUDIOCPP_TLS_HOSTS:-localhost 127.0.0.1}
+      ORBIT_HTTPS_UPSTREAM: ${ORBIT_HTTPS_UPSTREAM:-http://api:8787}
+    ports:
+      - "${AUDIOCPP_HTTPS_BIND:-127.0.0.1}:${AUDIOCPP_HTTPS_PORT:-8443}:8443"
+      - "${AUDIOCPP_HTTPS_BIND:-127.0.0.1}:${ORBIT_HTTPS_PORT:-8444}:8444"
+    volumes:
+      - orbit-data:/data
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: 1
+              capabilities: [gpu]
+    healthcheck:
+      test: ["CMD", "curl", "-fsS", "http://127.0.0.1:8080/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+      start_period: 120s
 
 volumes:
   orbit-data:

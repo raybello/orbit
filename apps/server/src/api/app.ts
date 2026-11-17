@@ -1,5 +1,6 @@
 import fs from 'node:fs';
 import path from 'node:path';
+import { fileURLToPath } from 'node:url';
 import { serveStatic } from '@hono/node-server/serve-static';
 import { Hono } from 'hono';
 import { HTTPException } from 'hono/http-exception';
@@ -81,7 +82,7 @@ export function createApp(): Hono {
 
   // Serve the built web app in production.
   // dist/api/app.js and src/api/app.ts sit at the same depth under apps/server, so one path fits both.
-  const webDist = path.resolve(new URL('.', import.meta.url).pathname, '../../../web/dist');
+  const webDist = path.resolve(fileURLToPath(new URL('.', import.meta.url)), '../../../web/dist');
   if (fs.existsSync(webDist)) {
     // index.html must never be cached by Electron across container rebuilds: the shell
     // references content-hashed assets, so a stale shell loads the wrong (or missing) JS.

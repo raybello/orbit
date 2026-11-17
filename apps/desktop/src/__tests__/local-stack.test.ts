@@ -199,6 +199,9 @@ function harness(opts: {
   up?: (call: number) => DockerResult;
   server?: (url: string, headers: Record<string, string>) => { status: number; body: unknown };
   files?: Record<string, string>;
+  /** Make the n-th fetch hang until its signal aborts (a proxy that accepted and went quiet). */
+  hangFetch?: (n: number) => boolean;
+  healthTimeoutMs?: number;
 }): Harness {
   const root = path.join(tmpRoot, opts.name);
   fs.rmSync(root, { recursive: true, force: true });
@@ -238,6 +241,9 @@ function harness(opts: {
   const fetchImpl = (async (input: string | URL | Request, init?: RequestInit) => {
     const url = String(input);
     fetched.push(url);
+    if (opts.hangFetch?.(fetched.length)) {
+      await new Promise((_, reject) => init?.signal?.addEventListener('abort', () => reject(new Error('aborted')), { once: true }));
+    }
     const headers = (init?.headers ?? {}) as Record<string, string>;
     const answer = opts.server?.(url, headers) ?? { status: 200, body: { ok: true } };
     return new Response(JSON.stringify(answer.body), {
@@ -263,7 +269,7 @@ function harness(opts: {
       if (next === undefined) throw new Error('ran out of fake ports');
       return next;
     },
-    healthTimeoutMs: 200,
+    healthTimeoutMs: opts.healthTimeoutMs ?? 200,
     healthIntervalMs: 1,
   } satisfies LocalStackOptions);
 
@@ -434,6 +440,17 @@ describe('LocalStackController: stack identity', () => {
     assert.equal(state.phase, 'failed');
     assert.match(state.error ?? '', /did not answer/i);
     assert.ok(h.fetched.some((url) => url.endsWith('/api/health')));
+  });
+
+  test('a health probe that hangs is abandoned after 5 s and the next one gets through', async () => {
+    const h = harness({ name: 'hung-probe', server: selfAwareServer(), hangFetch: (n) => n === 1, healthTimeoutMs: 30_000 });
+    // AbortSignal.timeout's timer does not hold the loop open; the app's window does.
+    const keepAlive = setInterval(() => {}, 1_000);
+    const t0 = Date.now();
+    const state = await h.controller.start().finally(() => clearInterval(keepAlive));
+    assert.equal(state.phase, 'ready', state.error);
+    assert.ok(Date.now() - t0 < 15_000, 'start() must not wait on the hung request');
+    assert.ok(h.fetched.filter((u) => u.endsWith('/api/health')).length >= 2);
   });
 
   test('accepts a stack that echoes stackToken: verified', async () => {

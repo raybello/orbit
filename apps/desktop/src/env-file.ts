@@ -29,7 +29,9 @@ export const REQUIRED_SECRETS: SecretSpec[] = [
  * A commented-out `# KEY=` line is not a value, which is why the match is anchored.
  */
 export function envValue(envText: string, key: string): string | null {
-  const re = new RegExp(`^\\s*(?:export\\s+)?${key}\\s*=(.*)$`, 'm');
+  // [ \t], never \s: in a CRLF file `^` also matches right after a \r, and \s* would then swallow
+  // the \n and reach into the next line (an installer built on a Windows checkout ships CRLF).
+  const re = new RegExp(`^[ \\t]*(?:export[ \\t]+)?${key}[ \\t]*=([^\\r\\n]*)`, 'm');
   const match = re.exec(envText);
   if (!match) return null;
   const value = match[1].replace(/\s+#.*$/, '').trim().replace(/^["']|["']$/g, '');
@@ -38,11 +40,15 @@ export function envValue(envText: string, key: string): string | null {
 
 /** Set KEY=value in a `.env` body, appending when absent. Other lines are untouched. */
 export function setEnvValue(envText: string, key: string, value: string): string {
-  const re = new RegExp(`^\\s*(?:export\\s+)?${key}\\s*=.*$`, 'm');
+  // Same anchoring as envValue: a CRLF line break must never be part of the match, or the
+  // replacement joins KEY=value onto the line above it (which is how a Windows first run used to
+  // lose its generated secrets into a comment).
+  const re = new RegExp(`^[ \\t]*(?:export[ \\t]+)?${key}[ \\t]*=[^\\r\\n]*`, 'm');
   const line = `${key}=${value}`;
-  if (re.test(envText)) return envText.replace(re, line);
-  const base = envText === '' || envText.endsWith('\n') ? envText : `${envText}\n`;
-  return `${base}${line}\n`;
+  if (re.test(envText)) return envText.replace(re, () => line);
+  const eol = envText.includes('\r\n') ? '\r\n' : '\n';
+  const base = envText === '' || envText.endsWith('\n') ? envText : `${envText}${eol}`;
+  return `${base}${line}${eol}`;
 }
 
 export function missingStackSecrets(envText: string): string[] {

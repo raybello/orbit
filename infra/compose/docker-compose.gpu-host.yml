@@ -1,0 +1,23 @@
+# Overlay for running only the audio.cpp sidecar while Orbit itself runs on the host
+# (`pnpm --filter @orbit/server dev`, the VS Code "server dev" configs, or the desktop app):
+#
+#   bash scripts/gpu-voice-stack.sh sidecar
+#
+# which is
+#
+#   docker compose -f infra/compose/docker-compose.yml -f infra/compose/docker-compose.gpu-host.yml \
+#     --profile gpu up -d --build audiocpp
+#
+# The host's Orbit reaches audio.cpp at its default AUDIOCPP_URL, http://127.0.0.1:8080, exactly as it
+# would a native audiocpp_server, so stop a native one first (port and VRAM). The models download
+# runs in the container (Download in the GPU voice settings), and the api reads its progress through
+# `docker exec`, since a host process cannot see the orbit-data volume.
+services:
+  audiocpp:
+    environment:
+      # :8444 → the Orbit running on this host (vite on :5173 in dev, the server on :8787 otherwise).
+      ORBIT_HTTPS_UPSTREAM: ${ORBIT_HTTPS_UPSTREAM:-http://host.docker.internal:5173}
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    ports:
+      - "${AUDIOCPP_API_BIND:-127.0.0.1}:${AUDIOCPP_API_PORT:-8080}:8080"

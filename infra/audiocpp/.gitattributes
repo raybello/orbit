@@ -1,0 +1,4 @@
+# Built into a Linux image from a Windows checkout too: CRLF would break the shebang.
+*.sh text eol=lf
+*.py text eol=lf
+*.json text eol=lf

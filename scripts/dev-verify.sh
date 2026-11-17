@@ -7,8 +7,9 @@
 # is baked into the container. If they differ you are looking at a stale image, not at new code.
 set -uo pipefail
 cd "$(dirname "$0")/.." || exit 1
+. scripts/lib/platform.sh
 
-STACK="${ORBIT_STACK_DIR:-$HOME/Library/Application Support/Orbit/stack}"
+STACK="${ORBIT_STACK_DIR:-$(orbit_user_data_default)/stack}"
 PORT=$(sed -n 's/^ORBIT_WEB_PORT=//p' "$STACK/.env" 2>/dev/null | head -1)
 PORT=${PORT:-8787}
 TOKEN=$(sed -n 's/^STACK_TOKEN=//p' "$STACK/.env" 2>/dev/null | head -1)

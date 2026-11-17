@@ -1,8 +1,11 @@
-# Builds and publishes Orbit's two images to GHCR:
+# Builds and publishes Orbit's images to GHCR:
 #
 #   ghcr.io/raybello/orbit/app       the API + web client + sandbox supervisor (one image, two
 #                                    entrypoints: `node dist/index.js`, `node dist/supervisor.js`)
 #   ghcr.io/raybello/orbit/computer  the per-bot desktop sandbox (apps/server/docker/computer)
+#   ghcr.io/raybello/orbit/audiocpp  the GPU voice sidecar (infra/audiocpp): audio.cpp built with
+#                                    CUDA + cuDNN, amd64 only (NVIDIA GPUs on Windows/Linux). The
+#                                    desktop app pulls it only when the person installs GPU voice.
 #
 # Tags: `edge` on every push to main, `v<x.y.z>` and `latest` on a v* tag, plus the commit sha.
 # Multi-arch on purpose: the desktop app ships on Apple Silicon and Windows/Linux x64, and
@@ -124,3 +127,58 @@ jobs:
           sbom: false
           cache-from: type=gha,scope=computer
           cache-to: type=gha,mode=max,scope=computer
+
+  audiocpp:
+    name: audiocpp (GPU voice) image
+    runs-on: ubuntu-latest
+    # Compiling audio.cpp's CUDA kernels for six GPU generations takes a while on a hosted runner.
+    timeout-minutes: 300
+    steps:
+      - uses: actions/checkout@v4
+
+      # The cuDNN devel base alone is ~10 GB unpacked; a hosted runner has ~14 GB free until the
+      # preinstalled SDKs this build never uses are removed.
+      - name: Free disk space
+        run: |
+          sudo rm -rf /usr/share/dotnet /usr/local/lib/android /opt/ghc /opt/hostedtoolcache/CodeQL /usr/local/share/boost
+          sudo docker image prune --all --force
+          df -h /
+
+      - uses: docker/setup-buildx-action@v3
+
+      - name: Log in to GHCR
+        uses: docker/login-action@v3
+        with:
+          registry: ${{ env.REGISTRY }}
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Tags and labels
+        id: meta
+        uses: docker/metadata-action@v5
+        with:
+          images: ${{ env.NAMESPACE }}/audiocpp
+          tags: |
+            type=edge,branch=main
+            type=semver,pattern=v{{version}}
+            type=raw,value=latest,enable=${{ startsWith(github.ref, 'refs/tags/v') }}
+            type=sha,format=short
+          labels: |
+            org.opencontainers.image.title=Orbit GPU voice
+            org.opencontainers.image.description=audio.cpp (OWSM ASR, LFM3-Audio TTS, SoulX-FlashHead avatar) with CUDA + cuDNN, and a Caddy HTTPS front door
+            org.opencontainers.image.source=https://github.com/raybello/orbit
+            org.opencontainers.image.licenses=MIT
+
+      - name: Build and push
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: infra/audiocpp/Dockerfile
+          platforms: linux/amd64
+          push: true
+          tags: ${{ steps.meta.outputs.tags }}
+          labels: ${{ steps.meta.outputs.labels }}
+          provenance: true
+          sbom: false
+          cache-from: type=gha,scope=audiocpp
+          cache-to: type=gha,mode=max,scope=audiocpp

@@ -1,4 +1,4 @@
-import { resolveVoiceProvider, type AvatarColor, type AvatarShape, type BotId, type UserId } from '@orbit/contracts';
+import { resolveVoiceProvider, type AvatarColor, type AvatarShape, type BotId, type UserId, type VoiceProvider } from '@orbit/contracts';
 import { type BotState, type EngineKind, transition } from '../domain/bot-lifecycle.js';
 
 /**
@@ -45,7 +45,7 @@ export interface BotPlan {
   avatar: { shape: AvatarShape; color: AvatarColor };
   mode: 'personal' | 'teammate';
   isPrimary: boolean;
-  voiceProvider: 'cloud' | 'local';
+  voiceProvider: VoiceProvider;
   voiceModel: string;
   /** A freshly created bot: `created`, which the route hands to beginProvisioning. */
   state: BotState;

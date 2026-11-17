@@ -1,0 +1,4 @@
+# The desktop installers bundle these files and the stack controller edits the .env it makes from
+# them. Keep them LF even in a Windows checkout, so a Windows-built installer ships the same bytes
+# as the macOS and Linux ones.
+* text eol=lf

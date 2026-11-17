@@ -70,9 +70,17 @@ describe('hermesHome', () => {
     assert.equal(hermesHome({}, { home: HOME, platform: 'darwin' }), path.join(HOME, '.hermes'));
   });
 
-  test('is %APPDATA%/hermes on Windows', () => {
+  test('is %LOCALAPPDATA%/hermes on Windows, where Hermes keeps its home', () => {
+    const env = { LOCALAPPDATA: 'C:\\Users\\tester\\AppData\\Local', APPDATA: 'C:\\Users\\tester\\AppData\\Roaming' };
     assert.equal(
-      hermesHome({ APPDATA: 'C:\\Users\\tester\\AppData\\Roaming' }, { home: HOME, platform: 'win32' }),
+      hermesHome(env, { home: HOME, platform: 'win32', exists: () => false }),
+      path.join('C:\\Users\\tester\\AppData\\Local', 'hermes'),
+    );
+    // %APPDATA%\hermes is normally only the Hermes desktop app's browser profile, but an older
+    // install that kept its home there (a .env or config.yaml) is still found.
+    const roamingEnv = path.join('C:\\Users\\tester\\AppData\\Roaming', 'hermes', '.env');
+    assert.equal(
+      hermesHome(env, { home: HOME, platform: 'win32', exists: (f) => f === roamingEnv }),
       path.join('C:\\Users\\tester\\AppData\\Roaming', 'hermes'),
     );
   });
@@ -92,9 +100,9 @@ describe('hermesCandidates', () => {
   });
 
   test('uses hermes.exe on Windows', () => {
-    const candidates = hermesCandidates({}, { home: HOME, platform: 'win32', env: { APPDATA: 'C:\\AD' } });
+    const candidates = hermesCandidates({}, { home: HOME, platform: 'win32', env: { LOCALAPPDATA: 'C:\\LAD' }, exists: () => false });
     assert.ok(candidates.every((c) => !c.endsWith('.exe') || c.endsWith('hermes.exe')));
-    assert.ok(candidates.includes(path.join('C:\\AD', 'hermes', 'bin', 'hermes.exe')));
+    assert.ok(candidates.includes(path.join('C:\\LAD', 'hermes', 'bin', 'hermes.exe')));
   });
 });
 

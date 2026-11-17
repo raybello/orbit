@@ -1,6 +1,7 @@
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
+import { fileURLToPath } from 'node:url';
 
 function req(name: string): string {
   const v = process.env[name];
@@ -93,7 +94,7 @@ export const env = {
   orgoKey: process.env.ORGO_API_KEY ?? (process.env.ORGO_API_KEY_FILE ? fs.readFileSync(process.env.ORGO_API_KEY_FILE, 'utf8').trim() : ''),
   sessionSecret: req('SESSION_SECRET'),
   devLogin: process.env.DEV_LOGIN === '1',
-  dbPath: process.env.DB_PATH ?? new URL('../../../data/grokbot.db', import.meta.url).pathname,
+  dbPath: process.env.DB_PATH ?? fileURLToPath(new URL('../../../data/grokbot.db', import.meta.url)),
   /** Local directory for bot files and Chrome profiles. Replaces /root/grokbot on non-root dev machines. */
   botDataDir: process.env.BOT_DATA_DIR ?? path.join(os.homedir(), '.local', 'share', 'bot-hq'),
   /**
@@ -101,6 +102,25 @@ export const env = {
    * Tests and the desktop app point VOICE_MODELS_DIR at a prepopulated cache.
    */
   voiceModelsDir: process.env.VOICE_MODELS_DIR ?? path.join(process.env.DATA_DIR ?? './data', 'voice-models'),
+  /**
+   * GPU voice: the audio.cpp server (OWSM ASR, LFM3-Audio TTS, SoulX-FlashHead avatar). The Docker
+   * sidecar is http://audiocpp:8080 on the compose network; a native server on this host is the default.
+   */
+  // `off` (or `none`/`disabled`) turns GPU voice off for this server: the desktop app sets it on
+  // macOS, where there is no CUDA sidecar.
+  audiocppDisabled: /^(off|none|disabled|0|false)$/i.test(process.env.AUDIOCPP_URL?.trim() ?? ''),
+  audiocppUrl: (process.env.AUDIOCPP_URL?.trim() || 'http://127.0.0.1:8080').replace(/\/+$/, ''),
+  /**
+   * The audio.cpp sidecar's models folder on the shared data volume. Only read for the download
+   * status file the sidecar writes there; absent (a native server) just means "not managed by us".
+   */
+  audiocppModelsDir: process.env.AUDIOCPP_MODELS_DIR?.trim() || '/data/audiocpp-models',
+  /** Uploaded bot portraits (512x512 JPEG), animated by SoulX-FlashHead during GPU-voice calls. */
+  audiocppPortraitsDir:
+    process.env.AUDIOCPP_PORTRAITS_DIR?.trim() ||
+    (process.env.AUDIOCPP_MODELS_DIR?.trim()
+      ? path.join(process.env.AUDIOCPP_MODELS_DIR.trim(), 'portraits')
+      : path.join(path.dirname(process.env.DB_PATH ?? fileURLToPath(new URL('../../../data/grokbot.db', import.meta.url))), 'audiocpp-portraits')),
 
   // ---- Hermes engine ----
   /** The `hermes` CLI used to start a gateway for each extra bot. */
@@ -115,7 +135,7 @@ export const env = {
   hermesUrl: (process.env.HERMES_URL ?? 'http://127.0.0.1:8642').replace(/\/+$/, ''),
   hermesKey: process.env.HERMES_KEY ?? '',
   /** Where each extra bot's own Hermes home lives. Must be outside ~/.hermes so it is a separate tenant. */
-  enginesDir: process.env.ENGINES_DIR ?? new URL('../../../data/engines', import.meta.url).pathname,
+  enginesDir: process.env.ENGINES_DIR ?? fileURLToPath(new URL('../../../data/engines', import.meta.url)),
   enginePortBase: Number(process.env.ENGINE_PORT_BASE ?? 8650),
   /** URL the Hermes gateways use to reach this server's MCP endpoint. */
   mcpBaseUrl: (process.env.MCP_BASE_URL ?? `http://127.0.0.1:${process.env.PORT ?? 8787}`).replace(/\/+$/, ''),
@@ -185,7 +205,7 @@ export const env = {
   defaultBotModel: process.env.DEFAULT_BOT_MODEL ?? 'deepseek-flash',
   defaultBotProvider: process.env.DEFAULT_BOT_PROVIDER ?? 'deepseek',
   /** Host directory holding each bot's home folder and workspace checkpoints. */
-  computerHomeDir: process.env.COMPUTER_HOME_DIR ?? new URL('../../../data/computers', import.meta.url).pathname,
+  computerHomeDir: process.env.COMPUTER_HOME_DIR ?? fileURLToPath(new URL('../../../data/computers', import.meta.url)),
 
   // ---- Google OAuth2 (direct, no third-party service required) ----
   /** OAuth2 client ID from your Google Cloud Console project. */

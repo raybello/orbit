@@ -124,6 +124,7 @@ export function voiceSetupDue(status: VoiceLocalStatus | null, dismissed: boolea
 /** What a call with this bot can do right now, from the shared inventory. Null until it loads. */
 export function readinessFor(bot: Pick<Bot, 'voiceProvider' | 'voiceModel'>, status: VoiceLocalStatus | null = useVoiceModels.getState().status): VoiceReadiness | null {
   if (bot.voiceProvider === 'cloud') return { status: 'cloud' };
+  if (bot.voiceProvider === 'audiocpp') return { status: 'audiocpp' };
   if (!status) return null;
   return voiceReadiness({ provider: 'local', addon: status.runtime.addon, models: status.voices, voiceModel: bot.voiceModel });
 }

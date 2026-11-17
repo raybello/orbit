@@ -40,10 +40,16 @@ export interface Bot {
   voice: string;
   voiceSpeed: number;
   voiceLanguage: string;
-  /** Which pipeline a call uses: the xAI realtime path, or the on-device sherpa-onnx one. */
+  /** Which pipeline a call uses: the xAI realtime path, the on-device sherpa-onnx one, or audio.cpp on a GPU. */
   voiceProvider: VoiceProvider;
   /** On-device voice model id (see GET /api/voice/local/models); unused on the cloud path. */
   voiceModel: string;
+  /** audio.cpp (GPU) voice: one of LFM3-Audio's built-in voices, e.g. `british_english_male`. */
+  audiocppVoice?: string;
+  /** audio.cpp: show the lip-synced portrait video during calls (needs `hasPortrait`). */
+  avatarEnabled?: boolean;
+  /** audio.cpp: a portrait has been uploaded (GET /api/voice/audiocpp/portrait/:botId). */
+  hasPortrait?: boolean;
   /** Hermes engine: model id and provider for this bot; null = the engine's default. */
   model: string | null;
   provider: string | null;
@@ -177,8 +183,11 @@ export interface VoiceCallRecord {
 
 export interface VoiceOption { id: string; name: string; gender?: string }
 
-/** Who runs a voice call: the cloud provider, or the on-device sherpa-onnx stack in this server. */
-export type VoiceProvider = 'cloud' | 'local';
+/**
+ * Who runs a voice call: the cloud provider, the on-device sherpa-onnx stack in this server (CPU), or
+ * an audio.cpp server (GPU: OWSM ASR, LFM3-Audio TTS, optional SoulX-FlashHead avatar video).
+ */
+export type VoiceProvider = 'cloud' | 'local' | 'audiocpp';
 
 export type VoiceModelStateValue = 'missing' | 'downloading' | 'ready' | 'error';
 
@@ -616,4 +625,48 @@ export interface InitiativeSettings {
 export interface InitiativeSettingsPatch {
   idleHours?: number;
   briefing?: { enabled?: boolean; time?: string; timezone?: string };
+}
+
+/**
+ * `GET /api/voice/audiocpp/status`. `available` = the audio.cpp server answers and every model Orbit
+ * needs is configured and loaded. `download` is present when the models live on this stack's data
+ * volume (the Docker sidecar), where Orbit can fetch them; a native server manages its own.
+ */
+/**
+ * The desktop app's control over the GPU voice sidecar on this computer (Windows and Linux with an
+ * NVIDIA GPU). The person installs it: nothing ~3 GB is pulled without asking. macOS has no CUDA
+ * sidecar yet, so there it reports `supported: false` and voice stays on-device.
+ */
+export interface DesktopGpuVoice {
+  supported: boolean;
+  /** Why it can't be installed here. */
+  reason?: 'macos' | 'no-nvidia' | 'not-docker-stack' | 'docker-missing';
+  /** "NVIDIA GeForce RTX 5070 Ti · 16 GB", when one was found. */
+  gpu?: string;
+  /** The person turned it on (the stack runs the sidecar). */
+  enabled: boolean;
+  phase: 'off' | 'installing' | 'on' | 'removing' | 'error';
+  detail?: string;
+  error?: string;
+}
+
+export interface AudiocppStatus {
+  available: boolean;
+  /**
+   * Why it is unavailable. `disabled`: this server has GPU voice turned off (AUDIOCPP_URL=off, which
+   * the desktop app sets on macOS until an Apple-silicon sidecar exists); clients hide GPU voice and
+   * calls use on-device voice instead.
+   */
+  reason?: 'disabled' | 'unreachable' | 'server-error' | 'models-missing' | 'downloading' | 'models-not-loaded';
+  url: string;
+  /** Model ids Orbit uses → loaded on the server. */
+  models: Record<string, boolean>;
+  /** The avatar model is configured: portraits can be animated. */
+  avatar: boolean;
+  download: { state: 'missing' | 'downloading' | 'ready' | 'error'; pct: number; file: string | null; error?: string; serverError?: string } | null;
+  /** The audio.cpp server's own reason it is not running (from the sidecar), when known. */
+  detail?: string;
+  /** A Docker sidecar Orbit can run the download in was found. */
+  managed: boolean;
+  voices: string[];
 }

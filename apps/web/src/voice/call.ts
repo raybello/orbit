@@ -5,9 +5,10 @@ import { create } from 'zustand';
 import type { Row, VoiceReadiness } from '@orbit/contracts';
 import { useStore } from '../store';
 import { sortedRows } from '../domain/transcript-utils';
-import { voiceApi, type VoiceSession } from './api';
+import { cachedAudiocppStatus, voiceApi, type VoiceSession } from './api';
 import { MicCapture, PcmPlayer, base64ToPcm, createAudioContext, micErrorMessage, openMic, pcmToBase64 } from './audio';
 import { endLocalCall, isLocalCallActive, localLevels, setLocalMuted, startLocalCall } from './local-call';
+import { audiocppLevels, endAudiocppCall, isAudiocppCallActive, setAudiocppMuted, startAudiocppCall } from './audiocpp-call';
 import { readinessFor, refreshVoiceModels, useVoiceModels } from './models-store';
 
 export interface Caption { id: string; role: 'user' | 'assistant'; text: string; final: boolean }
@@ -81,26 +82,45 @@ function startCloudFallback(botId: string, reason: string | undefined) {
  * audio never goes to the cloud for a bot set to stay on this device.
  */
 export function startCall(botId: string) {
-  if ((current && !current.ended) || isLocalCallActive()) {
+  if ((current && !current.ended) || isLocalCallActive() || isAudiocppCallActive()) {
     if ((current?.botId ?? useVoice.getState().botId) === botId) return;
     endCall();
   }
   const bot = useStore.getState().bots.find((b) => b.id === botId);
   if (!bot || bot.voiceProvider === 'cloud') { startCloud(botId); return; }
+  // GPU voice: the server checks audio.cpp at session start and the call bar shows why if it can't.
+  // A server with GPU voice turned off (macOS) answers with on-device voice instead.
+  if (bot.voiceProvider === 'audiocpp') {
+    if (cachedAudiocppStatus()?.reason === 'disabled') { onDeviceInstead(botId); return; }
+    setV({ blocked: null });
+    startAudiocppCall(botId, () => onDeviceInstead(botId));
+    return;
+  }
   const ready = readinessFor(bot);
   if (ready) { dispatch(botId, ready); return; }
   // The inventory has not loaded yet: the probe decides. It is cached from here on, so later clicks
   // dispatch synchronously and keep the click's user activation for the AudioContext.
   void refreshVoiceModels().then(() => {
-    if ((current && !current.ended) || isLocalCallActive()) return; // a call already took over
+    if ((current && !current.ended) || isLocalCallActive() || isAudiocppCallActive()) return; // a call already took over
     const latest = useStore.getState().bots.find((b) => b.id === botId);
     if (latest) dispatch(botId, readinessFor(latest) ?? { status: 'unsupported' });
   });
 }
 
+/** A GPU-voice bot on a server without GPU voice: the on-device pipeline takes the call. */
+function onDeviceInstead(botId: string) {
+  const bot = useStore.getState().bots.find((b) => b.id === botId);
+  if (!bot) return;
+  const asLocal = { ...bot, voiceProvider: 'local' as const };
+  const ready = readinessFor(asLocal);
+  if (ready) { dispatch(botId, ready); return; }
+  void refreshVoiceModels().then(() => dispatch(botId, readinessFor(asLocal) ?? { status: 'unsupported' }));
+}
+
 function dispatch(botId: string, ready: VoiceReadiness) {
   switch (ready.status) {
     case 'cloud': startCloud(botId); return;
+    case 'audiocpp': setV({ blocked: null }); startAudiocppCall(botId); return;
     case 'ready': setV({ blocked: null }); startLocalCall(botId); return;
     case 'unsupported':
       startCloudFallback(botId, useVoiceModels.getState().phase === 'gone' ? 'unreachable' : 'unsupported-runtime');
@@ -119,21 +139,23 @@ export function dismissBlockedCall() {
 export function endCall() {
   current?.end();
   endLocalCall();
+  endAudiocppCall();
 }
 
 export function toggleMute() {
   const on = !useVoice.getState().muted;
   if (current && !current.ended) current.setMuted(on);
+  else if (isAudiocppCallActive()) setAudiocppMuted(on);
   else setLocalMuted(on);
 }
 
 export function callLevels(): { out: number; mic: number } {
-  if (!current || current.ended) return localLevels();
+  if (!current || current.ended) return isAudiocppCallActive() ? audiocppLevels() : localLevels();
   return { out: current.player.level(), mic: current.micLevel() };
 }
 
 export const isCallActive = (s: VoiceState = useVoice.getState()) =>
-  s.status === 'connecting' || s.status === 'live' || isLocalCallActive();
+  s.status === 'connecting' || s.status === 'live' || isLocalCallActive() || isAudiocppCallActive();
 
 type Json = Record<string, unknown>;
 

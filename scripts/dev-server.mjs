@@ -32,11 +32,14 @@ function enginesDir() {
   return value ? path.resolve(serverDir, value) : path.join(root, 'data', 'engines');
 }
 
-const tsx = path.join(serverDir, 'node_modules', '.bin', process.platform === 'win32' ? 'tsx.cmd' : 'tsx');
+// tsx's CLI under this same Node, not the .bin shim: on Windows the shim is a .cmd, which Node
+// (>= 22.12, CVE-2024-27980) refuses to spawn without a shell, and a shell would pick up whatever
+// `node` is first on PATH instead of the one running this wrapper.
+const tsxCli = path.join(serverDir, 'node_modules', 'tsx', 'dist', 'cli.mjs');
 const args = ['watch', ...(fs.existsSync(envFile) ? [`--env-file=${envFile}`] : []), 'src/index.ts'];
 if (!fs.existsSync(envFile)) console.warn(`[dev-server] ${envFile} is missing — copy .env.example to .env (scripts/dev-reset-stack.sh does this)`);
 
-const child = spawn(tsx, args, { cwd: serverDir, stdio: 'inherit', env: process.env });
+const child = spawn(process.execPath, [tsxCli, ...args], { cwd: serverDir, stdio: 'inherit', env: process.env });
 
 let cleaning = false;
 async function finish(code) {

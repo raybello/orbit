@@ -56,8 +56,9 @@
 │  ├─ contracts/  @orbit/contracts: wire types shared by every app (Bot, Row, ServerEvent…)
 │  ├─ logger/     @orbit/logger: small structured logger
 │  └─ ui-tokens/  @orbit/ui-tokens: colour, type and accent-ramp tokens (tokens.css + TS)
-├─ infra/compose/ Source-based and image-based Docker Compose stacks
-├─ scripts/       Dev loops, remote install, Hermes wiring, smoke test
+├─ infra/compose/ Source-based and image-based Docker Compose stacks (+ the gpu profile)
+├─ infra/audiocpp/ The GPU voice sidecar: audio.cpp built with CUDA + cuDNN, Caddy HTTPS, warm-up
+├─ scripts/       Dev loops, installers, GPU voice stack, remote install, Hermes wiring, smoke test
 ├─ tests/         End-to-end and voice-call scripts
 └─ docs/          Architecture notes, screenshots, and these pages</code></pre>
 <p>The workspace is driven by pnpm and turbo: <code>pnpm build</code>, <code>pnpm test</code> and <code>pnpm typecheck</code> fan out to every package. CI (<code>.github/workflows/ci.yml</code>) runs install, typecheck, build, tests and the server smoke script on every push and pull request.</p>
@@ -82,6 +83,7 @@
 <tr><td>Apps</td><td><code>composio.ts</code></td><td>Toolkits, connections, OAuth, tool execution.</td></tr>
 <tr><td>Files</td><td><code>files.ts</code>, <code>routes-files.ts</code></td><td>One list over Library, attachments and workspace, read straight from disk.</td></tr>
 <tr><td>Voice</td><td><code>voice.ts</code>, <code>voice-local*.ts</code>, <code>voice-models.ts</code>, <code>voice-model-files.ts</code>, <code>voice-runtime.ts</code></td><td>Cloud realtime sessions (xAI) and the on-device sherpa-onnx pipeline: model downloads, STT, VAD, TTS, call relay.</td></tr>
+<tr><td>GPU voice</td><td><code>voice-audiocpp.ts</code>, <code>voice-audiocpp-session.ts</code>, <code>voice-audiocpp-endpoints.ts</code></td><td>The audio.cpp client (ASR, streaming TTS, the speaking-avatar recipe); the call session (energy VAD, barge-in, <code>ReplySegmenter</code> streaming the reply a sentence at a time); status, sidecar model download via <code>docker exec</code>, portraits.</td></tr>
 <tr><td>Realtime</td><td><code>lib/hub.ts</code>, <code>push.ts</code></td><td>Per-user event hub with a replay buffer for SSE; mobile push.</td></tr>
 <tr><td>Persistence</td><td><code>db.ts</code>, <code>db-config.ts</code>, <code>store.ts</code>, <code>infra/bot-repository.ts</code></td><td>SQLite schema (created and upgraded in code, no migration runner), row storage, bot queries.</td></tr>
 <tr><td>Pure domain</td><td><code>domain/*</code>, <code>core/*</code></td><td>State machines and rules with no I/O (below), plus services that adapt them to rows.</td></tr>
@@ -159,7 +161,7 @@
 <tr><td>Chat</td><td><code>ChatListView</code>, <code>BotRow</code>, <code>ChatView</code>, <code>ConvHeader</code>, <code>Transcript</code>, <code>ActivityLine</code>, <code>Composer</code>, <code>FilePart</code>, <code>Markdown</code>, <code>MembersCard</code>, <code>cards/Cards</code></td></tr>
 <tr><td>Screens</td><td><code>ComputersView</code>, <code>ComputerCard</code>, <code>ScreenPreview</code>, <code>ComputerViewer</code> (noVNC, watch/control)</td></tr>
 <tr><td>Sections</td><td><code>ActivityView</code>, <code>CalendarView</code>, <code>CallsView</code>, <code>FilesView</code>, <code>SkillsView</code>, <code>config/TasksView</code></td></tr>
-<tr><td>Voice</td><td><code>VoiceCallBar</code>, <code>VoiceSettings</code>; <code>voice/call.ts</code> (cloud), <code>voice/local-call.ts</code> (on-device), <code>voice/dictation.ts</code>, <code>voice/audio.ts</code></td></tr>
+<tr><td>Voice</td><td><code>VoiceCallBar</code>, <code>VoiceSettings</code>; <code>voice/call.ts</code> (cloud), <code>voice/local-call.ts</code> (on-device), <code>voice/audiocpp-call.ts</code> (GPU, with the avatar player), <code>voice/dictation.ts</code>, <code>voice/audio.ts</code>; <code>voice/AudiocppSettings</code> (install, download, voice, portrait); <code>lib/desktop.ts</code> (the desktop bridge, GPU voice install state)</td></tr>
 <tr><td>Settings</td><td><code>config/AppSettings</code>, <code>config/BotSettingsModal</code>, <code>config/EngineAuthPanel</code>, <code>EngineSettings</code>, <code>config/LibraryTab</code></td></tr>
 <tr><td>Modals</td><td><code>CreateBotModal</code>, <code>CreateGroupModal</code>, <code>CreateCalendarEventModal</code>, <code>ConnectAppsModal</code>, <code>SearchModal</code></td></tr>
 <tr><td>Helpers</td><td><code>lib/api.ts</code> and <code>lib/configApi.ts</code> (fetch wrappers), <code>domain/activity-feed.ts</code>, <code>avatar/BotAvatar</code></td></tr>
@@ -183,6 +185,7 @@
 <tr><td><code>setup.ts</code>, <code>setup.html</code>, <code>setup-config.ts</code>, <code>setup-store.ts</code></td><td>First-run window; <code>ORBIT_WEB_URL</code> &gt; saved setup &gt; setup window; settings in <code>userData/setup.json</code>.</td></tr>
 <tr><td><code>local-stack.ts</code>, <code>stack-controller.ts</code>, <code>docker-cli.ts</code>, <code>docker-move.ts</code></td><td>Starts or attaches to the local Docker Compose stack.</td></tr>
 <tr><td><code>native-stack.ts</code>, <code>mac-runtime.ts</code></td><td>The native server bundle on Apple Silicon.</td></tr>
+<tr><td><code>gpu-voice.ts</code>, <code>env-file.ts</code></td><td>GPU voice on the local stack: NVIDIA detection, the compose <code>gpu</code> profile, <code>ORBIT_GPU_VOICE</code> / <code>AUDIOCPP_URL</code> in the stack's <code>.env</code> (off on macOS); CRLF-safe <code>.env</code> edits.</td></tr>
 <tr><td><code>hermes-setup.ts</code>, <code>hermes-setup-window.ts</code></td><td>Hermes wiring from the app.</td></tr>
 <tr><td><code>app-window.ts</code>, <code>app-menu.ts</code>, <code>badge.ts</code>, <code>auto-update.ts</code></td><td>Main window, menu, unread badge, updates.</td></tr>
 <tr><td><code>ipc-guard.ts</code>, <code>session-permissions.ts</code></td><td>IPC checks; only the microphone permission is granted.</td></tr>

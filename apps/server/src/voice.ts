@@ -14,11 +14,14 @@ import { computerState } from './computer.js';
 import type { ActivityKind, EventBody, MessageBody, RowBody, VoiceCallRecord, VoiceOption } from './types.js';
 import { listMemories } from './engine-memory.js';
 import { localVoiceApi } from './voice-local.js';
+import { audiocppVoiceApi } from './voice-audiocpp-endpoints.js';
 import { requireBody, optionalBody, VoiceSessionSchema, VoiceToolSchema, VoiceEndSchema } from './api/schemas.js';
 
 export const voiceApi = new Hono<AuthVars>();
 // On-device STT/TTS: /api/voice/local/{status,stt,preview,models,models/download}.
 voiceApi.route('/local', localVoiceApi);
+// GPU voice through audio.cpp: /api/voice/audiocpp/{status,session,preview,models/download,portrait/:botId}.
+voiceApi.route('/audiocpp', audiocppVoiceApi);
 
 const XAI = 'https://api.x.ai/v1';
 const VOICE_MODEL = process.env.XAI_VOICE_MODEL ?? 'grok-voice-latest';

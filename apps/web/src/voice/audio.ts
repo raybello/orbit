@@ -3,14 +3,15 @@
 export const RATE = 24000;
 
 // The worklet runs at the context's native rate (usually 48 kHz). It box-filters down to 24 kHz,
-// converts to Int16 and posts 40 ms frames plus a level for the UI.
+// converts to Int16 and posts frames (40 ms by default; `frameMs`) plus a level for the UI.
 const WORKLET = `
 class Pcm16Capture extends AudioWorkletProcessor {
   constructor(options) {
     super();
     this.target = (options.processorOptions && options.processorOptions.rate) || 24000;
     this.ratio = sampleRate / this.target;
-    this.frame = new Int16Array(Math.round(this.target * 0.04));
+    const frameMs = (options.processorOptions && options.processorOptions.frameMs) || 40;
+    this.frame = new Int16Array(Math.round(this.target * frameMs / 1000));
     this.n = 0; this.sum = 0; this.cnt = 0; this.t = 0; this.peak = 0;
   }
   process(inputs) {
@@ -83,12 +84,13 @@ export class MicCapture {
   private sink: GainNode | null = null;
   level = 0;
 
-  constructor(private ctx: AudioContext, private stream: MediaStream, private onFrame: (pcm: Int16Array) => void, private rate = RATE) {}
+  /** `frameMs`: how much audio each posted frame holds; smaller = the far end hears it sooner. */
+  constructor(private ctx: AudioContext, private stream: MediaStream, private onFrame: (pcm: Int16Array) => void, private rate = RATE, private frameMs = 40) {}
 
   async start() {
     await ensureWorklet(this.ctx);
     this.source = this.ctx.createMediaStreamSource(this.stream);
-    this.node = new AudioWorkletNode(this.ctx, 'pcm16-capture', { processorOptions: { rate: this.rate }, numberOfInputs: 1, numberOfOutputs: 1, channelCount: 1, channelCountMode: 'explicit' });
+    this.node = new AudioWorkletNode(this.ctx, 'pcm16-capture', { processorOptions: { rate: this.rate, frameMs: this.frameMs }, numberOfInputs: 1, numberOfOutputs: 1, channelCount: 1, channelCountMode: 'explicit' });
     this.node.port.onmessage = (e: MessageEvent<{ pcm: ArrayBuffer; level: number }>) => {
       this.level = this.level * 0.6 + e.data.level * 0.4;
       this.onFrame(new Int16Array(e.data.pcm));
@@ -133,8 +135,9 @@ export class PcmPlayer {
 
   get playing() { return this.sources.size > 0; }
 
-  push(pcm: Int16Array, rate = RATE) {
-    if (!pcm.length) return;
+  /** Queue `pcm` after whatever is already queued. Returns the AudioContext time it starts playing. */
+  push(pcm: Int16Array, rate = RATE): number {
+    if (!pcm.length) return Math.max(this.nextTime, this.ctx.currentTime);
     if (this.ctx.state === 'suspended') void this.ctx.resume().catch(() => {});
     const buf = this.ctx.createBuffer(1, pcm.length, rate);
     const ch = buf.getChannelData(0);
@@ -154,6 +157,7 @@ export class PcmPlayer {
       if (!this.sources.size) this.settle();
     };
     if (wasIdle) this.onStart?.();
+    return at;
   }
 
   /** Drop everything queued (barge-in). */

@@ -3,8 +3,9 @@ import { env } from '../env.js';
 
 /**
  * One Docker Engine client for the whole server. The socket comes from DOCKER_SOCKET, else
- * DOCKER_HOST (unix:///path), else Docker's default /var/run/docker.sock. Created lazily so the
- * server still starts (and Orgo bots still work) when Docker is not installed.
+ * DOCKER_HOST (unix:///path, npipe://, tcp://), else Docker's default: /var/run/docker.sock, or
+ * the docker_engine named pipe on Windows. Created lazily so the server still starts (and Orgo
+ * bots still work) when Docker is not installed.
  */
 
 /** What dockerode rejects with: an HTTP status from the daemon, and a message. */
@@ -25,8 +26,10 @@ function options(): Docker.DockerOptions {
     const url = new URL(host);
     return { host: url.hostname, port: Number(url.port || 2375) };
   }
+  // Docker Desktop on Windows listens on a named pipe (DOCKER_HOST=npipe:////./pipe/docker_engine).
+  if (host.startsWith('npipe://')) return { socketPath: host.slice('npipe://'.length).replace(/\//g, '\\') };
   if (host) return { socketPath: host };
-  return { socketPath: '/var/run/docker.sock' };
+  return { socketPath: process.platform === 'win32' ? '\\\\.\\pipe\\docker_engine' : '/var/run/docker.sock' };
 }
 
 export function docker(): Docker {

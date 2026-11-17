@@ -9,7 +9,8 @@
 <tr><td><strong>pnpm 12</strong></td><td>The workspace (pinned in <code>packageManager</code>).</td></tr>
 <tr><td><strong>Docker</strong></td><td>The default per-bot desktops, and the compose stacks.</td></tr>
 <tr><td><strong>Hermes Agent</strong></td><td>The agent engine. The <code>hermes</code> CLI starts one gateway per extra bot; the first bot talks to an already-running gateway at <code>HERMES_URL</code>.</td></tr>
-<tr><td>A model provider key or subscription</td><td><code>DEEPSEEK_API_KEY</code> or another provider key, inherited from the primary Hermes home.</td></tr>
+<tr><td>A model provider</td><td>Whatever the primary Hermes agent uses: a subscription (for example Claude Pro/Max, which Hermes picks up from your Claude Code sign-in), an API key such as <code>ANTHROPIC_API_KEY</code> or <code>DEEPSEEK_API_KEY</code>, or a local model server such as LM Studio. See <a href="#model">Choosing the agent's model</a>.</td></tr>
+<tr><td>Optional: an NVIDIA GPU</td><td><a href="#gpu-voice">GPU voice</a> on Windows and Linux: 8 GB of VRAM or more with a cloud model (in testing the three voice models plus the Windows desktop used 8.4 GB; Turing / RTX 20-series or newer), Docker with the NVIDIA Container Toolkit, and about 9 GB of downloads.</td></tr>
 <tr><td>Optional: <code>COMPOSIO_API_KEY</code>, <code>XAI_API_KEY</code></td><td>Connected apps; cloud voice and <code>x_search</code>. Both clients are lazy, so a first run boots without them.</td></tr>
 <tr><td>Xcode / Android Studio</td><td>Only for native mobile builds.</td></tr>
 </tbody></table></div>
@@ -33,7 +34,10 @@ corepack enable &amp;&amp; corepack prepare pnpm@12 --activate
 # Docker Engine with your user in the docker group
 git clone https://github.com/raybello/orbit.git &amp;&amp; cd orbit
 pnpm install &amp;&amp; cp .env.example .env</code></pre>
-<p>The desktop app ships as an x64 <code>AppImage</code>. Linux is also the target for servers: the compose stacks and the published images (<code>ghcr.io/raybello/orbit/app</code>) are built for amd64 and arm64.</p>
+<p>The desktop app ships as an x64 <code>AppImage</code>; Orbit does not install Docker on Linux, so install Docker Engine first. Linux is also the target for servers: the compose stacks and the published images (<code>ghcr.io/raybello/orbit/app</code>) are built for amd64 and arm64.</p>
+<p>For <a href="#gpu-voice">GPU voice</a>, install the NVIDIA driver and the <a href="https://docs.nvidia.com/datacenter/cloud-native/container-toolkit/latest/install-guide.html">NVIDIA Container Toolkit</a>, then check that a container can see the GPU:</p>
+<pre><code>sudo nvidia-ctk runtime configure --runtime=docker &amp;&amp; sudo systemctl restart docker
+docker run --rm --gpus all nvidia/cuda:12.8.1-base-ubuntu22.04 nvidia-smi</code></pre>
 </div>
 <div class="tab-panel" id="p-win" role="tabpanel" aria-labelledby="t-win" hidden>
 <p>The desktop app ships as an x64 NSIS installer and uses Docker Desktop to run the local stack. To build from source, use Docker Desktop plus Node 22 and pnpm 12; running the server under WSL2 keeps paths and the Docker socket closest to Linux.</p>
@@ -43,6 +47,12 @@ git clone https://github.com/raybello/orbit.git
 cd orbit
 pnpm install
 copy .env.example .env</code></pre>
+<ul>
+  <li>Use Node <strong>22.12 or newer</strong>. On 22.11 the prebuilt <code>better-sqlite3</code> binary crashes when the server opens its database, and pnpm skips rolldown's Windows binding, so Vite and Vitest fail.</li>
+  <li>The repository's shell scripts and compose templates are checked out with LF line endings (<code>.gitattributes</code>); run them with Git Bash. The VS Code launch configs do this for you, and never pick WSL's <code>bash</code> by accident.</li>
+  <li>Hermes installs to <code>%LOCALAPPDATA%\hermes</code> on Windows (not <code>~/.hermes</code>), and the desktop profile lives in <code>%APPDATA%\Orbit</code>.</li>
+  <li>Docker Desktop with the WSL 2 backend already includes GPU support for containers; <a href="#gpu-voice">GPU voice</a> needs only a current NVIDIA driver on Windows.</li>
+</ul>
 </div>
 
 <h2 id="docker">Run the Docker stack</h2>
@@ -85,8 +95,20 @@ pnpm --filter @orbit/mobile start   # Metro for the Expo client</code></pre>
 <pre><code>ORBIT_WEB_URL=http://localhost:5173 pnpm --filter @orbit/desktop run dev
 # or: electron . --server=https://orbit.example.com</code></pre>
 <p>On first run the app checks for, and offers to install, what the local stack needs: <strong>Hermes Agent</strong> when it is missing; <strong>Docker Desktop</strong> on macOS and Windows when Docker is missing (on a Mac it downloads the build for your chip, checks Docker Inc's signature, copies it to Applications and starts it); and on the native Mac stack, <strong>Apple's container runtime</strong> (its signed <code>.pkg</code>, checked against a pinned SHA-256 and Apple's Developer ID signature before macOS asks for your password). The builds are not code-signed yet; the <a href="https://github.com/raybello/orbit#install-the-desktop-app">install guide</a> shows the one-time steps to open them.</p>
-<p>For testing, <code>ORBIT_USER_DATA_DIR</code> runs the app with a separate profile, and <code>ORBIT_IMAGE_TAG</code> picks the server image tag (for example <code>edge</code> before a release has published its own).</p>
+<p>For testing, <code>ORBIT_USER_DATA_DIR</code> runs the app with a separate profile, <code>ORBIT_STACK_DIR</code> gives it a separate stack folder (its compose files and <code>.env</code>), and <code>ORBIT_IMAGE_TAG</code> picks the server image tag (for example <code>edge</code> before a release has published its own, or a tag you built locally: a tag that exists locally is used even when the registry has none).</p>
 <p>Installers are published to GitHub Releases by <code>desktop-release.yml</code> on <code>v*</code> tags, and the app updates itself with electron-updater. Two scripts speed up local work: <code>scripts/dev-rebuild-loop.sh</code> rebuilds the app image, recreates the stack and relaunches Electron; <code>scripts/dev-vite.sh</code> runs Vite against the running stack when only the UI changed.</p>
+
+<h3 id="installers">Build the installers yourself</h3>
+<p><code>scripts/build-installer.sh</code> builds an installer the way the release workflow does, without publishing anything. Output lands in <code>apps/desktop/out</code>, followed by each file's size and SHA-256. The builds are unsigned unless you set <code>CSC_LINK</code> / <code>CSC_KEY_PASSWORD</code>.</p>
+<div class="table-wrap"><table>
+<thead><tr><th>Installer</th><th>Command</th><th>Where it builds</th></tr></thead>
+<tbody>
+<tr><td>Windows <code>.exe</code> (NSIS)</td><td><code>bash scripts/build-installer.sh win</code></td><td>On Windows locally; elsewhere on GitHub Actions.</td></tr>
+<tr><td>macOS <code>.dmg</code> + <code>.zip</code></td><td><code>bash scripts/build-installer.sh mac</code> (<code>ARCH=all</code> for Apple silicon and Intel)</td><td>On a Mac locally; elsewhere on GitHub Actions (<code>desktop-release.yml</code> with publishing off). Needs the <code>gh</code> CLI signed in.</td></tr>
+<tr><td>Linux <code>.AppImage</code></td><td><code>bash scripts/build-installer.sh linux</code></td><td>On Linux.</td></tr>
+<tr><td>Linux, from a Windows checkout</td><td><code>bash scripts/linux-installer-wsl.sh</code> · <code>run</code> · <code>smoke</code> · <code>test</code></td><td>Inside WSL: it mirrors the working tree to <code>~/orbit-linux</code>, installs and builds there, and copies the AppImage to <code>apps/desktop/out/wsl-linux/</code>. <code>run</code> launches it under WSLg, <code>smoke</code> runs the server's API smoke test on Linux, <code>test</code> runs every package's tests. <code>WSL_DISTRO</code> picks the distribution (default Ubuntu).</td></tr>
+</tbody></table></div>
+<p>To try a build without touching your real install, launch it with a separate profile and stack, for example <code>ORBIT_USER_DATA_DIR=/tmp/orbit-qa ORBIT_STACK_DIR=/tmp/orbit-qa-stack ORBIT_IMAGE_TAG=edge</code>. Every command also has a VS Code launch config under <strong>orbit: installer —</strong>.</p>
 
 <h2 id="mobile">Mobile app (iOS and Android)</h2>
 <pre><code>pnpm --filter @orbit/mobile start          # Metro; open in a dev build
@@ -112,7 +134,61 @@ KEYS_FILE=/root/keys.txt PRIMARY_CDP_URL=http://127.0.0.1:9333 \
   <li>The first bot is the Hermes agent already running on the machine. Point <code>HERMES_URL</code> at its API server and <code>HERMES_HOME_PRIMARY</code> at its home (default <code>~/.hermes</code>); the API key is read from <code>&lt;home&gt;/.env</code> or <code>HERMES_KEY</code>.</li>
   <li>Every other bot gets a managed home under <code>ENGINES_DIR/&lt;botId&gt;</code> (keep it outside <code>~/.hermes</code>) and a gateway on a port from <code>ENGINE_PORT_BASE</code> (8650) upward.</li>
   <li>Engines reach the app's tools at <code>MCP_BASE_URL/mcp/&lt;botId&gt;</code>; the host-run primary uses <code>PRIMARY_MCP_BASE_URL</code> when the server runs in a container. On startup the server makes sure the primary's config has its <code>hq</code> MCP entry.</li>
+  <li>Hermes' home is <code>~/.hermes</code> on macOS and Linux and <code>%LOCALAPPDATA%\hermes</code> on Windows. The gateway's API server listens on <code>:8642</code>.</li>
 </ul>
+
+<h3 id="model">Choosing the agent's model</h3>
+<p>Every bot runs on the model its Hermes home is set to. Set the primary agent's with <code>hermes model</code> (or <code>hermes setup</code>); new bots inherit it, and each bot's <strong>Engine</strong> panel can change it later.</p>
+<div class="table-wrap"><table>
+<thead><tr><th>Path</th><th>Setup</th><th>Notes</th></tr></thead>
+<tbody>
+<tr><td><strong>Anthropic Claude (recommended)</strong></td><td><code>hermes model</code> → <code>anthropic</code> → <code>claude-sonnet-4-5</code>. Credentials, in the order Hermes looks for them: <code>ANTHROPIC_TOKEN</code> / <code>CLAUDE_CODE_OAUTH_TOKEN</code>, then <code>ANTHROPIC_API_KEY</code>, then a login added with <code>hermes auth add anthropic</code>, then your Claude Code sign-in (<code>~/.claude/.credentials.json</code>, so being signed in to <code>claude</code> is enough).</td><td>The fastest path, and the one to use with <a href="#gpu-voice">GPU voice</a> on an 8 GB card: the GPU only has to hold the voice models. <code>hermes auth status anthropic</code> lists only logins Hermes stores itself, so it can say "logged out" while the Claude Code sign-in works. Check your provider's terms before running an agent on a consumer subscription.</td></tr>
+<tr><td>Other cloud providers</td><td><code>hermes model</code>, plus the provider's key in the Hermes home's <code>.env</code> (for example <code>DEEPSEEK_API_KEY</code>), or a subscription sign-in.</td><td>Managed bots inherit the primary's provider and keys.</td></tr>
+<tr><td>Local model (LM Studio, Ollama…)</td><td>In <code>config.yaml</code>: <code>provider: lmstudio</code>, <code>base_url: http://127.0.0.1:1234/v1</code>, and set <code>context_length</code> to what you loaded the model with.</td><td>Hermes assumes a 64K context unless you set it. Loading a model alongside GPU voice needs about 16 GB of VRAM between them, and avatar video arrives later because the two share the GPU.</td></tr>
+</tbody></table></div>
+<p>Voice-call turns run at low reasoning effort whatever the bot's setting, because thinking tokens are silence on a call.</p>
+
+<h2 id="gpu-voice">GPU voice (audio.cpp)</h2>
+<p>GPU voice runs a bot's calls on an NVIDIA GPU through an <a href="https://github.com/0xShug0/audio.cpp">audio.cpp</a> server: OWSM speech recognition, LFM3-Audio speech in 38 voices, and SoulX-FlashHead animating a portrait you upload, lip-synced to the reply. Hermes stays the brain. Orbit ships the server as a Docker sidecar, <code>ghcr.io/raybello/orbit/audiocpp</code>, with a Caddy HTTPS front door.</p>
+<div class="table-wrap"><table>
+<thead><tr><th>Platform</th><th>GPU voice</th></tr></thead>
+<tbody>
+<tr><td>Windows, Linux + NVIDIA</td><td>Opt-in from the desktop app. Nothing is downloaded until you click Install.</td></tr>
+<tr><td>macOS</td><td>Not offered: there is no CUDA, and no Apple-silicon build of the sidecar yet. The app sets <code>AUDIOCPP_URL=off</code>, hides the GPU option, and calls use on-device voice.</td></tr>
+<tr><td>Any server</td><td><code>AUDIOCPP_URL</code> can name any audio.cpp server: the sidecar, a native build on the host, or a GPU box on the LAN.</td></tr>
+</tbody></table></div>
+
+<h3>In the desktop app</h3>
+<ol>
+  <li>Open a bot's details panel, <strong>Activity → Voice chat</strong>, and choose <strong>GPU</strong> under Voice calls. The app names the GPU it found.</li>
+  <li><strong>Install</strong> pulls the sidecar image (about 4 GB) and restarts the stack's api pointed at it (<code>ORBIT_GPU_VOICE=1</code> in the stack's <code>.env</code>, which turns on the compose <code>gpu</code> profile).</li>
+  <li><strong>Download</strong> fetches the models (about 5 GB) onto the <code>orbit-data</code> volume, with progress in place. Once they are loaded, the sidecar warms them up, so the first call does not pay about 15 s of CUDA setup.</li>
+  <li>Pick a voice and upload a portrait (any image, cropped to 512×512), then turn on <strong>Show animated avatar during calls</strong>. Without a portrait, calls are audio-only.</li>
+  <li>Call the bot from the composer. <strong>Remove</strong> takes the sidecar away again; the models stay on the volume.</li>
+</ol>
+
+<h3>From a checkout</h3>
+<p>Every mode has a VS Code launch config under <strong>orbit: GPU voice —</strong>.</p>
+<div class="table-wrap"><table>
+<thead><tr><th>Setup</th><th>Command</th></tr></thead>
+<tbody>
+<tr><td>Docker stack + sidecar</td><td><code>bash scripts/gpu-voice-stack.sh</code>: <code>docker compose --profile gpu up --build</code>, then waits for health.</td></tr>
+<tr><td>Orbit dev server on the host + sidecar</td><td><code>bash scripts/gpu-voice-stack.sh sidecar</code>: audio.cpp on <code>127.0.0.1:8080</code>, which is <code>AUDIOCPP_URL</code>'s default, so <code>pnpm --filter @orbit/server dev</code> finds it.</td></tr>
+<tr><td>Docker stack + a native audio.cpp on the host</td><td><code>NATIVE=1 bash scripts/gpu-voice-stack.sh</code> (the api gets <code>http://host.docker.internal:8080</code>).</td></tr>
+<tr><td>Rebuild the sidecar</td><td><code>bash scripts/gpu-voice-stack.sh rebuild</code>: no cache and a fresh audio.cpp; the models are kept.</td></tr>
+<tr><td>Stop or follow it</td><td><code>bash scripts/gpu-voice-stack.sh down</code> · <code>logs</code></td></tr>
+</tbody></table></div>
+<p>The sidecar compiles audio.cpp from source with CUDA and cuDNN. <code>gpu-voice-stack.sh</code> builds only for your GPU's architecture, read from <code>nvidia-smi</code> (about 10 minutes); the published image covers sm_75 to sm_120. Models download with <strong>Download</strong> in the voice settings, or set <code>AUDIOCPP_AUTO_DOWNLOAD=1</code> to fetch them at boot. Only one audio.cpp server fits on a 16 GB card, so stop a native one before starting the sidecar.</p>
+
+<h3 id="gpu-voice-lan">Calls from a phone or another computer</h3>
+<p>Browsers allow the microphone only on <code>https://</code> or <code>localhost</code>. The sidecar's Caddy serves Orbit over HTTPS on <strong>:8444</strong> (and the audio.cpp WebUI on :8443) with its own certificate authority:</p>
+<pre><code>AUDIOCPP_TLS_HOSTS="localhost 127.0.0.1 192.168.1.20" AUDIOCPP_HTTPS_BIND=0.0.0.0 \
+  bash scripts/gpu-voice-stack.sh sidecar
+# then open https://192.168.1.20:8444 on the phone and accept the certificate warning once</code></pre>
+<p>Use your computer's LAN address. Opening the page by IP works: Caddy picks the certificate for the first non-loopback host. The CA lives on the data volume, so the warning comes back only if the volume is deleted. With the sidecar only, <code>ORBIT_HTTPS_UPSTREAM</code> (default <code>http://host.docker.internal:5173</code>) is the Orbit it fronts.</p>
+
+<h3>How fast it is</h3>
+<p>Measured on an RTX 5070 Ti with Hermes on Claude Sonnet 4.5, from the moment you stop talking: transcript at about 1.0 s, first reply audio at about 2.3 s, and avatar video at 5 to 6 s. Replies are spoken a sentence at a time while the agent is still writing, and the next piece is generated while the previous one plays. Talking over the bot interrupts it. The call protocol and design notes are in <a href="https://github.com/raybello/orbit/blob/main/docs/voice-audiocpp.md">docs/voice-audiocpp.md</a>.</p>
 
 <h2 id="env">Environment reference</h2>
 <div class="table-wrap"><table>
@@ -140,6 +216,13 @@ KEYS_FILE=/root/keys.txt PRIMARY_CDP_URL=http://127.0.0.1:9333 \
 <tr><td><code>COMPOSIO_API_KEY</code></td><td></td><td>Connected apps.</td></tr>
 <tr><td><code>XAI_API_KEY</code>, <code>XAI_MODEL</code></td><td>grok-4.7</td><td>Cloud voice and <code>x_search</code>.</td></tr>
 <tr><td><code>VOICE_MODELS_DIR</code></td><td>data/voice-models</td><td>On-device STT/TTS model cache.</td></tr>
+<tr><td><code>AUDIOCPP_URL</code></td><td>http://127.0.0.1:8080</td><td>The audio.cpp server for GPU voice. The source compose stack defaults to the sidecar, <code>http://audiocpp:8080</code>. The image stack defaults to <code>http://host.docker.internal:8080</code> and switches to the sidecar when GPU voice is installed. <code>off</code> turns GPU voice off.</td></tr>
+<tr><td><code>AUDIOCPP_MODELS_DIR</code>, <code>AUDIOCPP_PORTRAITS_DIR</code></td><td>/data/audiocpp-models, &lt;models&gt;/portraits</td><td>Where the sidecar keeps its models and download status, and where bot portraits are stored.</td></tr>
+<tr><td><code>ORBIT_GPU_VOICE</code></td><td>0</td><td>In the image stack's <code>.env</code>: <code>1</code> runs the sidecar (the compose <code>gpu</code> profile). The desktop app's Install and Remove set it.</td></tr>
+<tr><td><code>AUDIOCPP_TLS_HOSTS</code>, <code>AUDIOCPP_HTTPS_BIND</code>, <code>AUDIOCPP_API_BIND</code></td><td>localhost 127.0.0.1, 127.0.0.1, 127.0.0.1</td><td>Sidecar: the HTTPS hosts Caddy issues certificates for, and the addresses its HTTPS (:8443/:8444) and API (:8080) ports bind to.</td></tr>
+<tr><td><code>AUDIOCPP_AUTO_DOWNLOAD</code>, <code>AUDIOCPP_WARMUP</code>, <code>AUDIOCPP_AVATAR_VAE</code></td><td>0, 1, cudnn</td><td>Sidecar: download models at boot; warm them after start; the avatar's VAE (<code>ggml</code> for a build without cuDNN).</td></tr>
+<tr><td><code>AUDIOCPP_CUDA_ARCHS</code>, <code>AUDIOCPP_REF</code></td><td>75;80;86;89;90;120, v0.9.5</td><td>Sidecar build: GPU architectures to compile for, and the audio.cpp release.</td></tr>
+<tr><td><code>ORBIT_USER_DATA_DIR</code>, <code>ORBIT_STACK_DIR</code>, <code>ORBIT_IMAGE_TAG</code></td><td></td><td>Desktop app: a separate profile, a separate stack folder, and the image tag to run.</td></tr>
 <tr><td><code>GOOGLE_CLIENT_ID</code>, <code>GOOGLE_CLIENT_SECRET</code></td><td></td><td>Google sign-in, Gmail and Calendar. Redirect URI: <code>SERVER_URL/api/google/callback</code>.</td></tr>
 <tr><td><code>STACK_TOKEN</code></td><td></td><td>Shared secret between the desktop app and its local stack.</td></tr>
 </tbody></table></div>
@@ -150,5 +233,10 @@ KEYS_FILE=/root/keys.txt PRIMARY_CDP_URL=http://127.0.0.1:9333 \
   <li><strong>Apps or voice say "not configured":</strong> set <code>COMPOSIO_API_KEY</code> or <code>XAI_API_KEY</code>, or install the local voice models.</li>
   <li><strong>A bot has no screen:</strong> check Docker is running and that <code>COMPUTER_HOME_DIR</code> exists at the same path inside the API container.</li>
   <li><strong>The primary bot cannot use the app's tools:</strong> confirm its <code>config.yaml</code> has the <code>hq</code> MCP entry pointing at a URL it can reach.</li>
+  <li><strong>GPU voice is missing from the settings:</strong> the desktop app offers it only on Windows and Linux when <code>nvidia-smi</code> finds a GPU. On macOS it is hidden on purpose.</li>
+  <li><strong>GPU voice says "not answering" or shows an audio.cpp error:</strong> run <code>bash scripts/gpu-voice-stack.sh logs</code>. The settings show the server's own reason when it exits (for example "out of memory"): another model, a native audio.cpp server or a local LLM may be holding the VRAM.</li>
+  <li><strong>The first GPU call is slow:</strong> after a start the sidecar warms the models for a minute or so in the background; calls are fast once the settings show it ready.</li>
+  <li><strong>A phone cannot use the microphone:</strong> open Orbit over <code>https://&lt;lan-ip&gt;:8444</code>, not plain HTTP, with that address in <code>AUDIOCPP_TLS_HOSTS</code>, and accept the certificate warning.</li>
+  <li><strong>The stack fails with <code>SANDBOX_SUPERVISOR_TOKEN</code> missing:</strong> the stack's <code>.env</code> was damaged. Delete it and let the desktop app write a new one, or copy <code>.env.images.example</code> again.</li>
   <li><strong>Health check:</strong> <code>curl http://127.0.0.1:8787/api/health</code> returns the version, engine and uptime.</li>
 </ul>

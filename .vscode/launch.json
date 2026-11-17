@@ -1,0 +1,706 @@
+{
+    "//": [
+        "Cross-platform (macOS, Windows, Linux). Every config runs through .vscode/run-script.mjs, which on Windows",
+        "resolves `bash` to Git Bash (never WSL), runs pnpm/npx .cmd shims through cmd.exe and maps python3 to python.",
+        "Needs Node >= 22.12 (better-sqlite3 and rolldown native binaries); run-script warns when it is older.",
+        "Paths default per platform via scripts/lib/platform.sh: the desktop profile is %APPDATA%\\Orbit on Windows."
+    ],
+    "version": "0.2.0",
+    "configurations": [
+        {
+            "type": "node",
+            "request": "launch",
+            "name": "orbit: desktop dev — rebuild loop (image + stack + electron)",
+            "program": "${workspaceFolder}/.vscode/run-script.mjs",
+            "args": [
+                "bash",
+                "scripts/dev-rebuild-loop.sh"
+            ],
+            "cwd": "${workspaceFolder}",
+            "console": "integratedTerminal",
+            "internalConsoleOptions": "neverOpen",
+            "skipFiles": [
+                "<node_internals>/**"
+            ],
+            "presentation": {
+                "group": "1 desktop",
+                "order": 1
+            }
+        },
+        {
+            "type": "node",
+            "request": "launch",
+            "name": "orbit: desktop dev — rebuild only, no window (image + stack)",
+            "program": "${workspaceFolder}/.vscode/run-script.mjs",
+            "args": [
+                "bash",
+                "scripts/dev-rebuild-loop.sh"
+            ],
+            "cwd": "${workspaceFolder}",
+            "env": {
+                "ORBIT_NO_LAUNCH": "1"
+            },
+            "console": "integratedTerminal",
+            "internalConsoleOptions": "neverOpen",
+            "skipFiles": [
+                "<node_internals>/**"
+            ],
+            "presentation": {
+                "group": "1 desktop",
+                "order": 2
+            }
+        },
+        {
+            "type": "node",
+            "request": "launch",
+            "name": "orbit: reset stack — fresh data + images ensured (deletes stack data)",
+            "program": "${workspaceFolder}/.vscode/run-script.mjs",
+            "args": [
+                "bash",
+                "scripts/dev-reset-stack.sh"
+            ],
+            "cwd": "${workspaceFolder}",
+            "console": "integratedTerminal",
+            "internalConsoleOptions": "neverOpen",
+            "skipFiles": [
+                "<node_internals>/**"
+            ],
+            "presentation": {
+                "group": "1 desktop",
+                "order": 3
+            }
+        },
+        {
+            "type": "node",
+            "request": "launch",
+            "name": "orbit: server dev — tsx watch (:8787)",
+            "program": "${workspaceFolder}/.vscode/run-script.mjs",
+            "args": [
+                "pnpm",
+                "--filter",
+                "@orbit/server",
+                "run",
+                "dev"
+            ],
+            "cwd": "${workspaceFolder}",
+            "console": "integratedTerminal",
+            "internalConsoleOptions": "neverOpen",
+            "skipFiles": [
+                "<node_internals>/**"
+            ],
+            "presentation": {
+                "group": "2 server+web",
+                "order": 1
+            }
+        },
+        {
+            "type": "node",
+            "request": "launch",
+            "name": "orbit: server dev — GPU voice via native audio.cpp (:8787 → :8080)",
+            "program": "${workspaceFolder}/.vscode/run-script.mjs",
+            "args": [
+                "pnpm",
+                "--filter",
+                "@orbit/server",
+                "run",
+                "dev"
+            ],
+            "cwd": "${workspaceFolder}",
+            "env": {
+                "AUDIOCPP_URL": "http://127.0.0.1:8080"
+            },
+            "console": "integratedTerminal",
+            "internalConsoleOptions": "neverOpen",
+            "skipFiles": [
+                "<node_internals>/**"
+            ],
+            "presentation": {
+                "group": "2 server+web",
+                "order": 2
+            }
+        },
+        {
+            "type": "node",
+            "request": "launch",
+            "name": "orbit: server prod — build + start (:8787, serves the web bundle)",
+            "program": "${workspaceFolder}/.vscode/run-script.mjs",
+            "args": [
+                "bash",
+                "scripts/server-prod.sh"
+            ],
+            "cwd": "${workspaceFolder}",
+            "console": "integratedTerminal",
+            "internalConsoleOptions": "neverOpen",
+            "skipFiles": [
+                "<node_internals>/**"
+            ],
+            "presentation": {
+                "group": "2 server+web",
+                "order": 3
+            }
+        },
+        {
+            "type": "node",
+            "request": "launch",
+            "name": "orbit: web dev — vite HMR (:5173, /api → :8787)",
+            "program": "${workspaceFolder}/.vscode/run-script.mjs",
+            "args": [
+                "pnpm",
+                "--filter",
+                "@orbit/web",
+                "run",
+                "dev"
+            ],
+            "cwd": "${workspaceFolder}",
+            "env": {
+                "GROKBOT_API": "http://127.0.0.1:8787"
+            },
+            "console": "integratedTerminal",
+            "internalConsoleOptions": "neverOpen",
+            "skipFiles": [
+                "<node_internals>/**"
+            ],
+            "presentation": {
+                "group": "2 server+web",
+                "order": 4
+            }
+        },
+        {
+            "type": "node",
+            "request": "launch",
+            "name": "orbit: web prod — build + preview (:4173, /api → :8787)",
+            "program": "${workspaceFolder}/.vscode/run-script.mjs",
+            "args": [
+                "bash",
+                "scripts/web-prod.sh"
+            ],
+            "cwd": "${workspaceFolder}",
+            "env": {
+                "GROKBOT_API": "http://127.0.0.1:8787"
+            },
+            "console": "integratedTerminal",
+            "internalConsoleOptions": "neverOpen",
+            "skipFiles": [
+                "<node_internals>/**"
+            ],
+            "presentation": {
+                "group": "2 server+web",
+                "order": 5
+            }
+        },
+        {
+            "type": "node",
+            "request": "launch",
+            "name": "orbit: GPU voice — stack + audio.cpp sidecar (compose --profile gpu)",
+            "program": "${workspaceFolder}/.vscode/run-script.mjs",
+            "args": [
+                "bash",
+                "scripts/gpu-voice-stack.sh"
+            ],
+            "cwd": "${workspaceFolder}",
+            "console": "integratedTerminal",
+            "internalConsoleOptions": "neverOpen",
+            "skipFiles": [
+                "<node_internals>/**"
+            ],
+            "presentation": {
+                "group": "3 gpu voice",
+                "order": 1
+            }
+        },
+        {
+            "type": "node",
+            "request": "launch",
+            "name": "orbit: GPU voice — stack → native audio.cpp on this host (no sidecar)",
+            "program": "${workspaceFolder}/.vscode/run-script.mjs",
+            "args": [
+                "bash",
+                "scripts/gpu-voice-stack.sh"
+            ],
+            "cwd": "${workspaceFolder}",
+            "env": {
+                "NATIVE": "1"
+            },
+            "console": "integratedTerminal",
+            "internalConsoleOptions": "neverOpen",
+            "skipFiles": [
+                "<node_internals>/**"
+            ],
+            "presentation": {
+                "group": "3 gpu voice",
+                "order": 2
+            }
+        },
+        {
+            "type": "node",
+            "request": "launch",
+            "name": "orbit: GPU voice — only the audio.cpp sidecar (Orbit on this host → :8080)",
+            "program": "${workspaceFolder}/.vscode/run-script.mjs",
+            "args": [
+                "bash",
+                "scripts/gpu-voice-stack.sh",
+                "sidecar"
+            ],
+            "cwd": "${workspaceFolder}",
+            "console": "integratedTerminal",
+            "internalConsoleOptions": "neverOpen",
+            "skipFiles": [
+                "<node_internals>/**"
+            ],
+            "presentation": {
+                "group": "3 gpu voice",
+                "order": 5
+            }
+        },
+        {
+            "type": "node",
+            "request": "launch",
+            "name": "orbit: GPU voice — sidecar + HTTPS for phones on the LAN (real mic; set AUDIOCPP_TLS_HOSTS)",
+            "program": "${workspaceFolder}/.vscode/run-script.mjs",
+            "args": [
+                "bash",
+                "scripts/gpu-voice-stack.sh",
+                "sidecar"
+            ],
+            "cwd": "${workspaceFolder}",
+            "console": "integratedTerminal",
+            "internalConsoleOptions": "neverOpen",
+            "skipFiles": [
+                "<node_internals>/**"
+            ],
+            "presentation": {
+                "group": "3 gpu voice",
+                "order": 3
+            },
+            "env": {
+                "AUDIOCPP_TLS_HOSTS": "localhost 127.0.0.1 ${env:ORBIT_LAN_IP}",
+                "AUDIOCPP_HTTPS_BIND": "0.0.0.0"
+            }
+        },
+        {
+            "type": "node",
+            "request": "launch",
+            "name": "orbit: GPU voice — rebuild the audio.cpp sidecar (no cache, keeps models)",
+            "program": "${workspaceFolder}/.vscode/run-script.mjs",
+            "args": [
+                "bash",
+                "scripts/gpu-voice-stack.sh",
+                "rebuild"
+            ],
+            "cwd": "${workspaceFolder}",
+            "console": "integratedTerminal",
+            "internalConsoleOptions": "neverOpen",
+            "skipFiles": [
+                "<node_internals>/**"
+            ],
+            "presentation": {
+                "group": "3 gpu voice",
+                "order": 6
+            }
+        },
+        {
+            "type": "node",
+            "request": "launch",
+            "name": "orbit: GPU voice — stop the stack",
+            "program": "${workspaceFolder}/.vscode/run-script.mjs",
+            "args": [
+                "bash",
+                "scripts/gpu-voice-stack.sh",
+                "down"
+            ],
+            "cwd": "${workspaceFolder}",
+            "console": "integratedTerminal",
+            "internalConsoleOptions": "neverOpen",
+            "skipFiles": [
+                "<node_internals>/**"
+            ],
+            "presentation": {
+                "group": "3 gpu voice",
+                "order": 7
+            }
+        },
+        {
+            "type": "node",
+            "request": "launch",
+            "name": "orbit: GPU voice — follow sidecar logs",
+            "program": "${workspaceFolder}/.vscode/run-script.mjs",
+            "args": [
+                "bash",
+                "scripts/gpu-voice-stack.sh",
+                "logs"
+            ],
+            "cwd": "${workspaceFolder}",
+            "console": "integratedTerminal",
+            "internalConsoleOptions": "neverOpen",
+            "skipFiles": [
+                "<node_internals>/**"
+            ],
+            "presentation": {
+                "group": "3 gpu voice",
+                "order": 8
+            }
+        },
+        {
+            "type": "node",
+            "request": "launch",
+            "name": "orbit: GPU voice — tests (unit + live against audio.cpp :8080)",
+            "program": "${workspaceFolder}/.vscode/run-script.mjs",
+            "args": [
+                "pnpm",
+                "--filter",
+                "@orbit/server",
+                "exec",
+                "tsx",
+                "--test",
+                "src/__tests__/voice-audiocpp.test.ts"
+            ],
+            "cwd": "${workspaceFolder}",
+            "env": {
+                "SESSION_SECRET": "test-session-secret",
+                "AUDIOCPP_URL": "http://127.0.0.1:8080"
+            },
+            "console": "integratedTerminal",
+            "internalConsoleOptions": "neverOpen",
+            "skipFiles": [
+                "<node_internals>/**"
+            ],
+            "presentation": {
+                "group": "3 gpu voice",
+                "order": 9
+            }
+        },
+        {
+            "type": "node",
+            "request": "launch",
+            "name": "orbit: mobile dev — expo start",
+            "program": "${workspaceFolder}/.vscode/run-script.mjs",
+            "args": [
+                "pnpm",
+                "--filter",
+                "@orbit/mobile",
+                "run",
+                "start"
+            ],
+            "cwd": "${workspaceFolder}",
+            "console": "integratedTerminal",
+            "internalConsoleOptions": "neverOpen",
+            "skipFiles": [
+                "<node_internals>/**"
+            ],
+            "presentation": {
+                "group": "4 mobile",
+                "order": 1
+            }
+        },
+        {
+            "type": "node",
+            "request": "launch",
+            "name": "orbit: mobile prod — expo start (no dev, minified)",
+            "program": "${workspaceFolder}/.vscode/run-script.mjs",
+            "args": [
+                "pnpm",
+                "--filter",
+                "@orbit/mobile",
+                "exec",
+                "expo",
+                "start",
+                "--no-dev",
+                "--minify"
+            ],
+            "cwd": "${workspaceFolder}",
+            "console": "integratedTerminal",
+            "internalConsoleOptions": "neverOpen",
+            "skipFiles": [
+                "<node_internals>/**"
+            ],
+            "presentation": {
+                "group": "4 mobile",
+                "order": 2
+            }
+        },
+        {
+            "type": "node",
+            "request": "launch",
+            "name": "orbit: installer — Windows .exe (this PC, unsigned)",
+            "program": "${workspaceFolder}/.vscode/run-script.mjs",
+            "args": [
+                "bash",
+                "scripts/build-installer.sh",
+                "win"
+            ],
+            "cwd": "${workspaceFolder}",
+            "console": "integratedTerminal",
+            "internalConsoleOptions": "neverOpen",
+            "skipFiles": [
+                "<node_internals>/**"
+            ],
+            "presentation": {
+                "group": "5 installers",
+                "order": 1
+            }
+        },
+        {
+            "type": "node",
+            "request": "launch",
+            "name": "orbit: installer — macOS DMG (this Mac's chip, unsigned; GitHub Actions when not on a Mac)",
+            "program": "${workspaceFolder}/.vscode/run-script.mjs",
+            "args": [
+                "bash",
+                "scripts/build-installer.sh",
+                "mac"
+            ],
+            "cwd": "${workspaceFolder}",
+            "console": "integratedTerminal",
+            "internalConsoleOptions": "neverOpen",
+            "skipFiles": [
+                "<node_internals>/**"
+            ],
+            "presentation": {
+                "group": "5 installers",
+                "order": 2
+            }
+        },
+        {
+            "type": "node",
+            "request": "launch",
+            "name": "orbit: installer — macOS DMG (Apple silicon + Intel, unsigned; GitHub Actions when not on a Mac)",
+            "program": "${workspaceFolder}/.vscode/run-script.mjs",
+            "args": [
+                "bash",
+                "scripts/build-installer.sh",
+                "mac"
+            ],
+            "cwd": "${workspaceFolder}",
+            "env": {
+                "ARCH": "all"
+            },
+            "console": "integratedTerminal",
+            "internalConsoleOptions": "neverOpen",
+            "skipFiles": [
+                "<node_internals>/**"
+            ],
+            "presentation": {
+                "group": "5 installers",
+                "order": 3
+            }
+        },
+        {
+            "type": "node",
+            "request": "launch",
+            "name": "orbit: installer — Linux AppImage",
+            "program": "${workspaceFolder}/.vscode/run-script.mjs",
+            "args": [
+                "bash",
+                "scripts/build-installer.sh",
+                "linux"
+            ],
+            "cwd": "${workspaceFolder}",
+            "console": "integratedTerminal",
+            "internalConsoleOptions": "neverOpen",
+            "skipFiles": [
+                "<node_internals>/**"
+            ],
+            "presentation": {
+                "group": "5 installers",
+                "order": 4
+            }
+        },
+        {
+            "type": "node",
+            "request": "launch",
+            "name": "orbit: installer — Linux AppImage built in WSL (from Windows)",
+            "program": "${workspaceFolder}/.vscode/run-script.mjs",
+            "args": [
+                "bash",
+                "scripts/linux-installer-wsl.sh",
+                "build"
+            ],
+            "cwd": "${workspaceFolder}",
+            "console": "integratedTerminal",
+            "internalConsoleOptions": "neverOpen",
+            "skipFiles": [
+                "<node_internals>/**"
+            ],
+            "presentation": {
+                "group": "5 installers",
+                "order": 5
+            }
+        },
+        {
+            "type": "node",
+            "request": "launch",
+            "name": "orbit: installer — run the Linux AppImage under WSLg",
+            "program": "${workspaceFolder}/.vscode/run-script.mjs",
+            "args": [
+                "bash",
+                "scripts/linux-installer-wsl.sh",
+                "run"
+            ],
+            "cwd": "${workspaceFolder}",
+            "console": "integratedTerminal",
+            "internalConsoleOptions": "neverOpen",
+            "skipFiles": [
+                "<node_internals>/**"
+            ],
+            "presentation": {
+                "group": "5 installers",
+                "order": 6
+            }
+        },
+        {
+            "type": "node",
+            "request": "launch",
+            "name": "orbit: installer — Linux server smoke test in WSL (pnpm smoke)",
+            "program": "${workspaceFolder}/.vscode/run-script.mjs",
+            "args": [
+                "bash",
+                "scripts/linux-installer-wsl.sh",
+                "smoke"
+            ],
+            "cwd": "${workspaceFolder}",
+            "console": "integratedTerminal",
+            "internalConsoleOptions": "neverOpen",
+            "skipFiles": [
+                "<node_internals>/**"
+            ],
+            "presentation": {
+                "group": "5 installers",
+                "order": 7
+            }
+        },
+        {
+            "type": "node",
+            "request": "launch",
+            "name": "orbit: installer — try the macOS app (isolated profile + stack) [macOS]",
+            "program": "${workspaceFolder}/.vscode/run-script.mjs",
+            "args": [
+                "bash",
+                "scripts/try-installer.sh"
+            ],
+            "cwd": "${workspaceFolder}",
+            "console": "integratedTerminal",
+            "internalConsoleOptions": "neverOpen",
+            "skipFiles": [
+                "<node_internals>/**"
+            ],
+            "presentation": {
+                "group": "5 installers",
+                "order": 8
+            }
+        },
+        {
+            "type": "node",
+            "request": "launch",
+            "name": "orbit: installer — try as a download (Gatekeeper first launch) [macOS]",
+            "program": "${workspaceFolder}/.vscode/run-script.mjs",
+            "args": [
+                "bash",
+                "scripts/try-installer.sh"
+            ],
+            "cwd": "${workspaceFolder}",
+            "env": {
+                "SIMULATE_DOWNLOAD": "1"
+            },
+            "console": "integratedTerminal",
+            "internalConsoleOptions": "neverOpen",
+            "skipFiles": [
+                "<node_internals>/**"
+            ],
+            "presentation": {
+                "group": "5 installers",
+                "order": 9
+            }
+        },
+        {
+            "type": "node",
+            "request": "launch",
+            "name": "orbit: installer — clean up the try-out (deletes its profile + stack) [macOS]",
+            "program": "${workspaceFolder}/.vscode/run-script.mjs",
+            "args": [
+                "bash",
+                "scripts/try-installer.sh",
+                "--clean"
+            ],
+            "cwd": "${workspaceFolder}",
+            "console": "integratedTerminal",
+            "internalConsoleOptions": "neverOpen",
+            "skipFiles": [
+                "<node_internals>/**"
+            ],
+            "presentation": {
+                "group": "5 installers",
+                "order": 10
+            }
+        },
+        {
+            "type": "node",
+            "request": "launch",
+            "name": "orbit: docs — rebuild the docs pages",
+            "program": "${workspaceFolder}/.vscode/run-script.mjs",
+            "args": [
+                "python3",
+                "scripts/build-docs.py"
+            ],
+            "cwd": "${workspaceFolder}",
+            "console": "integratedTerminal",
+            "internalConsoleOptions": "neverOpen",
+            "skipFiles": [
+                "<node_internals>/**"
+            ],
+            "presentation": {
+                "group": "6 docs",
+                "order": 1
+            }
+        },
+        {
+            "type": "node",
+            "request": "launch",
+            "name": "orbit: site — preview GitHub Pages (:8094)",
+            "program": "${workspaceFolder}/.vscode/run-script.mjs",
+            "args": [
+                "python3",
+                "-m",
+                "http.server",
+                "8094",
+                "--bind",
+                "127.0.0.1"
+            ],
+            "cwd": "${workspaceFolder}",
+            "console": "integratedTerminal",
+            "internalConsoleOptions": "neverOpen",
+            "skipFiles": [
+                "<node_internals>/**"
+            ],
+            "presentation": {
+                "group": "6 docs",
+                "order": 2
+            }
+        }
+    ],
+    "compounds": [
+        {
+            "name": "orbit: server + web dev (:8787 + :5173)",
+            "configurations": [
+                "orbit: server dev — tsx watch (:8787)",
+                "orbit: web dev — vite HMR (:5173, /api → :8787)"
+            ],
+            "stopAll": true,
+            "presentation": {
+                "group": "2 server+web",
+                "order": 0
+            }
+        },
+        {
+            "name": "orbit: server + web dev with GPU voice (native audio.cpp)",
+            "configurations": [
+                "orbit: server dev — GPU voice via native audio.cpp (:8787 → :8080)",
+                "orbit: web dev — vite HMR (:5173, /api → :8787)"
+            ],
+            "stopAll": true,
+            "presentation": {
+                "group": "3 gpu voice",
+                "order": 0
+            }
+        }
+    ]
+}

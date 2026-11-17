@@ -50,7 +50,8 @@ const MAX_SENTENCE_CHARS = 240;
 /** An unclaimed call id (POST /session without a socket ever connecting) expires. */
 const UNCLAIMED_TTL_MS = 5 * 60_000;
 const RELAY_TIMEOUT_MS = 120_000;
-const RELAY_POLL_MS = 150;
+// Partial text lands every ~120 ms; polling faster than that only re-reads the same row.
+const RELAY_POLL_MS = 60;
 
 /**
  * Conversational behaviour while a slow agent works. Measured on this machine: Piper's first audio
@@ -853,8 +854,33 @@ const wait = (ms: number) => new Promise<void>((resolve) => setTimeout(resolve, 
  * socket test can run end to end with no agent and no provider key. That switch is for tests and
  * diagnostics only; nothing in production sets it.
  */
-async function defaultRelay(botId: string, callId: string, text: string): Promise<string> {
-  if ((process.env.VOICE_CALL_RELAY ?? '').trim().toLowerCase() === 'echo') return text.toUpperCase();
+export async function defaultRelay(botId: string, callId: string, text: string): Promise<string> {
+  let last = '';
+  for await (const part of streamRelay(botId, callId, text)) last = part.text;
+  return last;
+}
+
+/** One snapshot of the bot's reply while it is being written: the text so far, and whether it is complete. */
+export interface ReplySnapshot {
+  text: string;
+  final: boolean;
+}
+
+/**
+ * The same turn as defaultRelay, but streamed: yields the reply's text each time it grows (the agent
+ * loop flushes partial text to the row every ~120 ms), then once more with `final: true`. A GPU call
+ * starts speaking the first sentence while the model is still writing the rest.
+ *
+ * VOICE_CALL_RELAY=echo yields the transcript uppercased, in two steps, for tests and diagnostics.
+ */
+export async function* streamRelay(botId: string, callId: string, text: string, signal?: AbortSignal): AsyncGenerator<ReplySnapshot> {
+  if ((process.env.VOICE_CALL_RELAY ?? '').trim().toLowerCase() === 'echo') {
+    const upper = text.toUpperCase();
+    const half = upper.indexOf(' ', upper.length >> 1);
+    if (half > 0) yield { text: upper.slice(0, half), final: false };
+    yield { text: upper, final: true };
+    return;
+  }
 
   const [{ appendRow, getBotRow: botRow }, { enqueue }, { db }] = await Promise.all([
     import('./store.js'),
@@ -862,7 +888,7 @@ async function defaultRelay(botId: string, callId: string, text: string): Promis
     import('./db.js'),
   ]);
   const bot = botRow(botId);
-  if (!bot) return '';
+  if (!bot) return;
 
   const row = appendRow(botId, 'message', {
     type: 'message',
@@ -874,30 +900,58 @@ async function defaultRelay(botId: string, callId: string, text: string): Promis
   const firstName = String((db.prepare('SELECT name FROM users WHERE id=?').get(bot.user_id) as { name?: string } | undefined)?.name ?? 'the user').split(/\s+/)[0] || 'the user';
   enqueue(botId, {
     type: 'user',
-    text: `[Voice call: ${firstName} asked for this on a live voice call with you. Do the work, then reply in plain, short text with the outcome. Your reply is read aloud on the call, so lead with the answer and skip markdown, links and IDs unless asked.]\n${text}`,
+    voice: true,
+    text: `[Voice call: ${firstName} asked for this on a live voice call with you. Do the work, then reply in plain, short text with the outcome. Your reply is read aloud on the call, so lead with the answer and skip markdown, links and IDs unless asked.]
+${text}`,
   });
 
-  // The turn lands as rows; the answer is the first non-streaming assistant message after ours.
+  // The turn lands as rows; the answer is the first assistant message after ours. While it streams
+  // its row is rewritten in place, so it is read by seq once found.
   const deadline = Date.now() + RELAY_TIMEOUT_MS;
   const generation = bot.generation;
-  while (Date.now() < deadline) {
+  const next = db.prepare("SELECT seq, body FROM rows WHERE bot_id=? AND generation=? AND seq>? AND kind='message' ORDER BY seq ASC LIMIT 50");
+  const one = db.prepare('SELECT body FROM rows WHERE bot_id=? AND seq=?');
+  let seq: number | null = null;
+  let sent = '';
+  while (Date.now() < deadline && !signal?.aborted) {
     await wait(RELAY_POLL_MS);
-    const rows = db
-      .prepare("SELECT body FROM rows WHERE bot_id=? AND generation=? AND seq>? AND kind='message' ORDER BY seq ASC LIMIT 50")
-      .all(botId, generation, row.seq) as { body: string }[];
-    for (const r of rows) {
-      let body: AssistantMessageBody;
-      try {
-        body = JSON.parse(r.body) as AssistantMessageBody;
-      } catch {
+    let body: AssistantMessageBody | null = null;
+    if (seq === null) {
+      for (const r of next.all(botId, generation, row.seq) as { seq: number; body: string }[]) {
+        const b = parseBody(r.body);
+        if (b?.type === 'message' && b.role === 'assistant' && typeof b.text === 'string' && (b.streaming || b.text.trim())) {
+          seq = r.seq;
+          body = b;
+          break;
+        }
+      }
+    } else {
+      const r = one.get(botId, seq) as { body: string } | undefined;
+      body = r ? parseBody(r.body) : null;
+    }
+    if (!body || typeof body.text !== 'string') continue;
+    if (!body.streaming) {
+      // An empty final message was a placeholder for a tool-only step: keep waiting for the real one.
+      if (!body.text.trim()) {
+        seq = null;
         continue;
       }
-      if (body?.type === 'message' && body.role === 'assistant' && !body.streaming && typeof body.text === 'string' && body.text.trim()) {
-        return body.text;
-      }
+      yield { text: body.text, final: true };
+      return;
+    }
+    if (body.text !== sent && body.text.trim()) {
+      sent = body.text;
+      yield { text: sent, final: false };
     }
   }
-  return '';
+}
+
+function parseBody(raw: string): AssistantMessageBody | null {
+  try {
+    return JSON.parse(raw) as AssistantMessageBody;
+  } catch {
+    return null;
+  }
 }
 
 // ---------- the WebSocket relay ----------

@@ -8,8 +8,9 @@
 # read the port the stack actually published instead.
 set -uo pipefail
 cd "$(dirname "$0")/.." || exit 1
+. scripts/lib/platform.sh
 
-STACK="${ORBIT_STACK_DIR:-$HOME/Library/Application Support/Orbit/stack}"
+STACK="${ORBIT_STACK_DIR:-$(orbit_user_data_default)/stack}"
 PORT=$(sed -n 's/^ORBIT_WEB_PORT=//p' "$STACK/.env" 2>/dev/null | head -1)
 PORT=${PORT:-8787}
 

@@ -66,6 +66,11 @@ services:
       # The primary agent's Hermes home, mounted below. Fixed, not overridable: the app must not be
       # able to point it at a folder the mount does not cover.
       HERMES_HOME_PRIMARY: /host-hermes
+      # GPU voice (audio.cpp). The `audiocpp` service below answers here when the stack runs with
+      # `--profile gpu`; point it at http://host.docker.internal:8080 for an audiocpp_server running
+      # natively on the host instead. Unreachable = GPU voice is simply unavailable.
+      AUDIOCPP_URL: ${AUDIOCPP_URL:-http://audiocpp:8080}
+      AUDIOCPP_MODELS_DIR: /data/audiocpp-models
     ports:
       - "127.0.0.1:${ORBIT_WEB_PORT:-8787}:8787"
     volumes:
@@ -131,6 +136,61 @@ services:
       - orbit-data:/data
       - /var/run/docker.sock:/var/run/docker.sock
       # - ${ORBIT_HOST_DATA}:${ORBIT_HOST_DATA}
+
+  audiocpp:
+    # GPU voice: OWSM ASR, LFM3-Audio TTS and SoulX-FlashHead avatar video (infra/audiocpp/Dockerfile).
+    # Opt-in, because it needs an NVIDIA GPU and the NVIDIA Container Toolkit:
+    #   docker compose -f infra/compose/docker-compose.yml --profile gpu up --build
+    # Verify the runtime first: docker run --rm --gpus all nvidia/cuda:12.8.1-base-ubuntu22.04 nvidia-smi
+    profiles: [gpu]
+    build:
+      context: ../..
+      dockerfile: infra/audiocpp/Dockerfile
+      args:
+        # GPU architectures audio.cpp is compiled for. scripts/gpu-voice-stack.sh sets just this
+        # machine's (nvidia-smi compute_cap), which cuts the build to a fraction.
+        CUDA_ARCHITECTURES: ${AUDIOCPP_CUDA_ARCHS:-75;80;86;89;90;120}
+        AUDIOCPP_REF: ${AUDIOCPP_REF:-v0.9.5}
+    image: orbit/audiocpp:dev
+    restart: unless-stopped
+    labels:
+      # The api finds this container by label (POST /api/voice/audiocpp/models/download runs
+      # download-models.py in it), so the compose project/container name does not matter.
+      orbit.role: audiocpp
+    environment:
+      AUDIOCPP_MODELS_DIR: /data/audiocpp-models
+      HF_TOKEN: ${HF_TOKEN:-}
+      # 1 = fetch the ~5 GB of models at boot instead of waiting for Orbit to ask.
+      AUDIOCPP_AUTO_DOWNLOAD: ${AUDIOCPP_AUTO_DOWNLOAD:-0}
+      # Hostnames/IPs the built-in Caddy issues internal-CA certificates for. Add the LAN address you
+      # open Orbit from (e.g. "localhost 10.0.0.92") so the microphone works from other devices.
+      AUDIOCPP_TLS_HOSTS: ${AUDIOCPP_TLS_HOSTS:-localhost 127.0.0.1}
+      # :8444 fronts the Orbit web app over HTTPS (WebSockets included); empty disables that site.
+      ORBIT_HTTPS_UPSTREAM: ${ORBIT_HTTPS_UPSTREAM:-http://api:8787}
+      # SoulX VAE: cudnn (built in; ~2x faster, less VRAM) or ggml.
+      AUDIOCPP_AVATAR_VAE: ${AUDIOCPP_AVATAR_VAE:-cudnn}
+    # :8080 (audiocpp_server) stays on the compose network: only the api talks to it. The HTTPS front
+    # door is published; set AUDIOCPP_HTTPS_BIND=0.0.0.0 to reach it from other devices on the LAN.
+    ports:
+      - "${AUDIOCPP_HTTPS_BIND:-127.0.0.1}:${AUDIOCPP_HTTPS_PORT:-8443}:8443"
+      - "${AUDIOCPP_HTTPS_BIND:-127.0.0.1}:${ORBIT_HTTPS_PORT:-8444}:8444"
+    volumes:
+      - orbit-data:/data
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: 1
+              capabilities: [gpu]
+    healthcheck:
+      test: ["CMD", "curl", "-fsS", "http://127.0.0.1:8080/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+      # Covers loading three models onto the GPU, not the download: until the models are on the
+      # volume the server is not started and the container reports unhealthy, by design.
+      start_period: 120s
 
 volumes:
   orbit-data:
