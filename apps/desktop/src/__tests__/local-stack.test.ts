@@ -374,6 +374,17 @@ describe('LocalStackController: staging files', () => {
     assert.equal(h.controller.prepareEnvFile(), envPath);
     assert.match(fs.readFileSync(envPath!, 'utf8'), /HERMES_KEY=abc/);
   });
+
+  test('prepareEnvFile fills missing required secrets in an existing .env (upgrade path)', () => {
+    const h = harness({ name: 'prepare-env-upgrade', server: selfAwareServer() });
+    // Simulate an older .env that pre-dates SANDBOX_SUPERVISOR_TOKEN.
+    const envPath = path.join(h.stackDir, '.env');
+    fs.mkdirSync(h.stackDir, { recursive: true });
+    fs.writeFileSync(envPath, 'SESSION_SECRET=\nDB_ENCRYPTION_KEY=\nSTACK_TOKEN=\n');
+    h.controller.prepareEnvFile();
+    const content = fs.readFileSync(envPath, 'utf8');
+    assert.match(content, /SANDBOX_SUPERVISOR_TOKEN=[0-9a-f]{64}/);
+  });
 });
 
 describe('LocalStackController: port collisions', () => {
