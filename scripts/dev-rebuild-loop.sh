@@ -8,8 +8,9 @@
 # the image — so a web/server change needs an image rebuild, not just an Electron restart.
 set -euo pipefail
 cd "$(dirname "$0")/.." || exit 1
+. scripts/lib/platform.sh
 
-STACK="${ORBIT_STACK_DIR:-$HOME/Library/Application Support/Orbit/stack}"
+STACK="${ORBIT_STACK_DIR:-$(orbit_user_data_default)/stack}"
 APP_IMAGE="ghcr.io/raybello/orbit/app:edge"
 # The loop builds :edge, so it must also run :edge. The stack's .env carries whatever tag the last
 # launched app wrote there, and an installed release (same "Orbit" profile) writes its own version,
@@ -94,14 +95,10 @@ if [ "${ORBIT_NO_LAUNCH:-}" = "1" ]; then
 fi
 # The app quits silently when another instance holds the single-instance lock, which would
 # leave the *old* window (and its cached bundle) on screen: the rebuilt UI would never appear.
-STALE=$(pgrep -f 'node_modules/electron/dist/Electron.app/Contents/MacOS/Electron' || true)
-if [ -n "$STALE" ]; then
-  echo "  closing the running Orbit window first (pid $(printf '%s' "$STALE" | tr '\n' ' '))"
-  # shellcheck disable=SC2086
-  kill $STALE 2>/dev/null || true
-  for _ in $(seq 1 20); do
-    pgrep -f 'node_modules/electron/dist/Electron.app/Contents/MacOS/Electron' >/dev/null || break
-    sleep 0.2
-  done
+STALE=$(orbit_pids "$(orbit_dev_window_pattern)")
+if [ -n "${STALE// /}" ]; then
+  echo "  closing the running Orbit window first (pid $STALE)"
+  orbit_kill "$STALE"
+  orbit_reap "$STALE"
 fi
 exec pnpm --filter @orbit/desktop run dev

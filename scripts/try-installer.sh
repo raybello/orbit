@@ -17,6 +17,14 @@
 set -euo pipefail
 cd "$(dirname "$0")/.." || exit 1
 
+# The try-out copies Orbit.app out of a DMG and runs Gatekeeper's first launch: macOS only.
+if [ "$(uname -s)" != Darwin ]; then
+  echo "try-installer.sh drives the macOS DMG. On Windows, build the installer with" >&2
+  echo "  bash scripts/build-installer.sh win" >&2
+  echo "and run the .exe from apps/desktop/out (ORBIT_USER_DATA_DIR keeps it off your own profile)." >&2
+  exit 2
+fi
+
 TRY_ROOT="${ORBIT_TRY_DIR:-${TMPDIR:-/tmp}orbit-try}"
 PROJECT=orbit-try
 export COMPOSE_PROJECT_NAME="$PROJECT"

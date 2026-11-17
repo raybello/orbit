@@ -21,9 +21,10 @@
 set -uo pipefail
 cd "$(dirname "$0")/.." || exit 1
 ROOT="$PWD"
+. scripts/lib/platform.sh
 
-STACK="${ORBIT_STACK_DIR:-$HOME/Library/Application Support/Orbit/stack}"
-USER_DATA="${ORBIT_USER_DATA_DIR:-$HOME/Library/Application Support/Orbit}"
+USER_DATA="${ORBIT_USER_DATA_DIR:-$(orbit_user_data_default)}"
+STACK="${ORBIT_STACK_DIR:-$USER_DATA/stack}"
 APP_IMAGE="ghcr.io/raybello/orbit/app:edge"
 BOT_IMAGE="orbit/computer:local"
 VOLUME="${ORBIT_VOLUME:-orbit_orbit-data}"
@@ -34,51 +35,48 @@ echo "▸ checkout:  $ROOT"
 echo "▸ stack dir: $STACK"
 echo "▸ profile:   $USER_DATA"
 
-# Wait up to ~5s for a set of pids to exit, then SIGKILL what is left.
-reap() {
-  local pids="$1"
-  [ -z "$pids" ] && return 0
-  for _ in $(seq 1 25); do
-    local left=""
-    for p in $pids; do kill -0 "$p" 2>/dev/null && left="$left $p"; done
-    [ -z "$left" ] && return 0
-    sleep 0.2
-  done
-  for p in $pids; do kill -9 "$p" 2>/dev/null || true; done
-}
+# Wait up to ~5s for a set of pids to exit, then force what is left (scripts/lib/platform.sh).
+reap() { orbit_reap "$1"; }
 
 # 1 ---------------------------------------------------------------- stop everything using the data
 echo "▸ 1/7 stopping Orbit processes"
 
 # Dev servers started from this checkout: the dev-server wrapper (it stops its own bot engines on
 # SIGTERM) and a bare `tsx watch src/index.ts` from older runs.
+DEV_RE='scripts/dev-server\.mjs|tsx watch .*src/index\.ts|tsx/dist/cli\.mjs watch .*src/index\.ts'
 dev_pids=""
-for p in $(pgrep -f 'scripts/dev-server\.mjs|tsx watch .*src/index\.ts|tsx/dist/cli\.mjs watch .*src/index\.ts' 2>/dev/null); do
-  cwd=$(lsof -a -p "$p" -d cwd -Fn 2>/dev/null | sed -n 's/^n//p' | head -1)
-  case "$cwd" in "$ROOT"/*) dev_pids="$dev_pids $p" ;; esac
-done
-if [ -n "$dev_pids" ]; then
-  echo "  stopping the server dev run (pid$dev_pids)"
-  # shellcheck disable=SC2086
-  kill -TERM $dev_pids 2>/dev/null || true
+if [ "$ORBIT_OS" = win ]; then
+  # No lsof to read a process's cwd: a dev run from this checkout names the checkout on its command
+  # line (the wrapper's script path, tsx's --env-file), so match on that instead.
+  ROOT_RE=$(cygpath -m "$ROOT" | sed 's/[.]/\\./g')
+  dev_pids=$(orbit_pids "$ROOT_RE.*($DEV_RE)|($DEV_RE).*$ROOT_RE")
+else
+  for p in $(orbit_pids "$DEV_RE"); do
+    cwd=$(lsof -a -p "$p" -d cwd -Fn 2>/dev/null | sed -n 's/^n//p' | head -1)
+    case "$cwd" in "$ROOT"/*) dev_pids="$dev_pids $p" ;; esac
+  done
+fi
+if [ -n "${dev_pids// /}" ]; then
+  echo "  stopping the server dev run (pid $dev_pids)"
+  orbit_kill "$dev_pids"
   reap "$dev_pids"
 fi
 
 # The Orbit window — dev Electron or the installed app. Both use the profile folder wiped below,
 # and the native stack's server runs as their child.
-win_pids=$(pgrep -f 'node_modules/electron/dist/Electron\.app/Contents/MacOS/Electron|/Orbit\.app/Contents/MacOS/Orbit' 2>/dev/null | tr '\n' ' ')
+win_pids=$(orbit_pids "$(orbit_window_pattern)")
 if [ -n "${win_pids// /}" ]; then
   echo "  closing the Orbit window (pid $win_pids)"
-  # shellcheck disable=SC2086
-  kill -TERM $win_pids 2>/dev/null || true
+  orbit_kill "$win_pids"
   reap "$win_pids"
 fi
 # A native-stack server left behind by a crashed window.
-native_pids=$(pgrep -f "$USER_DATA/server-bundles/" 2>/dev/null | tr '\n' ' ')
+BUNDLES="$USER_DATA/server-bundles/"
+[ "$ORBIT_OS" = win ] && BUNDLES="$(cygpath -m "$USER_DATA")/server-bundles/"
+native_pids=$(orbit_pids "$BUNDLES")
 if [ -n "${native_pids// /}" ]; then
   echo "  stopping native-stack processes (pid $native_pids)"
-  # shellcheck disable=SC2086
-  kill -TERM $native_pids 2>/dev/null || true
+  orbit_kill "$native_pids"
   reap "$native_pids"
 fi
 
@@ -125,7 +123,11 @@ for f in orbit.db orbit.db-wal orbit.db-shm orbit.db-journal engines computer-ho
 sleep 2
 if [ -e "$ENGINES" ]; then
   warn "$ENGINES came back — still writing to it:"
-  lsof +D "$ENGINES" 2>/dev/null | awk 'NR>1 {print "    pid " $2 " " $1}' | sort -u >&2
+  if command -v lsof >/dev/null 2>&1; then
+    lsof +D "$ENGINES" 2>/dev/null | awk 'NR>1 {print "    pid " $2 " " $1}' | sort -u >&2
+  else
+    warn "  (no lsof here: look for hermes gateway processes in Task Manager)"
+  fi
 fi
 
 # 3 ---------------------------------------------------------------- docker stack
