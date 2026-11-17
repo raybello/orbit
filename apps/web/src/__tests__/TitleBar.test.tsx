@@ -36,7 +36,8 @@ describe('TitleBar', () => {
 
   it('shows the account and offers settings and log out', () => {
     render(<TitleBar />);
-    fireEvent.click(screen.getByRole('button', { name: 'Account menu' }));
+    // avatar button uses onMouseDown to avoid Electron drag-region click swallowing
+    fireEvent.mouseDown(screen.getByRole('button', { name: 'Account menu' }));
 
     expect(screen.getByText('ada@example.com')).toBeTruthy();
     expect(screen.getByRole('menuitem', { name: /Settings/ })).toBeTruthy();

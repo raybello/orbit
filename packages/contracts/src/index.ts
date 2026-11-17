@@ -32,6 +32,8 @@ export interface Bot {
   isPrimary: boolean;
   /** 'room' = group chat (members answer instead of the bot itself). */
   kind?: 'agent' | 'room';
+  /** True when the room was created by a team template (has an orchestrating routine). */
+  isTeam?: boolean;
   pinned: boolean;
   effort: 'low' | 'medium' | 'high' | 'xhigh';
   /** Voice chat settings: xAI voice id, speed multiplier (0.7–1.5), BCP-47 language or 'auto'. */

@@ -58,7 +58,8 @@ describe('ChatListView', () => {
     });
     const { container } = render(<ChatListView />);
 
-    expect(rowNames(container)).toEqual(['Primary Bot', 'Alpha', 'Design Crew', 'Beta']);
+    // agents render before groups: Primary Bot (primary) → Alpha, Beta (agents) → Design Crew (group)
+    expect(rowNames(container)).toEqual(['Primary Bot', 'Alpha', 'Beta', 'Design Crew']);
     expect(container.querySelectorAll('.chat-list__sep')).toHaveLength(1);
     expect(container.querySelector('.group-row')?.textContent).toContain('Design Crew');
   });

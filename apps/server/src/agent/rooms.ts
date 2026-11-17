@@ -51,7 +51,7 @@ export interface GroupTurn {
 }
 
 export function initRooms() {
-  for (const col of ["kind TEXT NOT NULL DEFAULT 'agent'", 'members TEXT']) {
+  for (const col of ["kind TEXT NOT NULL DEFAULT 'agent'", 'members TEXT', 'is_team INTEGER NOT NULL DEFAULT 0']) {
     try { db.exec(`ALTER TABLE bots ADD COLUMN ${col}`); } catch { /* exists */ }
   }
 }
@@ -64,12 +64,14 @@ export function roomMembers(roomId: string): GroupMember[] {
   return ids.map((id) => db.prepare('SELECT id, name FROM bots WHERE id=?').get(id) as GroupMember | undefined).filter((m): m is GroupMember => Boolean(m));
 }
 
-export function createRoom(userId: string, name: string, memberIds: string[]) {
+export function createRoom(userId: string, name: string, memberIds: string[], isTeam = false) {
   const id = newId('room');
+  const label = isTeam ? 'Team' : 'Group';
+  const desc = isTeam ? `Team with ${memberIds.length} Bots` : `Group chat with ${memberIds.length} Bots`;
   db.prepare(
-    `INSERT INTO bots(id,user_id,name,label,description,avatar_shape,avatar_color,kind,members,created_at,updated_at)
-     VALUES (?,?,?,?,?,?,?,'room',?,?,?)`,
-  ).run(id, userId, name.slice(0, 60), 'Group', `Group chat with ${memberIds.length} Bots`, 'cloud', 'gray', JSON.stringify(memberIds), now(), now());
+    `INSERT INTO bots(id,user_id,name,label,description,avatar_shape,avatar_color,kind,members,is_team,created_at,updated_at)
+     VALUES (?,?,?,?,?,?,?,'room',?,?,?,?)`,
+  ).run(id, userId, name.slice(0, 60), label, desc, 'cloud', 'gray', JSON.stringify(memberIds), isTeam ? 1 : 0, now(), now());
   hub.emit(userId, { type: 'roster' });
   return id;
 }
