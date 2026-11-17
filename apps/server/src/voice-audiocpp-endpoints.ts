@@ -15,6 +15,7 @@
  */
 import fs from 'node:fs';
 import path from 'node:path';
+import { PassThrough } from 'node:stream';
 import { Hono, type Context } from 'hono';
 import { AUDIOCPP_VOICES, resolveAudiocppVoice, type AudiocppStatus } from '@orbit/contracts';
 import { requireUser, type AuthVars } from './lib/auth.js';
@@ -48,7 +49,16 @@ type DownloadState = NonNullable<AudiocppStatus['download']>;
 /** The sidecar's download status file on the shared volume; null where there is no sidecar volume. */
 export function readDownloadStatus(dir = env.audiocppModelsDir): DownloadState | null {
   try {
-    const j = JSON.parse(fs.readFileSync(path.join(dir, '.orbit-status.json'), 'utf8')) as Partial<DownloadState> & { updated_at?: number };
+    return parseDownloadStatus(fs.readFileSync(path.join(dir, '.orbit-status.json'), 'utf8'));
+  } catch {
+    return null;
+  }
+}
+
+/** The sidecar's `.orbit-status.json` text → its state; null when it is not one. */
+export function parseDownloadStatus(text: string): DownloadState | null {
+  try {
+    const j = JSON.parse(text) as Partial<DownloadState> & { updated_at?: number; server_error?: unknown };
     const state = (['missing', 'downloading', 'ready', 'error'] as const).find((s) => s === j.state);
     if (!state) return null;
     // A "downloading" file nobody has touched for two minutes belongs to a downloader that died.
@@ -58,6 +68,7 @@ export function readDownloadStatus(dir = env.audiocppModelsDir): DownloadState |
       pct: Math.max(0, Math.min(100, Number(j.pct) || 0)),
       file: typeof j.file === 'string' ? j.file : null,
       ...(stale ? { error: 'the download stopped; start it again' } : j.error ? { error: String(j.error) } : {}),
+      ...(typeof j.server_error === 'string' && j.server_error ? { serverError: j.server_error.slice(0, 300) } : {}),
     };
   } catch {
     return null;
@@ -81,14 +92,56 @@ async function sidecarContainer(): Promise<string | null> {
   return id;
 }
 
+/**
+ * The status file read inside the sidecar, for an api that does not share its volume (Orbit on the
+ * host with only the sidecar in Docker: scripts/gpu-voice-stack.sh sidecar).
+ */
+async function sidecarDownloadStatus(id: string): Promise<DownloadState | null> {
+  try {
+    const { docker } = await import('./docker/client.js');
+    const exec = await docker().getContainer(id).exec({
+      Cmd: ['sh', '-c', 'cat "${AUDIOCPP_MODELS_DIR:-/data/audiocpp-models}/.orbit-status.json"'],
+      AttachStdout: true,
+      AttachStderr: false,
+    });
+    const stream = await exec.start({ hijack: true, stdin: false });
+    const chunks: Buffer[] = [];
+    await new Promise<void>((resolve, reject) => {
+      const timer = setTimeout(() => { stream.destroy(); resolve(); }, 5_000);
+      // Not a TTY, so stdout arrives in Docker's 8-byte-header frames.
+      const stdout = new PassThrough();
+      stdout.on('data', (b: Buffer) => chunks.push(b));
+      docker().modem.demuxStream(stream, stdout, new PassThrough().resume());
+      stream.on('end', () => { clearTimeout(timer); resolve(); });
+      stream.on('error', (e) => { clearTimeout(timer); reject(e); });
+    });
+    return parseDownloadStatus(Buffer.concat(chunks).toString('utf8'));
+  } catch {
+    return null;
+  }
+}
+
+/** Download progress: the shared volume when this api has it, else read through the sidecar. */
+async function downloadStatus(sidecar: string | null): Promise<DownloadState | null> {
+  return readDownloadStatus() ?? (sidecar ? await sidecarDownloadStatus(sidecar) : null);
+}
+
 export async function audiocppStatus(): Promise<AudiocppStatus> {
-  const download = readDownloadStatus();
-  const managed = !!(await sidecarContainer());
+  if (env.audiocppDisabled) {
+    return { available: false, reason: 'disabled', url: '', models: {}, avatar: false, download: null, managed: false, voices: AUDIOCPP_VOICES };
+  }
+  const sidecar = await sidecarContainer();
+  const download = await downloadStatus(sidecar);
+  const managed = !!sidecar;
   const base = { url: env.audiocppUrl, download, managed, voices: AUDIOCPP_VOICES };
   const health = await audiocpp.audiocppReady();
   if (!health.ok) {
     // While the sidecar waits for its models the server is deliberately not running.
     const reason = download?.state === 'downloading' ? 'downloading' : download && download.state !== 'ready' ? 'models-missing' : health.reason;
+    // The sidecar recorded why audio.cpp exited (a bad model file, a GPU out of memory): say that.
+    if (reason === 'unreachable' && download?.serverError) {
+      return { available: false, reason: 'server-error', detail: download.serverError, models: {}, avatar: false, ...base };
+    }
     return { available: false, reason, models: {}, avatar: false, ...base };
   }
   let list: audiocpp.AudiocppModelInfo[] = [];
@@ -185,7 +238,7 @@ audiocppVoiceApi.post('/models/download', async (c) => {
   if (!id) {
     return c.json({ started: false, managed: false, error: 'No audio.cpp container in this stack. A native audio.cpp server manages its own models.' }, 409);
   }
-  const current = readDownloadStatus();
+  const current = await downloadStatus(id);
   if (current?.state === 'downloading') return c.json({ started: false, managed: true, download: current });
   try {
     const { docker } = await import('./docker/client.js');

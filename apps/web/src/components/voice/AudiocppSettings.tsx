@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from 'react';
-import { AUDIOCPP_VOICES, type AudiocppStatus, type Bot } from '@orbit/contracts';
+import { AUDIOCPP_VOICES, type AudiocppStatus, type Bot, type DesktopGpuVoice } from '@orbit/contracts';
 import { useStore } from '../../store';
 import { voiceApi, portraitUrl, type BotVoicePatch } from '../../voice/api';
 import { PcmPlayer, createAudioContext } from '../../voice/audio';
@@ -14,6 +14,7 @@ export function voiceLabel(id: string): string {
 }
 
 const REASONS: Record<string, string> = {
+  disabled: 'it is turned off on this server; calls use on-device voice',
   unreachable: 'the audio.cpp server isn’t answering',
   'server-error': 'the audio.cpp server reported an error',
   'models-missing': 'its models aren’t downloaded yet',
@@ -27,6 +28,7 @@ export function gpuLine(s: AudiocppStatus | null): string {
   if (s.available) return s.avatar ? 'Ready · speech + avatar' : 'Ready · speech';
   if (s.download?.state === 'downloading') return `GPU voice loading… ${s.download.pct}%`;
   if (s.download?.state === 'error') return `Download failed${s.download.error ? ` — ${s.download.error}` : ''}`;
+  if (s.reason === 'server-error' && s.detail) return `Unavailable — audio.cpp: ${s.detail}`;
   return `Unavailable — ${REASONS[s.reason ?? ''] ?? s.reason ?? 'unknown'}`;
 }
 
@@ -39,12 +41,14 @@ export function useAudiocppStatus(): [AudiocppStatus | null, () => void] {
     voiceApi.audiocppStatus().then((s) => { if (alive) setStatus(s); }).catch(() => { if (alive) setStatus(null); });
     return () => { alive = false; };
   }, [tick]);
-  const waiting = !!status && !status.available;
+  // Every 5 s while it is coming up (a download, models loading), every 30 s once ready so a
+  // server that goes away later is noticed, and never on a server that has GPU voice switched off.
+  const every = !status || status.reason === 'disabled' ? 0 : status.available ? 30_000 : 5_000;
   useEffect(() => {
-    if (!waiting) return;
-    const t = setInterval(() => setTick((n) => n + 1), 5000);
+    if (!every) return;
+    const t = setInterval(() => setTick((n) => n + 1), every);
     return () => clearInterval(t);
-  }, [waiting]);
+  }, [every]);
   return [status, () => setTick((n) => n + 1)];
 }
 
@@ -52,11 +56,19 @@ export function useAudiocppStatus(): [AudiocppStatus | null, () => void] {
  * The GPU voice controls under the Voice settings when a bot uses audio.cpp: the LFM3-Audio voice,
  * a preview, the portrait SoulX-FlashHead animates, and whether calls show it.
  */
-export function AudiocppSettings({ bot, status, refresh, onError }: {
+/** What installing the sidecar from the desktop app involves, said before anything is downloaded. */
+function installNote(d: DesktopGpuVoice): string {
+  return `Runs speech and the animated avatar on ${d.gpu ?? 'your NVIDIA GPU'}. Downloads the GPU voice server (about 4 GB), then its models (about 5 GB).`;
+}
+
+export function AudiocppSettings({ bot, status, refresh, onError, desktop = null, onDesktop }: {
   bot: Bot;
   status: AudiocppStatus | null;
   refresh: () => void;
   onError: (msg: string | null) => void;
+  /** The desktop app's sidecar control, when running inside it. */
+  desktop?: DesktopGpuVoice | null;
+  onDesktop?: (action: 'install' | 'remove') => Promise<void>;
 }) {
   const [previewing, setPreviewing] = useState(false);
   const [uploading, setUploading] = useState(false);
@@ -137,6 +149,19 @@ export function AudiocppSettings({ bot, status, refresh, onError }: {
     }
   };
 
+  const desktopAction = async (action: 'install' | 'remove') => {
+    onError(null);
+    try {
+      await onDesktop?.(action);
+    } catch (e) {
+      onError((e as Error).message || (action === 'install' ? 'Couldn’t install GPU voice' : 'Couldn’t remove GPU voice'));
+    }
+    refresh();
+  };
+  // The desktop app can install the sidecar when the server has no audio.cpp to talk to yet.
+  const canInstall = !!desktop?.supported && !desktop.enabled && !status?.available && status?.reason !== 'disabled';
+  const installing = desktop?.phase === 'installing';
+
   const pct = status?.download?.state === 'downloading' ? status.download.pct : null;
   const canDownload = !!status && !status.available && status.managed && status.download?.state !== 'downloading';
 
@@ -145,10 +170,20 @@ export function AudiocppSettings({ bot, status, refresh, onError }: {
       <div className="panel-row panel-row--setting" data-state={status?.available ? 'ready' : 'unavailable'} title={status?.url}>
         <span>GPU voice</span>
         <span className="voice-setting__right" style={{ minWidth: 0 }}>
-          <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', color: status?.available ? undefined : 'var(--color-text-secondary)' }}>{gpuLine(status)}</span>
+          <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', color: status?.available ? undefined : 'var(--color-text-secondary)' }}>{canInstall && status?.reason === 'unreachable' ? 'Not installed on this computer' : gpuLine(status)}</span>
           {canDownload && <button type="button" className="voice-preview" onClick={() => void download()}>Download</button>}
+          {(canInstall || installing) && (
+            <button type="button" className="voice-preview" disabled={installing} onClick={() => void desktopAction('install')}>
+              {installing ? 'Installing…' : 'Install'}
+            </button>
+          )}
         </span>
       </div>
+      {(canInstall || installing || desktop?.phase === 'error') && desktop && (
+        <div className="panel-row panel-row--setting" style={{ whiteSpace: 'normal', fontSize: 11, color: 'var(--color-text-secondary)' }} aria-live="polite">
+          {desktop.phase === 'error' ? `GPU voice install failed — ${desktop.error ?? 'see the logs'}` : installing ? (desktop.detail ?? 'Installing GPU voice…') : installNote(desktop)}
+        </div>
+      )}
       {pct !== null && (
         <div role="progressbar" aria-valuemin={0} aria-valuemax={100} aria-valuenow={pct} aria-label="GPU model download progress" style={{ height: 4, margin: '2px 8px 6px', borderRadius: 2, background: '#1C1C1C14', overflow: 'hidden' }}>
           <div style={{ width: `${pct}%`, height: '100%', background: 'var(--color-ink)', transition: 'width 240ms linear' }} />
@@ -183,7 +218,8 @@ export function AudiocppSettings({ bot, status, refresh, onError }: {
           <span style={{ display: 'flex', flexDirection: 'column', gap: 2, minWidth: 0 }}>
             <span>Portrait</span>
             <span style={{ fontSize: 11, color: 'var(--color-text-secondary)', whiteSpace: 'normal' }}>
-              {status && !status.avatar ? 'This audio.cpp server has no avatar model.' : 'A face photo, animated while the bot speaks.'}
+              {/* Only a running server can say it lacks the avatar model; while it loads, it just isn't known yet. */}
+              {status?.available && !status.avatar ? 'This audio.cpp server has no avatar model.' : 'A face photo, animated while the bot speaks.'}
             </span>
           </span>
         </span>
@@ -198,6 +234,14 @@ export function AudiocppSettings({ bot, status, refresh, onError }: {
           <span>Show animated avatar during calls</span>
           <input type="checkbox" checked={!!bot.avatarEnabled} onChange={(e) => void save({ avatarEnabled: e.target.checked })} aria-label="Show animated avatar during calls" />
         </label>
+      )}
+      {desktop?.enabled && (
+        <div className="panel-row panel-row--setting" style={{ fontSize: 11, color: 'var(--color-text-secondary)' }}>
+          <span>GPU voice server on {desktop.gpu ?? 'this computer'}</span>
+          <button type="button" className="link-btn link-btn--small" disabled={desktop.phase === 'removing'} onClick={() => void desktopAction('remove')}>
+            {desktop.phase === 'removing' ? 'Removing…' : 'Remove'}
+          </button>
+        </div>
       )}
     </>
   );

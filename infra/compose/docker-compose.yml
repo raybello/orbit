@@ -146,6 +146,11 @@ services:
     build:
       context: ../..
       dockerfile: infra/audiocpp/Dockerfile
+      args:
+        # GPU architectures audio.cpp is compiled for. scripts/gpu-voice-stack.sh sets just this
+        # machine's (nvidia-smi compute_cap), which cuts the build to a fraction.
+        CUDA_ARCHITECTURES: ${AUDIOCPP_CUDA_ARCHS:-75;80;86;89;90;120}
+        AUDIOCPP_REF: ${AUDIOCPP_REF:-v0.9.5}
     image: orbit/audiocpp:dev
     restart: unless-stopped
     labels:
@@ -162,6 +167,8 @@ services:
       AUDIOCPP_TLS_HOSTS: ${AUDIOCPP_TLS_HOSTS:-localhost 127.0.0.1}
       # :8444 fronts the Orbit web app over HTTPS (WebSockets included); empty disables that site.
       ORBIT_HTTPS_UPSTREAM: ${ORBIT_HTTPS_UPSTREAM:-http://api:8787}
+      # SoulX VAE: cudnn (built in; ~2x faster, less VRAM) or ggml.
+      AUDIOCPP_AVATAR_VAE: ${AUDIOCPP_AVATAR_VAE:-cudnn}
     # :8080 (audiocpp_server) stays on the compose network: only the api talks to it. The HTTPS front
     # door is published; set AUDIOCPP_HTTPS_BIND=0.0.0.0 to reach it from other devices on the LAN.
     ports:

@@ -8,7 +8,8 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 import { app, BrowserWindow, Menu, dialog, ipcMain, nativeImage, systemPreferences, type IpcMainEvent, type IpcMainInvokeEvent, type MediaAccessPermissionRequest, type Session } from 'electron';
-import { DEEP_LINK_SCHEME, ORBIT_HEADERS, ORBIT_WEB_URL_ENV, type DeepLink } from '@orbit/contracts';
+import { DEEP_LINK_SCHEME, ORBIT_HEADERS, ORBIT_WEB_URL_ENV, type DeepLink, type DesktopGpuVoice } from '@orbit/contracts';
+import { gpuVoiceSupport } from './gpu-voice';
 import { createLogger } from '@orbit/logger';
 import type { DesktopSetup, DesktopLocalStackState, ServerProbe } from './shared/api';
 import { IPC } from './shared/api';
@@ -63,6 +64,8 @@ configureSetupStore(userDataDir);
 
 let mainWindow: BrowserWindow | null = null;
 let setupWindow: BrowserWindow | null = null;
+/** True while the finished setup window hands over to boot() (see IPC.setupComplete). */
+let handingOff = false;
 let appSession: AppWindow | null = null;
 let badge: BadgeController | null = null;
 let currentUrl: string | null = null;
@@ -174,8 +177,9 @@ function openSetupWindow(): void {
   setupWindow.once('ready-to-show', () => setupWindow?.show());
   setupWindow.on('closed', () => {
     setupWindow = null;
-    // Closing setup on first run without saving means there is nothing to open.
-    if (!mainWindow && !booted) quitApp('setup window closed before anything was saved');
+    // Closing setup on first run without saving means there is nothing to open. Setup closing
+    // itself because it finished (handingOff) is the opposite: boot() is about to open the app.
+    if (!mainWindow && !booted && !handingOff) quitApp('setup window closed before anything was saved');
   });
   void setupWindow.loadFile(path.join(here, 'setup.html'));
 }
@@ -379,7 +383,7 @@ async function selectStackController(opts: { interactive?: boolean } = {}): Prom
   const manifest = readServerManifest(manifestFile);
   const eligible = nativeStackEligible();
   if (!eligible || !manifest) {
-    const why = !eligible ? 'this Mac is not eligible' : `${manifestFile} is missing or invalid`;
+    const why = !eligible ? (process.platform === 'darwin' ? 'this Mac is not eligible' : 'the native stack is macOS-only') : `${manifestFile} is missing or invalid`;
     if (forced === 'native') log.warn(`ORBIT_FORCE_STACK=native ignored: ${why}`);
     else log.info(`native stack unavailable: ${why}`);
     return dockerStack();
@@ -828,12 +832,19 @@ function registerIpc(): void {
   // `on`, not `handle`: a rejection here is a log line, not an exception in the main process.
   ipcMain.on(IPC.setupComplete, (event) => {
     if (!senderTrusted(event)) return;
+    // From here until boot() has a window up there may be none at all, and on Windows and Linux
+    // that is when window-all-closed quits the app: a first run used to exit right after
+    // "Looking for Docker". The handoff flag keeps it alive across the gap.
+    handingOff = true;
     if (setupWindow && !setupWindow.isDestroyed()) {
       const win = setupWindow;
       setupWindow = null;
       win.destroy();
     }
     void boot()
+      .finally(() => {
+        handingOff = false;
+      })
       .then(() => {
         // The setup window is gone; if boot produced nothing, the person is looking at an app with
         // no window (which is how a first run can appear to "just quit"). Put the setup window back
@@ -886,6 +897,17 @@ function registerIpc(): void {
   // itself lives in the app window, so guarding it would leave it stuck open.
   ipcMain.on(IPC.noticeDismiss, () => dismissUpdateBar());
   // Only the app window's page may take a link: the setup window and the update bar have no use for one.
+  // GPU voice: read-only status for any window; installing/removing is a trusted-page action.
+  ipcMain.handle(IPC.gpuVoiceStatus, (): Promise<DesktopGpuVoice> | DesktopGpuVoice =>
+    stack.kind === 'docker'
+      ? stack.gpuVoiceStatus()
+      : { ...gpuVoiceSupport(process.platform, null, 'native'), enabled: false, phase: 'off' },
+  );
+  ipcMain.handle(IPC.gpuVoiceSet, async (event, on: boolean): Promise<DesktopGpuVoice> => {
+    assertSender(event);
+    if (stack.kind !== 'docker') return { ...gpuVoiceSupport(process.platform, null, 'native'), enabled: false, phase: 'off' };
+    return stack.setGpuVoice(on === true);
+  });
   ipcMain.handle(IPC.deepLinkTake, (event) => (mainWindow && !mainWindow.isDestroyed() && event.sender === mainWindow.webContents ? deepLinks.take() : null));
   ipcMain.handle(IPC.openExternal, (event, url: string) => {
     assertSender(event);
@@ -1154,6 +1176,8 @@ if (!app.requestSingleInstanceLock()) {
   app.on('window-all-closed', () => {
     // The local stack keeps running (containers survive a quit on purpose: Stop Local
     // Stack is the explicit action). macOS keeps the app in the dock.
+    // Setup handing over to the app window is not "the person closed every window".
+    if (handingOff) return;
     if (process.platform !== 'darwin') quitApp('all windows closed (non-macOS)');
   });
 

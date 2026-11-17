@@ -27,7 +27,11 @@ import { recordRoutineOutcome } from '../initiative-store.js';
  */
 
 export type Trigger =
-  | { type: 'user'; text: string }
+  /**
+   * `voice`: asked on a live call. The caller is listening for the first word, so the turn runs at
+   * low reasoning effort whatever the bot's own setting is: thinking tokens are seconds of silence.
+   */
+  | { type: 'user'; text: string; voice?: boolean }
   | { type: 'routine'; routineId: string; name: string; prompt: string }
   | { type: 'bot'; fromBotId: string; fromName: string; text: string; depth: number }
   /** `_groupDepth` is set by the group-chat dispatcher (agent/rooms.ts): how many bot-to-bot hops into one group conversation this turn is. */
@@ -168,6 +172,10 @@ export type ApprovalDecision = 'allow' | 'deny' | 'expired';
 
 /** Longest a tool call waits for the user. Kept under the engines' 30 minute tool timeout. */
 const APPROVAL_WAIT_MS = 25 * 60_000;
+/** How long a turn waits for its bot's screen before answering without it (it keeps starting). */
+const SCREEN_READY_WAIT_MS = Number(process.env.SCREEN_READY_WAIT_MS) || 20_000;
+/** Screens a turn stopped waiting for while they kept starting, so the next turn doesn't wait again. */
+const screensComingUp = new Map<string, Promise<void>>();
 
 const waiters = new Map<string, { botId: string; resolve: (d: ApprovalDecision) => void }>();
 
@@ -464,11 +472,29 @@ async function runTurn(botId: string, trigger: Trigger) {
   let failed = false;
 
   try {
-    // The screen first: the engine's browser and computer tools point at it.
-    if (computerKindFor(botId) === 'docker') {
-      await dockerProvider.readyScreen(userId, botId).catch((e) => console.warn(`[docker] screen not ready for ${botId}: ${e?.message ?? e}`));
-    } else {
-      await screenForWork(userId, botId).catch((e) => console.warn(`[computer] screen not ready for ${botId}: ${e?.message ?? e}`));
+    // The screen first: the engine's browser and computer tools point at it. Waited for only so long:
+    // a screen that is still building (a first image build, a registry that stalls) must not hold
+    // back a reply, least of all one a person is waiting for on a call. It keeps coming up meanwhile.
+    // A screen an earlier turn already gave up waiting for is not waited for again until it is up.
+    let screen = screensComingUp.get(botId);
+    const alreadyWaited = !!screen;
+    if (!screen) {
+      screen = (computerKindFor(botId) === 'docker'
+        ? dockerProvider.readyScreen(userId, botId).catch((e) => console.warn(`[docker] screen not ready for ${botId}: ${e?.message ?? e}`))
+        : screenForWork(userId, botId).catch((e) => console.warn(`[computer] screen not ready for ${botId}: ${e?.message ?? e}`))
+      ).then(() => undefined);
+    }
+    let screenTimer: ReturnType<typeof setTimeout> | undefined;
+    const waited = await Promise.race([
+      screen.then(() => 'ready' as const),
+      new Promise<'timeout'>((resolve) => { screenTimer = setTimeout(() => resolve('timeout'), alreadyWaited ? 0 : SCREEN_READY_WAIT_MS); }),
+    ]);
+    clearTimeout(screenTimer);
+    if (waited === 'timeout' && !alreadyWaited) {
+      console.warn(`[computer] screen for ${botId} not ready after ${SCREEN_READY_WAIT_MS / 1000}s; answering without waiting for it`);
+      const pending = screen;
+      screensComingUp.set(botId, pending);
+      void pending.finally(() => { if (screensComingUp.get(botId) === pending) screensComingUp.delete(botId); });
     }
     const engine = await engineFor(botId);
     if (ctrl.signal.aborted) throw new Error('interrupted');
@@ -495,7 +521,7 @@ async function runTurn(botId: string, trigger: Trigger) {
         conversation: `hq-${botId}-g${bot.generation}`,
         stream: true,
         store: true,
-        model_options: { reasoning_effort: bot.effort ?? 'medium' },
+        model_options: { reasoning_effort: trigger.type === 'user' && trigger.voice ? 'low' : (bot.effort ?? 'medium') },
       }),
     });
     if (!res.ok || !res.body) throw new Error(await failureText(res));

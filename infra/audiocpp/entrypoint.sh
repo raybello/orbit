@@ -31,7 +31,13 @@ fi
 
 # ---- the server config, with the models root filled in ----
 CONFIG=/tmp/server-config.json
-sed "s#{MODELS_DIR}#${MODELS_DIR}#g" /opt/audiocpp/server-config.json > "$CONFIG"
+# SoulX's VAE: cudnn (default; this image compiles it in) or ggml (the generic path, for a binary
+# built without cuDNN). A failed cudnn start falls back to ggml below instead of crash-looping.
+AVATAR_VAE=${AUDIOCPP_AVATAR_VAE:-cudnn}
+render_config() {
+  sed -e "s#{MODELS_DIR}#${MODELS_DIR}#g" -e "s#{AVATAR_VAE}#$1#g" /opt/audiocpp/server-config.json > "$CONFIG"
+}
+render_config "$AVATAR_VAE"
 
 models_present() {
   grep -o '"path": "[^"]*"' "$CONFIG" | cut -d'"' -f4 | while read -r p; do [ -f "$p" ] || exit 1; done
@@ -50,13 +56,46 @@ if ! models_present; then
 fi
 
 printf '{"state":"ready","pct":100,"have":0,"total":0,"file":null}\n' > "$STATUS"
-echo "[audiocpp] models present; starting audiocpp_server on :8080"
-/opt/audiocpp/audiocpp_server --config "$CONFIG" --models-root "$MODELS_DIR" &
-SERVER_PID=$!
+SERVER_LOG=/tmp/audiocpp_server.log
+start_server() {
+  echo "[audiocpp] models present; starting audiocpp_server on :8080 (avatar VAE: $1)"
+  # tee keeps the log on stdout for `docker logs` and in a file for the cuDNN check below.
+  /opt/audiocpp/audiocpp_server --config "$CONFIG" --models-root "$MODELS_DIR" > >(tee "$SERVER_LOG") 2>&1 &
+  SERVER_PID=$!
+}
+start_server "$AVATAR_VAE"
+
+# Loading three models takes a while; if the server dies during it because this binary has no
+# cuDNN Conv3D, restart it once on the generic VAE so voice still works (just slower avatar video).
+if [ "$AVATAR_VAE" = cudnn ]; then
+  for _ in $(seq 1 300); do
+    kill -0 "$SERVER_PID" 2>/dev/null || break
+    curl -fs http://127.0.0.1:8080/health >/dev/null 2>&1 && break
+    sleep 1
+  done
+  if ! kill -0 "$SERVER_PID" 2>/dev/null && grep -qi 'cudnn support is not compiled' "$SERVER_LOG"; then
+    echo "[audiocpp] this build has no cuDNN Conv3D; falling back to the generic avatar VAE"
+    render_config ggml
+    start_server ggml
+  fi
+fi
+
+# Warm the models in the background: the first request after boot is ~15 s of CUDA/cuDNN setup
+# that would otherwise land on someone's first call. AUDIOCPP_WARMUP=0 skips it.
+if [ "${AUDIOCPP_WARMUP:-1}" != "0" ]; then
+  python3 /opt/audiocpp/warmup.py &
+fi
 
 # Whichever process exits first takes the container down, so `restart: unless-stopped` restarts both.
 trap 'kill -TERM $SERVER_PID ${CADDY_PID:-} 2>/dev/null || true' TERM INT
 code=0
 wait -n $SERVER_PID ${CADDY_PID:-} || code=$?
+# Tell Orbit why, so the GPU voice settings show the server's own error instead of "not answering".
+if ! kill -0 "$SERVER_PID" 2>/dev/null; then
+  why="$(grep -h 'audiocpp_server failed' "$SERVER_LOG" 2>/dev/null | tail -n1 | sed 's/^audiocpp_server failed: //' | cut -c1-300 | tr -d '"\')"
+  [ -n "$why" ] || why="audiocpp_server exited with code $code"
+  printf '{"state":"ready","pct":100,"have":0,"total":0,"file":null,"server_error":"%s","updated_at":%s}
+' "$why" "$(date +%s000)" > "$STATUS"
+fi
 kill -TERM $SERVER_PID ${CADDY_PID:-} 2>/dev/null || true
 exit $code

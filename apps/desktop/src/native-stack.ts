@@ -794,6 +794,10 @@ export class NativeStackController implements NativeStack {
       ...this.hermesKey(),
       // The bundle root, so the API can serve `web/` from the same directory it ran from.
       ORBIT_BUNDLE_DIR: bundleDir,
+      // The native stack is the macOS path, and there is no Apple-silicon audio.cpp sidecar yet:
+      // GPU voice is off (the web app hides it) and calls use on-device voice. An explicit
+      // AUDIOCPP_URL in the environment (a GPU box on the LAN) still wins.
+      AUDIOCPP_URL: this.env.AUDIOCPP_URL?.trim() || 'off',
     };
   }
 

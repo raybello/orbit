@@ -9,7 +9,7 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import { spawn } from 'node:child_process';
-import { ORBIT_HEADERS } from '@orbit/contracts';
+import { ORBIT_HEADERS, type DesktopGpuVoice } from '@orbit/contracts';
 import { createLogger } from '@orbit/logger';
 import { DEFAULT_LOCAL_WEB_URL, normalizeServerUrl } from './setup-config';
 import { allocateLoopbackPort } from './loopback-port';
@@ -35,6 +35,7 @@ import {
 } from './local-stack-networking';
 import { sessionSecretFromEnvFile } from './desktop-session';
 import { hermesHome } from './hermes-setup';
+import { applyGpuVoice, detectNvidiaGpu, gpuProfileArgs, gpuVoiceEnabled, gpuVoiceSupport, type RunFile } from './gpu-voice';
 import type { DockerStack } from './stack-controller';
 import type { DesktopLocalStackState, DockerFailureKind, StackPhase } from './shared/api';
 
@@ -70,6 +71,8 @@ export interface LocalStackOptions {
   now?: () => number;
   allocatePort?: () => Promise<number>;
   launchDockerDesktop?: (platform: NodeJS.Platform, env: NodeJS.ProcessEnv) => Promise<void>;
+  /** Runs `nvidia-smi` for GPU detection; injected in tests. */
+  runFile?: RunFile;
   onState?: (state: DesktopLocalStackState) => void;
   healthTimeoutMs?: number;
   healthIntervalMs?: number;
@@ -96,6 +99,12 @@ const STACK_FILES: ReadonlyArray<{ target: string; candidates: readonly string[]
 /** A compose file that builds from the repo root: `../..` is not the repo once staged. */
 const SOURCE_BUILD_CONTEXT = /^\s*context:\s*['"]?\.\.\/\.\.['"]?\s*$/m;
 
+/** One probe's signal: the caller's (stop/abort), but never longer than five seconds. */
+function probeSignal(signal?: AbortSignal): AbortSignal {
+  const timeout = AbortSignal.timeout(5_000);
+  return signal ? AbortSignal.any([signal, timeout]) : timeout;
+}
+
 export class LocalStackController implements DockerStack {
   readonly kind = 'docker' as const;
   readonly stackDir: string;
@@ -105,6 +114,9 @@ export class LocalStackController implements DockerStack {
   private readonly env: NodeJS.ProcessEnv;
   private current: DesktopLocalStackState;
   private abortController: AbortController | null = null;
+  /** The GPU voice install/remove in progress or last failed, for the settings to show. */
+  private gpu: { phase: DesktopGpuVoice['phase']; detail?: string; error?: string } | null = null;
+  private gpuName: Promise<string | null> | null = null;
 
   constructor(options: LocalStackOptions) {
     this.opts = { ...options };
@@ -169,7 +181,9 @@ export class LocalStackController implements DockerStack {
     try {
       const res = await fetchImpl(`${webUrl}/api/desktop/probe`, {
         headers: { [ORBIT_HEADERS.stackToken]: token, [ORBIT_HEADERS.desktop]: '1' },
-        signal: signal ?? AbortSignal.timeout(5_000),
+        // Always bounded: Docker Desktop's port proxy accepts a connection before the container
+        // listens and can then leave the request hanging, which used to stall start() for good.
+        signal: probeSignal(signal),
       });
       if (!res.ok) return null;
       return (await res.json()) as { imageTag?: string; version?: string };
@@ -201,9 +215,45 @@ export class LocalStackController implements DockerStack {
   private compose(binary: string, args: string[], opts?: DockerRunOptions) {
     return this.exec(
       binary,
-      ['compose', '-f', path.join(this.stackDir, 'docker-compose.yml'), '--project-directory', this.stackDir, '--env-file', path.join(this.stackDir, '.env'), ...args],
+      [
+        'compose', '-f', path.join(this.stackDir, 'docker-compose.yml'), '--project-directory', this.stackDir, '--env-file', path.join(this.stackDir, '.env'),
+        // The GPU voice sidecar runs only when the person installed it (ORBIT_GPU_VOICE=1).
+        ...gpuProfileArgs(this.envText(), this.platform),
+        ...args,
+      ],
       opts,
     );
+  }
+
+  private envText(): string {
+    try {
+      return fs.readFileSync(path.join(this.stackDir, '.env'), 'utf8');
+    } catch {
+      return '';
+    }
+  }
+
+  private writeEnv(text: string): void {
+    const envPath = path.join(this.stackDir, '.env');
+    fs.writeFileSync(envPath, text, { encoding: 'utf8', mode: 0o600 });
+    try {
+      fs.chmodSync(envPath, 0o600);
+    } catch {
+      /* Windows */
+    }
+  }
+
+  /**
+   * Are all images the stack needs already on this machine? A tag that is not on the registry (a
+   * locally built image, an installer tested before its release published) still runs then.
+   */
+  private async imagesPresent(binary: string, signal?: AbortSignal): Promise<boolean> {
+    const listed = await this.compose(binary, ['config', '--images'], { timeoutMs: 30_000, signal });
+    if (listed.code !== 0) return false;
+    const images = listed.stdout.split(/\r?\n/).map((l) => l.trim()).filter(Boolean);
+    if (!images.length) return false;
+    const inspect = await this.exec(binary, ['image', 'inspect', '--format', '{{.Id}}', ...images], { timeoutMs: 30_000, signal });
+    return inspect.code === 0;
   }
 
   /**
@@ -347,6 +397,8 @@ export class LocalStackController implements DockerStack {
     // container has no way to know where the host keeps ~/.hermes, and with the value missing the
     // mount falls back to /tmp and every new agent starts with no API key.
     text = setEnvValue(text, 'HERMES_HOME_HOST', hermesHome());
+    // GPU voice follows the person's choice (and is always off on macOS).
+    text = applyGpuVoice(text, gpuVoiceEnabled(text, this.platform), this.platform);
     fs.writeFileSync(envPath, text, { encoding: 'utf8', mode: 0o600 });
     try {
       fs.chmodSync(envPath, 0o600);
@@ -392,7 +444,9 @@ export class LocalStackController implements DockerStack {
     try {
       const res = await fetchImpl(`${webUrl}/api/health`, {
         headers: { [ORBIT_HEADERS.stackToken]: token, [ORBIT_HEADERS.desktop]: '1' },
-        signal: signal ?? AbortSignal.timeout(5_000),
+        // Always bounded: Docker Desktop's port proxy accepts a connection before the container
+        // listens and can then leave the request hanging, which used to stall start() for good.
+        signal: probeSignal(signal),
       });
       if (!res.ok) return false;
       const body = (await res.json()) as { ok?: boolean; stackToken?: string };
@@ -501,7 +555,7 @@ export class LocalStackController implements DockerStack {
       const pull = await this.compose(binary, ['pull', '--quiet'], { timeoutMs: 600_000, signal });
       if (pull.code !== 0) {
         const kind = classifyDockerFailure(failureText(pull));
-        if (kind === 'image-not-found') {
+        if (kind === 'image-not-found' && !(await this.imagesPresent(binary, signal))) {
           return this.fail(kind, `The image ghcr.io/raybello/orbit/app:${this.imageTag()} is not published yet.`);
         }
         if (signal.aborted) return this.set({ phase: 'idle', detail: 'Stopped' });
@@ -572,6 +626,81 @@ export class LocalStackController implements DockerStack {
   abort(): void {
     this.abortController?.abort();
     this.abortController = null;
+  }
+
+  // ---------------------------------------------------------------- GPU voice
+
+  private detectGpu(): Promise<string | null> {
+    // A GPU does not come and go while the app runs; ask the driver once.
+    return (this.gpuName ??= detectNvidiaGpu(this.opts.runFile));
+  }
+
+  /** Can this computer run the GPU voice sidecar, is it on, and what is it doing. */
+  async gpuVoiceStatus(): Promise<DesktopGpuVoice> {
+    const support = gpuVoiceSupport(this.platform, this.platform === 'darwin' ? null : await this.detectGpu(), 'docker');
+    const enabled = gpuVoiceEnabled(this.envText(), this.platform);
+    const busy = this.gpu?.phase === 'installing' || this.gpu?.phase === 'removing' || this.gpu?.phase === 'error';
+    const phase: DesktopGpuVoice['phase'] = busy ? this.gpu!.phase : enabled ? 'on' : 'off';
+    return { ...support, enabled, phase, detail: this.gpu?.detail, error: phase === 'error' ? this.gpu?.error : undefined };
+  }
+
+  /**
+   * Install (pull and start the sidecar, then recreate the api pointed at it) or remove it. The
+   * choice is written first, so a stack started later honours it even if this run is interrupted.
+   * Models are not part of this: the GPU voice settings download them, with progress, afterwards.
+   */
+  async setGpuVoice(on: boolean): Promise<DesktopGpuVoice> {
+    const status = await this.gpuVoiceStatus();
+    if (on && !status.supported) {
+      const why = status.reason === 'macos' ? 'GPU voice needs an NVIDIA GPU; on a Mac, calls use on-device voice.' : 'No NVIDIA GPU was found on this computer.';
+      this.gpu = { phase: 'error', error: why };
+      return this.gpuVoiceStatus();
+    }
+    if (this.gpu?.phase === 'installing' || this.gpu?.phase === 'removing') return status;
+    const exists = this.opts.exists ?? ((file: string) => fs.existsSync(file));
+    const binary = resolveDockerBinary(this.platform, this.env, exists);
+    if (!binary) {
+      this.gpu = { phase: 'error', error: 'Docker is not installed.' };
+      return this.gpuVoiceStatus();
+    }
+    try {
+      if (!fs.existsSync(path.join(this.stackDir, '.env'))) this.prepareEnvFile();
+      if (!on) {
+        // Stop the sidecar while the profile is still on, so compose knows the service.
+        this.gpu = { phase: 'removing', detail: 'Stopping the GPU voice server…' };
+        const rm = await this.compose(binary, ['rm', '--stop', '--force', 'audiocpp'], { timeoutMs: 120_000 });
+        if (rm.code !== 0) log.warn('could not remove the GPU voice sidecar', failureText(rm));
+      }
+      this.writeEnv(applyGpuVoice(this.envText(), on, this.platform));
+
+      if (on) {
+        this.gpu = { phase: 'installing', detail: 'Downloading the GPU voice server (about 4 GB)…' };
+        const pull = await this.compose(binary, ['pull', '--quiet', 'audiocpp'], { timeoutMs: 3_600_000 });
+        if (pull.code !== 0 && !(await this.imagesPresent(binary))) {
+          this.writeEnv(applyGpuVoice(this.envText(), false, this.platform));
+          this.gpu = { phase: 'error', error: summarizeDockerFailure(pull) };
+          return this.gpuVoiceStatus();
+        }
+      }
+      if (this.current.phase === 'ready') {
+        // `up -d` starts the sidecar and recreates the api, whose AUDIOCPP_URL just changed.
+        this.gpu = { phase: on ? 'installing' : 'removing', detail: on ? 'Starting the GPU voice server…' : 'Restarting Orbit without GPU voice…' };
+        const up = await this.compose(binary, ['up', '-d'], { timeoutMs: 300_000 });
+        if (up.code !== 0) {
+          this.gpu = { phase: 'error', error: summarizeDockerFailure(up) };
+          return this.gpuVoiceStatus();
+        }
+        const token = this.token();
+        const webUrl = this.current.webUrl;
+        if (token && webUrl) await this.waitForHealth(webUrl, token, new AbortController().signal);
+        if (webUrl) this.set({ phase: 'ready', detail: 'Orbit is running', webUrl, progress: 1 });
+      }
+      this.gpu = null;
+    } catch (err) {
+      log.error('GPU voice change failed', err);
+      this.gpu = { phase: 'error', error: err instanceof Error ? err.message : String(err) };
+    }
+    return this.gpuVoiceStatus();
   }
 }
 

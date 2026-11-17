@@ -25,7 +25,7 @@ import type { IncomingMessage, Server } from 'node:http';
 import { WebSocket, WebSocketServer } from 'ws';
 import { userFromCookieHeader, userFromToken } from './lib/auth.js';
 import { getBotRow } from './store.js';
-import { defaultRelay } from './voice-local-session.js';
+import { streamRelay, type ReplySnapshot } from './voice-local-session.js';
 import * as audiocpp from './voice-audiocpp.js';
 
 /** Audio the client sends: 16 kHz mono PCM16, the rate OWSM listens at. */
@@ -45,7 +45,7 @@ const ONSET_WINDOWS = 3;
 /** Windows that must be loud over the bot's own voice to count as barge-in (~190 ms). */
 const BARGE_WINDOWS = 6;
 /** Silence that ends an utterance. OWSM is offline, so this is the whole endpointing latency. */
-const END_SILENCE_MS = 700;
+const END_SILENCE_MS = 600;
 /** Utterances shorter than this much speech are coughs and clicks, not turns. */
 const MIN_SPEECH_MS = 250;
 /** An utterance is cut (and transcribed) at this length even if the caller keeps talking. */
@@ -67,7 +67,10 @@ export type AudiocppCallEvent =
   | { type: 'ready'; ttsSampleRate: number; hasAvatar: boolean; voice: string }
   | { type: 'listening'; on: boolean }
   | { type: 'transcript'; text: string; final: boolean }
-  /** What the bot is about to say (its caption), sent before the reply's audio. */
+  /**
+   * What the bot is saying (its caption), sent before each piece's audio. A reply spoken in pieces
+   * sends the cumulative text each time, so the client replaces the turn's caption.
+   */
   | { type: 'reply'; text: string }
   | { type: 'thinking' }
   | { type: 'speaking'; on: boolean }
@@ -79,6 +82,8 @@ export type AudiocppCallEvent =
 
 export interface AudiocppCallDeps {
   relay?: (text: string) => Promise<string>;
+  /** Streaming relay (preferred over `relay`): the reply's text as it is written. */
+  relayStream?: (text: string, signal: AbortSignal) => AsyncIterable<ReplySnapshot>;
   transcribe?: (pcm: Int16Array, rate: number) => Promise<string>;
   speech?: (text: string, signal: AbortSignal) => AsyncIterable<{ pcm: Int16Array; rate: number }>;
   avatar?: (text: string, signal: AbortSignal) => AsyncIterable<audiocpp.AvatarStreamItem>;
@@ -124,6 +129,78 @@ export function speakableText(text: string): string {
     t = end > 200 ? cut.slice(0, end + 1) : `${cut.slice(0, cut.lastIndexOf(' '))}…`;
   }
   return t;
+}
+
+/**
+ * Cuts a reply that is still being written into pieces to speak, so the first sentence is on its way
+ * to the GPU while the model writes the rest. Feed it the cumulative text each time it grows.
+ *
+ * The first piece is the first sentence (or, for a long run-on opening, its first clause): that is
+ * what the caller waits on. Later pieces gather whole sentences up to a comfortable size, because
+ * every piece is a separate TTS / avatar request with its own warm-up. Nothing is cut inside a code
+ * fence, and the total stays under MAX_REPLY_CHARS.
+ */
+export class ReplySegmenter {
+  private consumed = 0;
+  private pieces = 0;
+  private spoken = 0;
+  private done = false;
+
+  constructor(private readonly opts: { firstMin?: number; laterMin?: number; clauseAfter?: number; maxChars?: number } = {}) {}
+
+  /** Pieces now ready from `full` (everything written so far); `final` flushes the remainder. */
+  push(full: string, final = false): string[] {
+    const out: string[] = [];
+    if (this.done) return out;
+    for (;;) {
+      const rest = full.slice(this.consumed);
+      const cut = this.cutPoint(rest, final);
+      if (cut <= 0) break;
+      this.consumed += cut;
+      const piece = speakableText(rest.slice(0, cut));
+      if (!piece) continue;
+      if (this.spoken + piece.length > (this.opts.maxChars ?? MAX_REPLY_CHARS)) {
+        if (!this.pieces) out.push(piece); // a lone first piece is already capped by speakableText
+        this.done = true;
+        break;
+      }
+      this.spoken += piece.length + 1;
+      this.pieces++;
+      out.push(piece);
+    }
+    return out;
+  }
+
+  /** Length of `rest` to speak next, or 0 to wait for more text. */
+  private cutPoint(rest: string, final: boolean): number {
+    if (!rest.trim()) return final ? rest.length : 0;
+    const min = this.pieces === 0 ? (this.opts.firstMin ?? 2) : (this.opts.laterMin ?? 90);
+    let best = 0;
+    let fences = 0;
+    // Sentence ends: . ! ? … (optionally closed by quotes/brackets) followed by whitespace, or a line break.
+    const re = /```|[.!?…]+["')\]]*(?=\s)|\n+/g;
+    for (let m = re.exec(rest); m; m = re.exec(rest)) {
+      if (m[0] === '```') {
+        fences++;
+        continue;
+      }
+      if (fences % 2) continue;
+      const end = m.index + m[0].length;
+      if (rest.slice(0, end).trim().length < min) continue;
+      best = end;
+      if (this.pieces === 0) break; // the first sentence goes out alone, as early as possible
+      if (end >= (this.opts.laterMin ?? 90) * 2) break;
+    }
+    if (best) return best;
+    if (final) return rest.length;
+    // A long opening with no sentence end yet: speak up to its last clause break.
+    const clauseAfter = this.opts.clauseAfter ?? 120;
+    if (this.pieces === 0 && fences % 2 === 0 && rest.length > clauseAfter) {
+      const comma = Math.max(rest.lastIndexOf(', '), rest.lastIndexOf('; '), rest.lastIndexOf(': '));
+      if (comma > clauseAfter / 2) return comma + 1;
+    }
+    return 0;
+  }
 }
 
 /** OWSM marks non-speech with tags like `<nospeech>`; those are not words. */
@@ -377,49 +454,99 @@ export class AudiocppCallSession {
 
   // ---------- turn ----------
 
-  private async respond(text: string, gen: number): Promise<void> {
-    let settled = false;
-    const relayed = (this.deps.relay ? this.deps.relay(text) : defaultRelay(this.botId, this.callId, text)).then(
-      (reply) => ({ ok: true as const, reply }),
-      (error) => ({ ok: false as const, error }),
-    );
-    const deadline = new Promise<{ ok: 'timeout' }>((resolve) => {
-      const t = setTimeout(() => resolve({ ok: 'timeout' }), this.options.relayTimeoutMs);
-      t.unref?.();
-      void relayed.finally(() => clearTimeout(t));
-    });
-    // A quick answer is spoken instead of the filler; a slow one gets "One moment." first.
-    const filler = (async () => {
-      await this.sleep(this.options.fillerDelayMs);
-      if (settled || this.closed || gen !== this.turnGen) return;
-      await this.speak(FILLER_TEXT, gen, { audioOnly: true, keepSpeaking: true });
-    })();
-    const outcome = await Promise.race([relayed, deadline]);
-    settled = true;
-    this.wakeAll(); // a filler still waiting out its delay is not needed any more
-    if (this.closed || gen !== this.turnGen) return;
-    await filler;
-    if (this.closed || gen !== this.turnGen) return;
+  /** The bot's reply as it is written: the streaming relay, or a one-shot `relay` stub (tests). */
+  private replySource(text: string, signal: AbortSignal): AsyncIterable<ReplySnapshot> {
+    if (this.deps.relayStream) return this.deps.relayStream(text, signal);
+    const relay = this.deps.relay;
+    if (relay) {
+      return (async function* () {
+        yield { text: await relay(text), final: true };
+      })();
+    }
+    return streamRelay(this.botId, this.callId, text, signal);
+  }
 
-    if (outcome.ok === 'timeout') {
-      await this.speak(TIMEOUT_TEXT, gen, { audioOnly: true });
-      if (!this.closed && gen === this.turnGen) this.emit({ type: 'done' });
-      return;
+  /**
+   * One turn's answer, spoken as it is written: the first sentence goes to TTS/avatar the moment it
+   * exists, and each later piece is generated while the one before it plays, so the caller hears the
+   * answer about one sentence after the model starts writing instead of after it finishes. A model
+   * that has said nothing after `fillerDelayMs` gets "One moment."; nothing by the deadline gets an
+   * apology and the call carries on.
+   */
+  private async respond(text: string, gen: number): Promise<void> {
+    const turn = new AbortController();
+    const live = () => !this.closed && gen === this.turnGen;
+    const segmenter = new ReplySegmenter();
+    const queue: string[] = [];
+    let ended = false;
+    let failure: unknown = null;
+    const producer = (async () => {
+      try {
+        for await (const snap of this.replySource(text, turn.signal)) {
+          if (!live()) break;
+          queue.push(...segmenter.push(snap.text, snap.final));
+          this.wakeAll();
+          if (snap.final) break;
+        }
+      } catch (e) {
+        failure = e;
+      } finally {
+        ended = true;
+        this.wakeAll();
+      }
+    })();
+
+    const started = Date.now();
+    let said = '';
+    let filler = false;
+    try {
+      while (live()) {
+        const piece = queue.shift();
+        if (piece) {
+          said = said ? `${said} ${piece}` : piece;
+          this.emit({ type: 'reply', text: said });
+          // Don't wait for it to finish playing: the next piece generates meanwhile.
+          await this.speak(piece, gen, { waitPlayback: false, keepSpeaking: true });
+          continue;
+        }
+        if (ended) break;
+        const waited = Date.now() - started;
+        if (!said && waited >= this.options.relayTimeoutMs) {
+          turn.abort();
+          await this.speak(TIMEOUT_TEXT, gen, { audioOnly: true });
+          if (live()) this.emit({ type: 'done' });
+          return;
+        }
+        if (!said && !filler && waited >= this.options.fillerDelayMs) {
+          filler = true;
+          await this.speak(FILLER_TEXT, gen, { audioOnly: true, waitPlayback: false, keepSpeaking: true });
+          continue;
+        }
+        const nextAlarm = !said && !filler ? this.options.fillerDelayMs : this.options.relayTimeoutMs;
+        await this.sleep(Math.max(10, Math.min(1000, nextAlarm - waited)));
+      }
+      if (!live()) return;
+      if (!said) {
+        this.emit({ type: 'error', message: failure ? `relay failed: ${errText(failure)}` : 'the bot did not answer' });
+        this.close();
+        return;
+      }
+      await this.waitPlayback(gen);
+      if (live()) {
+        this.setSpeaking(false);
+        this.emit({ type: 'done' });
+      }
+    } finally {
+      turn.abort();
+      void producer;
     }
-    if (!outcome.ok) {
-      this.emit({ type: 'error', message: `relay failed: ${errText(outcome.error)}` });
-      this.close();
-      return;
+  }
+
+  /** Hold `speaking` until the browser has played what it was sent, so barge-in still works. */
+  private async waitPlayback(gen: number): Promise<void> {
+    while (!this.closed && gen === this.turnGen && Date.now() < this.playbackEnd) {
+      await this.sleep(Math.min(250, this.playbackEnd - Date.now()));
     }
-    const reply = speakableText(outcome.reply);
-    if (!reply) {
-      this.emit({ type: 'error', message: 'the bot did not answer' });
-      this.close();
-      return;
-    }
-    this.emit({ type: 'reply', text: reply });
-    await this.speak(reply, gen);
-    if (!this.closed && gen === this.turnGen) this.emit({ type: 'done' });
   }
 
   /**
@@ -427,7 +554,7 @@ export class AudiocppCallSession {
    * avatar failure before any audio went out retries audio-only, so a broken portrait never costs
    * the caller the answer. Resolves once the browser has finished playing it (or barge-in).
    */
-  private async speak(text: string, gen: number, opts: { audioOnly?: boolean; keepSpeaking?: boolean } = {}): Promise<void> {
+  private async speak(text: string, gen: number, opts: { audioOnly?: boolean; keepSpeaking?: boolean; waitPlayback?: boolean } = {}): Promise<void> {
     const abort = new AbortController();
     this.speakAbort = abort;
     this.setSpeaking(true);
@@ -445,10 +572,7 @@ export class AudiocppCallSession {
       } else {
         await this.speakAudio(text, gen, abort.signal);
       }
-      // Hold `speaking` until the browser has played what it was sent, so barge-in still works.
-      while (!this.closed && gen === this.turnGen && Date.now() < this.playbackEnd) {
-        await this.sleep(Math.min(250, this.playbackEnd - Date.now()));
-      }
+      if (opts.waitPlayback !== false) await this.waitPlayback(gen);
     } catch (e) {
       if (!abort.signal.aborted && !this.closed && gen === this.turnGen) {
         this.emit({ type: 'error', message: `speech failed: ${errText(e)}` });
@@ -626,11 +750,10 @@ export function pendingAudiocppCalls(): number {
 
 // ---------- the WebSocket relay ----------
 
+/** PCM16 LE bytes → samples in one copy (every platform Orbit runs on is little-endian). */
 function pcm16From(buf: Buffer): Int16Array {
-  const n = buf.length >> 1;
-  const out = new Int16Array(n);
-  for (let i = 0; i < n; i++) out[i] = buf.readInt16LE(i * 2);
-  return out;
+  const bytes = buf.length & ~1; // a trailing odd byte is dropped rather than misread
+  return new Int16Array(buf.buffer.slice(buf.byteOffset, buf.byteOffset + bytes));
 }
 
 /** WebSocket relay for /api/voice/audiocpp/call/:callId; same upgrade rules as the local call relay. */

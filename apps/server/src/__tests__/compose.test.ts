@@ -62,6 +62,23 @@ test('docker-compose.yml: the audiocpp GPU sidecar is opt-in and never publishes
   assert.doesNotMatch(svc, /:8080"/, 'audiocpp_server stays on the compose network');
 });
 
+test('docker-compose.images.yml: the installers ship the GPU sidecar behind the gpu profile, from GHCR', () => {
+  const text = lf(fs.readFileSync(path.join(composeDir, 'docker-compose.images.yml'), 'utf8'));
+  const svc = serviceBlock(text, 'audiocpp');
+  assert.match(svc, /profiles: \[gpu\]/, 'only the desktop app adds --profile gpu, after the person installs it');
+  assert.match(svc, /image: ghcr\.io\/raybello\/orbit\/audiocpp:\$\{ORBIT_IMAGE_TAG:-edge\}/, 'same tag as the app image');
+  assert.match(svc, /orbit\.role: audiocpp/);
+  assert.doesNotMatch(svc, /:8080"/, 'audiocpp_server stays on the compose network');
+});
+
+test('docker-compose.gpu-host.yml: sidecar-only mode publishes audio.cpp on loopback for a host-run Orbit', () => {
+  const text = lf(fs.readFileSync(path.join(composeDir, 'docker-compose.gpu-host.yml'), 'utf8'));
+  const svc = serviceBlock(text, 'audiocpp');
+  assert.match(svc, /"\$\{AUDIOCPP_API_BIND:-127\.0\.0\.1\}:\$\{AUDIOCPP_API_PORT:-8080\}:8080"/, 'loopback by default');
+  assert.match(svc, /ORBIT_HTTPS_UPSTREAM: \$\{ORBIT_HTTPS_UPSTREAM:-http:\/\/host\.docker\.internal:\d+\}/);
+  assert.match(svc, /host\.docker\.internal:host-gateway/, 'Linux engines need the host alias spelled out');
+});
+
 test('the env example does not ship an empty COMPUTER_IMAGE without a default in compose', () => {
   const example = fs.readFileSync(path.join(composeDir, '.env.images.example'), 'utf8');
   assert.match(example, /^COMPUTER_IMAGE=/m, 'the example still documents the key');

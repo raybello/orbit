@@ -5,7 +5,7 @@ import { create } from 'zustand';
 import type { Row, VoiceReadiness } from '@orbit/contracts';
 import { useStore } from '../store';
 import { sortedRows } from '../domain/transcript-utils';
-import { voiceApi, type VoiceSession } from './api';
+import { cachedAudiocppStatus, voiceApi, type VoiceSession } from './api';
 import { MicCapture, PcmPlayer, base64ToPcm, createAudioContext, micErrorMessage, openMic, pcmToBase64 } from './audio';
 import { endLocalCall, isLocalCallActive, localLevels, setLocalMuted, startLocalCall } from './local-call';
 import { audiocppLevels, endAudiocppCall, isAudiocppCallActive, setAudiocppMuted, startAudiocppCall } from './audiocpp-call';
@@ -89,7 +89,13 @@ export function startCall(botId: string) {
   const bot = useStore.getState().bots.find((b) => b.id === botId);
   if (!bot || bot.voiceProvider === 'cloud') { startCloud(botId); return; }
   // GPU voice: the server checks audio.cpp at session start and the call bar shows why if it can't.
-  if (bot.voiceProvider === 'audiocpp') { setV({ blocked: null }); startAudiocppCall(botId); return; }
+  // A server with GPU voice turned off (macOS) answers with on-device voice instead.
+  if (bot.voiceProvider === 'audiocpp') {
+    if (cachedAudiocppStatus()?.reason === 'disabled') { onDeviceInstead(botId); return; }
+    setV({ blocked: null });
+    startAudiocppCall(botId, () => onDeviceInstead(botId));
+    return;
+  }
   const ready = readinessFor(bot);
   if (ready) { dispatch(botId, ready); return; }
   // The inventory has not loaded yet: the probe decides. It is cached from here on, so later clicks
@@ -99,6 +105,16 @@ export function startCall(botId: string) {
     const latest = useStore.getState().bots.find((b) => b.id === botId);
     if (latest) dispatch(botId, readinessFor(latest) ?? { status: 'unsupported' });
   });
+}
+
+/** A GPU-voice bot on a server without GPU voice: the on-device pipeline takes the call. */
+function onDeviceInstead(botId: string) {
+  const bot = useStore.getState().bots.find((b) => b.id === botId);
+  if (!bot) return;
+  const asLocal = { ...bot, voiceProvider: 'local' as const };
+  const ready = readinessFor(asLocal);
+  if (ready) { dispatch(botId, ready); return; }
+  void refreshVoiceModels().then(() => dispatch(botId, readinessFor(asLocal) ?? { status: 'unsupported' }));
 }
 
 function dispatch(botId: string, ready: VoiceReadiness) {

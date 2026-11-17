@@ -65,9 +65,54 @@ build_inputs() {
   pnpm --filter @orbit/desktop run check-resources
 }
 
+# Build one platform's installer on GitHub Actions with publishing off, and download it:
+#   ci_build <win|mac|linux> <artifact globs…>
+ci_build() {
+  command -v gh >/dev/null 2>&1 || { echo "✗ needs the GitHub CLI (gh) to build on GitHub Actions" >&2; exit 1; }
+  REF="${ORBIT_REF:-$(git rev-parse --abbrev-ref HEAD)}"
+  if [ "$(git rev-parse "$REF")" != "$(git rev-parse "origin/$REF" 2>/dev/null || echo none)" ]; then
+    echo "✗ $REF is not pushed (or differs from origin/$REF); Actions builds what is on GitHub" >&2
+    exit 1
+  fi
+  # A workflow without the PUBLISH switch publishes every run, which would overwrite the live
+  # release's installers. Refuse unless the copy on GitHub can build without releasing.
+  if ! gh api "repos/$REPO/contents/.github/workflows/desktop-release.yml?ref=$REF" --jq .content 2>/dev/null \
+      | base64 --decode 2>/dev/null | grep -q 'PUBLISH:'; then
+    echo "✗ the release workflow on $REF publishes every run; push the version with the PUBLISH switch first" >&2
+    exit 1
+  fi
+  echo "▸ no local $1 toolchain: building on GitHub Actions ($REPO @ $REF, publish off)"
+  # Compare like with like: the newest *manual* run before ours, so an old manual run is never
+  # mistaken for the one this script starts.
+  BEFORE=$(gh run list -R "$REPO" -w desktop-release.yml -e workflow_dispatch -L 1 --json databaseId --jq '.[0].databaseId // 0')
+  gh workflow run desktop-release.yml -R "$REPO" --ref "$REF" -f publish=false
+  RUN=""
+  for _ in $(seq 1 30); do
+    RUN=$(gh run list -R "$REPO" -w desktop-release.yml -e workflow_dispatch -L 1 --json databaseId --jq '.[0].databaseId // 0')
+    [ "$RUN" != "0" ] && [ "$RUN" -gt "$BEFORE" ] && break
+    sleep 2
+  done
+  [ -n "$RUN" ] && [ "$RUN" -gt "$BEFORE" ] || { echo "✗ the workflow run did not appear" >&2; exit 1; }
+  echo "  https://github.com/$REPO/actions/runs/$RUN"
+  gh run watch "$RUN" -R "$REPO" --interval 20 || true
+  OUT="$DESKTOP/out/ci-$1"
+  rm -rf "$OUT" && mkdir -p "$OUT"
+  gh run download "$RUN" -R "$REPO" -n "orbit-desktop-$1" -D "$OUT" \
+    || { echo "✗ the $1 build produced no artifact; see the run log above" >&2; exit 1; }
+  shift
+  # The globs were expanded before the download, so expand them again now that the files exist.
+  local files=()
+  for pattern in "$@"; do for f in $pattern; do files+=("$f"); done; done
+  checksums "${files[@]}"
+}
+
 case "$PLATFORM" in
   mac)
-    [ "$(uname -s)" = "Darwin" ] || { echo "✗ macOS installers can only be built on a Mac" >&2; exit 1; }
+    # A DMG needs macOS (hdiutil, codesign): elsewhere, build it on GitHub's macOS runner.
+    if [ "$(uname -s)" != "Darwin" ]; then
+      ci_build mac "$DESKTOP/out/ci-mac/*.dmg" "$DESKTOP/out/ci-mac/*.zip"
+      exit 0
+    fi
     case "${ARCH:-host}" in
       host) [ "$(uname -m)" = "arm64" ] && ARCH_FLAGS=(--arm64) || ARCH_FLAGS=(--x64) ;;
       all) ARCH_FLAGS=(--arm64 --x64) ;;
@@ -104,37 +149,6 @@ case "$PLATFORM" in
 
     # No Windows toolchain here (NSIS and the icon/version step need Windows or Wine), so build on
     # GitHub's Windows runner with publishing off and download the result.
-    command -v gh >/dev/null 2>&1 || { echo "✗ needs the GitHub CLI (gh) to build on GitHub Actions" >&2; exit 1; }
-    REF="${ORBIT_REF:-$(git rev-parse --abbrev-ref HEAD)}"
-    if [ "$(git rev-parse "$REF")" != "$(git rev-parse "origin/$REF" 2>/dev/null || echo none)" ]; then
-      echo "✗ $REF is not pushed (or differs from origin/$REF); Actions builds what is on GitHub" >&2
-      exit 1
-    fi
-    # A workflow without the PUBLISH switch publishes every run, which would overwrite the live
-    # release's installers. Refuse unless the copy on GitHub can build without releasing.
-    if ! gh api "repos/$REPO/contents/.github/workflows/desktop-release.yml?ref=$REF" --jq .content 2>/dev/null \
-        | base64 --decode 2>/dev/null | grep -q 'PUBLISH:'; then
-      echo "✗ the release workflow on $REF publishes every run; push the version with the PUBLISH switch first" >&2
-      exit 1
-    fi
-    echo "▸ no local Windows toolchain: building on GitHub Actions ($REPO @ $REF, publish off)"
-    # Compare like with like: the newest *manual* run before ours, so an old manual run is never
-    # mistaken for the one this script starts.
-    BEFORE=$(gh run list -R "$REPO" -w desktop-release.yml -e workflow_dispatch -L 1 --json databaseId --jq '.[0].databaseId // 0')
-    gh workflow run desktop-release.yml -R "$REPO" --ref "$REF" -f publish=false
-    RUN=""
-    for _ in $(seq 1 30); do
-      RUN=$(gh run list -R "$REPO" -w desktop-release.yml -e workflow_dispatch -L 1 --json databaseId --jq '.[0].databaseId // 0')
-      [ "$RUN" != "0" ] && [ "$RUN" -gt "$BEFORE" ] && break
-      sleep 2
-    done
-    [ -n "$RUN" ] && [ "$RUN" -gt "$BEFORE" ] || { echo "✗ the workflow run did not appear" >&2; exit 1; }
-    echo "  https://github.com/$REPO/actions/runs/$RUN"
-    gh run watch "$RUN" -R "$REPO" --interval 20 || true
-    OUT="$DESKTOP/out/ci-win"
-    rm -rf "$OUT" && mkdir -p "$OUT"
-    gh run download "$RUN" -R "$REPO" -n orbit-desktop-win -D "$OUT" \
-      || { echo "✗ the Windows build produced no artifact; see the run log above" >&2; exit 1; }
-    checksums "$OUT"/*.exe
+    ci_build win "$DESKTOP/out/ci-win/*.exe"
     ;;
 esac

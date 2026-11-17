@@ -192,17 +192,33 @@ async function errorOf(res: Response, fallback: string): Promise<Error> {
   return new Error(msg);
 }
 
+/** The last GPU voice status seen, so a call can be routed without waiting on the network. */
+let lastAudiocppStatus: AudiocppStatus | null = null;
+export const cachedAudiocppStatus = () => lastAudiocppStatus;
+
 /** `GET /api/voice/audiocpp/status`: is the audio.cpp server up, and with which models. */
 export async function audiocppStatus(): Promise<AudiocppStatus> {
   const res = await fetch('/api/voice/audiocpp/status', { credentials: 'include' });
   if (!res.ok) throw new Error(`HTTP ${res.status}`);
-  return res.json() as Promise<AudiocppStatus>;
+  lastAudiocppStatus = (await res.json()) as AudiocppStatus;
+  return lastAudiocppStatus;
+}
+
+/** GPU voice is turned off on this server (macOS, or AUDIOCPP_URL=off): calls use on-device voice. */
+export class GpuVoiceDisabledError extends Error {
+  constructor() {
+    super('GPU voice is turned off on this server');
+  }
 }
 
 export async function startAudiocppSession(botId: string): Promise<AudiocppSession> {
   const res = await fetch('/api/voice/audiocpp/session', {
     method: 'POST', credentials: 'include', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ botId }),
   });
+  if (res.status === 503) {
+    const body = (await res.clone().json().catch(() => ({}))) as { reason?: string };
+    if (body.reason === 'disabled') throw new GpuVoiceDisabledError();
+  }
   if (!res.ok) throw await errorOf(res, 'GPU voice isn’t available');
   const s = (await res.json()) as Partial<AudiocppSession>;
   if (typeof s.callId !== 'string' || !s.callId) throw new Error('GPU voice session was not created');

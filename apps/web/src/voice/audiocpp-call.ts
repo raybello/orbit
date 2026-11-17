@@ -14,7 +14,7 @@
 import { create } from 'zustand';
 import type { Caption } from './call';
 import { useVoice } from './call';
-import { startAudiocppSession } from './api';
+import { GpuVoiceDisabledError, startAudiocppSession } from './api';
 import { MicCapture, PcmPlayer, createAudioContext, micErrorMessage, openMic } from './audio';
 import { LOCAL_IN_RATE, StreamResampler, toPcm16 } from './resample';
 
@@ -59,6 +59,9 @@ interface VideoChunk {
  * Pure part of the frame scheduler, tested without a browser: which frame of which chunk is due at
  * AudioContext time `t`. Returns null between chunks (the last drawn frame stays on the canvas).
  */
+/** Mic frames of 20 ms: the server's VAD hears speech start and stop one frame sooner than at 40. */
+const MIC_FRAME_MS = 20;
+
 export function dueFrame(chunks: { start: number | null; frames: number; fps: number }[], t: number): { chunk: number; frame: number } | null {
   for (let i = 0; i < chunks.length; i++) {
     const c = chunks[i];
@@ -104,6 +107,8 @@ class AudiocppCall {
   private ttsRate = 24000;
   private readonly resampler = new StreamResampler();
   private captionSeq = 0;
+  /** This turn's reply caption, grown as the reply's pieces are spoken. */
+  private replyCaption: string | null = null;
   private connectTimer: ReturnType<typeof setTimeout> | null = null;
   private onUnload = () => this.end();
 
@@ -112,6 +117,9 @@ class AudiocppCall {
   private chunks: VideoChunk[] = [];
   private raf = 0;
   private lastDrawn = '';
+
+  /** Called instead of an error when this server has GPU voice turned off. */
+  onDisabled: (() => void) | null = null;
 
   constructor(readonly botId: string) {
     this.ctx = createAudioContext();
@@ -129,6 +137,10 @@ class AudiocppCall {
     useAvatarCall.setState({ hasAvatar: false, videoLive: false });
     window.addEventListener('pagehide', this.onUnload);
     window.addEventListener('beforeunload', this.onUnload);
+    // Ask for the session now rather than after the mic is open: the two don't depend on each other,
+    // and a call that waits on both one after the other starts noticeably later.
+    const session = startAudiocppSession(this.botId);
+    session.catch(() => {}); // observed below; an unopened mic must not leave it unhandled
     let stream: MediaStream;
     try {
       stream = await openMic({ sampleRate: LOCAL_IN_RATE });
@@ -138,16 +150,22 @@ class AudiocppCall {
     }
     if (this.ended) { stream.getTracks().forEach((t) => t.stop()); return; }
     try {
-      this.mic = new MicCapture(this.captureCtx, stream, (frame) => this.sendAudio(frame), LOCAL_IN_RATE);
-      await this.mic.start();
-      if (this.ended) return;
-      const sess = await startAudiocppSession(this.botId);
+      this.mic = new MicCapture(this.captureCtx, stream, (frame) => this.sendAudio(frame), LOCAL_IN_RATE, MIC_FRAME_MS);
+      // The session was requested while the mic permission prompt was up; its answer is usually here.
+      const [, sess] = await Promise.all([this.mic.start(), session]);
       if (this.ended) return;
       this.ttsRate = sess.ttsSampleRate;
       useAvatarCall.setState({ hasAvatar: sess.hasAvatar });
       setV({ callId: sess.callId });
       this.connect(sess.callId);
     } catch (e) {
+      if (e instanceof GpuVoiceDisabledError && this.onDisabled) {
+        // Not an error the person can fix here: hand the call to on-device voice instead.
+        stream.getTracks().forEach((t) => t.stop());
+        this.end();
+        this.onDisabled();
+        return;
+      }
       this.end((e as Error).message || 'Could not start the call');
     }
   }
@@ -278,10 +296,12 @@ class AudiocppCall {
         setV({ listening: !!ev.on });
         return;
       case 'transcript':
+        this.replyCaption = null; // a new turn: its reply gets a caption of its own
         if (ev.text?.trim()) this.caption('user', ev.text.trim());
         return;
       case 'reply':
-        if (ev.text?.trim()) this.caption('assistant', ev.text.trim());
+        // A reply spoken in pieces arrives as cumulative text: grow this turn's caption in place.
+        if (ev.text?.trim()) this.replyCaption = this.caption('assistant', ev.text.trim(), this.replyCaption);
         return;
       case 'thinking':
         setV({ thinking: true, listening: false });
@@ -313,9 +333,16 @@ class AudiocppCall {
     }
   }
 
-  private caption(role: Caption['role'], text: string) {
+  /** Add a caption, or replace caption `id` when it is still there. Returns the caption's id. */
+  private caption(role: Caption['role'], text: string, id?: string | null): string {
     const caps = useVoice.getState().captions;
-    setV({ captions: [...caps, { id: `gpu-${++this.captionSeq}`, role, text, final: true }].slice(-200) });
+    if (id && caps.some((c) => c.id === id)) {
+      setV({ captions: caps.map((c) => (c.id === id ? { ...c, text } : c)) });
+      return id;
+    }
+    const fresh = `gpu-${++this.captionSeq}`;
+    setV({ captions: [...caps, { id: fresh, role, text, final: true }].slice(-200) });
+    return fresh;
   }
 
   end(error?: string) {
@@ -347,12 +374,14 @@ class AudiocppCall {
 }
 
 /** Start a GPU call. Must be called from a user gesture (click) so audio can start. */
-export function startAudiocppCall(botId: string) {
+/** `onDisabled`: where the call goes when this server has GPU voice off (on-device voice). */
+export function startAudiocppCall(botId: string, onDisabled?: () => void) {
   if (current && !current.ended) {
     if (current.botId === botId) return;
     current.end();
   }
   current = new AudiocppCall(botId);
+  current.onDisabled = onDisabled ?? null;
   void current.start();
 }
 

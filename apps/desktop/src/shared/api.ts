@@ -7,7 +7,7 @@
  * literally, so a change here needs the same change there.
  */
 
-import type { DeepLink } from '@orbit/contracts';
+import type { DeepLink, DesktopGpuVoice } from '@orbit/contracts';
 
 export type SetupMode = 'new' | 'existing';
 
@@ -126,6 +126,12 @@ export interface OrbitDesktopAPI {
    * page subscribed. Each link is delivered once, to the app window only.
    */
   onDeepLink(cb: (link: DeepLink) => void): () => void;
+  // GPU voice: the audio.cpp sidecar, installed only when the person asks (Windows/Linux + NVIDIA).
+  gpuVoice: {
+    status(): Promise<DesktopGpuVoice>;
+    install(): Promise<DesktopGpuVoice>;
+    remove(): Promise<DesktopGpuVoice>;
+  };
   // Platform
   platform: 'darwin' | 'win32' | 'linux';
   version: string;
@@ -153,4 +159,6 @@ export const IPC = {
   openExternal: 'orbit:shell:open-external',
   deepLinkReady: 'orbit:deeplink:ready',
   deepLinkTake: 'orbit:deeplink:take',
+  gpuVoiceStatus: 'orbit:gpu-voice:status',
+  gpuVoiceSet: 'orbit:gpu-voice:set',
 } as const;

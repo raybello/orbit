@@ -106,6 +106,9 @@ export const env = {
    * GPU voice: the audio.cpp server (OWSM ASR, LFM3-Audio TTS, SoulX-FlashHead avatar). The Docker
    * sidecar is http://audiocpp:8080 on the compose network; a native server on this host is the default.
    */
+  // `off` (or `none`/`disabled`) turns GPU voice off for this server: the desktop app sets it on
+  // macOS, where there is no CUDA sidecar.
+  audiocppDisabled: /^(off|none|disabled|0|false)$/i.test(process.env.AUDIOCPP_URL?.trim() ?? ''),
   audiocppUrl: (process.env.AUDIOCPP_URL?.trim() || 'http://127.0.0.1:8080').replace(/\/+$/, ''),
   /**
    * The audio.cpp sidecar's models folder on the shared data volume. Only read for the download

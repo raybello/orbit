@@ -632,15 +632,40 @@ export interface InitiativeSettingsPatch {
  * needs is configured and loaded. `download` is present when the models live on this stack's data
  * volume (the Docker sidecar), where Orbit can fetch them; a native server manages its own.
  */
+/**
+ * The desktop app's control over the GPU voice sidecar on this computer (Windows and Linux with an
+ * NVIDIA GPU). The person installs it: nothing ~3 GB is pulled without asking. macOS has no CUDA
+ * sidecar yet, so there it reports `supported: false` and voice stays on-device.
+ */
+export interface DesktopGpuVoice {
+  supported: boolean;
+  /** Why it can't be installed here. */
+  reason?: 'macos' | 'no-nvidia' | 'not-docker-stack' | 'docker-missing';
+  /** "NVIDIA GeForce RTX 5070 Ti · 16 GB", when one was found. */
+  gpu?: string;
+  /** The person turned it on (the stack runs the sidecar). */
+  enabled: boolean;
+  phase: 'off' | 'installing' | 'on' | 'removing' | 'error';
+  detail?: string;
+  error?: string;
+}
+
 export interface AudiocppStatus {
   available: boolean;
-  reason?: 'unreachable' | 'server-error' | 'models-missing' | 'downloading' | 'models-not-loaded';
+  /**
+   * Why it is unavailable. `disabled`: this server has GPU voice turned off (AUDIOCPP_URL=off, which
+   * the desktop app sets on macOS until an Apple-silicon sidecar exists); clients hide GPU voice and
+   * calls use on-device voice instead.
+   */
+  reason?: 'disabled' | 'unreachable' | 'server-error' | 'models-missing' | 'downloading' | 'models-not-loaded';
   url: string;
   /** Model ids Orbit uses → loaded on the server. */
   models: Record<string, boolean>;
   /** The avatar model is configured: portraits can be animated. */
   avatar: boolean;
-  download: { state: 'missing' | 'downloading' | 'ready' | 'error'; pct: number; file: string | null; error?: string } | null;
+  download: { state: 'missing' | 'downloading' | 'ready' | 'error'; pct: number; file: string | null; error?: string; serverError?: string } | null;
+  /** The audio.cpp server's own reason it is not running (from the sidecar), when known. */
+  detail?: string;
   /** A Docker sidecar Orbit can run the download in was found. */
   managed: boolean;
   voices: string[];

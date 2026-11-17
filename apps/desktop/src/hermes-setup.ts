@@ -86,7 +86,11 @@ function defaultExec(
   });
 }
 
-/** `~/.hermes`, or `%APPDATA%\hermes` on Windows, unless HERMES_HOME says otherwise. */
+/**
+ * `~/.hermes`, or `%LOCALAPPDATA%\hermes` on Windows (where Hermes keeps its home; `%APPDATA%\hermes`
+ * is only the Hermes desktop app's browser profile), unless HERMES_HOME says otherwise. A Windows
+ * home that only exists under `%APPDATA%` (an older install) is still found.
+ */
 export function hermesHome(env: NodeJS.ProcessEnv = process.env, deps: HermesDeps = {}): string {
   // Callers pass either an env object or `deps.env`; merge so both spellings work.
   const effective: NodeJS.ProcessEnv = { ...(deps.env ?? {}), ...env };
@@ -94,8 +98,10 @@ export function hermesHome(env: NodeJS.ProcessEnv = process.env, deps: HermesDep
   const override = effective.HERMES_HOME?.trim();
   if (override) return override;
   if (resolved.platform === 'win32') {
-    const appData = effective.APPDATA?.trim() || path.join(resolved.home, 'AppData', 'Roaming');
-    return path.join(appData, 'hermes');
+    const local = path.join(effective.LOCALAPPDATA?.trim() || path.join(resolved.home, 'AppData', 'Local'), 'hermes');
+    const roaming = path.join(effective.APPDATA?.trim() || path.join(resolved.home, 'AppData', 'Roaming'), 'hermes');
+    const isHome = (dir: string) => resolved.exists(path.join(dir, '.env')) || resolved.exists(path.join(dir, 'config.yaml'));
+    return !isHome(local) && isHome(roaming) ? roaming : local;
   }
   return path.join(resolved.home, '.hermes');
 }

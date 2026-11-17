@@ -15,7 +15,7 @@ import test, { after } from 'node:test';
 import { cleanupTmpEnv } from './helpers/tmp-env.js';
 
 const audiocpp = await import('../voice-audiocpp.js');
-const { AudiocppCallSession, speakableText, cleanTranscript, FRAME_AUDIO, FRAME_VIDEO } = await import('../voice-audiocpp-session.js');
+const { AudiocppCallSession, ReplySegmenter, speakableText, cleanTranscript, FRAME_AUDIO, FRAME_VIDEO } = await import('../voice-audiocpp-session.js');
 type AudiocppCallEvent = import('../voice-audiocpp-session.js').AudiocppCallEvent;
 type AvatarStreamItem = import('../voice-audiocpp.js').AvatarStreamItem;
 const endpoints = await import('../voice-audiocpp-endpoints.js');
@@ -227,9 +227,12 @@ test('talking over the bot is barge-in: the reply stops and the new utterance be
       relay: async (t) => (t === 'first' ? 'A long answer.' : 'Short.'),
       speech: (text, signal) => (async function* () {
         signal.addEventListener('abort', () => { aborted = true; });
-        // Ten seconds of reply, delivered at once: the browser would still be playing it.
-        if (text === 'A long answer.') yield { pcm: new Int16Array(240000), rate: 24000 };
-        else yield { pcm: new Int16Array(240), rate: 24000 };
+        if (text === 'A long answer.') {
+          // Ten seconds of reply so far, and the GPU is still generating the rest when the caller
+          // talks over it: the generation must be cancelled, not just the playback.
+          yield { pcm: new Int16Array(240000), rate: 24000 };
+          await new Promise((r) => signal.addEventListener('abort', r));
+        } else yield { pcm: new Int16Array(240), rate: 24000 };
       })(),
       onEvent: (e) => events.push(e),
     },
@@ -248,6 +251,54 @@ test('talking over the bot is barge-in: the reply stops and the new utterance be
   session.close();
   const said = events.filter((e) => e.type === 'transcript').map((e) => (e as { text: string }).text);
   assert.deepEqual(said, ['first', 'second']);
+});
+
+test('ReplySegmenter: the first sentence goes out alone, later ones are gathered, code is never split', () => {
+  const seg = new ReplySegmenter();
+  assert.deepEqual(seg.push('Sure'), [], 'no sentence end yet');
+  assert.deepEqual(seg.push('Sure. I checked'), ['Sure.']);
+  assert.deepEqual(seg.push('Sure. I checked your calendar. You have'), [], 'later pieces wait for a comfortable size');
+  const long = 'Sure. I checked your calendar. You have three meetings today, starting at nine with the design review. ';
+  assert.deepEqual(seg.push(long), ['I checked your calendar. You have three meetings today, starting at nine with the design review.']);
+  assert.deepEqual(seg.push(`${long}Then lunch.`, true), ['Then lunch.']);
+
+  const code = new ReplySegmenter();
+  assert.deepEqual(code.push('Run this: ```ls -la. echo hi.``` Done. More'), ['Run this: Done.'], 'the fence is dropped, not cut through');
+
+  const runOn = new ReplySegmenter();
+  const opening = 'Well, looking at everything you asked for this morning, including the budget and the hiring plan and the offsite, here is';
+  assert.deepEqual(runOn.push(opening), ['Well, looking at everything you asked for this morning, including the budget and the hiring plan and the offsite,'], 'a long opening speaks its clauses');
+});
+
+test('a streamed reply is spoken piece by piece while it is still being written', async () => {
+  const events: AudiocppCallEvent[] = [];
+  const spoken: string[] = [];
+  let release!: () => void;
+  const rest = new Promise<void>((r) => { release = r; });
+  const session = new AudiocppCallSession({
+    callId: 'call_stream', botId: 'bot_x', voice: 'v',
+    options: { fillerDelayMs: 60_000 },
+    deps: {
+      transcribe: async () => 'what is up',
+      relayStream: () => (async function* () {
+        yield { text: 'Not much. Still', final: false };
+        await rest; // the model is still writing
+        yield { text: 'Not much. Still working on the quarterly report, which should be finished by Friday afternoon at the latest.', final: true };
+      })(),
+      speech: (text) => (async function* () { spoken.push(text); yield { pcm: new Int16Array(24), rate: 24000 }; })(),
+      onEvent: (e) => events.push(e),
+    },
+  });
+  feed(session, utterance(200, 600, 900));
+  await waitFor(events, 'reply');
+  for (let i = 0; i < 50 && !spoken.length; i++) await new Promise((r) => setTimeout(r, 10));
+  assert.deepEqual(spoken, ['Not much.'], 'the first sentence is spoken before the reply is finished');
+  release();
+  await waitFor(events, 'done');
+  session.close();
+  assert.deepEqual(spoken, ['Not much.', 'Still working on the quarterly report, which should be finished by Friday afternoon at the latest.']);
+  const replies = events.filter((e) => e.type === 'reply').map((e) => (e as { text: string }).text);
+  assert.equal(replies.at(-1), 'Not much. Still working on the quarterly report, which should be finished by Friday afternoon at the latest.', 'captions are cumulative');
 });
 
 test('mute drops input and ends a half-heard utterance', async () => {
@@ -280,6 +331,11 @@ test('readDownloadStatus reads the sidecar file and treats a silent "downloading
     assert.equal(endpoints.readDownloadStatus(dir)?.state, 'error');
     fs.writeFileSync(file, '{"state":"bogus"}');
     assert.equal(endpoints.readDownloadStatus(dir), null);
+    // The same parser reads the file through `docker exec` when the api cannot see the volume.
+    assert.deepEqual(endpoints.parseDownloadStatus('{"state":"ready","pct":100,"file":null}\n'), { state: 'ready', pct: 100, file: null });
+    assert.equal(endpoints.parseDownloadStatus(''), null);
+    // The sidecar records why audio.cpp exited, for the settings to show.
+    assert.equal(endpoints.parseDownloadStatus('{"state":"ready","pct":100,"file":null,"server_error":"GGUF has no model spec"}')?.serverError, 'GGUF has no model spec');
   } finally {
     fs.rmSync(dir, { recursive: true, force: true });
   }

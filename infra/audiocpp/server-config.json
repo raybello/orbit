@@ -29,7 +29,7 @@
       "task": "gen",
       "mode": "streaming",
       "session_options": {
-        "soulx_flashhead.exec_plan": "{\"vae\":{\"impl\":\"cudnn\"}}"
+        "soulx_flashhead.exec_plan": "{\"vae\":{\"impl\":\"{AVATAR_VAE}\"}}"
       }
     }
   ]

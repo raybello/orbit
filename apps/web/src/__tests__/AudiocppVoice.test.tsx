@@ -1,6 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
-import type { AudiocppStatus, Bot } from '@orbit/contracts';
+import type { AudiocppStatus, Bot, DesktopGpuVoice } from '@orbit/contracts';
 
 vi.mock('../lib/api', () => ({
   api: {
@@ -159,5 +159,35 @@ describe('VoiceSettings with GPU voice', () => {
     render(<VoiceSettings bot={live('b1')} />);
     await screen.findByText('GPU voice loading… 37%');
     expect(screen.getByRole('progressbar', { name: 'GPU model download progress' }).getAttribute('aria-valuenow')).toBe('37');
+  });
+
+  it('hides GPU on a server that has it turned off (macOS): on-device is the local option', async () => {
+    stubServer({ ...READY, available: false, reason: 'disabled', models: {}, avatar: false, url: '' }, () => live('b1'));
+    render(<VoiceSettings bot={live('b1')} />);
+    await screen.findByRole('button', { name: 'On-device voice' });
+    await waitFor(() => expect(screen.queryByRole('button', { name: 'GPU voice' })).toBeNull());
+  });
+
+  it('in the desktop app with an NVIDIA GPU, GPU can be chosen before the sidecar exists and installs on request', async () => {
+    setBot(bot({ id: 'b1', name: 'Nova', voiceProvider: 'audiocpp' }));
+    const off: DesktopGpuVoice = { supported: true, gpu: 'NVIDIA GeForce RTX 5070 Ti · 16 GB', enabled: false, phase: 'off' };
+    let state: DesktopGpuVoice = off;
+    const install = vi.fn(async () => (state = { ...off, enabled: true, phase: 'on' }));
+    vi.stubGlobal('orbitDesktop', { platform: 'win32', gpuVoice: { status: vi.fn(async () => state), install, remove: vi.fn() } });
+    stubServer({ ...READY, available: false, reason: 'unreachable', models: {}, avatar: false }, () => live('b1'));
+    render(<VoiceSettings bot={live('b1')} />);
+    await screen.findByText(/Downloads the GPU voice server/);
+    expect(screen.getByText(/NVIDIA GeForce RTX 5070 Ti/)).toBeTruthy();
+    fireEvent.click(screen.getByRole('button', { name: 'Install' }));
+    await waitFor(() => expect(install).toHaveBeenCalledTimes(1));
+    await screen.findByRole('button', { name: 'Remove' });
+  });
+
+  it('the macOS desktop app never offers GPU voice', async () => {
+    vi.stubGlobal('orbitDesktop', { platform: 'darwin' });
+    stubServer({ ...READY, available: false, reason: 'unreachable', models: {}, avatar: false }, () => live('b1'));
+    render(<VoiceSettings bot={live('b1')} />);
+    await screen.findByRole('button', { name: 'On-device voice' });
+    await waitFor(() => expect(screen.queryByRole('button', { name: 'GPU voice' })).toBeNull());
   });
 });

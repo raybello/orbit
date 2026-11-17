@@ -234,6 +234,48 @@
         {
             "type": "node",
             "request": "launch",
+            "name": "orbit: GPU voice — only the audio.cpp sidecar (Orbit on this host → :8080)",
+            "program": "${workspaceFolder}/.vscode/run-script.mjs",
+            "args": [
+                "bash",
+                "scripts/gpu-voice-stack.sh",
+                "sidecar"
+            ],
+            "cwd": "${workspaceFolder}",
+            "console": "integratedTerminal",
+            "internalConsoleOptions": "neverOpen",
+            "skipFiles": [
+                "<node_internals>/**"
+            ],
+            "presentation": {
+                "group": "3 gpu voice",
+                "order": 3
+            }
+        },
+        {
+            "type": "node",
+            "request": "launch",
+            "name": "orbit: GPU voice — rebuild the audio.cpp sidecar (no cache, keeps models)",
+            "program": "${workspaceFolder}/.vscode/run-script.mjs",
+            "args": [
+                "bash",
+                "scripts/gpu-voice-stack.sh",
+                "rebuild"
+            ],
+            "cwd": "${workspaceFolder}",
+            "console": "integratedTerminal",
+            "internalConsoleOptions": "neverOpen",
+            "skipFiles": [
+                "<node_internals>/**"
+            ],
+            "presentation": {
+                "group": "3 gpu voice",
+                "order": 4
+            }
+        },
+        {
+            "type": "node",
+            "request": "launch",
             "name": "orbit: GPU voice — stop the stack",
             "program": "${workspaceFolder}/.vscode/run-script.mjs",
             "args": [
@@ -249,7 +291,7 @@
             ],
             "presentation": {
                 "group": "3 gpu voice",
-                "order": 3
+                "order": 5
             }
         },
         {
@@ -270,7 +312,7 @@
             ],
             "presentation": {
                 "group": "3 gpu voice",
-                "order": 4
+                "order": 6
             }
         },
         {
@@ -299,7 +341,7 @@
             ],
             "presentation": {
                 "group": "3 gpu voice",
-                "order": 5
+                "order": 7
             }
         },
         {
@@ -375,7 +417,7 @@
         {
             "type": "node",
             "request": "launch",
-            "name": "orbit: installer — macOS DMG (this Mac's chip, unsigned)",
+            "name": "orbit: installer — macOS DMG (this Mac's chip, unsigned; GitHub Actions when not on a Mac)",
             "program": "${workspaceFolder}/.vscode/run-script.mjs",
             "args": [
                 "bash",
@@ -396,7 +438,7 @@
         {
             "type": "node",
             "request": "launch",
-            "name": "orbit: installer — macOS DMG (Apple silicon + Intel, unsigned)",
+            "name": "orbit: installer — macOS DMG (Apple silicon + Intel, unsigned; GitHub Actions when not on a Mac)",
             "program": "${workspaceFolder}/.vscode/run-script.mjs",
             "args": [
                 "bash",
@@ -441,6 +483,69 @@
         {
             "type": "node",
             "request": "launch",
+            "name": "orbit: installer — Linux AppImage built in WSL (from Windows)",
+            "program": "${workspaceFolder}/.vscode/run-script.mjs",
+            "args": [
+                "bash",
+                "scripts/linux-installer-wsl.sh",
+                "build"
+            ],
+            "cwd": "${workspaceFolder}",
+            "console": "integratedTerminal",
+            "internalConsoleOptions": "neverOpen",
+            "skipFiles": [
+                "<node_internals>/**"
+            ],
+            "presentation": {
+                "group": "5 installers",
+                "order": 5
+            }
+        },
+        {
+            "type": "node",
+            "request": "launch",
+            "name": "orbit: installer — run the Linux AppImage under WSLg",
+            "program": "${workspaceFolder}/.vscode/run-script.mjs",
+            "args": [
+                "bash",
+                "scripts/linux-installer-wsl.sh",
+                "run"
+            ],
+            "cwd": "${workspaceFolder}",
+            "console": "integratedTerminal",
+            "internalConsoleOptions": "neverOpen",
+            "skipFiles": [
+                "<node_internals>/**"
+            ],
+            "presentation": {
+                "group": "5 installers",
+                "order": 6
+            }
+        },
+        {
+            "type": "node",
+            "request": "launch",
+            "name": "orbit: installer — Linux server smoke test in WSL (pnpm smoke)",
+            "program": "${workspaceFolder}/.vscode/run-script.mjs",
+            "args": [
+                "bash",
+                "scripts/linux-installer-wsl.sh",
+                "smoke"
+            ],
+            "cwd": "${workspaceFolder}",
+            "console": "integratedTerminal",
+            "internalConsoleOptions": "neverOpen",
+            "skipFiles": [
+                "<node_internals>/**"
+            ],
+            "presentation": {
+                "group": "5 installers",
+                "order": 7
+            }
+        },
+        {
+            "type": "node",
+            "request": "launch",
             "name": "orbit: installer — try the macOS app (isolated profile + stack) [macOS]",
             "program": "${workspaceFolder}/.vscode/run-script.mjs",
             "args": [
@@ -455,7 +560,7 @@
             ],
             "presentation": {
                 "group": "5 installers",
-                "order": 5
+                "order": 8
             }
         },
         {
@@ -478,7 +583,7 @@
             ],
             "presentation": {
                 "group": "5 installers",
-                "order": 6
+                "order": 9
             }
         },
         {
@@ -499,7 +604,7 @@
             ],
             "presentation": {
                 "group": "5 installers",
-                "order": 7
+                "order": 10
             }
         },
         {

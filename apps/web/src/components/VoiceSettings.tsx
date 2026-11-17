@@ -9,6 +9,7 @@ import { useVoiceModels } from '../voice/models-store';
 import { Icon } from './Icon';
 import { formatSize, latencyHint } from './voice/format';
 import { AudiocppSettings, useAudiocppStatus } from './voice/AudiocppSettings';
+import { isMacDesktop, useDesktopGpuVoice } from '../lib/desktop';
 import type { BotVoicePatch } from '../voice/api';
 
 const FALLBACK: VoiceOptions = {
@@ -80,6 +81,7 @@ export function VoiceSettings({ bot }: { bot: Bot }) {
    */
   const callError = useVoice((s) => (s.botId === bot.id ? s.error : null));
   const [gpu, refreshGpu] = useAudiocppStatus();
+  const [desktopGpu, desktopGpuAction] = useDesktopGpuVoice();
 
   useEffect(() => { voiceApi.options().then(setOpts).catch(() => {}); }, []);
   useEffect(() => setError(null), [bot.id]);
@@ -178,7 +180,15 @@ export function VoiceSettings({ bot }: { bot: Bot }) {
   const blockedWhy = !local ? (localPhase === 'gone' ? 'not available on this server' : 'checking this device…') : reasonText(local.reason);
   // GPU voice (audio.cpp) can be chosen while its models are still downloading; it can't while the
   // server is simply not there, unless the bot is already on it (so it can be switched away).
-  const gpuBlocked = !gpu || (!gpu.available && !gpu.download && provider !== 'audiocpp');
+  // On macOS (no CUDA sidecar) and on any server with GPU voice switched off, GPU voice is not
+  // offered at all: on-device voice is the local option there. A bot already set to GPU keeps the
+  // button so it can be switched away; its calls run on-device meanwhile.
+  const gpuOff = gpu?.reason === 'disabled' || (isMacDesktop() && !gpu?.available);
+  const showGpu = !gpuOff || provider === 'audiocpp';
+  // In the desktop app on a computer with an NVIDIA GPU, GPU can be chosen before the sidecar is
+  // installed: choosing it shows the Install button.
+  const canInstallGpu = !!desktopGpu?.supported && !desktopGpu.enabled;
+  const gpuBlocked = !gpu || gpuOff || (!gpu.available && !gpu.download && provider !== 'audiocpp' && !canInstallGpu);
   const showProviders = localPhase !== 'gone' || !!gpu;
 
   const ttsModels = (menu?.items ?? []).filter((m) => m.kind === 'tts');
@@ -314,6 +324,7 @@ export function VoiceSettings({ bot }: { bot: Bot }) {
               title={onDeviceBlocked ? `On-device voice isn’t available — ${blockedWhy}` : 'Speak in this server, with no cloud voice service'}
               onClick={() => { if (!onDeviceBlocked && provider !== 'local') void saveVoice({ voiceProvider: 'local' }); }}
             >On-device</button>
+{showGpu && (
             <button
               type="button"
               className="voice-preview"
@@ -322,13 +333,14 @@ export function VoiceSettings({ bot }: { bot: Bot }) {
               data-state={gpuBlocked ? 'disabled' : provider === 'audiocpp' ? 'active' : 'idle'}
               style={seg(provider === 'audiocpp')}
               disabled={gpuBlocked}
-              title={gpuBlocked ? 'GPU voice not available' : 'Speak through audio.cpp on a GPU, with an optional animated portrait'}
+              title={gpuOff ? 'GPU voice is off on this server — calls use on-device voice' : gpuBlocked ? 'GPU voice not available' : 'Speak through audio.cpp on a GPU, with an optional animated portrait'}
               onClick={() => { if (!gpuBlocked && provider !== 'audiocpp') void saveVoice({ voiceProvider: 'audiocpp' }); }}
             >GPU</button>
+            )}
           </span>
         </div>
       )}
-      {provider === 'audiocpp' && <AudiocppSettings bot={bot} status={gpu} refresh={refreshGpu} onError={setError} />}
+      {provider === 'audiocpp' && <AudiocppSettings bot={bot} status={gpu} refresh={refreshGpu} onError={setError} desktop={desktopGpu} onDesktop={desktopGpuAction} />}
       {local && onDeviceBlocked && provider !== 'audiocpp' && (
         <div className="panel-row panel-row--setting" data-state="reason" title={`On-device voice isn’t available — ${blockedWhy}`}>
           <span style={{ fontSize: 12, color: 'var(--color-text-secondary)', whiteSpace: 'normal' }}>On-device voice is off: {blockedWhy}.</span>

@@ -30,6 +30,8 @@ const IPC = {
   openExternal: 'orbit:shell:open-external',
   deepLinkReady: 'orbit:deeplink:ready',
   deepLinkTake: 'orbit:deeplink:take',
+  gpuVoiceStatus: 'orbit:gpu-voice:status',
+  gpuVoiceSet: 'orbit:gpu-voice:set',
 };
 
 /**
@@ -84,6 +86,12 @@ contextBridge.exposeInMainWorld('orbitDesktop', {
     const off = subscribe(IPC.deepLinkReady, take);
     take();
     return off;
+  },
+  // GPU voice (audio.cpp sidecar): installed only when the person asks.
+  gpuVoice: {
+    status: () => ipcRenderer.invoke(IPC.gpuVoiceStatus),
+    install: () => ipcRenderer.invoke(IPC.gpuVoiceSet, true),
+    remove: () => ipcRenderer.invoke(IPC.gpuVoiceSet, false),
   },
   // Platform
   platform: process.platform,
