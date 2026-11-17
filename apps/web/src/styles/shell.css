@@ -15,9 +15,14 @@
 .titlebar.has-native-controls .titlebar__lead { display: none; }
 .titlebar__brand { display: inline-flex; align-items: center; gap: 8px; color: var(--accent-500); }
 .titlebar__brand-name { font-size: 14px; font-weight: 600; letter-spacing: -0.1px; color: var(--color-fg-default); }
-.titlebar__search {
+/* Centered group: nav buttons + search pill, absolutely centered as a unit */
+.titlebar__center {
   position: absolute; left: 50%; transform: translateX(-50%);
-  display: flex; align-items: center; gap: 8px; width: clamp(200px, 40vw, 520px); height: 32px; padding: 0 10px;
+  display: flex; align-items: center; gap: 6px;
+  -webkit-app-region: no-drag;
+}
+.titlebar__search {
+  display: flex; align-items: center; gap: 8px; width: clamp(200px, 36vw, 480px); height: 32px; padding: 0 10px;
   border-radius: var(--radius-sm); border: 1px solid var(--color-border-default);
   background: var(--color-bg-stage); color: var(--color-fg-muted);
   font-size: 13px; line-height: 18px; text-align: left;
@@ -66,6 +71,7 @@
   .titlebar__search-kbd { display: none; }
   .titlebar__brand-name { display: none; }
   .titlebar__nav { display: none; }
+  .titlebar__center { gap: 0; }
 }
 
 /* ---------- nav rail: the icon strip (dark in both themes, white glyphs) ---------- */

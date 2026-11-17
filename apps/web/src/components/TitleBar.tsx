@@ -58,40 +58,42 @@ export function TitleBar() {
         </span>
       </div>
 
-      <div className="titlebar__nav" aria-label="Navigation history">
+      <div className="titlebar__center">
+        <div className="titlebar__nav" aria-label="Navigation history">
+          <button
+            type="button"
+            className="titlebar__nav-btn"
+            disabled={!canBack}
+            onClick={goBack}
+            aria-label="Go back"
+            title="Back (Alt+←)"
+          >
+            <Icon name="chev_left" size={16} />
+          </button>
+          <button
+            type="button"
+            className="titlebar__nav-btn"
+            disabled={!canForward}
+            onClick={goForward}
+            aria-label="Go forward"
+            title="Forward (Alt+→)"
+          >
+            <Icon name="chev_right" size={16} />
+          </button>
+        </div>
+
         <button
           type="button"
-          className="titlebar__nav-btn"
-          disabled={!canBack}
-          onClick={goBack}
-          aria-label="Go back"
-          title="Back (Alt+←)"
+          className="titlebar__search"
+          onClick={() => setModal('search')}
+          aria-label="Search Orbit"
+          title="Search (⌘K)"
         >
-          <Icon name="chev_left" size={16} />
-        </button>
-        <button
-          type="button"
-          className="titlebar__nav-btn"
-          disabled={!canForward}
-          onClick={goForward}
-          aria-label="Go forward"
-          title="Forward (Alt+→)"
-        >
-          <Icon name="chev_right" size={16} />
+          <Icon name="search" size={14} opacity={0.6} />
+          <span className="titlebar__search-label">Search</span>
+          <kbd className="titlebar__search-kbd">⌘K</kbd>
         </button>
       </div>
-
-      <button
-        type="button"
-        className="titlebar__search"
-        onClick={() => setModal('search')}
-        aria-label="Search Orbit"
-        title="Search (⌘K)"
-      >
-        <Icon name="search" size={14} opacity={0.6} />
-        <span className="titlebar__search-label">Search</span>
-        <kbd className="titlebar__search-kbd">⌘K</kbd>
-      </button>
 
       <div className="titlebar__actions">
         <button

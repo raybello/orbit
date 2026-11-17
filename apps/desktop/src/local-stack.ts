@@ -282,7 +282,26 @@ export class LocalStackController implements DockerStack {
    */
   prepareEnvFile(): string | null {
     const envPath = path.join(this.stackDir, '.env');
-    if (fs.existsSync(envPath)) return envPath;
+    if (fs.existsSync(envPath)) {
+      // Fill any secrets missing from an older install — e.g. SANDBOX_SUPERVISOR_TOKEN added
+      // after the user's first run. start() calls prepareEnv() too, but doing it here means
+      // mirrorHermesKey() sees a complete file before compose ever runs.
+      try {
+        const existing = fs.readFileSync(envPath, 'utf8');
+        const { text, generated } = fillEmptySecrets(existing);
+        if (Object.keys(generated).length > 0) {
+          fs.writeFileSync(envPath, text, { encoding: 'utf8', mode: 0o600 });
+          try {
+            fs.chmodSync(envPath, 0o600);
+          } catch {
+            /* Windows */
+          }
+        }
+      } catch {
+        /* non-fatal: prepareEnv() in start() fills secrets before compose runs */
+      }
+      return envPath;
+    }
     try {
       this.prepareFiles();
     } catch (err) {
