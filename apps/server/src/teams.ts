@@ -112,7 +112,7 @@ export function createTeam(userId: string, teamSlug: string, opts: { schedule?: 
       bots.push(bot);
     }
 
-    const roomId = createRoom(userId, teamName, bots.map((b) => b.id));
+    const roomId = createRoom(userId, teamName, bots.map((b) => b.id), true);
 
     const routine = createRoutine({
       botId: primaryBot.id,

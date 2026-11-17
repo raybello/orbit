@@ -54,6 +54,8 @@ export interface BotRow {
   hidden: number | null;
   /** Added by initRooms(): JSON array of member bot ids, on a room. */
   members: string | null;
+  /** Added by initRooms(): 1 when this room was created by a team template. */
+  is_team: number | null;
 }
 
 /** The values a new bot row is made of. Timestamps are passed in so a caller controls the clock. */

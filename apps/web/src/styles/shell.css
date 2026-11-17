@@ -44,9 +44,28 @@
   background: var(--accent-500); color: var(--color-fg-on-accent);
   font-size: 11px; font-weight: 600; line-height: 12px; letter-spacing: 0.2px;
 }
+/* Back/forward navigation buttons, left of the search pill */
+.titlebar__nav {
+  display: flex; align-items: center; gap: 2px; flex-shrink: 0; -webkit-app-region: no-drag;
+}
+.titlebar__nav-btn {
+  display: flex; align-items: center; justify-content: center; width: 28px; height: 28px;
+  border-radius: var(--radius-sm); color: var(--color-fg-subtle);
+  transition: color 120ms, background-color 120ms;
+}
+.titlebar__nav-btn:hover:not(:disabled) { background: var(--color-bg-nav-hover); color: var(--color-fg-default); }
+.titlebar__nav-btn:disabled { opacity: 0.35; cursor: default; }
+
+/* User avatar image in titlebar */
+.titlebar__avatar-img {
+  width: 28px; height: 28px; border-radius: var(--radius-full);
+  object-fit: cover; display: block;
+}
+
 @media (max-width: 900px) {
   .titlebar__search-kbd { display: none; }
   .titlebar__brand-name { display: none; }
+  .titlebar__nav { display: none; }
 }
 
 /* ---------- nav rail: the icon strip (dark in both themes, white glyphs) ---------- */
@@ -199,6 +218,20 @@
   display: inline-flex; align-items: center; justify-content: center; width: 32px; height: 32px; flex-shrink: 0; border-radius: var(--radius-full);
   background: var(--color-bg-nav-active); box-shadow: 0 0 0 1px var(--color-border-subtle) inset;
   color: var(--color-fg-subtle); font-size: 12px; font-weight: 600; letter-spacing: -0.2px; line-height: 12px;
+}
+.account__initials--lg { width: 64px; height: 64px; font-size: 22px; }
+.account__avatar-wrap { flex-shrink: 0; }
+.account__avatar-img { width: 32px; height: 32px; border-radius: var(--radius-full); object-fit: cover; }
+.account__avatar-preview { display: flex; justify-content: center; padding: 8px 0; }
+.account__avatar-lg { width: 64px; height: 64px; border-radius: var(--radius-full); object-fit: cover; }
+.account__avatar-actions { display: flex; gap: 8px; justify-content: center; flex-wrap: wrap; }
+.account__avatar-url-row { width: 100%; }
+.cfg-hint { font-size: 12px; line-height: 16px; color: var(--color-text-tertiary); padding: 4px 0; }
+.cfg-row--col { flex-direction: column; align-items: stretch; gap: 10px; }
+.cfg-section__title { font-size: 12px; font-weight: 500; letter-spacing: 0.3px; text-transform: uppercase; color: var(--color-text-tertiary); padding-bottom: 6px; }
+.chat-list__section-label {
+  padding: 10px 12px 4px; font-size: 11px; font-weight: 600; letter-spacing: 0.5px;
+  text-transform: uppercase; color: var(--color-text-tertiary);
 }
 
 /* ---------- the window handle ---------- */

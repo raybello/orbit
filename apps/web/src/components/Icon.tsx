@@ -1,7 +1,7 @@
 import type { CSSProperties } from 'react';
 
 export type IconName =
-  | 'apps' | 'arrow_down' | 'chat_filled' | 'check' | 'chev_down' | 'chev_right' | 'clock' | 'close'
+  | 'apps' | 'arrow_down' | 'chat_filled' | 'check' | 'chev_down' | 'chev_left' | 'chev_right' | 'clock' | 'close'
   | 'composer_plus' | 'copy' | 'edit' | 'file' | 'mic' | 'paperclip' | 'plus' | 'record' | 'save'
   | 'search' | 'share' | 'sidebar' | 'slack' | 'star' | 'voice_a' | 'voice_b'
   // nav rail sections (mask files under public/assets/icons)
@@ -23,6 +23,7 @@ const INLINE: Partial<Record<IconName, string>> = {
 
 /** Outline glyphs, drawn with a 1.8px round stroke. */
 const OUTLINE: Partial<Record<IconName, string>> = {
+  chev_left: 'M15 4.5l-7 7.5 7 7.5',
   eye: 'M2.6 12s3.4-6.4 9.4-6.4 9.4 6.4 9.4 6.4-3.4 6.4-9.4 6.4S2.6 12 2.6 12Z M12 9.3a2.7 2.7 0 1 0 0 5.4 2.7 2.7 0 0 0 0-5.4Z',
   pointer: 'M5.4 4.6 10.9 19.4 13.2 13.2 19.4 10.9 5.4 4.6Z',
   expand: 'M14.5 4.5h5v5 M19.5 4.5l-5.8 5.8 M9.5 19.5h-5v-5 M4.5 19.5l5.8-5.8',

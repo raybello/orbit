@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { api } from '../lib/api';
 import { useConfigUI } from '../configStore';
 import { hasNativeWindowControls } from '../lib/desktop-shell';
@@ -21,9 +21,30 @@ function initials(name: string) {
 export function TitleBar() {
   const user = useStore((s) => s.user);
   const setModal = useStore((s) => s.setModal);
+  const goBack = useStore((s) => s.goBack);
+  const goForward = useStore((s) => s.goForward);
+  const canBack = useStore((s) => s.navHistory.length > 0);
+  const canForward = useStore((s) => s.navFuture.length > 0);
   const [accountMenu, setAccountMenu] = useState(false);
   const nativeControls = hasNativeWindowControls();
   const logout = async () => { await api.logout().catch(() => {}); location.reload(); };
+
+  useEffect(() => {
+    const handleKey = (e: KeyboardEvent) => {
+      if (e.altKey && e.key === 'ArrowLeft') { e.preventDefault(); goBack(); }
+      else if (e.altKey && e.key === 'ArrowRight') { e.preventDefault(); goForward(); }
+    };
+    const handleMouse = (e: MouseEvent) => {
+      if (e.button === 3) { e.preventDefault(); goBack(); }
+      else if (e.button === 4) { e.preventDefault(); goForward(); }
+    };
+    window.addEventListener('keydown', handleKey);
+    window.addEventListener('mousedown', handleMouse);
+    return () => {
+      window.removeEventListener('keydown', handleKey);
+      window.removeEventListener('mousedown', handleMouse);
+    };
+  }, [goBack, goForward]);
 
   return (
     <header className={`titlebar${nativeControls ? ' has-native-controls' : ''}`}>
@@ -35,6 +56,29 @@ export function TitleBar() {
           </svg>
           <span className="titlebar__brand-name">Orbit</span>
         </span>
+      </div>
+
+      <div className="titlebar__nav" aria-label="Navigation history">
+        <button
+          type="button"
+          className="titlebar__nav-btn"
+          disabled={!canBack}
+          onClick={goBack}
+          aria-label="Go back"
+          title="Back (Alt+←)"
+        >
+          <Icon name="chev_left" size={16} />
+        </button>
+        <button
+          type="button"
+          className="titlebar__nav-btn"
+          disabled={!canForward}
+          onClick={goForward}
+          aria-label="Go forward"
+          title="Forward (Alt+→)"
+        >
+          <Icon name="chev_right" size={16} />
+        </button>
       </div>
 
       <button
@@ -63,13 +107,17 @@ export function TitleBar() {
           <button
             type="button"
             className="titlebar__avatar"
-            onClick={() => setAccountMenu(!accountMenu)}
+            onMouseDown={(e) => { e.stopPropagation(); setAccountMenu((v) => !v); }}
             aria-haspopup="menu"
             aria-expanded={accountMenu}
             aria-label="Account menu"
             title={user?.email ?? 'Account'}
           >
-            <span className="titlebar__initials">{initials(user?.name ?? user?.email ?? '')}</span>
+            {user?.avatarUrl ? (
+              <img className="titlebar__avatar-img" src={user.avatarUrl} alt={user.name} />
+            ) : (
+              <span className="titlebar__initials">{initials(user?.name ?? user?.email ?? '')}</span>
+            )}
           </button>
           {accountMenu && (
             <Menu

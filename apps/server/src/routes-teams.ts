@@ -20,6 +20,7 @@ interface TeamTemplateSummary {
   description: string;
   schedule: string;
   memberCount: number;
+  memberNames: string[];
 }
 
 teamsApi.get('/team-templates', (c) => {
@@ -30,6 +31,7 @@ teamsApi.get('/team-templates', (c) => {
     description: t.description,
     schedule: t.schedule,
     memberCount: t.members.length,
+    memberNames: t.members.map((m) => m.name ?? m.templateSlug),
   }));
   return c.json({ templates });
 });

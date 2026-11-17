@@ -99,10 +99,10 @@ export function ChatListView() {
     return matched.slice().sort((a, b) => b.lastActivityAt - a.lastActivityAt);
   }, [bots, filter]);
 
-  // Every primary Bot is pinned above the rest: the team can have up to three, and all of them
-  // carry the star and coordinate. The separator only appears when there is something below it.
   const primaries = visible.filter((b) => b.isPrimary);
-  const rest = visible.filter((b) => !b.isPrimary);
+  const agents = visible.filter((b) => !b.isPrimary && b.kind !== 'room');
+  const groups = visible.filter((b) => b.kind === 'room' && !b.isTeam);
+  const teams = visible.filter((b) => b.kind === 'room' && b.isTeam);
 
   const row = (bot: Bot) => {
     const { selected, running, awaiting } = statusOf(bot.id, live, selectedBotId);
@@ -163,15 +163,22 @@ export function ChatListView() {
         {primaries.length > 0 && (
           <>
             {primaries.map(row)}
-            {rest.length > 0 && <div className="chat-list__sep" role="separator" />}
+            {(agents.length > 0 || groups.length > 0 || teams.length > 0) && <div className="chat-list__sep" role="separator" />}
           </>
         )}
-        {rest.map(row)}
+        {agents.map(row)}
+        {groups.map(row)}
+        {teams.length > 0 && (
+          <>
+            <div className="chat-list__section-label">Teams</div>
+            {teams.map(row)}
+          </>
+        )}
       </div>
 
       {visible.length === 0 && (
         <div className="chat-list__empty">
-          {filter ? `No chats match “${query.trim()}”.` : 'No chats yet. Start a Bot or a group.'}
+          {filter ? `No chats match "${query.trim()}".` : 'No chats yet. Start a Bot or a group.'}
         </div>
       )}
       {!filter && bots.filter((b) => b.kind !== 'room').length <= 1 && <ExploreTemplatesCta />}

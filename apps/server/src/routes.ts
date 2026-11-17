@@ -88,6 +88,42 @@ api.get('/auth/me', (c) => {
   return c.json({ user, devLogin: env.devLogin });
 });
 
+api.patch('/auth/me', requireUser, async (c) => {
+  const userId = c.get('user').id;
+  const body = await c.req.json() as { avatarUrl?: string | null };
+  if (body.avatarUrl !== undefined) {
+    db.prepare('UPDATE users SET avatar_url=? WHERE id=?').run(body.avatarUrl ?? null, userId);
+  }
+  return c.json({ user: { ...c.get('user'), avatarUrl: body.avatarUrl ?? c.get('user').avatarUrl } });
+});
+
+api.post('/auth/avatar', requireUser, async (c) => {
+  const userId = c.get('user').id;
+  const form = await c.req.formData();
+  const file = form.get('file');
+  if (!(file instanceof File)) return c.json({ error: 'No file' }, 400);
+  const ext = file.name.includes('.') ? '.' + file.name.split('.').pop()!.toLowerCase() : '';
+  const allowed = ['.jpg', '.jpeg', '.png', '.gif', '.webp', '.svg'];
+  if (ext && !allowed.includes(ext)) return c.json({ error: 'Unsupported image format' }, 400);
+  const avatarDir = path.join(libraryRoot('_avatars'), userId);
+  fs.mkdirSync(avatarDir, { recursive: true });
+  const filename = `avatar${ext}`;
+  const dest = path.join(avatarDir, filename);
+  const buf = Buffer.from(await file.arrayBuffer());
+  fs.writeFileSync(dest, buf);
+  const url = `/api/auth/avatar/${userId}/${filename}`;
+  db.prepare('UPDATE users SET avatar_url=? WHERE id=?').run(url, userId);
+  return c.json({ url });
+});
+
+api.get('/auth/avatar/:userId/:filename', (c) => {
+  const { userId, filename } = c.req.param();
+  const filePath = path.join(libraryRoot('_avatars'), userId, filename);
+  if (!fs.existsSync(filePath)) return c.json({ error: 'Not found' }, 404);
+  const mt = mediaTypeFor(filename) ?? 'application/octet-stream';
+  return c.newResponse(fs.readFileSync(filePath), 200, { 'Content-Type': mt });
+});
+
 api.get('/auth/google/start', async (c) => {
   if (!composioEnabled()) return c.redirect(`${env.appUrl}/?login=failed&reason=composio_unconfigured`);
   const attemptId = newId('login');
