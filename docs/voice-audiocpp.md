@@ -17,15 +17,50 @@ Per bot: Voice chat → **Voice calls: GPU**, then a voice (38 LFM3 voices), an 
 (any image, cropped to 512×512) and "Show animated avatar during calls". No portrait, or an
 audio.cpp server without the avatar model, means an audio-only call.
 
+| Platform | GPU voice |
+| --- | --- |
+| Windows, Linux + NVIDIA GPU | Opt-in. In the desktop app: Voice chat → **GPU** → **Install** pulls the sidecar image, then **Download** fetches its models. **Remove** takes it away again. Nothing is downloaded until you click. |
+| macOS | Not offered. There is no CUDA, and no Apple-silicon build of the sidecar yet. The desktop app sets `AUDIOCPP_URL=off`, the settings hide **GPU**, and a bot that was set to GPU elsewhere takes its calls on-device. |
+| Any server | `AUDIOCPP_URL` names an audio.cpp server (native, sidecar or a GPU box on the LAN). `AUDIOCPP_URL=off` turns GPU voice off. |
+
+## Latency
+
+The call is built so the caller hears the answer about one sentence after the model starts writing:
+
+- **Streamed replies.** The agent loop flushes partial text to the reply row every ~120 ms. The call
+  polls the row every 60 ms and cuts the text into pieces: the first sentence on its own, then
+  sentences grouped to about 90 characters. Each piece goes to TTS/avatar as soon as it exists, and
+  the next piece is generated while the previous one plays. The caption grows in place.
+- **Endpointing.** 600 ms of silence ends a turn (energy VAD with an adaptive noise floor). The
+  browser sends 20 ms mic frames, and the server keeps only 200 ms of trailing silence for OWSM.
+- **cuDNN.** The sidecar compiles audio.cpp with cuDNN Conv3D for SoulX's VAE, about 2× faster with
+  about 44% less VRAM than the generic VAE. If a binary lacks it, the entrypoint falls back to the
+  generic VAE (`AUDIOCPP_AVATAR_VAE=ggml`) instead of crash-looping.
+- **Call setup.** The browser requests the GPU session while the microphone permission prompt is
+  still open, not after it.
+- **Filler.** A model that has said nothing after 1.2 s gets "One moment."; one that has said
+  nothing after 90 s gets an apology, and the call stays up.
+
+Measured on an RTX 5070 Ti, with the sidecar and Hermes on local LM Studio: see the PR for the run.
+
 ## Running it
 
 | Setup | How |
 | --- | --- |
+| Desktop app (Windows/Linux + NVIDIA) | Voice chat → **GPU** → **Install**, then **Download**. |
 | audiocpp_server already running on this machine (e.g. the Windows build) | Nothing: `AUDIOCPP_URL` defaults to `http://127.0.0.1:8080`. In VS Code: «orbit: server + web dev with GPU voice (native audio.cpp)». |
+| Orbit dev server on the host + GPU sidecar in Docker | `bash scripts/gpu-voice-stack.sh sidecar`. It publishes audio.cpp on `127.0.0.1:8080`, so the host's Orbit finds it at the default URL. The api reads download progress with `docker exec`, because it can't see the volume. |
 | Docker stack + native server on the host | `NATIVE=1 bash scripts/gpu-voice-stack.sh` (api gets `AUDIOCPP_URL=http://host.docker.internal:8080`). |
-| Docker stack + GPU sidecar | `bash scripts/gpu-voice-stack.sh` (`docker compose --profile gpu up --build`). Needs the NVIDIA Container Toolkit. |
+| Docker stack + GPU sidecar | `bash scripts/gpu-voice-stack.sh` (`docker compose --profile gpu up --build`). Needs the NVIDIA Container Toolkit (Docker Desktop on Windows has it). |
+| Rebuild the sidecar | `bash scripts/gpu-voice-stack.sh rebuild` (no cache, base images pulled, models kept). VS Code: «orbit: GPU voice — rebuild the audio.cpp sidecar». |
 
-The sidecar (`infra/audiocpp/`) is the v0.9.5 CUDA 12.8 release on `nvidia/cuda:12.8.1-cudnn-runtime`.
+The sidecar (`infra/audiocpp/`) compiles audio.cpp v0.9.5 from source on
+`nvidia/cuda:12.8.1-cudnn-devel`, and runs on `cudnn-runtime`. The build is CUDA + cuDNN Conv3D
+and compiles only OWSM, LFM3-Audio and SoulX-FlashHead. It is a deployment build, so the model
+specs are compiled in; LiquidAI's LFM3 GGUF doesn't embed one. Build time is governed by
+`AUDIOCPP_CUDA_ARCHS`. The published image covers sm_75 to sm_120. `gpu-voice-stack.sh` builds
+for your GPU only, which takes about 10 minutes. If audio.cpp exits, the entrypoint records why,
+and the GPU voice settings show it (for example "audio.cpp: out of memory").
 It also runs **Caddy** with an internal CA. Port **:8443** serves the audio.cpp WebUI and **:8444**
 serves Orbit, both over HTTPS. Browsers only allow the microphone on https:// (or localhost), so
 this is how a phone or second PC on the LAN gets to talk. Set
@@ -94,6 +129,8 @@ off it falls back to the file's path on the shared volume.
 
 ## Windows notes
 
+- Docker Desktop reaches the api's Docker client over the `//./pipe/docker_engine` named pipe, so
+  the Download button and progress work for an Orbit running natively on Windows too.
 - Use Node ≥ 22.12. On 22.11 `better-sqlite3@13`'s prebuilt binary crashes (access violation) when
   the server opens its database, and pnpm skips rolldown's Windows binding, so vite and vitest fail.
 - `.vscode/launch.json` works on Windows: `run-script.mjs` runs `bash` as Git Bash (never WSL),

@@ -2,7 +2,7 @@
 
 <p align="center">
   A team of AI agents you chat with, each with its own screen on its own computer.<br>
-  <a href="https://github.com/NousResearch/hermes-agent">Hermes Agent</a> runs the bots, a Docker desktop gives each one a screen, <a href="https://composio.dev">Composio</a> connects their apps, and local STT/TTS or xAI gives them a voice.
+  <a href="https://github.com/NousResearch/hermes-agent">Hermes Agent</a> runs the bots, a Docker desktop gives each one a screen, <a href="https://composio.dev">Composio</a> connects their apps, and local STT/TTS, a GPU (audio.cpp, with a lip-synced avatar) or xAI gives them a voice.
 </p>
 
 <p align="center">
@@ -59,6 +59,7 @@ All screenshots below were captured from this branch while the flows were exerci
 | **Group chats with bot handoffs** | A group is a room with members. A message dispatches the bots it @mentions, or the whole room (capped at three). A bot can @mention a peer and Orbit dispatches that peer one hop deeper. |
 | **Calendar events, once or recurring** | Create a one-time event at a date and time, or a recurring event on a cron preset (daily, weekdays, weekly) or a custom expression. The assigned bot runs the prompt when it fires. |
 | **Voice calls** | Talk to a bot from the composer. Orbit prefers on-device STT/TTS when the model cache is present, degrades to the cloud voice when it is not, and puts the spoken turn into the bot's normal transcript. |
+| **GPU voice with a talking avatar** | On Windows and Linux with an NVIDIA GPU, install the audio.cpp sidecar from the bot's Voice settings and calls run on your GPU: OWSM speech recognition, LFM3-Audio speech in 38 voices, and SoulX-FlashHead animating a portrait you upload, lip-synced to the reply. Replies are spoken a sentence at a time while the model is still writing. macOS uses on-device voice. See [docs/voice-audiocpp.md](docs/voice-audiocpp.md). |
 | **Model and subscription per bot** | Pick the provider and model in the bot's Engine panel, or sign in to a subscription on the bot's own screen. |
 | **Connected apps with approvals** | Bots ask for the app they need and you connect it through Composio. Actions that write (send, post, delete) wait for your OK on a card in the chat. |
 | **Routines, tasks and a Library** | Recurring jobs on a schedule, a task list per bot, and a place where bots save the files they make. |
@@ -93,6 +94,19 @@ All screenshots below were captured from this branch while the flows were exerci
   <tr>
     <td align="center"><sub>Inter-bot handoff: Iris asks Milo, Milo replies</sub></td>
     <td align="center"><sub>Voice call: speech in, transcript and reply out</sub></td>
+  </tr>
+</table>
+
+### GPU voice calls with an animated avatar
+
+<table>
+  <tr>
+    <td width="50%"><img src="docs/screenshots/gpu-voice/win-05-gpu-call-avatar.png" alt="A GPU voice call in the installed Windows app: Atlas's portrait, animated by SoulX-FlashHead, says Paris is the capital of France; the call captions and the chat show the same turn."></td>
+    <td width="50%"><img src="docs/screenshots/gpu-voice/win-03-gpu-install.png" alt="Voice settings with GPU selected: Install runs speech and the avatar on the NVIDIA GeForce RTX 5070 Ti, after saying it downloads the GPU voice server and its models."></td>
+  </tr>
+  <tr>
+    <td align="center"><sub>A call on the GPU: the portrait speaks the agent's answer</sub></td>
+    <td align="center"><sub>Opt-in: Install names the GPU and the download first</sub></td>
   </tr>
 </table>
 
@@ -216,9 +230,25 @@ The screenshots above come from a real install of the unsigned Apple-silicon DMG
 
 Run `Orbit-Setup-<version>.exe`. If SmartScreen warns about an unrecognised app, choose **More info**, then **Run anyway**. When Docker is missing, Orbit can download and start Docker Desktop's installer, which handles elevation and WSL 2.
 
+<img src="docs/screenshots/gpu-voice/win-01-setup.png" alt="Welcome to Orbit on Windows: This computer or Existing instance." width="420">
+
+Choose **This computer**. Orbit starts its stack in Docker, signs you in and opens your primary bot. Its first answer comes from your Hermes agent:
+
+<img src="docs/screenshots/gpu-voice/win-02-first-message.png" alt="The installed Windows app: the first message to Atlas and its answer." width="100%">
+
+**GPU voice (optional, NVIDIA).** In a bot's details panel, open **Activity → Voice chat**, choose **GPU**, then **Install**. Orbit pulls the GPU voice server (about 4 GB) and restarts its api pointed at it. Then click **Download** for the models (about 5 GB; progress shows in place). Upload a portrait to get the animated avatar. **Remove** takes it away again.
+
+<img src="docs/screenshots/gpu-voice/win-04-gpu-models-downloading.png" alt="GPU voice settings in the Windows app: the models downloading, with a progress bar." width="100%">
+
 ### Linux
 
-Make the AppImage executable (`chmod +x Orbit-*.AppImage`) and run it. Install Docker Engine with your package manager first; Orbit does not install it on Linux.
+Make the AppImage executable (`chmod +x Orbit-*.AppImage`) and run it. Install Docker Engine with your package manager first; Orbit does not install it on Linux. GPU voice works the same way as on Windows, and needs the NVIDIA Container Toolkit.
+
+To build and try the AppImage from a Windows checkout, use `bash scripts/linux-installer-wsl.sh` (build), `… run` (launch under WSLg) or `… smoke` (the server's API smoke test on Linux).
+
+### Voice on macOS
+
+GPU voice is not offered on a Mac: there is no CUDA, and no Apple-silicon build of the sidecar yet. The desktop app turns it off (`AUDIOCPP_URL=off`), the GPU option is hidden, and calls use on-device speech recognition and TTS.
 
 ## Build and run
 
@@ -334,6 +364,7 @@ The flows in the screenshots were run against a live stack on this branch:
 | New bot chatting | `13-mobile-thread.png`, the Iris thread in `07-voice-call.png`, `bot-lifecycle.test.ts` |
 | New bot screens | `05-bot-screens.png`, `06-screen-viewer.png`, `computer-model.test.ts`, `computer-store-claim.test.ts` |
 | Voice calling | `07-voice-call.png`, `voice-local-session.test.ts`, `voice-local.test.ts` |
+| GPU voice + avatar (installed Windows app) | `gpu-voice/win-0*.png`, `voice-audiocpp.test.ts` (incl. live tests against the sidecar), `AudiocppVoice.test.tsx`, `gpu-voice.test.ts` |
 | Group messages | `03-group-chat.png`, `rooms-cascade.test.ts` |
 | Inter-bot communication | `04-inter-bot.png`, `rooms-cascade.test.ts` (mention dispatch, chain depth) |
 | One-time and recurring events | `08-calendar-one-time.png`, `11-calendar-both.png`, `routines-calendar.test.ts` |

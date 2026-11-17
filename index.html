@@ -47,7 +47,7 @@
         <div class="hero__copy">
           <p class="eyebrow mono"><span class="dot"></span>Self-hosted · MIT · Experimental</p>
           <h1>Your team.<br><span class="muted">Their own computers.</span></h1>
-          <p class="lede">A team of AI agents you chat with, each with its own screen on its own computer. <a href="https://github.com/NousResearch/hermes-agent">Hermes Agent</a> runs the bots, a Docker desktop gives each one a screen, <a href="https://composio.dev">Composio</a> connects their apps, and local STT/TTS or xAI gives them a voice.</p>
+          <p class="lede">A team of AI agents you chat with, each with its own screen on its own computer. <a href="https://github.com/NousResearch/hermes-agent">Hermes Agent</a> runs the bots, a Docker desktop gives each one a screen, <a href="https://composio.dev">Composio</a> connects their apps, and local STT/TTS, a GPU with a talking avatar, or xAI gives them a voice.</p>
           <div class="cta">
             <a class="btn btn--primary" href="#download">Download the app</a>
             <a class="btn btn--ghost" href="docs/">Read the docs</a>
@@ -122,6 +122,7 @@
           <article class="feature"><h3>Group chats with bot handoffs</h3><p>A message dispatches the bots it @mentions. A bot can @mention a peer and Orbit dispatches that peer one hop deeper.</p></article>
           <article class="feature"><h3>Calendar events</h3><p>One-time events at a date and time, or recurring ones on a cron preset or custom expression. The assigned bot runs the prompt when it fires.</p></article>
           <article class="feature"><h3>Voice calls</h3><p>Talk to a bot from the composer. On-device STT/TTS when the models are present, cloud voice when not; the spoken turn lands in the transcript.</p></article>
+          <article class="feature"><h3>GPU voice with a talking avatar</h3><p>On Windows and Linux with an NVIDIA GPU, one Install in the voice settings runs speech recognition, 38 voices and a lip-synced portrait on your GPU. Answers are spoken a sentence at a time while the model is still writing.</p></article>
           <article class="feature"><h3>Connected apps with approvals</h3><p>Bots ask for the app they need and you connect it through Composio. Actions that write wait for your OK on a card in the chat.</p></article>
           <article class="feature"><h3>Mobile app</h3><p>An Expo client for iOS and Android: chats, threads, calendar, files, computers and a live VNC viewer.</p></article>
         </div>
@@ -136,6 +137,8 @@
           <figure><img src="docs/screenshots/refactor/06-screen-viewer.png" alt="Iris's own Linux desktop, live in Orbit's viewer." loading="lazy"><figcaption>Each bot's desktop, live</figcaption></figure>
           <figure><img src="docs/screenshots/refactor/04-inter-bot.png" alt="Iris @mentions Milo in a group; Milo answers with his top launch risk." loading="lazy"><figcaption>Inter-bot handoff in a group</figcaption></figure>
           <figure><img src="docs/screenshots/refactor/11-calendar-both.png" alt="A daily recurring check-in plus a one-time Launch retro." loading="lazy"><figcaption>One-time and recurring events</figcaption></figure>
+          <figure><img src="docs/screenshots/gpu-voice/win-05-gpu-call-avatar.png" alt="A GPU voice call: Atlas's portrait, animated on the GPU, speaks the agent's answer." loading="lazy"><figcaption>GPU voice: the portrait speaks the answer</figcaption></figure>
+          <figure><img src="docs/screenshots/gpu-voice/win-03-gpu-install.png" alt="Voice settings: Install GPU voice on an NVIDIA GeForce RTX 5070 Ti." loading="lazy"><figcaption>GPU voice installs on request</figcaption></figure>
         </div>
         <div class="phones">
           <img src="docs/screenshots/refactor/12-mobile-bots.png" alt="Orbit on iPhone: the Chats list." loading="lazy">
