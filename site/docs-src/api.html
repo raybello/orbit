@@ -61,7 +61,7 @@ GET|/api/events|Server-Sent Events for the signed-in user. Pass <code>?since=&lt
 <!--endpoints
 GET|/api/bots|<code>{ bots: Bot[], live: LiveState[] }</code>. Bots and groups, with each one's live state.
 POST|/api/bots|Create a bot: <code>{ name?, label?, description?, instructions?, avatarShape?, avatarColor?, mode?, isPrimary?, voiceProvider?, voiceModel? }</code> → <code>{ bot }</code>. Fails past <code>MAX_BOTS</code>.
-PATCH|/api/bots/:id|Update any of <code>name, label, description, instructions, avatarShape, avatarColor, mode, effort, pinned, voice, voiceSpeed, voiceLanguage, voiceProvider, voiceModel</code>.
+PATCH|/api/bots/:id|Update any of <code>name, label, description, instructions, avatarShape, avatarColor, mode, effort, pinned, voice, voiceSpeed, voiceLanguage, voiceProvider, voiceModel, audiocppVoice, avatarEnabled</code>.
 DELETE|/api/bots/:id|Delete a bot; reports which bot was promoted if it was the last primary.
 POST|/api/bots/:id/primary|Promote to primary (max 3).
 POST|/api/bots/:id/primary/restore|Restore the previous primary set.
@@ -173,6 +173,14 @@ POST|/api/voice/local/stt|On-device dictation (<code>?botId=</code>).
 POST|/api/voice/local/preview|Plays a sample of a local voice.
 POST|/api/voice/local/session|<code>{ botId }</code>. Mints a local call id.
 WS|/api/voice/local/call/:callId|Audio relay for an on-device call.
+GET|/api/voice/audiocpp/status|<code>AudiocppStatus</code>: whether GPU voice is available and, if not, why (<code>disabled</code>, <code>unreachable</code>, <code>server-error</code>, <code>models-missing</code>, <code>downloading</code>, <code>models-not-loaded</code>), loaded models, the voice list, download progress and the server's own error.
+POST|/api/voice/audiocpp/session|<code>{ botId }</code> → <code>{ callId, sampleRate, ttsSampleRate, hasAvatar, voice }</code>. 503 with <code>reason</code> when GPU voice is unavailable; with <code>reason: 'disabled'</code> the client falls back to on-device voice.
+WS|/api/voice/audiocpp/call/:callId|The GPU call: PCM16 16 kHz mic frames in; <code>0x01</code> reply audio, <code>0x02</code> avatar JPEG frames and JSON turn events out. Protocol in <a href="https://github.com/raybello/orbit/blob/main/docs/voice-audiocpp.md#call-socket">docs/voice-audiocpp.md</a>.
+POST|/api/voice/audiocpp/preview|<code>{ text, voice?, botId? }</code>. Plays a sample of an LFM3 voice (WAV).
+POST|/api/voice/audiocpp/models/download|Starts the model download inside the sidecar (found by its <code>orbit.role=audiocpp</code> label). 409 when there is no sidecar, because a native server manages its own models.
+GET|/api/voice/audiocpp/portrait/:botId|The bot's avatar portrait.
+POST|/api/voice/audiocpp/portrait/:botId|Multipart image upload; cropped to 512×512.
+DELETE|/api/voice/audiocpp/portrait/:botId|Removes the portrait; calls become audio-only.
 -->
 
 <h2 id="mcp">MCP for agents</h2>
@@ -200,7 +208,8 @@ POST|/mcp/primary|The same, for whichever bot the primary engine is bound to.
   mode: 'personal' | 'teammate'; isPrimary: boolean; kind?: 'agent' | 'room';
   pinned: boolean; effort: 'low' | 'medium' | 'high' | 'xhigh';
   voice: string; voiceSpeed: number; voiceLanguage: string;
-  voiceProvider: 'cloud' | 'local'; voiceModel: string;
+  voiceProvider: 'cloud' | 'local' | 'audiocpp'; voiceModel: string;
+  audiocppVoice?: string; avatarEnabled?: boolean; hasPortrait?: boolean;  // GPU voice
   model: string | null; provider: string | null;   // null = the engine's default
   generation: number; unread: number; lastPreview: string | null;
   lastActivityAt: number; createdAt: number;

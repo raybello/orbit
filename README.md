@@ -14,6 +14,8 @@
   <a href="#build-and-run">Build and run</a> ·
   <a href="#build-per-target">Build per target</a> ·
   <a href="#run-the-docker-stack">Docker</a> ·
+  <a href="#gpu-voice-from-a-checkout">GPU voice</a> ·
+  <a href="#models-and-subscriptions">Models</a> ·
   <a href="#status-and-limits">Limits</a>
 </p>
 
@@ -155,6 +157,7 @@ flowchart LR
   S -- "Docker API" --> C1["Bot desktop<br/>Xvfb · Chrome · VNC"]
   S -- "Composio" --> A["Connected apps"]
   S -- "on-device STT/TTS" --> V["Voice"]
+  S -- "HTTP + SSE" --> G["audio.cpp sidecar<br/>NVIDIA GPU: ASR · TTS · avatar"]
 ```
 
 - **One bot, one Hermes home.** The first bot is the Hermes agent already running on the machine. Each further bot gets `ENGINES_DIR/<botId>` and its own `hermes gateway run`.
@@ -242,13 +245,22 @@ Choose **This computer**. Orbit starts its stack in Docker, signs you in and ope
 
 ### Linux
 
-Make the AppImage executable (`chmod +x Orbit-*.AppImage`) and run it. Install Docker Engine with your package manager first; Orbit does not install it on Linux. GPU voice works the same way as on Windows, and needs the NVIDIA Container Toolkit.
+Make the AppImage executable (`chmod +x Orbit-*.AppImage`) and run it. Install Docker Engine with your package manager first; Orbit does not install it on Linux. GPU voice works the same way as on Windows, and needs the NVIDIA driver and the [NVIDIA Container Toolkit](https://docs.nvidia.com/datacenter/cloud-native/container-toolkit/latest/install-guide.html):
+
+```bash
+sudo nvidia-ctk runtime configure --runtime=docker && sudo systemctl restart docker
+docker run --rm --gpus all nvidia/cuda:12.8.1-base-ubuntu22.04 nvidia-smi   # should list your GPU
+```
 
 To build and try the AppImage from a Windows checkout, use `bash scripts/linux-installer-wsl.sh` (build), `… run` (launch under WSLg) or `… smoke` (the server's API smoke test on Linux).
 
 ### Voice on macOS
 
 GPU voice is not offered on a Mac: there is no CUDA, and no Apple-silicon build of the sidecar yet. The desktop app turns it off (`AUDIOCPP_URL=off`), the GPU option is hidden, and calls use on-device speech recognition and TTS.
+
+### After installing
+
+Pick the model your agent runs on (see [Models and subscriptions](#models-and-subscriptions)). Claude through your existing Claude sign-in is the fastest path, and the one to use with GPU voice on an 8 GB card.
 
 ## Build and run
 
@@ -280,7 +292,7 @@ Keys:
 | Key | Used for |
 |---|---|
 | `SESSION_SECRET` | Sign-in sessions and the tokens agents use to reach `/mcp` |
-| `DEEPSEEK_API_KEY` or another provider key | The default model for managed bots, inherited from the primary Hermes home |
+| Nothing, `ANTHROPIC_API_KEY`, or another provider key | The model. Set in the primary Hermes home, not here; managed bots inherit it. A Claude subscription needs no key (see [Models and subscriptions](#models-and-subscriptions)) |
 | `COMPOSIO_API_KEY` | Connected apps |
 | `XAI_API_KEY` | Cloud voice and `x_search` (optional when local voice models are installed) |
 | `ORGO_API_KEY`, `ORGO_COMPUTER_ID` | Orgo screens when `COMPUTER_KIND=orgo` |
@@ -304,7 +316,21 @@ A first run without `COMPOSIO_API_KEY` or `XAI_API_KEY` boots: both clients are 
 
 **Mobile.** Expo SDK 53 and React Native 0.79, with expo-router file-based routes. Metro is the dev server; a native dev build is produced by `expo run:ios` or `expo run:android`, and release builds by the `eas.json` profiles. The API base is read from `EXPO_PUBLIC_API_URL` (baked into `extra.apiUrl` at build time) and can be changed at runtime on the server screen, where the token is stored in `expo-secure-store`. A release build must use `https`; the config throws rather than ship a cleartext public URL.
 
-CI (`.github/workflows/ci.yml`) runs `pnpm install --frozen-lockfile`, typecheck, build, tests and the server smoke script on every push and pull request. `desktop-release.yml` publishes installers and the native server bundle on `v*` tags; `publish-images.yml` pushes the app and computer images for amd64 and arm64 on `main` and tags.
+CI (`.github/workflows/ci.yml`) runs `pnpm install --frozen-lockfile`, typecheck, build, tests and the server smoke script on every push and pull request. `desktop-release.yml` publishes installers and the native server bundle on `v*` tags; `publish-images.yml` pushes the app and computer images for amd64 and arm64, and the GPU voice sidecar (`ghcr.io/raybello/orbit/audiocpp`, amd64), on `main` and tags.
+
+### Build the installers
+
+`scripts/build-installer.sh` builds an installer the way the release workflow does, without publishing. Output lands in `apps/desktop/out` with each file's size and SHA-256; builds are unsigned unless `CSC_LINK` is set.
+
+```bash
+bash scripts/build-installer.sh win      # NSIS .exe: on Windows locally, elsewhere on GitHub Actions
+bash scripts/build-installer.sh mac      # DMG + zip for this Mac's chip (ARCH=all for both); GitHub Actions when not on a Mac
+bash scripts/build-installer.sh linux    # AppImage, on Linux
+bash scripts/linux-installer-wsl.sh      # AppImage from a Windows checkout, built inside WSL
+bash scripts/linux-installer-wsl.sh run  # …and launch it under WSLg (also: smoke, test)
+```
+
+Try a build without touching your real install with `ORBIT_USER_DATA_DIR=<dir> ORBIT_STACK_DIR=<dir> ORBIT_IMAGE_TAG=edge`. `.vscode/launch.json` has a config for each of these under **orbit: installer —**.
 
 ## Run the Docker stack
 
@@ -330,6 +356,30 @@ The build context for the server image is the repository root, not `apps/server`
 
 Per-bot Docker computers need the host folder in `COMPUTER_HOME_DIR` to exist at the same absolute path inside the `api` container (the bot home is a host bind mount). Set `ORBIT_HOST_DATA` and mount it at the same path, or use `COMPUTER_KIND=orgo`.
 
+To add GPU voice to the image stack, set `ORBIT_GPU_VOICE=1` and `AUDIOCPP_URL=http://audiocpp:8080` in its `.env` and add `--profile gpu` to the `up` command. The desktop app's **Install** button does exactly that.
+
+## GPU voice from a checkout
+
+Needs an NVIDIA GPU (Turing or newer, 8 GB or more with a cloud model) and Docker with GPU access: Docker Desktop on Windows has it, and Linux needs the NVIDIA Container Toolkit ([above](#linux)). `scripts/gpu-voice-stack.sh` covers each setup, and `.vscode/launch.json` has a config for each under **orbit: GPU voice —**.
+
+```bash
+bash scripts/gpu-voice-stack.sh            # the whole stack plus the sidecar (compose --profile gpu)
+bash scripts/gpu-voice-stack.sh sidecar    # only the sidecar, for `pnpm --filter @orbit/server dev` on the host
+NATIVE=1 bash scripts/gpu-voice-stack.sh   # the stack, pointed at an audiocpp_server already running on :8080
+bash scripts/gpu-voice-stack.sh rebuild    # rebuild the sidecar from scratch; models are kept
+bash scripts/gpu-voice-stack.sh logs       # or: down
+```
+
+The script compiles audio.cpp for your GPU only (about 10 minutes the first time). Then, in a bot's **Voice chat** settings, choose **GPU** and click **Download** for the models (about 5 GB). The server reads `AUDIOCPP_URL`: `http://127.0.0.1:8080` by default, and `off` disables GPU voice.
+
+**Calls from a phone or another PC.** Browsers only give the microphone to `https://` pages (or `localhost`). The sidecar serves Orbit over HTTPS on port 8444 with its own certificate authority:
+
+```bash
+AUDIOCPP_TLS_HOSTS="localhost 127.0.0.1 192.168.1.20" AUDIOCPP_HTTPS_BIND=0.0.0.0 bash scripts/gpu-voice-stack.sh sidecar
+```
+
+Open `https://192.168.1.20:8444` (your LAN address) and accept the certificate warning once. More in the [setup guide](https://raybello.github.io/orbit/docs/setup.html#gpu-voice) and [docs/voice-audiocpp.md](docs/voice-audiocpp.md).
+
 ## Install on a remote computer
 
 The app can run on the same computer as Hermes.
@@ -350,7 +400,17 @@ The app can run on the same computer as Hermes.
 
 ## Models and subscriptions
 
-Open a bot's details panel, **Engine**. Pick a provider and model there. **Sign in to a subscription** opens a terminal on the bot's screen running Hermes' own sign-in for that provider (for example Claude Pro/Max), so you finish it in the viewer and the bot uses that subscription from then on. Check your provider's terms before running an agent on a consumer subscription.
+The primary agent's model is set in Hermes (`hermes model`, or `hermes setup`), and new bots inherit it.
+
+| Path | How | When |
+|---|---|---|
+| **Claude (recommended)** | `hermes model` → `anthropic` → `claude-sonnet-4-5`. If you are signed in to Claude Code, Hermes uses that sign-in; nothing else to do. Otherwise `hermes auth add anthropic`, or set `ANTHROPIC_API_KEY` in the Hermes home's `.env`. | The fastest responses, and the main path for GPU voice: about 2.3 s from the end of your sentence to the first spoken words, and the GPU only holds the voice models. |
+| Other providers | `hermes model`, plus the provider's key or subscription sign-in. | Any model Hermes supports. |
+| Local (LM Studio, Ollama…) | `provider: lmstudio` and `base_url: http://127.0.0.1:1234/v1` in Hermes' `config.yaml`; set `context_length` to what the model was loaded with (Hermes otherwise assumes 64K). | Fully offline. With GPU voice on the same card you need about 16 GB of VRAM, and the avatar arrives later. |
+
+`hermes auth status anthropic` only reports logins Hermes stores itself, so it can say "logged out" while the Claude Code sign-in works. Hermes' home is `~/.hermes` on macOS and Linux, and `%LOCALAPPDATA%\hermes` on Windows.
+
+To change a single bot, open its details panel, **Engine**. Pick a provider and model there. **Sign in to a subscription** opens a terminal on the bot's screen running Hermes' own sign-in for that provider (for example Claude Pro/Max), so you finish it in the viewer and the bot uses that subscription from then on. Check your provider's terms before running an agent on a consumer subscription.
 
 A new managed bot inherits the primary agent's provider choice and API keys. Subscription tokens are inherited as access tokens, never as a copied refresh token; a Codex subscription needs its own sign-in because Hermes refuses a token store without a refresh token.
 
@@ -378,6 +438,8 @@ The voice screenshot is a real local call: a 16 kHz WAV prompt was fed through t
 - Approval cards cover Composio write actions. What a bot does through its browser or shell is not gated, and Hermes' own "risky command" prompts are not shown in the app yet.
 - The default ceiling is four bots (`MAX_BOTS=4`) because each Docker desktop takes a screen, a browser and roughly 1 to 2 GB of RAM. Raise it only on a host with the memory to match.
 - A bot cannot use a Claude or ChatGPT subscription that the primary agent signed in to unless the provider allows token inheritance; Codex subscriptions always need their own sign-in.
+- GPU voice needs an NVIDIA GPU on Windows or Linux. There is no Apple-silicon build of the sidecar yet, so Macs use on-device voice. The sidecar image is amd64 only.
+- The desktop installers are not code-signed or notarized yet.
 - The screen look is an original implementation inspired by OrgoAI/bops; no code or assets from that repository are used.
 
 ## License and credits

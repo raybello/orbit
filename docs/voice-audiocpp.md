@@ -41,7 +41,18 @@ The call is built so the caller hears the answer about one sentence after the mo
 - **Filler.** A model that has said nothing after 1.2 s gets "One moment."; one that has said
   nothing after 90 s gets an apology, and the call stays up.
 
-Measured on an RTX 5070 Ti, with the sidecar and Hermes on local LM Studio: see the PR for the run.
+Measured on an RTX 5070 Ti through a full Orbit call, from the end of the caller's speech:
+
+| Hermes model | Transcript | First reply audio | First avatar video |
+| --- | --- | --- | --- |
+| Claude Sonnet 4.5 (Anthropic, LM Studio unloaded) | 1.0 s | 2.3 s | 5.0–6.3 s |
+| qwen3.5-9b on LM Studio, sharing the GPU | 1.0–1.2 s | 3.6–4.2 s | 14–21 s |
+
+A cloud model is the fast path: the GPU only holds the three voice models (8.4 GB in use, the
+Windows desktop included), so an 8 GB card can run it, and SoulX does not compete with an LLM. Voice-call
+turns also run at `reasoning_effort: low`, because thinking tokens are silence on a call. Hermes
+uses your Claude Code sign-in for Anthropic when no key is set; see the
+[setup guide](https://raybello.github.io/orbit/docs/setup.html#model).
 
 ## Running it
 
@@ -72,8 +83,8 @@ serves only Caddy and writes `/data/audiocpp-models/.orbit-status.json`, which t
 "GPU voice loading… N%". Start the download with **Download** in the GPU voice settings
 (`POST /api/voice/audiocpp/models/download`, which runs `download-models.py` in the container through the
 Docker socket, finding it by the `orbit.role=audiocpp` label), or set `AUDIOCPP_AUTO_DOWNLOAD=1`.
-A 16 GB card holds one audio.cpp server with these models (~12 GB), so stop a native one before
-starting the sidecar.
+A 16 GB card holds one audio.cpp server with these models, so stop a native one before starting
+the sidecar. A local LLM on the same card (LM Studio) needs the rest of it.
 
 ## API
 
