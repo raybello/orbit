@@ -1,7 +1,7 @@
 import type { Context } from 'hono';
 import { HTTPException } from 'hono/http-exception';
 import { z } from 'zod';
-import { INITIATIVE_LEVELS } from '@orbit/contracts';
+import { AUDIOCPP_VOICES, INITIATIVE_LEVELS } from '@orbit/contracts';
 
 /**
  * The JSON bodies routes.ts accepts, as zod schemas, and the two helpers that read them.
@@ -77,8 +77,11 @@ export const PatchBotSchema = z
     voiceSpeed: z.number().optional(),
     voiceLanguage: z.string().optional(),
     // An explicit choice: anything else would be stored and read back as on-device.
-    voiceProvider: z.enum(['cloud', 'local']).optional(),
+    voiceProvider: z.enum(['cloud', 'local', 'audiocpp']).optional(),
     voiceModel: z.string().optional(),
+    // GPU voice: one of LFM3-Audio's voices, and whether a call shows the animated portrait.
+    audiocppVoice: z.enum(AUDIOCPP_VOICES as [string, ...string[]]).optional(),
+    avatarEnabled: z.boolean().optional(),
     // New with F8, so no older client sends anything else: the column only ever holds a real level.
     initiative: z.enum(INITIATIVE_LEVELS).optional(),
   })

@@ -7,6 +7,7 @@ import { useStore } from '../store';
 import { callLevels, dismissBlockedCall, endCall, startCall, toggleMute, useVoice, type CallBlock } from '../voice/call';
 import { readinessFor, useVoiceModels } from '../voice/models-store';
 import '../styles/voice-models.css';
+import { AvatarVideo } from './voice/AvatarVideo';
 
 function MicGlyph({ off }: { off?: boolean }) {
   return (
@@ -34,6 +35,7 @@ function blockedPrompt(r: VoiceReadiness | CallBlock): { text: string; action: s
   switch (r.status) {
     case 'ready':
     case 'cloud':
+    case 'audiocpp':
       return { text: 'Voice is ready.', action: 'Start call', start: true };
     case 'preparing':
       return { text: `Downloading on-device voice… ${r.pct}%`, action: 'Downloads', start: false };
@@ -136,6 +138,7 @@ export function VoiceCallBar() {
       role="region"
       aria-label={`Voice call with ${bot.name}`}
     >
+      {active && <AvatarVideo bot={bot} speaking={v.speaking} />}
       <div className="vcall__main">
         <span className="vcall__avatar" ref={avatarRef}>
           <span className="vcall__halo" aria-hidden />

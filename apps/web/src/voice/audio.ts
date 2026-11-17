@@ -133,8 +133,9 @@ export class PcmPlayer {
 
   get playing() { return this.sources.size > 0; }
 
-  push(pcm: Int16Array, rate = RATE) {
-    if (!pcm.length) return;
+  /** Queue `pcm` after whatever is already queued. Returns the AudioContext time it starts playing. */
+  push(pcm: Int16Array, rate = RATE): number {
+    if (!pcm.length) return Math.max(this.nextTime, this.ctx.currentTime);
     if (this.ctx.state === 'suspended') void this.ctx.resume().catch(() => {});
     const buf = this.ctx.createBuffer(1, pcm.length, rate);
     const ch = buf.getChannelData(0);
@@ -154,6 +155,7 @@ export class PcmPlayer {
       if (!this.sources.size) this.settle();
     };
     if (wasIdle) this.onStart?.();
+    return at;
   }
 
   /** Drop everything queued (barge-in). */

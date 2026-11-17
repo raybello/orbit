@@ -12,3 +12,5 @@ allowBuilds:
   cpu-features: true
   protobufjs: true
   ssh2: true
+  # sharp ships prebuilt libvips binaries (@img/sharp-*); its install script only builds from source.
+  sharp: false

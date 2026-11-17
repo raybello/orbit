@@ -8,6 +8,8 @@ import { endCall, isCallActive, startCall, useVoice } from '../voice/call';
 import { useVoiceModels } from '../voice/models-store';
 import { Icon } from './Icon';
 import { formatSize, latencyHint } from './voice/format';
+import { AudiocppSettings, useAudiocppStatus } from './voice/AudiocppSettings';
+import type { BotVoicePatch } from '../voice/api';
 
 const FALLBACK: VoiceOptions = {
   voices: ['ara', 'eve', 'leo', 'luna', 'rex', 'sal'].map((id) => ({ id, name: id[0].toUpperCase() + id.slice(1) })),
@@ -77,6 +79,7 @@ export function VoiceSettings({ bot }: { bot: Bot }) {
    * right here in the panel instead of only in the call bar.
    */
   const callError = useVoice((s) => (s.botId === bot.id ? s.error : null));
+  const [gpu, refreshGpu] = useAudiocppStatus();
 
   useEffect(() => { voiceApi.options().then(setOpts).catch(() => {}); }, []);
   useEffect(() => setError(null), [bot.id]);
@@ -153,7 +156,7 @@ export function VoiceSettings({ bot }: { bot: Bot }) {
    * The voice *pipeline* choice (Cloud / On-device) and the on-device model id. Optimistic, rolled
    * back to the previous values if the PATCH fails; the server returns the row it stored.
    */
-  const saveVoice = async (patch: { voiceProvider?: 'cloud' | 'local'; voiceModel?: string }) => {
+  const saveVoice = async (patch: Pick<BotVoicePatch, 'voiceProvider' | 'voiceModel'>) => {
     const prev = useStore.getState().bots.find((b) => b.id === bot.id);
     useStore.setState((s) => ({ bots: s.bots.map((b) => (b.id === bot.id ? { ...b, ...patch } : b)) }));
     setError(null);
@@ -173,6 +176,10 @@ export function VoiceSettings({ bot }: { bot: Bot }) {
   // `models-missing` is recoverable (the picker below downloads it), so it stays enabled.
   const onDeviceBlocked = !local || !supported(local);
   const blockedWhy = !local ? (localPhase === 'gone' ? 'not available on this server' : 'checking this device…') : reasonText(local.reason);
+  // GPU voice (audio.cpp) can be chosen while its models are still downloading; it can't while the
+  // server is simply not there, unless the bot is already on it (so it can be switched away).
+  const gpuBlocked = !gpu || (!gpu.available && !gpu.download && provider !== 'audiocpp');
+  const showProviders = localPhase !== 'gone' || !!gpu;
 
   const ttsModels = (menu?.items ?? []).filter((m) => m.kind === 'tts');
   const chosenModel = ttsModels.find((m) => m.id === bot.voiceModel);
@@ -282,7 +289,7 @@ export function VoiceSettings({ bot }: { bot: Bot }) {
           </span>
         </div>
       )}
-      {localPhase !== 'gone' && (
+      {showProviders && (
         <div className="panel-row panel-row--setting" data-state={onDeviceBlocked ? 'unavailable' : provider} data-provider={provider}>
           <span>Voice calls</span>
           <span className="voice-setting__right" role="group" aria-label="Voice provider" style={{ gap: 2, padding: 2, borderRadius: 8, background: 'var(--color-bg-hover)' }}>
@@ -307,15 +314,27 @@ export function VoiceSettings({ bot }: { bot: Bot }) {
               title={onDeviceBlocked ? `On-device voice isn’t available — ${blockedWhy}` : 'Speak in this server, with no cloud voice service'}
               onClick={() => { if (!onDeviceBlocked && provider !== 'local') void saveVoice({ voiceProvider: 'local' }); }}
             >On-device</button>
+            <button
+              type="button"
+              className="voice-preview"
+              aria-label="GPU voice"
+              aria-pressed={provider === 'audiocpp'}
+              data-state={gpuBlocked ? 'disabled' : provider === 'audiocpp' ? 'active' : 'idle'}
+              style={seg(provider === 'audiocpp')}
+              disabled={gpuBlocked}
+              title={gpuBlocked ? 'GPU voice not available' : 'Speak through audio.cpp on a GPU, with an optional animated portrait'}
+              onClick={() => { if (!gpuBlocked && provider !== 'audiocpp') void saveVoice({ voiceProvider: 'audiocpp' }); }}
+            >GPU</button>
           </span>
         </div>
       )}
-      {local && onDeviceBlocked && (
+      {provider === 'audiocpp' && <AudiocppSettings bot={bot} status={gpu} refresh={refreshGpu} onError={setError} />}
+      {local && onDeviceBlocked && provider !== 'audiocpp' && (
         <div className="panel-row panel-row--setting" data-state="reason" title={`On-device voice isn’t available — ${blockedWhy}`}>
           <span style={{ fontSize: 12, color: 'var(--color-text-secondary)', whiteSpace: 'normal' }}>On-device voice is off: {blockedWhy}.</span>
         </div>
       )}
-      {local && supported(local) && ttsModels.map((m) => {
+      {provider !== 'audiocpp' && local && supported(local) && ttsModels.map((m) => {
         const ready = m.state === 'ready';
         const chosen = bot.voiceModel === m.id;
         const busy = watching === m.id || m.state === 'downloading';

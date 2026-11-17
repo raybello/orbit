@@ -3,7 +3,7 @@ import { hub } from './lib/hub.js';
 import type { Bot, LiveState, Row, RowBody, RowKind, Routine, Task } from './types.js';
 import type { BotRow } from './infra/bot-repository.js';
 import { Cron } from 'croner';
-import { resolveVoiceProvider } from '@orbit/contracts';
+import { resolveAudiocppVoice, resolveVoiceProvider } from '@orbit/contracts';
 
 /** A `rows` table row, before its JSON body is parsed. */
 interface RowRecord {
@@ -71,6 +71,9 @@ export function toBot(r: BotRow): Bot {
     voiceLanguage: r.voice_language ?? 'auto',
     voiceProvider: resolveVoiceProvider(r.voice_provider),
     voiceModel: r.voice_model ?? 'piper-lessac-medium',
+    audiocppVoice: resolveAudiocppVoice(r.audiocpp_voice),
+    avatarEnabled: !!r.avatar_enabled,
+    hasPortrait: !!r.avatar_portrait_path,
     model: r.model ?? null,
     provider: r.provider ?? null,
     initiative: r.initiative,

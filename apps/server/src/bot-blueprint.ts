@@ -128,5 +128,6 @@ export function duplicateBotFor(userId: string, botId: string): Bot {
     voiceLanguage: src.voice_language,
     voiceProvider: src.voice_provider,
     voiceModel: src.voice_model,
+    audiocppVoice: src.audiocpp_voice ?? undefined,
   });
 }

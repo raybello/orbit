@@ -62,6 +62,10 @@ services:
       # able to point it at a folder the mount does not cover.
       HERMES_HOME_PRIMARY: /host-hermes
       LOG_LEVEL: ${LOG_LEVEL:-info}
+      # GPU voice (audio.cpp). This stack ships no GPU sidecar, so the default is an audiocpp_server
+      # on the host; unreachable just means GPU voice is unavailable and bots use the other paths.
+      AUDIOCPP_URL: ${AUDIOCPP_URL:-http://host.docker.internal:8080}
+      AUDIOCPP_MODELS_DIR: /data/audiocpp-models
     ports:
       # Loopback only. ORBIT_API_PORT=0 in .env.images.example is the "let the OS pick" case the
       # desktop controller uses when 8787 is taken; this port is the one the app loads.

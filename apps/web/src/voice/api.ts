@@ -1,4 +1,4 @@
-import type { Bot, VoiceLocalStatus, VoiceModelItem, VoiceModelState, VoiceModelStateValue, VoiceOption } from '@orbit/contracts';
+import type { AudiocppStatus, Bot, VoiceLocalStatus, VoiceModelItem, VoiceModelState, VoiceModelStateValue, VoiceOption, VoiceProvider } from '@orbit/contracts';
 
 export interface VoiceSession {
   callId: string;
@@ -131,10 +131,19 @@ export async function deleteLocalModel(model: string): Promise<{ removed: number
  * The per-bot voice choice: `PATCH /api/bots/:id` with only the two voice keys, so saving a voice
  * never races the bot's other fields. Returns the bot the server stored.
  */
-export async function saveBotVoice(botId: string, patch: { voiceProvider?: 'cloud' | 'local'; voiceModel?: string }): Promise<{ bot: Bot }> {
-  const body: Record<string, string> = {};
+export interface BotVoicePatch {
+  voiceProvider?: VoiceProvider;
+  voiceModel?: string;
+  audiocppVoice?: string;
+  avatarEnabled?: boolean;
+}
+
+export async function saveBotVoice(botId: string, patch: BotVoicePatch): Promise<{ bot: Bot }> {
+  const body: Record<string, string | boolean> = {};
   if (patch.voiceProvider !== undefined) body.voiceProvider = patch.voiceProvider;
   if (patch.voiceModel !== undefined) body.voiceModel = patch.voiceModel;
+  if (patch.audiocppVoice !== undefined) body.audiocppVoice = patch.audiocppVoice;
+  if (patch.avatarEnabled !== undefined) body.avatarEnabled = patch.avatarEnabled;
   const res = await fetch(`/api/bots/${botId}`, {
     method: 'PATCH', credentials: 'include', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body),
   });
@@ -162,6 +171,84 @@ export async function startLocalSession(botId: string): Promise<LocalSession> {
     sampleRate: Number.isFinite(rate) && rate > 0 ? Math.round(rate) : 16000,
     ttsSampleRate: Number.isFinite(tts) && tts > 0 ? Math.round(tts) : LOCAL_TTS_RATE,
   };
+}
+
+// ---------- GPU voice (audio.cpp) ----------
+
+export interface AudiocppSession {
+  callId: string;
+  /** Rate the socket expects from the mic: 16 000 Hz mono PCM16. */
+  sampleRate: number;
+  /** Reply audio rate: 24 000 Hz (LFM3-Audio). */
+  ttsSampleRate: number;
+  /** The call streams lip-synced portrait video (0x02 frames). */
+  hasAvatar: boolean;
+  voice: string;
+}
+
+async function errorOf(res: Response, fallback: string): Promise<Error> {
+  let msg = fallback;
+  try { msg = ((await res.json()) as { error?: string }).error ?? msg; } catch { /* not json */ }
+  return new Error(msg);
+}
+
+/** `GET /api/voice/audiocpp/status`: is the audio.cpp server up, and with which models. */
+export async function audiocppStatus(): Promise<AudiocppStatus> {
+  const res = await fetch('/api/voice/audiocpp/status', { credentials: 'include' });
+  if (!res.ok) throw new Error(`HTTP ${res.status}`);
+  return res.json() as Promise<AudiocppStatus>;
+}
+
+export async function startAudiocppSession(botId: string): Promise<AudiocppSession> {
+  const res = await fetch('/api/voice/audiocpp/session', {
+    method: 'POST', credentials: 'include', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ botId }),
+  });
+  if (!res.ok) throw await errorOf(res, 'GPU voice isn’t available');
+  const s = (await res.json()) as Partial<AudiocppSession>;
+  if (typeof s.callId !== 'string' || !s.callId) throw new Error('GPU voice session was not created');
+  return {
+    callId: s.callId,
+    sampleRate: Number(s.sampleRate) > 0 ? Number(s.sampleRate) : 16000,
+    ttsSampleRate: Number(s.ttsSampleRate) > 0 ? Number(s.ttsSampleRate) : 24000,
+    hasAvatar: !!s.hasAvatar,
+    voice: String(s.voice ?? ''),
+  };
+}
+
+/** One LFM3-Audio voice saying `text`: PCM16 at the rate in `X-Audio-Rate`. */
+export async function audiocppPreview(p: { text: string; voice: string; botId?: string }): Promise<LocalPreview> {
+  const res = await fetch('/api/voice/audiocpp/preview', {
+    method: 'POST', credentials: 'include', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(p),
+  });
+  if (!res.ok) throw await errorOf(res, 'Preview unavailable');
+  const rate = Number(res.headers.get('X-Audio-Rate'));
+  const body = await res.arrayBuffer();
+  return { pcm: new Int16Array(body, 0, body.byteLength >> 1), rate: rate > 0 ? rate : 24000 };
+}
+
+/** Fetch the GPU models in this stack's audio.cpp container (backgrounded; poll the status). */
+export async function downloadAudiocppModels(): Promise<{ started: boolean; managed: boolean; error?: string }> {
+  const res = await fetch('/api/voice/audiocpp/models/download', { method: 'POST', credentials: 'include' });
+  const j = (await res.json().catch(() => ({}))) as { started?: boolean; managed?: boolean; error?: string };
+  if (!res.ok && !j.error) throw new Error(`HTTP ${res.status}`);
+  return { started: !!j.started, managed: !!j.managed, error: j.error };
+}
+
+export const portraitUrl = (botId: string, bust = 0) => `/api/voice/audiocpp/portrait/${encodeURIComponent(botId)}${bust ? `?v=${bust}` : ''}`;
+
+/** Upload a portrait; the server crops it to a 512x512 JPEG and switches the avatar on. */
+export async function uploadPortrait(botId: string, file: File): Promise<{ bot: Bot }> {
+  const fd = new FormData();
+  fd.append('file', file, file.name || 'portrait');
+  const res = await fetch(portraitUrl(botId), { method: 'POST', credentials: 'include', body: fd });
+  if (!res.ok) throw await errorOf(res, 'Couldn’t upload that image');
+  return res.json() as Promise<{ bot: Bot }>;
+}
+
+export async function deletePortrait(botId: string): Promise<{ bot: Bot }> {
+  const res = await fetch(portraitUrl(botId), { method: 'DELETE', credentials: 'include' });
+  if (!res.ok) throw await errorOf(res, 'Couldn’t remove the portrait');
+  return res.json() as Promise<{ bot: Bot }>;
 }
 
 export const voiceApi = {
@@ -202,6 +289,11 @@ export const voiceApi = {
   cancelLocalModel,
   deleteLocalModel,
   saveBotVoice,
+  audiocppStatus,
+  audiocppPreview,
+  downloadAudiocppModels,
+  uploadPortrait,
+  deletePortrait,
 
   /** On-device preview through the bot's chosen model: raw PCM16 plus the rate the engine produced. */
   async localPreview(p: { text: string; speed?: number; model?: string }): Promise<LocalPreview> {

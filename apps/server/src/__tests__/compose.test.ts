@@ -15,6 +15,9 @@ const repo = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../../.
 const composeDir = path.join(repo, 'infra/compose');
 const files = ['docker-compose.yml', 'docker-compose.images.yml'];
 
+/** A Windows checkout (core.autocrlf) has CRLF line ends; the block regexes are written for LF. */
+const lf = (s: string) => s.split('\r\n').join('\n');
+
 function serviceBlock(text: string, name: string): string {
   const start = text.indexOf(`\n  ${name}:\n`);
   assert.ok(start >= 0, `service ${name} missing`);
@@ -24,7 +27,7 @@ function serviceBlock(text: string, name: string): string {
 }
 
 for (const file of files) {
-  const text = fs.readFileSync(path.join(composeDir, file), 'utf8');
+  const text = lf(fs.readFileSync(path.join(composeDir, file), 'utf8'));
 
   test(`${file}: both services run as root so they can open the Docker socket`, () => {
     for (const svc of ['api', 'sandbox-supervisor']) {
@@ -44,7 +47,20 @@ for (const file of files) {
   test(`${file}: the supervisor token cannot silently default`, () => {
     assert.match(text, /SANDBOX_SUPERVISOR_TOKEN: \$\{SANDBOX_SUPERVISOR_TOKEN:\?/);
   });
+
+  test(`${file}: the api knows where GPU voice (audio.cpp) lives, with a default`, () => {
+    assert.match(serviceBlock(text, 'api'), /AUDIOCPP_URL: \$\{AUDIOCPP_URL:-http:\/\/[a-z.]+:8080\}/);
+  });
 }
+
+test('docker-compose.yml: the audiocpp GPU sidecar is opt-in and never publishes :8080', () => {
+  const text = lf(fs.readFileSync(path.join(composeDir, 'docker-compose.yml'), 'utf8'));
+  const svc = serviceBlock(text, 'audiocpp');
+  assert.match(svc, /profiles: \[gpu\]/, 'a host without the NVIDIA runtime must still `up` the default stack');
+  assert.match(svc, /orbit\.role: audiocpp/, 'the api finds the container by this label');
+  assert.match(svc, /driver: nvidia/);
+  assert.doesNotMatch(svc, /:8080"/, 'audiocpp_server stays on the compose network');
+});
 
 test('the env example does not ship an empty COMPUTER_IMAGE without a default in compose', () => {
   const example = fs.readFileSync(path.join(composeDir, '.env.images.example'), 'utf8');
@@ -52,6 +68,6 @@ test('the env example does not ship an empty COMPUTER_IMAGE without a default in
 });
 
 test('the supervisor opts out of the image healthcheck (it binds no port)', () => {
-  const text = fs.readFileSync(path.join(composeDir, 'docker-compose.images.yml'), 'utf8');
+  const text = lf(fs.readFileSync(path.join(composeDir, 'docker-compose.images.yml'), 'utf8'));
   assert.match(serviceBlock(text, 'sandbox-supervisor'), /healthcheck:\n\s+test: \["NONE"\]/);
 });

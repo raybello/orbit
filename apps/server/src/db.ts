@@ -177,6 +177,11 @@ addColumn('bots', 'voice_language', "TEXT NOT NULL DEFAULT 'auto'");
 // in which case the client falls back on its own (the server never silently proxies to xAI).
 addColumn('bots', 'voice_provider', "TEXT NOT NULL DEFAULT 'cloud'");
 addColumn('bots', 'voice_model', "TEXT NOT NULL DEFAULT 'piper-lessac-medium'");
+// GPU voice (audio.cpp, voice_provider='audiocpp'): the LFM3-Audio voice, and the optional lip-synced
+// portrait (a 512x512 JPEG on the data volume; see voice-audiocpp-endpoints.ts).
+addColumn('bots', 'audiocpp_voice', "TEXT NOT NULL DEFAULT 'american_english_female'");
+addColumn('bots', 'avatar_enabled', 'INTEGER NOT NULL DEFAULT 0');
+addColumn('bots', 'avatar_portrait_path', 'TEXT');
 migrateUnsetVoiceProviders(db);
 // Hermes engine: per-bot model choice, which engine runs the bot ('primary' = the existing agent,
 // 'managed' = a gateway we start), and the managed gateway's port.

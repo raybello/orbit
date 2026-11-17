@@ -108,6 +108,8 @@ const PATCH_COLUMNS: Record<string, string> = {
   voiceLanguage: 'voice_language',
   voiceProvider: 'voice_provider',
   voiceModel: 'voice_model',
+  audiocppVoice: 'audiocpp_voice',
+  avatarEnabled: 'avatar_enabled',
   initiative: 'initiative',
 };
 

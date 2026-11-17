@@ -853,7 +853,7 @@ const wait = (ms: number) => new Promise<void>((resolve) => setTimeout(resolve, 
  * socket test can run end to end with no agent and no provider key. That switch is for tests and
  * diagnostics only; nothing in production sets it.
  */
-async function defaultRelay(botId: string, callId: string, text: string): Promise<string> {
+export async function defaultRelay(botId: string, callId: string, text: string): Promise<string> {
   if ((process.env.VOICE_CALL_RELAY ?? '').trim().toLowerCase() === 'echo') return text.toUpperCase();
 
   const [{ appendRow, getBotRow: botRow }, { enqueue }, { db }] = await Promise.all([
