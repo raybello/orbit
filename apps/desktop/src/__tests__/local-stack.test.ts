@@ -202,6 +202,10 @@ function harness(opts: {
   /** Make the n-th fetch hang until its signal aborts (a proxy that accepted and went quiet). */
   hangFetch?: (n: number) => boolean;
   healthTimeoutMs?: number;
+  /** Extra environment for the controller (ORBIT_SKIP_PULL, ...). */
+  env?: Record<string, string>;
+  /** Report the stack's images as already on this machine. */
+  localImages?: boolean;
 }): Harness {
   const root = path.join(tmpRoot, opts.name);
   fs.rmSync(root, { recursive: true, force: true });
@@ -231,6 +235,9 @@ function harness(opts: {
     cwdState.push(Boolean(runOpts?.cwd && fs.existsSync(runOpts.cwd)));
     if (args[0] === 'info') return { code: 0, stdout: '24.0.7\n', stderr: '' };
     if (args[0] === 'compose' && args.includes('pull')) return { code: 0, stdout: '', stderr: '' };
+    if (args[0] === 'compose' && args.includes('config') && args.includes('--images')) {
+      return { code: 0, stdout: opts.localImages ? 'ghcr.io/raybello/orbit/app:edge\n' : '', stderr: '' };
+    }
     if (args[0] === 'compose' && args.includes('up')) {
       upCalls += 1;
       return opts.up?.(upCalls) ?? { code: 0, stdout: '', stderr: '' };
@@ -259,7 +266,7 @@ function harness(opts: {
     packaged: opts.packaged ?? false,
     resourcesDir: resources,
     platform: 'darwin',
-    env: { ORBIT_DOCKER_BIN: '/usr/bin/docker' } as NodeJS.ProcessEnv,
+    env: { ORBIT_DOCKER_BIN: '/usr/bin/docker', ...opts.env } as NodeJS.ProcessEnv,
     exists: (file: string) => file === '/usr/bin/docker',
     exec,
     fetchImpl,
@@ -298,6 +305,31 @@ function selfAwareServer(imageTag = 'edge') {
     return { status: 404, body: { error: 'not found' } };
   };
 }
+
+describe('LocalStackController: pulling images', () => {
+  const pulled = (h: Harness) => h.calls.some((a) => a[0] === 'compose' && a.includes('pull'));
+
+  test('pulls by default', async () => {
+    const h = harness({ name: 'pull-default', server: selfAwareServer(), localImages: true });
+    const state = await h.controller.start();
+    assert.equal(state.phase, 'ready', state.error);
+    assert.equal(pulled(h), true);
+  });
+
+  test('ORBIT_SKIP_PULL=1 keeps a locally built image instead of pulling over it', async () => {
+    const h = harness({ name: 'pull-skip', server: selfAwareServer(), localImages: true, env: { ORBIT_SKIP_PULL: '1' } });
+    const state = await h.controller.start();
+    assert.equal(state.phase, 'ready', state.error);
+    assert.equal(pulled(h), false);
+  });
+
+  test('ORBIT_SKIP_PULL=1 still pulls when the images are not on this machine', async () => {
+    const h = harness({ name: 'pull-skip-missing', server: selfAwareServer(), env: { ORBIT_SKIP_PULL: '1' } });
+    const state = await h.controller.start();
+    assert.equal(state.phase, 'ready', state.error);
+    assert.equal(pulled(h), true);
+  });
+});
 
 describe('LocalStackController: staging files', () => {
   test('creates the stack folder before the first docker call', async () => {

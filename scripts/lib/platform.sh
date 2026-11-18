@@ -30,7 +30,9 @@ _orbit_win_pattern() {
   printf '%s' "$re" | sed 's#/#[\\\\/]#g'
 }
 
-# PIDs whose command line matches an extended regex (pgrep -f), space separated.
+# PIDs whose command line matches an extended regex (pgrep -f), space separated. Finding none is
+# not a failure: pgrep exits 1 then, and under `set -o pipefail` that used to end the calling
+# script silently (the rebuild loop died at "3/3 electron" whenever no Orbit window was open).
 orbit_pids() {
   local re="$1"
   if [ "$ORBIT_OS" = win ]; then
@@ -38,9 +40,9 @@ orbit_pids() {
     winre=$(_orbit_win_pattern "$re")
     powershell.exe -NoProfile -NonInteractive -Command \
       "Get-CimInstance Win32_Process | Where-Object { \$_.CommandLine -match '$(printf '%s' "$winre" | sed "s/'/''/g")' -and \$_.ProcessId -ne \$PID } | ForEach-Object { \$_.ProcessId }" \
-      2>/dev/null | tr -d '\r' | tr '\n' ' '
+      2>/dev/null | tr -d '\r' | tr '\n' ' ' || true
   else
-    pgrep -f "$re" 2>/dev/null | tr '\n' ' '
+    { pgrep -f "$re" 2>/dev/null || true; } | tr '\n' ' '
   fi
 }
 

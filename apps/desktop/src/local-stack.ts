@@ -551,17 +551,24 @@ export class LocalStackController implements DockerStack {
       let prepared = this.prepareEnv(port);
       let webUrl = prepared.webUrl;
 
-      this.set({ phase: 'pulling', detail: `Pulling ghcr.io/raybello/orbit/app:${this.imageTag()}`, progress: 0.1 });
-      const pull = await this.compose(binary, ['pull', '--quiet'], { timeoutMs: 600_000, signal });
-      if (pull.code !== 0) {
-        const kind = classifyDockerFailure(failureText(pull));
-        if (kind === 'image-not-found' && !(await this.imagesPresent(binary, signal))) {
-          return this.fail(kind, `The image ghcr.io/raybello/orbit/app:${this.imageTag()} is not published yet.`);
+      // ORBIT_SKIP_PULL=1 (the dev rebuild loop sets it): run the images already on this machine.
+      // Pulling there would replace the image just built from the working tree with the
+      // published one of the same tag, and the window would show the registry's code instead.
+      if (this.env.ORBIT_SKIP_PULL?.trim() === '1' && (await this.imagesPresent(binary, signal))) {
+        log.info(`ORBIT_SKIP_PULL=1: using the local ghcr.io/raybello/orbit/app:${this.imageTag()}, not pulling`);
+      } else {
+        this.set({ phase: 'pulling', detail: `Pulling ghcr.io/raybello/orbit/app:${this.imageTag()}`, progress: 0.1 });
+        const pull = await this.compose(binary, ['pull', '--quiet'], { timeoutMs: 600_000, signal });
+        if (pull.code !== 0) {
+          const kind = classifyDockerFailure(failureText(pull));
+          if (kind === 'image-not-found' && !(await this.imagesPresent(binary, signal))) {
+            return this.fail(kind, `The image ghcr.io/raybello/orbit/app:${this.imageTag()} is not published yet.`);
+          }
+          if (signal.aborted) return this.set({ phase: 'idle', detail: 'Stopped' });
+          // A pull can fail for a local-only tag or a flaky registry while usable images
+          // are cached; let `up` be the judge instead of failing here.
+          log.warn(`compose pull failed (${kind}); continuing`);
         }
-        if (signal.aborted) return this.set({ phase: 'idle', detail: 'Stopped' });
-        // A pull can fail for a local-only tag or a flaky registry while usable images
-        // are cached; let `up` be the judge instead of failing here.
-        log.warn(`compose pull failed (${kind}); continuing`);
       }
 
       this.set({ phase: 'starting', detail: 'Starting the stack', progress: 0.5 });
