@@ -110,6 +110,7 @@ const PATCH_COLUMNS: Record<string, string> = {
   voiceModel: 'voice_model',
   audiocppVoice: 'audiocpp_voice',
   avatarEnabled: 'avatar_enabled',
+  alwaysAllow: 'always_allow',
   initiative: 'initiative',
 };
 

@@ -10,7 +10,7 @@ import { computerKindFor } from '../computer-provider-registry.js';
 import { dockerProvider } from '../docker-provider.js';
 import { engineFor } from '../engine.js';
 import { instructionsFor } from './prompt.js';
-import { activityFor, appToolName, humanizeSlug, LIBRARY_ROOT, mayAlwaysAllow, policyFor } from './tools.js';
+import { activityFor, appToolName, humanizeSlug, LIBRARY_ROOT, policyFor, rememberAlwaysAllow } from './tools.js';
 import { MIME_BY_EXTENSION } from '../lib/mime.js';
 import { sendPushNotification } from '../push.js';
 import { recordRoutineOutcome } from '../initiative-store.js';
@@ -201,7 +201,7 @@ const pendingApprovals = (botId: string) => db.prepare("SELECT * FROM approvals 
 /** Put an approval card in the conversation and wait for the user's answer. */
 export async function requestApproval(
   who: { userId: string; botId: string },
-  pol: { key: string; toolkit?: string; title: string; rule?: { id: string; description: string }; offerAlways?: boolean },
+  pol: { key: string; toolkit?: string; title: string; rule?: { id: string; description: string }; offerAlways?: boolean; alwaysFor?: { botId: string; botName: string } },
   args: unknown,
   rowSeq: number | null,
 ): Promise<ApprovalDecision> {
@@ -213,6 +213,7 @@ export async function requestApproval(
     detail: describeArgs(args), tool: pol.key, toolkit: pol.toolkit, toolkitName: tk?.name, logo: tk?.logo, args, status: 'pending',
     ...(pol.rule ? { rule: pol.rule } : {}),
     ...(pol.offerAlways === false ? { offerAlways: false } : {}),
+    ...(pol.alwaysFor ? { alwaysFor: pol.alwaysFor } : {}),
   });
   db.prepare('INSERT INTO approvals(id,bot_id,row_seq,call_id,tool,status,created_at) VALUES (?,?,?,?,?,?,?)').run(approvalId, botId, card.seq, '', pol.key, 'pending', now());
   db.prepare('UPDATE bots SET unread = unread + 1 WHERE id=?').run(botId);
@@ -273,11 +274,11 @@ export function resolveApproval(userId: string, approvalId: string, decision: 'a
   if (ap.status !== 'pending') return;
   const waiter = waiters.get(approvalId);
   if (!waiter) return expireApproval(approvalId);
-  // "Always allow" on an action that must ask every time (sending email) counts as allowing once.
-  const always = decision === 'always' && mayAlwaysAllow(ap.tool);
+  // "Always allow" is kept for this bot when its per-bot setting is on, otherwise for the person;
+  // on an action that must ask every time (sending email) without the per-bot setting, it allows once.
+  const always = decision === 'always' && rememberAlwaysAllow(userId, ap.bot_id, ap.tool) !== null;
   const status = decision === 'deny' ? 'denied' : always ? 'always' : 'allowed';
   db.prepare('UPDATE approvals SET status=?, resolved_at=? WHERE id=?').run(status, now(), approvalId);
-  if (always) db.prepare("INSERT OR REPLACE INTO policies(user_id,tool,mode) VALUES (?,?,'always_allow')").run(userId, ap.tool);
   setApprovalCard(ap.bot_id, ap.row_seq, approvalId, status);
   waiter.resolve(decision === 'deny' ? 'deny' : 'allow');
 }

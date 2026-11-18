@@ -42,6 +42,8 @@ export interface BotRow {
   /** audio.cpp GPU voice (db.ts addColumn). */
   audiocpp_voice: string | null;
   avatar_enabled: number | null;
+  /** Per-bot "Always allow" (db.ts addColumn). */
+  always_allow: number | null;
   avatar_portrait_path: string | null;
   /** Hermes engine (db.ts addColumn). */
   model: string | null;

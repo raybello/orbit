@@ -14,6 +14,8 @@ vi.mock('../lib/configApi', () => ({
     setInitiative: vi.fn(async (p: { idleHours?: number; briefing?: { enabled?: boolean; time?: string } }) =>
       settings({ enabled: p.briefing?.enabled ?? false, time: p.briefing?.time ?? '08:00' }, p.idleHours ?? 24)),
     updateBot: vi.fn(async (id: string, p: Partial<Bot>) => ({ bot: { id, ...p } })),
+    botPolicies: vi.fn(async () => ({ policies: [] })),
+    removeBotPolicy: vi.fn(async () => ({ ok: true })),
   },
 }));
 vi.mock('../lib/api', () => ({

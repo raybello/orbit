@@ -50,6 +50,8 @@ export interface Bot {
   avatarEnabled?: boolean;
   /** audio.cpp: a portrait has been uploaded (GET /api/voice/audiocpp/portrait/:botId). */
   hasPortrait?: boolean;
+  /** The person lets this Bot's approval cards offer "Always allow for <Bot>", kept for this Bot only. Off by default. */
+  alwaysAllow?: boolean;
   /** Hermes engine: model id and provider for this bot; null = the engine's default. */
   model: string | null;
   provider: string | null;
@@ -132,6 +134,8 @@ export type CardBody =
       rule?: { id: string; description: string };
       /** False for an action that must ask every time (sending email): the card does not offer "Always allow". */
       offerAlways?: boolean;
+      /** Set when the person turned on per-bot "Always allow" for this Bot: the button reads "Always allow for <Bot>" and is kept for this Bot only. */
+      alwaysFor?: { botId: string; botName: string };
       status: 'pending' | 'allowed' | 'always' | 'denied' | 'expired';
     }
   | {

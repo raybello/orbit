@@ -82,6 +82,7 @@ export const PatchBotSchema = z
     // GPU voice: one of LFM3-Audio's voices, and whether a call shows the animated portrait.
     audiocppVoice: z.enum(AUDIOCPP_VOICES as [string, ...string[]]).optional(),
     avatarEnabled: z.boolean().optional(),
+    alwaysAllow: z.boolean().optional(),
     // New with F8, so no older client sends anything else: the column only ever holds a real level.
     initiative: z.enum(INITIATIVE_LEVELS).optional(),
   })

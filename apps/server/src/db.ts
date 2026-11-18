@@ -166,6 +166,16 @@ addColumn('bots', 'voice_model', "TEXT NOT NULL DEFAULT 'piper-lessac-medium'");
 // portrait (a 512x512 JPEG on the data volume; see voice-audiocpp-endpoints.ts).
 addColumn('bots', 'audiocpp_voice', "TEXT NOT NULL DEFAULT 'american_english_female'");
 addColumn('bots', 'avatar_enabled', 'INTEGER NOT NULL DEFAULT 0');
+// Per-bot "Always allow": off for every bot until the person turns it on. While on, the bot's
+// approval cards offer "Always allow for <Bot>" and what the person allows is kept in bot_policies,
+// for that bot only. Turning it off keeps the list but stops using it.
+addColumn('bots', 'always_allow', 'INTEGER NOT NULL DEFAULT 0');
+db.exec(`CREATE TABLE IF NOT EXISTS bot_policies (
+  bot_id TEXT NOT NULL REFERENCES bots(id) ON DELETE CASCADE,
+  tool TEXT NOT NULL,
+  created_at INTEGER NOT NULL,
+  PRIMARY KEY (bot_id, tool)
+)`);
 addColumn('bots', 'avatar_portrait_path', 'TEXT');
 migrateUnsetVoiceProviders(db);
 // Hermes engine: per-bot model choice, which engine runs the bot ('primary' = the existing agent,

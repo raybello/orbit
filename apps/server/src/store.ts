@@ -73,6 +73,7 @@ export function toBot(r: BotRow): Bot {
     voiceModel: r.voice_model ?? 'piper-lessac-medium',
     audiocppVoice: resolveAudiocppVoice(r.audiocpp_voice),
     avatarEnabled: !!r.avatar_enabled,
+    alwaysAllow: !!r.always_allow,
     hasPortrait: !!r.avatar_portrait_path,
     model: r.model ?? null,
     provider: r.provider ?? null,

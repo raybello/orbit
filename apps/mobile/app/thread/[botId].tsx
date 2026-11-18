@@ -456,10 +456,10 @@ function ApprovalCard({ body, botId, tokens }: { body: Extract<CardBody, { card:
             busy={approval.isPending}
             onPress={() => approval.mutate({ approvalId: body.approvalId, decision: 'allow' })}
           />
-          {!body.rule && body.offerAlways !== false ? (
+          {!body.rule && (body.alwaysFor || body.offerAlways !== false) ? (
             <CardButton
               tokens={tokens}
-              label="Always"
+              label={body.alwaysFor ? `Always for ${body.alwaysFor.botName}` : 'Always'}
               busy={approval.isPending}
               onPress={() => approval.mutate({ approvalId: body.approvalId, decision: 'always' })}
             />

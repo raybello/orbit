@@ -66,7 +66,7 @@ async function listTools(botId: string | null) {
  * when the call must not run, or null when it may.
  */
 async function refusal(who: { userId: string; botId: string }, name: string, args: Record<string, unknown>, ownTool: boolean, rowSeq: number | null): Promise<string | null> {
-  const pol = policyFor(who.userId, name, args);
+  const pol = policyFor(who.userId, name, args, who.botId);
   const review = await reviewToolCall(who.botId, name, args, ownTool);
   const rule = review.verdict.decidedBy?.rule;
   const decision = strictest(pol.decision, review.verdict.decision);

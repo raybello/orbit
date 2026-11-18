@@ -701,4 +701,19 @@ api.delete('/policies/:tool', (c) => {
   return c.json({ ok: true });
 });
 
+// Per-bot "Always allow": what the person always-allowed for one Bot (used only while that Bot's
+// alwaysAllow setting is on), and removing one.
+api.get('/bots/:id/policies', (c) => {
+  const b = ownBot(c.get('user').id, c.req.param('id'));
+  if (!b) return c.json({ error: 'not found' }, 404);
+  const rows = db.prepare('SELECT tool, created_at FROM bot_policies WHERE bot_id=? ORDER BY created_at').all(b.id) as { tool: string; created_at: number }[];
+  return c.json({ policies: rows.map((r) => ({ tool: r.tool, createdAt: r.created_at })) });
+});
+api.delete('/bots/:id/policies/:tool', (c) => {
+  const b = ownBot(c.get('user').id, c.req.param('id'));
+  if (!b) return c.json({ error: 'not found' }, 404);
+  db.prepare('DELETE FROM bot_policies WHERE bot_id=? AND tool=?').run(b.id, c.req.param('tool'));
+  return c.json({ ok: true });
+});
+
 api.route('/voice', voiceApi);

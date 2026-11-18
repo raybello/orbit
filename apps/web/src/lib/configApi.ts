@@ -32,11 +32,14 @@ export interface ComputerDetails {
   hibernation: { idleMinutes: number; viewers: number; dryRun: boolean };
 }
 
-export type BotPatch = Partial<Pick<Bot, 'name' | 'label' | 'description' | 'instructions' | 'avatarShape' | 'avatarColor' | 'effort' | 'mode' | 'initiative'>>;
+export type BotPatch = Partial<Pick<Bot, 'name' | 'label' | 'description' | 'instructions' | 'avatarShape' | 'avatarColor' | 'effort' | 'mode' | 'initiative' | 'alwaysAllow'>>;
 
 export const configApi = {
   settings: (botId: string) => req<BotSettingsBundle>('GET', `/bots/${botId}/settings`),
   updateBot: (botId: string, p: BotPatch) => req<{ bot: Bot }>('PATCH', `/bots/${botId}`, p),
+  /** What the person always-allowed for this Bot (used while its alwaysAllow setting is on). */
+  botPolicies: (botId: string) => req<{ policies: { tool: string; createdAt: number }[] }>('GET', `/bots/${botId}/policies`),
+  removeBotPolicy: (botId: string, tool: string) => req<{ ok: true }>('DELETE', `/bots/${botId}/policies/${encodeURIComponent(tool)}`),
   deleteBot: (botId: string) => req<{ ok: true }>('DELETE', `/bots/${botId}`),
   /** Promote a Bot to primary, or restore it to default. At most three primaries, at least one. */
   setPrimary: (botId: string, primary: boolean) => req<{ ok: true; primaries: string[] }>('POST', `/bots/${botId}/primary${primary ? '' : '/restore'}`),
