@@ -6,7 +6,7 @@ import { useStore } from '../store';
 import { Icon } from './Icon';
 import { PageShell } from './PageShell';
 import { Segmented } from './config/ui';
-import { CreateCalendarEventModal } from './modals/CreateCalendarEventModal';
+import { CreateCalendarEventModal, type DuplicateFrom } from './modals/CreateCalendarEventModal';
 import { GoogleEventModal, type GoogleEventIntent } from './modals/GoogleEventModal';
 import { daysOf } from '../lib/eventTime';
 import '../styles/calendar.css';
@@ -83,6 +83,8 @@ export function CalendarView() {
   const [selectedGoogle, setSelectedGoogle] = useState<{ ev: GoogleCalendarEvent; x: number; y: number } | null>(null);
   const [googleIntent, setGoogleIntent] = useState<GoogleEventIntent | null>(null);
   const [choosing, setChoosing] = useState<Date | null>(null);
+  const [duplicating, setDuplicating] = useState<DuplicateFrom | null>(null);
+  const [dupError, setDupError] = useState<string | null>(null);
   const [showCalendars, setShowCalendars] = useState(false);
   const [hidden, setHidden] = useState<Set<string>>(() => new Set());
   const calendarVersion = useStore((s) => s.calendarVersion);
@@ -187,6 +189,7 @@ export function CalendarView() {
         <span className="cal-pill__dot" aria-hidden />
         {!compact && <span className="cal-pill__time">{fmtTime(ev.start)}</span>}
         <span className="cal-pill__title">{ev.title}</span>
+        {ev.parentTitle && <span className="cal-pill__parent" aria-label={`Made from the Google event ${ev.parentTitle}`} title={`Follows “${ev.parentTitle}”`}>↗</span>}
         {ev.eventType === 'one_time'
           ? <span className="cal-pill__badge" aria-label="One-time event"><Icon name="clock" size={10} /></span>
           : <span className="cal-pill__badge" aria-label="Recurring event">↻</span>}
@@ -404,6 +407,7 @@ export function CalendarView() {
                 ? new Date(selected.ev.start).toLocaleString('en-US', { weekday: 'short', month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' })
                 : `Repeats · ${selected.ev.recurrenceRule ?? 'scheduled'}`}
             </div>
+            {selected.ev.parentTitle && <div className="cal-pop__parent">Made from your Google event “{selected.ev.parentTitle}”{selected.ev.eventType === 'one_time' ? ', and moves with it' : ''}.</div>}
             {selected.ev.completedAt && <div className="cal-pop__done">Completed</div>}
             {selectedPrompt && <div className="cal-pop__prompt">{selectedPrompt}</div>}
             <div className="cal-pop__foot">
@@ -434,9 +438,15 @@ export function CalendarView() {
             </div>
             {selectedGoogle.ev.location && <div className="cal-pop__prompt">{selectedGoogle.ev.location}</div>}
             {selectedGoogle.ev.attendees.length > 0 && <div className="cal-pop__prompt">With {selectedGoogle.ev.attendees.join(', ')}</div>}
+            {dupError && <div className="card__error" role="alert">{dupError}</div>}
             {selectedGoogle.ev.meetLink && <a className="cal-pop__link" href={selectedGoogle.ev.meetLink} target="_blank" rel="noreferrer">Join Google Meet</a>}
             <div className="cal-pop__foot">
               {selectedGoogle.ev.htmlLink && <a className="cal-pop__link" href={selectedGoogle.ev.htmlLink} target="_blank" rel="noreferrer">Open in Google</a>}
+              <button type="button" className="cfg-btn cfg-btn--secondary" onClick={() => {
+                const ev = selectedGoogle.ev;
+                setDupError(null);
+                api.duplicateDefaults(ev.key).then((defaults) => { setDuplicating({ key: ev.key, defaults }); setSelectedGoogle(null); }).catch((e) => setDupError((e as Error).message));
+              }}>Duplicate as Orbit event</button>
               <button type="button" className="cfg-btn cfg-btn--secondary" onClick={() => { setGoogleIntent({ kind: 'delete', event: selectedGoogle.ev }); setSelectedGoogle(null); }}>Delete</button>
               <button type="button" className="cfg-btn cfg-btn--primary" onClick={() => { setGoogleIntent({ kind: 'edit', event: selectedGoogle.ev }); setSelectedGoogle(null); }}>Edit</button>
             </div>
@@ -458,6 +468,15 @@ export function CalendarView() {
 
         {googleIntent && (
           <GoogleEventModal intent={googleIntent} calendars={calendars.filter((c) => c.enabled)} onClose={() => setGoogleIntent(null)} onSaved={() => { setGoogleIntent(null); reloadAll(); }} />
+        )}
+
+        {duplicating && (
+          <CreateCalendarEventModal
+            initialDate={new Date(duplicating.defaults.start)}
+            duplicate={duplicating}
+            onClose={() => setDuplicating(null)}
+            onSaved={() => { setDuplicating(null); reloadAll(); }}
+          />
         )}
 
         {creating && (

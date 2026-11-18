@@ -7,7 +7,8 @@ import { createRoutine } from './routines.js';
 import { isEventSchedule } from './triggers.js';
 import { requireBody, CalendarToggleSchema, CreateRoutineSchema, GoogleEventCreateSchema, GoogleEventPatchSchema, type CreateRoutineBody } from './api/schemas.js';
 import { ReviewEditError } from './review/index.js';
-import { listCalendars, listMirror, mirrorState, setCalendarEnabled, syncCalendar, syncIfStale, syncStatus } from './calendar/mirror.js';
+import { listCalendars, listMirror, mirrorEvent, mirrorState, setCalendarEnabled, syncCalendar, syncIfStale, syncStatus } from './calendar/mirror.js';
+import { duplicateDefaults, linkRoutine, parentTitles } from './calendar/links.js';
 import { CalendarActionError, createGoogleEvent, deleteGoogleEvent, toGoogleEvent, updateGoogleEvent } from './calendar/actions.js';
 import type { CalendarEvent } from './types.js';
 
@@ -145,8 +146,10 @@ calendarApi.get('/calendar', (c) => {
   if (state.available && cals.size) syncIfStale(user.id);
   const google = state.available ? listMirror(user.id, from, to).map((e) => toGoogleEvent(e, cals)) : [];
   const sync = syncStatus(user.id);
+  const orbit = buildCalendar(rows, from, to);
+  const parents = parentTitles([...new Set(orbit.map((e) => e.routineId))]);
   return c.json({
-    events: buildCalendar(rows, from, to),
+    events: orbit.map((e) => (parents.has(e.routineId) ? { ...e, parentTitle: parents.get(e.routineId) } : e)),
     google,
     googleState: { available: state.available, ...(state.available ? {} : { reason: state.reason }), connected: cals.size > 0, lastSyncAt: sync.lastSyncAt, lastError: sync.lastError },
   });
@@ -179,6 +182,12 @@ const googleFailure = (c: { json: (b: unknown, s: number) => Response }, e: unkn
   if (e instanceof ReviewEditError) return c.json({ error: e.message }, 400);
   throw e;
 };
+
+/** GET /api/calendar/google/events/:key/duplicate → what an Orbit event made from this one starts with. */
+calendarApi.get('/calendar/google/events/:key/duplicate', async (c) => {
+  const d = await duplicateDefaults(c.get('user').id, c.req.param('key'));
+  return d ? c.json(d) : c.json({ error: 'That event is no longer in your calendar.' }, 404);
+});
 
 /** POST /api/calendar/google/events → create a Google event (no bot). */
 calendarApi.post('/calendar/google/events', async (c) => {
@@ -231,6 +240,10 @@ calendarApi.post('/routines', async (c) => {
     return c.json({ error: 'A one-time event needs an ISO eventDate.' }, 400);
   }
 
+  // Made from a Google event: it must be one of this person's, still in their calendar.
+  const parentKey = typeof body.parentEventKey === 'string' && body.parentEventKey ? body.parentEventKey : null;
+  if (parentKey && !mirrorEvent(user.id, parentKey)) return c.json({ error: 'That Google event is no longer in your calendar.' }, 404);
+
   try {
     const routine = createRoutine({
       botId,
@@ -242,6 +255,7 @@ calendarApi.post('/routines', async (c) => {
       timezone: body.timezone,
       description: body.description,
     });
+    if (parentKey) linkRoutine(user.id, routine.id, parentKey, body.eventType === 'one_time' && body.eventDate ? new Date(body.eventDate) : null);
     hub.emit(user.id, { type: 'routines', botId: routine.botId });
     return c.json({ routine }, 201);
   } catch (e) {

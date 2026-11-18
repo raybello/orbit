@@ -195,6 +195,11 @@ db.exec(`CREATE TABLE IF NOT EXISTS gcal_events (
   PRIMARY KEY (user_id, event_key)
 )`);
 db.exec('CREATE INDEX IF NOT EXISTS gcal_events_window ON gcal_events(user_id, start_ms)');
+// An Orbit event made from a Google event (calendar/links.ts): the mirror key of its parent, how long
+// before or after the parent it runs, and a sealed snapshot of the parent for the bot's context.
+addColumn('routines', 'parent_event_key', 'TEXT');
+addColumn('routines', 'parent_offset_ms', 'INTEGER');
+addColumn('routines', 'parent_sealed', 'TEXT');
 db.exec(`CREATE TABLE IF NOT EXISTS gcal_sync (
   user_id TEXT PRIMARY KEY REFERENCES users(id) ON DELETE CASCADE,
   last_sync_at INTEGER,

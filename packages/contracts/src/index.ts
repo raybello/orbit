@@ -383,6 +383,22 @@ export interface CalendarEvent {
   recurrenceRule: string | null;
   eventType: 'recurring' | 'one_time';
   completedAt: string | null;
+  /** Made from a Google event: its title, shown as a chip. The Orbit event follows it when it moves. */
+  parentTitle?: string;
+}
+
+/** GET /api/calendar/google/events/:key/duplicate → what an Orbit event made from this Google event starts with. */
+export interface DuplicateDefaults {
+  title: string;
+  /** The Google event's start (ISO) and timezone: the default time of the Orbit event. */
+  start: string;
+  timezone: string;
+  prompt: string;
+  /** The Google event repeats. */
+  recurring: boolean;
+  /** The repeat as cron, when cron can say it; otherwise why not. */
+  cron: string | null;
+  cronReason?: string;
 }
 
 /** A Google Calendar event from the person's mirror (no bot: it is theirs). Times are ISO; all-day ends are exclusive midnights (UTC). */
@@ -435,6 +451,8 @@ export interface CreateRoutineRequest {
   eventDate?: string;
   timezone?: string;
   description?: string;
+  /** Made from this Google event (its key from GET /api/calendar): the Orbit event follows it when it moves. */
+  parentEventKey?: string;
 }
 
 // ------------------------------------------------------------------ files

@@ -179,6 +179,7 @@ export const CreateRoutineSchema = z
     eventDate: z.string().optional(),
     timezone: z.string().optional(),
     description: z.string().optional(),
+    parentEventKey: z.string().optional(),
   })
   .loose();
 export type CreateRoutineBody = z.infer<typeof CreateRoutineSchema>;

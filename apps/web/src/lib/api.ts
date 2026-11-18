@@ -1,4 +1,4 @@
-import type { Bot, CalendarResponse, ComputersResponse, CreateRoutineRequest, FileEntry, FilesResponse, ComputerState, LiveState, Routine, Row, SkillEntry, SkillsResponse, Toolkit, User, EventEdits, EventFields, GoogleCalendarInfo } from '@orbit/contracts';
+import type { Bot, CalendarResponse, ComputersResponse, CreateRoutineRequest, FileEntry, FilesResponse, ComputerState, LiveState, Routine, Row, SkillEntry, SkillsResponse, Toolkit, User, EventEdits, EventFields, GoogleCalendarInfo, DuplicateDefaults } from '@orbit/contracts';
 
 export class ApiError extends Error {
   constructor(public status: number, message: string) { super(message); }
@@ -102,6 +102,8 @@ export const api = {
   /** The person's Google calendars and which ones the Orbit calendar shows. */
   googleCalendars: () => req<{ state: { available: boolean; reason?: string }; calendars: GoogleCalendarInfo[]; sync: { lastSyncAt: number | null; lastError: string | null } }>('GET', '/calendar/google'),
   setGoogleCalendar: (key: string, enabled: boolean) => req<{ ok: true }>('PATCH', `/calendar/google/${encodeURIComponent(key)}`, { enabled }),
+  /** What an Orbit event made from this Google event starts with. */
+  duplicateDefaults: (key: string) => req<DuplicateDefaults>('GET', `/calendar/google/events/${encodeURIComponent(key)}/duplicate`),
   syncGoogle: () => req<{ ok: true; changes: number }>('POST', '/calendar/google/sync'),
   createGoogleEvent: (body: { calendarKey?: string; fields: EventFields; notifyGuests?: boolean }) => req<{ ok: true; eventId: string }>('POST', '/calendar/google/events', body),
   updateGoogleEvent: (key: string, edits: EventEdits) => req<{ ok: true }>('PATCH', `/calendar/google/events/${encodeURIComponent(key)}`, { edits }),
