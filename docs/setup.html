@@ -38,7 +38,7 @@
       <ul><li><a href="index.html">Overview</a></li><li><a href="guide.html">Using Orbit</a></li><li><a href="setup.html" aria-current="page">Setup</a></li><li><a href="api.html">API reference</a></li><li><a href="source.html">Source code</a></li></ul>
       <div class="toc-block">
         <h4>On this page</h4>
-        <ul class="toc"><li><a href="#requirements">Requirements</a></li><li><a href="#platforms">Platform notes</a></li><li><a href="#docker">Run the Docker stack</a></li><li><a href="#source">Build from source</a></li><li><a href="#desktop">Desktop app</a></li><li><a href="#mobile">Mobile app (iOS and Android)</a></li><li><a href="#remote">Install on a remote computer (Orgo)</a></li><li><a href="#hermes">Wiring up Hermes</a></li><li><a href="#gpu-voice">GPU voice (audio.cpp)</a></li><li><a href="#env">Environment reference</a></li><li><a href="#troubleshooting">Troubleshooting</a></li></ul>
+        <ul class="toc"><li><a href="#requirements">Requirements</a></li><li><a href="#platforms">Platform notes</a></li><li><a href="#docker">Run the Docker stack</a></li><li><a href="#source">Build from source</a></li><li><a href="#desktop">Desktop app</a></li><li><a href="#mobile">Mobile app (iOS and Android)</a></li><li><a href="#remote">Install on a remote computer (Orgo)</a></li><li><a href="#hermes">Wiring up Hermes</a></li><li><a href="#composio">Connecting apps with Composio</a></li><li><a href="#gpu-voice">GPU voice (audio.cpp)</a></li><li><a href="#env">Environment reference</a></li><li><a href="#troubleshooting">Troubleshooting</a></li></ul>
       </div>
     </aside>
     <main class="doc" id="top">
@@ -192,6 +192,53 @@ KEYS_FILE=/root/keys.txt PRIMARY_CDP_URL=http://127.0.0.1:9333 \
 </tbody></table></div>
 <p>Voice-call turns run at low reasoning effort whatever the bot's setting, because thinking tokens are silence on a call.</p>
 
+<h2 id="composio">Connecting apps with Composio</h2>
+<p>Orbit reaches Gmail, Google Calendar, Google Sheets, Google Docs, Slack, GitHub and hundreds of other apps through <a href="https://composio.dev">Composio</a>. Composio holds the OAuth connections; Orbit holds one API key for your Composio project and asks Composio to run each action. You do not register an OAuth client with Google or anyone else: Composio's managed sign-in does that for the apps that offer it.</p>
+
+<h3 id="composio-how">How it works</h3>
+<ol>
+  <li><strong>One key per Orbit server.</strong> <code>COMPOSIO_API_KEY</code> names your Composio project. Everyone who signs in to that server connects their own accounts inside it.</li>
+  <li><strong>One Composio user per Orbit user.</strong> Orbit uses your Orbit user id as the Composio user id, so your connections are yours and every bot you own can use them. Another person on the same server connects their own accounts.</li>
+  <li><strong>Connecting.</strong> The <strong>Connect apps</strong> window (or a bot's Connect card) asks Composio for a sign-in link and opens it. You sign in to the app on Composio's page, and Composio sends your browser back to <code>SERVER_URL/api/apps/callback</code>, which tells the waiting bot to carry on.</li>
+  <li><strong>Bots call apps through the app's MCP server.</strong> Each bot's Hermes reaches Orbit's <code>hq</code> MCP server, which offers Composio's tool router: <code>COMPOSIO_SEARCH_TOOLS</code> to find an action and <code>COMPOSIO_MULTI_EXECUTE_TOOL</code> to run it. Every call passes through Orbit first, which is where approvals happen.</li>
+  <li><strong>Approvals.</strong> Reads run at once and show as a line in the chat. Anything that writes waits on a card. Gmail, Calendar, Sheets and Docs get review cards you can edit before you allow them (see <a href="guide.html#workspace">Google Workspace</a>). <strong>Always</strong> on a card lets that one bot run that action without asking; it is off until you choose it, and you can take it back in settings under <strong>Always allow</strong>.</li>
+  <li><strong>Event routines.</strong> A routine on a Composio trigger (for example "a new Gmail message") is delivered to the server over Composio's realtime connection, so it needs no public URL.</li>
+</ol>
+
+<h3 id="composio-setup">Set it up</h3>
+<ol>
+  <li><strong>Get a key.</strong> Sign up at <a href="https://platform.composio.dev">platform.composio.dev</a>, create a project (one per Orbit server keeps people apart), and copy its API key from the project settings.</li>
+  <li><strong>Give it to the server</strong> and restart it:
+    <ul>
+      <li>Docker or from source: <code>COMPOSIO_API_KEY=…</code> in the repo's <code>.env</code>.</li>
+      <li>Desktop app: the same line in its stack <code>.env</code> (on macOS <code>~/Library/Application Support/Orbit/stack/.env</code>; <code>ORBIT_STACK_DIR</code> moves it), then quit and reopen Orbit.</li>
+    </ul>
+  </li>
+  <li><strong>Check the callback address.</strong> <code>SERVER_URL</code> must be the address your browser uses to reach the server, because Composio sends you back there after you sign in. On your own computer the default (<code>http://localhost:8787</code>) works. On a remote server, set it to the server's public <code>https</code> URL.</li>
+  <li><strong>For Google Calendar in Orbit's calendar,</strong> set <code>DB_ENCRYPTION_KEY</code> (<code>openssl rand -hex 32</code>). Synced events are stored encrypted with it; without it the calendar says so and shows only Orbit's own events. The desktop app sets one for you.</li>
+  <li><strong>Connect your apps.</strong> Sign in to Orbit, open <strong>Connect apps</strong>, search for Gmail (or any app) and choose <strong>Connect</strong>. When the window says "Connected", close it; the app shows as connected and every bot is told what it can now do there. To use Google Calendar, Sheets or Docs, connect each one: they are separate apps in Composio.</li>
+  <li><strong>Try it.</strong> Ask a bot "what's on my calendar this week?" (a read, no card) and then "draft an email to me saying hello" (a Gmail draft card).</li>
+</ol>
+
+<h3 id="composio-optional">Optional</h3>
+<ul>
+  <li><strong>Expired connections:</strong> Orbit checks connections in the background and puts a <strong>Reconnect</strong> card in front of the bot that hit an expired one. To hear about it sooner, give the server a public URL, add a webhook in your Composio project pointing at <code>SERVER_URL/webhooks/composio</code>, and set its signing secret as <code>COMPOSIO_WEBHOOK_SECRET</code>.</li>
+  <li><strong>Your own OAuth app:</strong> to show your own app name on Google's consent screen, create an auth config with your own OAuth client in the Composio dashboard. Orbit uses whatever auth config the project has.</li>
+  <li><strong>Disconnecting:</strong> <strong>Connect apps</strong> → the app → <strong>Disconnect</strong>. Disconnecting Google Calendar also deletes its synced events from Orbit.</li>
+</ul>
+
+<h3 id="composio-trouble">When it does not work</h3>
+<div class="table-wrap"><table>
+<thead><tr><th>What you see</th><th>Why, and what to do</th></tr></thead>
+<tbody>
+<tr><td>"Composio is not configured on this server"</td><td><code>COMPOSIO_API_KEY</code> is missing or the server was not restarted after you set it.</td></tr>
+<tr><td>The sign-in window ends on "This site can't be reached"</td><td><code>SERVER_URL</code> is not an address your browser can open. Set it to the one you use for Orbit and restart.</td></tr>
+<tr><td>The link says it is invalid or expired</td><td>Composio sign-in links last about ten minutes. Choose <strong>Connect</strong> again.</td></tr>
+<tr><td>A bot says an app is not connected, though you connected it</td><td>You connected it as another Orbit user or in another Composio project. Check that the server uses the project you connected in.</td></tr>
+<tr><td>The calendar shows no Google events</td><td>Set <code>DB_ENCRYPTION_KEY</code> and restart; check the calendars chosen under <strong>Calendars…</strong>; Google events appear within a few minutes of connecting.</td></tr>
+<tr><td>A bot keeps asking to approve the same action</td><td>That is the default. Choose <strong>Always</strong> on the card to let that bot run it without asking.</td></tr>
+</tbody></table></div>
+
 <h2 id="gpu-voice">GPU voice (audio.cpp)</h2>
 <p>GPU voice runs a bot's calls on an NVIDIA GPU through an <a href="https://github.com/0xShug0/audio.cpp">audio.cpp</a> server: OWSM speech recognition, LFM3-Audio speech in 38 voices, and SoulX-FlashHead animating a portrait you upload, lip-synced to the reply. Hermes stays the brain. Orbit ships the server as a Docker sidecar, <code>ghcr.io/raybello/orbit/audiocpp</code>, with a Caddy HTTPS front door.</p>
 <div class="table-wrap"><table>
@@ -257,7 +304,9 @@ KEYS_FILE=/root/keys.txt PRIMARY_CDP_URL=http://127.0.0.1:9333 \
 <tr><td><code>DOCKER_SOCKET</code></td><td>Docker default</td><td>Docker API socket.</td></tr>
 <tr><td><code>ORGO_API_KEY</code>, <code>ORGO_COMPUTER_ID</code>, <code>HQ_LOCAL</code>, <code>PRIMARY_CDP_URL</code></td><td></td><td>Orgo screens and the remote install.</td></tr>
 <tr><td><code>DEFAULT_BOT_MODEL</code>, <code>DEFAULT_BOT_PROVIDER</code></td><td>deepseek-flash, deepseek</td><td>Fallback model when the primary agent has none.</td></tr>
-<tr><td><code>COMPOSIO_API_KEY</code></td><td></td><td>Connected apps.</td></tr>
+<tr><td><code>COMPOSIO_API_KEY</code></td><td></td><td>Connected apps (<a href="#composio">Connecting apps with Composio</a>).</td></tr>
+<tr><td><code>COMPOSIO_WEBHOOK_SECRET</code></td><td></td><td>Signing secret of the Composio webhook at <code>/webhooks/composio</code>; optional.</td></tr>
+<tr><td><code>DB_ENCRYPTION_KEY</code></td><td></td><td>64 hex characters (<code>openssl rand -hex 32</code>). Encrypts the Bot Vault and synced Google Calendar events; both are off without it.</td></tr>
 <tr><td><code>XAI_API_KEY</code>, <code>XAI_MODEL</code></td><td>grok-4.7</td><td>Cloud voice and <code>x_search</code>.</td></tr>
 <tr><td><code>VOICE_MODELS_DIR</code></td><td>data/voice-models</td><td>On-device STT/TTS model cache.</td></tr>
 <tr><td><code>AUDIOCPP_URL</code></td><td>http://127.0.0.1:8080</td><td>The audio.cpp server for GPU voice. The source compose stack defaults to the sidecar, <code>http://audiocpp:8080</code>. The image stack defaults to <code>http://host.docker.internal:8080</code> and switches to the sidecar when GPU voice is installed. <code>off</code> turns GPU voice off.</td></tr>
@@ -267,14 +316,13 @@ KEYS_FILE=/root/keys.txt PRIMARY_CDP_URL=http://127.0.0.1:9333 \
 <tr><td><code>AUDIOCPP_AUTO_DOWNLOAD</code>, <code>AUDIOCPP_WARMUP</code>, <code>AUDIOCPP_AVATAR_VAE</code></td><td>0, 1, cudnn</td><td>Sidecar: download models at boot; warm them after start; the avatar's VAE (<code>ggml</code> for a build without cuDNN).</td></tr>
 <tr><td><code>AUDIOCPP_CUDA_ARCHS</code>, <code>AUDIOCPP_REF</code></td><td>75;80;86;89;90;120, v0.9.5</td><td>Sidecar build: GPU architectures to compile for, and the audio.cpp release.</td></tr>
 <tr><td><code>ORBIT_USER_DATA_DIR</code>, <code>ORBIT_STACK_DIR</code>, <code>ORBIT_IMAGE_TAG</code></td><td></td><td>Desktop app: a separate profile, a separate stack folder, and the image tag to run.</td></tr>
-
 <tr><td><code>STACK_TOKEN</code></td><td></td><td>Shared secret between the desktop app and its local stack.</td></tr>
 </tbody></table></div>
 
 <h2 id="troubleshooting">Troubleshooting</h2>
 <ul>
   <li><strong>The server exits at start:</strong> <code>SESSION_SECRET</code> is missing.</li>
-  <li><strong>Apps or voice say "not configured":</strong> set <code>COMPOSIO_API_KEY</code> or <code>XAI_API_KEY</code>, or install the local voice models.</li>
+  <li><strong>Apps or voice say "not configured":</strong> set <code>COMPOSIO_API_KEY</code> (see <a href="#composio">Connecting apps with Composio</a>) or <code>XAI_API_KEY</code>, or install the local voice models.</li>
   <li><strong>A bot has no screen:</strong> check Docker is running and that <code>COMPUTER_HOME_DIR</code> exists at the same path inside the API container.</li>
   <li><strong>The primary bot cannot use the app's tools:</strong> confirm its <code>config.yaml</code> has the <code>hq</code> MCP entry pointing at a URL it can reach.</li>
   <li><strong>GPU voice is missing from the settings:</strong> the desktop app offers it only on Windows and Linux when <code>nvidia-smi</code> finds a GPU. On macOS it is hidden on purpose.</li>

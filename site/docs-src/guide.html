@@ -67,7 +67,7 @@
 <p>Talk naturally: about 600 ms of silence ends your turn, and talking over the bot stops it. With the agent on a cloud model such as Claude Sonnet 4.5, the first words of the answer come about 2 seconds after you stop talking, and an 8 GB card is enough because the GPU only runs the voice models. To call from a phone, open Orbit over the sidecar's HTTPS address (<a href="setup.html#gpu-voice-lan">set up in Setup</a>), since browsers only allow the microphone on secure pages. Setup, every way to run it, and troubleshooting: <a href="setup.html#gpu-voice">Setup → GPU voice</a>. Protocol and design: <a href="https://github.com/raybello/orbit/blob/main/docs/voice-audiocpp.md">docs/voice-audiocpp.md</a>.</p>
 
 <h2 id="apps">Connected apps</h2>
-<p>Open <strong>Connect apps</strong> to link accounts through Composio (needs <code>COMPOSIO_API_KEY</code>). Google apps connect through Composio too. Bots ask for an app when they need one; reads run directly, writes wait for an approval card.</p>
+<p>Open <strong>Connect apps</strong> to link accounts through Composio (the server needs <code>COMPOSIO_API_KEY</code>; see <a href="setup.html#composio">Connecting apps with Composio</a>). Google apps connect through Composio too. Bots ask for an app when they need one; reads run directly, writes wait for an approval card.</p>
 
 <h2 id="workspace">Google Workspace</h2>
 <p>With Gmail, Google Calendar, Google Sheets or Google Docs connected, every bot is told what it can do in each one, and anything that changes your data waits for you on a card made for it:</p>
