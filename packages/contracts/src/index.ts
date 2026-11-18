@@ -385,8 +385,43 @@ export interface CalendarEvent {
   completedAt: string | null;
 }
 
+/** A Google Calendar event from the person's mirror (no bot: it is theirs). Times are ISO; all-day ends are exclusive midnights (UTC). */
+export interface GoogleCalendarEvent {
+  /** Opaque key, used to change, delete or duplicate it through the app. */
+  key: string;
+  calendarKey: string;
+  calendarName: string;
+  color: string | null;
+  title: string;
+  description: string;
+  location: string;
+  attendees: string[];
+  start: string;
+  end: string;
+  allDay: boolean;
+  timezone: string;
+  meetLink: string;
+  htmlLink: string;
+  /** Part of a repeating series. */
+  recurring: boolean;
+}
+
+/** How the Google side of the calendar is doing. */
+export interface GoogleCalendarState {
+  available: boolean;
+  /** Why Google events are not shown, when they are not. */
+  reason?: string;
+  /** At least one Google calendar is known (Google Calendar is connected and has synced). */
+  connected: boolean;
+  lastSyncAt: number | null;
+  lastError: string | null;
+}
+
+/** A Google calendar of the person's, and whether the Orbit calendar shows it. */
+export interface GoogleCalendarInfo { key: string; name: string; color: string | null; primary: boolean; enabled: boolean }
+
 /** GET /api/calendar?from=&to= */
-export interface CalendarResponse { events: CalendarEvent[] }
+export interface CalendarResponse { events: CalendarEvent[]; google?: GoogleCalendarEvent[]; googleState?: GoogleCalendarState }
 
 /** POST /api/routines */
 export interface CreateRoutineRequest {

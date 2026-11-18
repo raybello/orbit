@@ -213,3 +213,56 @@
 @media (prefers-reduced-motion: reduce) {
   .cal-pop { animation: none; }
 }
+
+/* ---------- Google Calendar events and filters ---------- */
+.cal-pill--google {
+  border: 1px solid var(--cal-color, var(--accent-500)); border-left-width: 1px;
+  background: var(--color-bg-stage);
+}
+.cal-pill--google:hover { background: color-mix(in srgb, var(--cal-color, var(--accent-500)) 10%, var(--color-bg-stage)); }
+.cal-pill--google .cal-pill__badge { font-size: 9px; font-weight: 600; color: var(--cal-color, var(--accent-500)); }
+.cal-filters { display: flex; flex-wrap: wrap; gap: 6px; padding: 0 var(--space-3, 12px) var(--space-2, 8px); }
+.cal-chip {
+  display: inline-flex; align-items: center; gap: 6px; height: 26px; padding: 0 10px; border-radius: 999px;
+  border: 1px solid var(--color-border-subtle); background: var(--color-bg-stage); font-size: 12px; line-height: 16px; color: var(--color-fg-default);
+}
+.cal-chip.is-off { opacity: 0.45; }
+.cal-chip.is-off .cal-pill__dot, .cal-chip.is-off .cal-chip__swatch { background: transparent; box-shadow: inset 0 0 0 1px var(--color-fg-muted); }
+.cal-chip__swatch { width: 10px; height: 10px; border-radius: 3px; background: var(--accent-500); flex-shrink: 0; }
+.cal-chip--google .cal-chip__swatch { background: transparent; box-shadow: inset 0 0 0 2px var(--accent-500); }
+.cal-chip--settings { border-style: dashed; }
+.cal-note { margin: 0 var(--space-3, 12px) var(--space-2, 8px); padding: 8px 10px; border-radius: 8px; font-size: 12px; line-height: 16px; background: var(--color-bg-subtle, var(--color-bg-stage)); color: var(--color-fg-subtle); }
+.cal-calendars {
+  position: absolute; z-index: 20; right: 12px; top: 96px; width: 300px; max-width: calc(100% - 24px);
+  display: flex; flex-direction: column; gap: 6px; padding: 12px; border-radius: 12px; background: var(--color-bg-pane, var(--color-bg-stage)); box-shadow: var(--shadow-card);
+}
+.cal-calendars__head { font-size: 12px; font-weight: 600; color: var(--color-fg-subtle); }
+.cal-calendars__row { display: flex; align-items: center; gap: 8px; font-size: 13px; line-height: 18px; overflow-wrap: anywhere; }
+.cal-calendars__foot { display: flex; align-items: center; justify-content: space-between; gap: 8px; padding-top: 6px; font-size: 12px; color: var(--color-fg-subtle); }
+.cal-day__allday { display: flex; gap: 8px; padding: 4px 0; border-bottom: 1px solid var(--color-border-subtle); }
+.cal-pop__swatch { width: 10px; height: 10px; border-radius: 3px; box-shadow: inset 0 0 0 2px var(--cal-color, var(--accent-500)); flex-shrink: 0; }
+.cal-pop__link { font-size: 12px; color: var(--accent-600, var(--accent-500)); }
+.cal-pop--google .cal-pop__foot { gap: 6px; flex-wrap: wrap; }
+.cal-chooser {
+  position: absolute; z-index: 25; left: 50%; top: 80px; transform: translateX(-50%); width: 360px; max-width: calc(100% - 24px);
+  display: flex; flex-direction: column; gap: 8px; padding: 14px; border-radius: 12px; background: var(--color-bg-pane, var(--color-bg-stage)); box-shadow: var(--shadow-card);
+}
+.cal-chooser__title { font-size: 14px; font-weight: 600; }
+.cal-chooser__option { display: flex; flex-direction: column; gap: 2px; padding: 10px 12px; border-radius: 10px; border: 1px solid var(--color-border-subtle); text-align: left; font-size: 13px; line-height: 18px; }
+.cal-chooser__option:hover { background: var(--color-bg-hover, var(--color-bg-stage)); }
+.cal-chooser__option span { color: var(--color-fg-subtle); font-size: 12px; }
+
+/* the Google event modal */
+.gev-modal { width: 520px; max-width: calc(100vw - 32px); }
+.gev { display: flex; flex-direction: column; gap: 10px; padding: 16px; }
+.gev__title { font-size: 16px; font-weight: 600; }
+.gev__sub { font-size: 12px; color: var(--color-fg-subtle); }
+.gev .event-card__content { padding: 0; }
+.gev__calendar { max-width: 280px; }
+.gev__confirm { font-size: 14px; line-height: 20px; }
+.gev__confirm ul { margin: 6px 0 0; padding-left: 18px; }
+.gev__scope { display: flex; flex-direction: column; gap: 4px; border: 0; padding: 0; margin: 0; font-size: 13px; }
+.gev__scope legend { font-weight: 500; margin-bottom: 4px; }
+.gev__notify { padding: 0; }
+.gev__error { padding: 0; }
+.gev__actions { display: flex; justify-content: flex-end; gap: 8px; padding-top: 4px; }

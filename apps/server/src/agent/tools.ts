@@ -18,6 +18,8 @@ import { COMPUTER_TOOLS } from '../computer-tools.js';
 import { RESEARCH_TOOLS } from '../computer-research.js';
 import { BOT_TOOLS } from './bot-tools.js';
 import { VAULT_TOOLS } from '../vault-tools.js';
+import { listCalendars, listMirror, mirrorState } from '../calendar/mirror.js';
+import { buildCalendar, type CalendarRoutineRow } from '../routes-calendar.js';
 
 /** Tool arguments as the model sent them: a JSON object, read field by field. */
 type ToolArgs = Record<string, unknown>;
@@ -220,6 +222,43 @@ export const TOOLS: ToolDef[] = [
       } catch (e) {
         return { output: `Could not create the trigger: ${messageOf(e)}. If the app isn't connected, call request_app_connection first.` };
       }
+    },
+  },
+  {
+    name: 'calendar_list',
+    description: "Read the user's calendar as the app shows it: their Google Calendar events (title, time, location, guests, calendar) and the team's scheduled routines (which Bot runs what, when), merged and in order. Faster than Google Calendar's own tools and covers the next 90 days and the last 30. Dates are YYYY-MM-DD; times come back as ISO with the event's timezone. To change a Google event, use Google Calendar's PATCH_EVENT through Composio (the user approves it).",
+    parameters: obj({
+      from: { type: 'string', description: 'First day, YYYY-MM-DD. Default: today.' },
+      to: { type: 'string', description: 'Last day, YYYY-MM-DD (inclusive). Default: 7 days after `from`.' },
+      include: { type: 'string', enum: ['all', 'google', 'routines'], description: 'Which events. Default all.' },
+    }),
+    activity: 'working',
+    label: 'Checking the calendar',
+    impl: async (a, ctx) => {
+      const day = /^\d{4}-\d{2}-\d{2}$/;
+      const from = day.test(String(a.from ?? '')) ? new Date(`${a.from as string}T00:00:00Z`) : new Date(new Date().toISOString().slice(0, 10) + 'T00:00:00Z');
+      const to = day.test(String(a.to ?? '')) ? new Date(Date.parse(`${a.to as string}T00:00:00Z`) + 86_400_000) : new Date(from.getTime() + 8 * 86_400_000);
+      if (to <= from) return { output: '`to` must be on or after `from`.' };
+      const include = String(a.include ?? 'all');
+      const out: Record<string, unknown> = { from: from.toISOString().slice(0, 10), to: new Date(to.getTime() - 1).toISOString().slice(0, 10) };
+      if (include !== 'routines') {
+        const state = mirrorState();
+        if (!state.available) out.google = { unavailable: state.reason };
+        else {
+          const cals = new Map(listCalendars(ctx.userId).map((c) => [c.key, c]));
+          if (!cals.size) out.google = { unavailable: 'Google Calendar is not connected or has not synced yet. Use request_app_connection with googlecalendar if the user wants it.' };
+          else out.google = listMirror(ctx.userId, from, to).slice(0, 200).map((e) => ({
+            title: e.title, start: e.start, end: e.end, all_day: e.allDay, timezone: e.timezone, ...(e.location ? { location: e.location } : {}),
+            ...(e.attendees.length ? { guests: e.attendees } : {}), calendar: cals.get(e.calendarKey)?.name, event_id: e.eventId, calendar_id: e.calendarId,
+            ...(e.recurringEventId ? { repeating: true } : {}), ...(e.meetLink ? { meet: e.meetLink } : {}),
+          }));
+        }
+      }
+      if (include !== 'google') {
+        const rows = db.prepare('SELECT r.*, b.name AS bot_name FROM routines r JOIN bots b ON b.id=r.bot_id WHERE b.user_id=? ORDER BY r.created_at').all(ctx.userId) as CalendarRoutineRow[];
+        out.routines = buildCalendar(rows, from, to).slice(0, 200).map((e) => ({ title: e.title, bot: e.botName, start: e.start, repeating: e.eventType === 'recurring' }));
+      }
+      return { output: JSON.stringify(out), summary: 'Read the calendar' };
     },
   },
   {

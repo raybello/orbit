@@ -32,6 +32,8 @@ interface State {
   rosterVersion: number;
   /** Bumped on every `connections` event so open views can refetch. */
   connectionsVersion: number;
+  /** Bumped when the Google Calendar mirror changes, so the calendar reloads. */
+  calendarVersion: number;
   sseConnected: boolean;
 
   detailsOpen: boolean;
@@ -83,6 +85,7 @@ export const useStore = create<State>((set, get) => ({
   recentActivity: [],
   activitySeen: {},
   connectionsVersion: 0,
+  calendarVersion: 0,
   rosterVersion: 0,
   sseConnected: false,
   // Closed by default (Teams): the conversation takes the full width until asked otherwise.
@@ -272,6 +275,9 @@ export const useStore = create<State>((set, get) => ({
         return;
       case 'connections':
         set((st) => ({ connectionsVersion: st.connectionsVersion + 1 }));
+        return;
+      case 'calendar':
+        set((st) => ({ calendarVersion: st.calendarVersion + 1 }));
         return;
     }
   },

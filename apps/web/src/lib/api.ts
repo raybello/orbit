@@ -1,7 +1,4 @@
-import type {
-  Bot, CalendarResponse, ComputersResponse, CreateRoutineRequest, FileEntry, FilesResponse,
-  ComputerState, LiveState, Routine, Row, SkillEntry, SkillsResponse, Toolkit, User,
-} from '@orbit/contracts';
+import type { Bot, CalendarResponse, ComputersResponse, CreateRoutineRequest, FileEntry, FilesResponse, ComputerState, LiveState, Routine, Row, SkillEntry, SkillsResponse, Toolkit, User, EventEdits, EventFields, GoogleCalendarInfo } from '@orbit/contracts';
 
 export class ApiError extends Error {
   constructor(public status: number, message: string) { super(message); }
@@ -102,6 +99,14 @@ export const api = {
   deleteRoom: (id: string) => req<{ ok: true }>('DELETE', `/rooms/${id}`),
 
   calendar: (from: string, to: string) => req<CalendarResponse>('GET', `/calendar?from=${encodeURIComponent(from)}&to=${encodeURIComponent(to)}`),
+  /** The person's Google calendars and which ones the Orbit calendar shows. */
+  googleCalendars: () => req<{ state: { available: boolean; reason?: string }; calendars: GoogleCalendarInfo[]; sync: { lastSyncAt: number | null; lastError: string | null } }>('GET', '/calendar/google'),
+  setGoogleCalendar: (key: string, enabled: boolean) => req<{ ok: true }>('PATCH', `/calendar/google/${encodeURIComponent(key)}`, { enabled }),
+  syncGoogle: () => req<{ ok: true; changes: number }>('POST', '/calendar/google/sync'),
+  createGoogleEvent: (body: { calendarKey?: string; fields: EventFields; notifyGuests?: boolean }) => req<{ ok: true; eventId: string }>('POST', '/calendar/google/events', body),
+  updateGoogleEvent: (key: string, edits: EventEdits) => req<{ ok: true }>('PATCH', `/calendar/google/events/${encodeURIComponent(key)}`, { edits }),
+  deleteGoogleEvent: (key: string, opts: { scope?: 'this' | 'following' | 'all'; notify?: boolean }) =>
+    req<{ ok: true }>('DELETE', `/calendar/google/events/${encodeURIComponent(key)}?${new URLSearchParams({ ...(opts.scope ? { scope: opts.scope } : {}), ...(opts.notify !== undefined ? { notify: opts.notify ? '1' : '0' } : {}) })}`),
   createRoutine: (r: CreateRoutineRequest) => req<{ routine: Routine }>('POST', '/routines', r),
 
   files: (opts: { botId?: string; type?: string; search?: string; page?: number; pageSize?: number } = {}) => {

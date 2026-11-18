@@ -1,6 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
-import type { Bot, CalendarEvent } from '@orbit/contracts';
+import type { Bot, CalendarEvent, GoogleCalendarEvent } from '@orbit/contracts';
 import { api } from '../lib/api';
 import { useStore } from '../store';
 import { CalendarView } from '../components/CalendarView';
@@ -10,7 +10,7 @@ vi.mock('../lib/api', () => ({
     constructor(public status: number, message: string) { super(message); }
   },
   openPopup: vi.fn(),
-  api: { calendar: vi.fn(), createRoutine: vi.fn() },
+  api: { calendar: vi.fn(), createRoutine: vi.fn(), googleCalendars: vi.fn(async () => ({ state: { available: true }, calendars: [{ key: 'c1', name: 'Me', color: '#4285f4', primary: true, enabled: true }], sync: { lastSyncAt: null, lastError: null } })) },
 }));
 
 const BOT_A: Bot = {
@@ -204,5 +204,53 @@ describe('CalendarView', () => {
     });
     await waitFor(() => expect(screen.queryByRole('dialog', { name: 'New Event' })).toBeNull());
     expect(vi.mocked(api.calendar).mock.calls.length).toBe(2);
+  });
+
+  describe('with Google Calendar connected', () => {
+    const g = (over: Partial<GoogleCalendarEvent> = {}): GoogleCalendarEvent => ({
+      key: 'g1', calendarKey: 'c1', calendarName: 'Me', color: '#4285f4', title: 'Design review', description: '', location: 'Room 2', attendees: [],
+      start: inMonth(12, 15), end: inMonth(12, 16), allDay: false, timezone: 'UTC', meetLink: '', htmlLink: '', recurring: false, ...over,
+    });
+    const connected = { available: true, connected: true, lastSyncAt: 1, lastError: null };
+
+    it('shows Google events outlined beside Orbit events, and filters each kind', async () => {
+      vi.mocked(api.calendar).mockResolvedValue({ events: [event()], google: [g()], googleState: connected });
+      render(<CalendarView />);
+      await ready();
+      const pill = (await screen.findByText('Design review')).closest('button')!;
+      expect(pill.className).toContain('cal-pill--google');
+      expect(pill.getAttribute('title')).toMatch(/^Design review · Me · /);
+      expect(screen.getByText('Morning standup')).toBeTruthy();
+      fireEvent.click(screen.getByRole('button', { name: 'Google Calendar' }));
+      expect(screen.queryByText('Design review')).toBeNull();
+      fireEvent.click(screen.getByRole('button', { name: 'Ada' }));
+      expect(screen.queryByText('Morning standup')).toBeNull();
+    });
+
+    it('an all-day event spans each of its days', async () => {
+      const now = new Date();
+      const ymd = (d: number) => `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(d).padStart(2, '0')}`;
+      vi.mocked(api.calendar).mockResolvedValue({ events: [], google: [g({ title: 'Offsite', allDay: true, start: `${ymd(14)}T00:00:00.000Z`, end: `${ymd(17)}T00:00:00.000Z` })], googleState: connected });
+      render(<CalendarView />);
+      await ready();
+      await waitFor(() => expect(screen.getAllByText('Offsite').length).toBe(3));
+    });
+
+    it('a new event asks which kind it is', async () => {
+      vi.mocked(api.calendar).mockResolvedValue({ events: [], google: [], googleState: connected });
+      render(<CalendarView />);
+      await ready();
+      await waitFor(() => expect(screen.getByRole('button', { name: 'Google Calendar' })).toBeTruthy());
+      fireEvent.click(screen.getByRole('button', { name: 'New event' }));
+      expect(screen.getByRole('dialog', { name: 'New event' })).toBeTruthy();
+      expect(screen.getByRole('button', { name: /Google Calendar event/ })).toBeTruthy();
+    });
+
+    it('says why Google events are missing when the server cannot keep them encrypted', async () => {
+      vi.mocked(api.calendar).mockResolvedValue({ events: [], google: [], googleState: { available: false, reason: 'No DB_ENCRYPTION_KEY', connected: false, lastSyncAt: null, lastError: null } });
+      render(<CalendarView />);
+      await ready();
+      expect(await screen.findByText('No DB_ENCRYPTION_KEY')).toBeTruthy();
+    });
   });
 });

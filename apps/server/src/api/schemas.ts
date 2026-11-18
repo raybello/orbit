@@ -99,6 +99,16 @@ export const SendMessageSchema = z
   .loose();
 
 /** POST /api/approvals/:id — the three decisions the approval UI offers. */
+const EventFieldsSchema = z.object({
+  summary: z.string().max(1024), description: z.string().max(8000), location: z.string().max(1024),
+  start: z.string().max(32), end: z.string().max(32), allDay: z.boolean(), timezone: z.string().max(64),
+  attendees: z.array(z.string().max(320)).max(200), meet: z.boolean(),
+});
+/** POST /api/calendar/google/events */
+export const GoogleEventCreateSchema = z.object({ calendarKey: z.string().optional(), fields: EventFieldsSchema, notifyGuests: z.boolean().optional() }).loose();
+/** PATCH /api/calendar/google/events/:key — the event review's edits (fields, scope, notifyGuests), checked by it. */
+export const GoogleEventPatchSchema = z.object({ edits: z.record(z.string(), z.unknown()) }).loose();
+
 /** PATCH /api/calendar/google/:key */
 export const CalendarToggleSchema = z.object({ enabled: z.boolean() }).loose();
 

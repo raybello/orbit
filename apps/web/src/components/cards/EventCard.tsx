@@ -81,7 +81,7 @@ function EventView({ f, before, deleting }: { f: EventFields; before?: EventFiel
   );
 }
 
-function EventEditor({ f, onChange, idBase }: { f: EventFields; onChange: (f: EventFields) => void; idBase: string }) {
+export function EventEditor({ f, onChange, idBase }: { f: EventFields; onChange: (f: EventFields) => void; idBase: string }) {
   const put = <K extends keyof EventFields>(k: K, v: EventFields[K]) => onChange({ ...f, [k]: v });
   const setAllDay = (allDay: boolean) => onChange({ ...f, allDay, start: allDay ? f.start.slice(0, 10) : `${f.start.slice(0, 10)}T09:00`, end: allDay ? f.end.slice(0, 10) : `${f.end.slice(0, 10)}T09:30` });
   const kind = f.allDay ? 'date' : 'datetime-local';

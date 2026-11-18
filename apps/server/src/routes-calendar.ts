@@ -5,8 +5,10 @@ import { hub } from './lib/hub.js';
 import { requireUser, type AuthVars } from './lib/auth.js';
 import { createRoutine } from './routines.js';
 import { isEventSchedule } from './triggers.js';
-import { requireBody, CalendarToggleSchema, CreateRoutineSchema, type CreateRoutineBody } from './api/schemas.js';
-import { listCalendars, mirrorState, setCalendarEnabled, syncCalendar, syncStatus } from './calendar/mirror.js';
+import { requireBody, CalendarToggleSchema, CreateRoutineSchema, GoogleEventCreateSchema, GoogleEventPatchSchema, type CreateRoutineBody } from './api/schemas.js';
+import { ReviewEditError } from './review/index.js';
+import { listCalendars, listMirror, mirrorState, setCalendarEnabled, syncCalendar, syncIfStale, syncStatus } from './calendar/mirror.js';
+import { CalendarActionError, createGoogleEvent, deleteGoogleEvent, toGoogleEvent, updateGoogleEvent } from './calendar/actions.js';
 import type { CalendarEvent } from './types.js';
 
 /** /api/calendar and the calendar's POST /api/routines. */
@@ -137,7 +139,17 @@ calendarApi.get('/calendar', (c) => {
     .prepare('SELECT r.*, b.name AS bot_name FROM routines r JOIN bots b ON b.id=r.bot_id WHERE b.user_id=? ORDER BY r.created_at')
     .all(user.id) as CalendarRoutineRow[];
 
-  return c.json({ events: buildCalendar(rows, from, to) });
+  // Google events from the person's mirror, refreshed in the background when it is over a minute old.
+  const state = mirrorState();
+  const cals = new Map(listCalendars(user.id).map((cal) => [cal.key, cal]));
+  if (state.available && cals.size) syncIfStale(user.id);
+  const google = state.available ? listMirror(user.id, from, to).map((e) => toGoogleEvent(e, cals)) : [];
+  const sync = syncStatus(user.id);
+  return c.json({
+    events: buildCalendar(rows, from, to),
+    google,
+    googleState: { available: state.available, ...(state.available ? {} : { reason: state.reason }), connected: cals.size > 0, lastSyncAt: sync.lastSyncAt, lastError: sync.lastError },
+  });
 });
 
 /** GET /api/calendar/google → the Google calendars, which are shown, and how the mirror is doing. */
@@ -159,6 +171,36 @@ calendarApi.patch('/calendar/google/:key', async (c) => {
 calendarApi.post('/calendar/google/sync', async (c) => {
   const r = await syncCalendar(c.get('user').id);
   return r.ok ? c.json({ ok: true, changes: r.changes }) : c.json({ error: r.reason }, 503);
+});
+
+/** The person's own Google event changes. Errors carry the reason to show. */
+const googleFailure = (c: { json: (b: unknown, s: number) => Response }, e: unknown) => {
+  if (e instanceof CalendarActionError) return c.json({ error: e.message }, e.status);
+  if (e instanceof ReviewEditError) return c.json({ error: e.message }, 400);
+  throw e;
+};
+
+/** POST /api/calendar/google/events → create a Google event (no bot). */
+calendarApi.post('/calendar/google/events', async (c) => {
+  const body = await requireBody(c, GoogleEventCreateSchema);
+  try { return c.json({ ok: true, ...(await createGoogleEvent(c.get('user').id, body)) }, 201); } catch (e) { return googleFailure(c, e); }
+});
+
+/** PATCH /api/calendar/google/events/:key → change one, with the scope for a repeating event. */
+calendarApi.patch('/calendar/google/events/:key', async (c) => {
+  const { edits } = await requireBody(c, GoogleEventPatchSchema);
+  try { await updateGoogleEvent(c.get('user').id, c.req.param('key'), edits); return c.json({ ok: true }); } catch (e) { return googleFailure(c, e); }
+});
+
+/** DELETE /api/calendar/google/events/:key?scope=&notify= → delete one, its series, or it and later ones. */
+calendarApi.delete('/calendar/google/events/:key', async (c) => {
+  const scope = c.req.query('scope');
+  const notify = c.req.query('notify');
+  if (scope && !['this', 'following', 'all'].includes(scope)) return c.json({ error: 'scope must be this, following or all.' }, 400);
+  try {
+    await deleteGoogleEvent(c.get('user').id, c.req.param('key'), { ...(scope ? { scope: scope as 'this' | 'following' | 'all' } : {}), ...(notify ? { notifyGuests: notify !== '0' } : {}) });
+    return c.json({ ok: true });
+  } catch (e) { return googleFailure(c, e); }
 });
 
 /** POST /api/routines → create a calendar event (a routine with calendar metadata). */

@@ -275,7 +275,7 @@ function updateAsPatch(args: Record<string, unknown>, before: EventFields): Reco
 const extras = (args: Record<string, unknown>) => Object.fromEntries(Object.entries(args).filter(([k]) => PATCH_PARAMS.has(k) && !['summary', 'description', 'location', 'start_time', 'end_time', 'timezone', 'attendees', 'conference_data', 'conference_data_version', 'send_updates', 'event_id', 'calendar_id'].includes(k)));
 
 /** Card fields as GOOGLECALENDAR_CREATE_EVENT arguments. */
-function createArgs(f: EventFields): Record<string, unknown> {
+export function createArgs(f: EventFields): Record<string, unknown> {
   if (!f.start) return { summary: f.summary, description: f.description, location: f.location, timezone: f.timezone, attendees: f.attendees, create_meeting_room: f.meet };
   const times = f.allDay
     ? { start_date: f.start.slice(0, 10), end_date: addDays(f.end.slice(0, 10), 1) }
