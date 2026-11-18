@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
-import { envValue, fillEmptySecrets, missingStackSecrets, setEnvValue } from '../env-file';
+import { envValue, fillEmptySecrets, migrateLegacyBotCap, missingStackSecrets, setEnvValue } from '../env-file';
 
 // The shape of .env.images.example: a comment block right above the empty secrets.
 const EXAMPLE = [
@@ -41,4 +41,18 @@ for (const [eol, name] of [['\n', 'LF'], ['\r\n', 'CRLF']] as const) {
 test('a commented-out key is not a value, and an empty value is none', () => {
   assert.equal(envValue('# STACK_TOKEN=abc\nSTACK_TOKEN=\n', 'STACK_TOKEN'), null);
   assert.equal(envValue('export STACK_TOKEN="abc" # note\r\n', 'STACK_TOKEN'), 'abc');
+});
+
+test('migrateLegacyBotCap comments out the old MAX_BOTS=4 template default', () => {
+  const { text, changed } = migrateLegacyBotCap('HQ_LOCAL=0\nMAX_BOTS=4\nCOMPUTER_KIND=auto\n');
+  assert.equal(changed, true);
+  assert.equal(envValue(text, 'MAX_BOTS'), null);
+  assert.equal(envValue(text, 'COMPUTER_KIND'), 'auto');
+});
+
+test('migrateLegacyBotCap leaves Orgo installs and other values alone', () => {
+  assert.equal(migrateLegacyBotCap('MAX_BOTS=4\nCOMPUTER_KIND=orgo\n').changed, false);
+  assert.equal(migrateLegacyBotCap('MAX_BOTS=4\nORGO_COMPUTER_ID=abc\n').changed, false);
+  assert.equal(migrateLegacyBotCap('MAX_BOTS=6\n').changed, false);
+  assert.equal(migrateLegacyBotCap('# MAX_BOTS=10\n').changed, false);
 });

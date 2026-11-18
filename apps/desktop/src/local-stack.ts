@@ -17,6 +17,7 @@ import {
   REQUIRED_SECRETS,
   envValue,
   fillEmptySecrets,
+  migrateLegacyBotCap,
   missingStackSecrets,
   setEnvValue,
 } from './env-file';
@@ -338,8 +339,10 @@ export class LocalStackController implements DockerStack {
       // mirrorHermesKey() sees a complete file before compose ever runs.
       try {
         const existing = fs.readFileSync(envPath, 'utf8');
-        const { text, generated } = fillEmptySecrets(existing);
-        if (Object.keys(generated).length > 0) {
+        const { text: filledText, generated } = fillEmptySecrets(existing);
+        const { text, changed } = migrateLegacyBotCap(filledText);
+        if (changed) log.info('removed the old MAX_BOTS=4 template default from the stack .env');
+        if (changed || Object.keys(generated).length > 0) {
           fs.writeFileSync(envPath, text, { encoding: 'utf8', mode: 0o600 });
           try {
             fs.chmodSync(envPath, 0o600);
@@ -383,7 +386,7 @@ export class LocalStackController implements DockerStack {
       : fs.readFileSync(path.join(this.stackDir, '.env.example'), 'utf8');
 
     const filled = fillEmptySecrets(existing);
-    let text = filled.text;
+    let text = migrateLegacyBotCap(filled.text).text;
     text = setEnvValue(text, 'ORBIT_IMAGE_TAG', this.imageTag());
     text = setEnvValue(text, 'ORBIT_VERSION', this.opts.version);
     text = setEnvValue(text, 'ORBIT_WEB_PORT', String(port));

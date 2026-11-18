@@ -77,6 +77,26 @@ export function fillEmptySecrets(
   return { text, generated };
 }
 
+/**
+ * Drop the `MAX_BOTS=4` older installers copied in from the bundled example.
+ *
+ * That line was a template default, not a choice: it pinned every Docker install to four bots
+ * even though each bot gets a container of its own and the server's own default is ten. Four is
+ * only right for an Orgo machine (four screens), so the line is left alone there. It is commented
+ * out rather than deleted, so the file keeps its shape and the person can see what changed.
+ */
+export function migrateLegacyBotCap(envText: string): { text: string; changed: boolean } {
+  if (envValue(envText, 'MAX_BOTS') !== '4') return { text: envText, changed: false };
+  const kind = (envValue(envText, 'COMPUTER_KIND') ?? 'auto').toLowerCase();
+  if (kind === 'orgo' || envValue(envText, 'ORGO_COMPUTER_ID')) return { text: envText, changed: false };
+  const re = /^[ \t]*(?:export[ \t]+)?MAX_BOTS[ \t]*=[^\r\n]*/m;
+  const text = envText.replace(
+    re,
+    () => '# MAX_BOTS=10   # default 10 with a container per bot; 4 with COMPUTER_KIND=orgo',
+  );
+  return { text, changed: true };
+}
+
 function defaultGenerate(bytes: number): string {
   return randomBytes(bytes).toString('hex');
 }
