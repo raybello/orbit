@@ -9,6 +9,7 @@
  *   node scripts/composio-shapes.mjs connect   # prints sign-in links for the eval user; open them signed in to the TEST Google account
  *   node scripts/composio-shapes.mjs status    # which apps the eval user has connected
  *   node scripts/composio-shapes.mjs capture   # runs the actions against the test account and saves redacted results
+ *   node scripts/composio-shapes.mjs drift     # compares the pinned version's arguments with Composio's latest
  *
  * Every call runs as the Composio user EVAL_COMPOSIO_USER (default `orbit-eval-test`), never as a real
  * Orbit user. `capture` refuses to run unless all four apps are connected for that user, and only
@@ -26,6 +27,8 @@ const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const OUT = path.join(root, 'apps/server/src/__tests__/fixtures/composio');
 const USER = process.env.EVAL_COMPOSIO_USER || 'orbit-eval-test';
 const TOOLKITS = ['gmail', 'googlecalendar', 'googlesheets', 'googledocs'];
+/** The toolkit version the app pins (apps/server/src/domain/google-actions.ts GOOGLE_TOOLKIT_VERSION). */
+const PINNED = process.env.COMPOSIO_TOOLKIT_VERSION || '20261116_00';
 const REST = 'https://backend.composio.dev/api/v3.1';
 
 function readEnvKey() {
@@ -47,10 +50,10 @@ async function rest(p) {
 
 // The slugs the plan depends on, by toolkit.
 const SLUGS = {
-  gmail: ['GMAIL_GET_PROFILE', 'GMAIL_WHO_AM_I', 'GMAIL_CREATE_EMAIL_DRAFT', 'GMAIL_GET_DRAFT', 'GMAIL_UPDATE_DRAFT', 'GMAIL_SEND_DRAFT', 'GMAIL_DELETE_DRAFT', 'GMAIL_SEND_EMAIL', 'GMAIL_REPLY_TO_THREAD'],
-  googlecalendar: ['GOOGLECALENDAR_LIST_CALENDARS', 'GOOGLECALENDAR_EVENTS_LIST_ALL_CALENDARS', 'GOOGLECALENDAR_EVENTS_GET', 'GOOGLECALENDAR_EVENTS_INSTANCES', 'GOOGLECALENDAR_CREATE_EVENT', 'GOOGLECALENDAR_UPDATE_EVENT', 'GOOGLECALENDAR_PATCH_EVENT', 'GOOGLECALENDAR_DELETE_EVENT', 'GOOGLECALENDAR_QUICK_ADD', 'GOOGLECALENDAR_REMOVE_ATTENDEE'],
-  googlesheets: ['GOOGLESHEETS_CREATE_GOOGLE_SHEET1', 'GOOGLESHEETS_VALUES_GET', 'GOOGLESHEETS_VALUES_UPDATE', 'GOOGLESHEETS_SPREADSHEETS_VALUES_APPEND', 'GOOGLESHEETS_UPDATE_VALUES_BATCH', 'GOOGLESHEETS_BATCH_UPDATE', 'GOOGLESHEETS_EXECUTE_SQL', 'GOOGLESHEETS_ADD_SHEET'],
-  googledocs: ['GOOGLEDOCS_CREATE_DOCUMENT_MARKDOWN', 'GOOGLEDOCS_GET_DOCUMENT_PLAINTEXT', 'GOOGLEDOCS_INSERT_TEXT_ACTION', 'GOOGLEDOCS_REPLACE_ALL_TEXT', 'GOOGLEDOCS_UPDATE_DOCUMENT_MARKDOWN'],
+  gmail: ['GMAIL_GET_PROFILE', 'GMAIL_WHO_AM_I', 'GMAIL_CREATE_EMAIL_DRAFT', 'GMAIL_GET_DRAFT', 'GMAIL_UPDATE_DRAFT', 'GMAIL_SEND_DRAFT', 'GMAIL_DELETE_DRAFT', 'GMAIL_SEND_EMAIL', 'GMAIL_REPLY_TO_THREAD', 'GMAIL_FETCH_EMAILS', 'GMAIL_FETCH_MESSAGE_BY_THREAD_ID', 'GMAIL_LIST_THREADS'],
+  googlecalendar: ['GOOGLECALENDAR_LIST_CALENDARS', 'GOOGLECALENDAR_EVENTS_LIST_ALL_CALENDARS', 'GOOGLECALENDAR_EVENTS_GET', 'GOOGLECALENDAR_EVENTS_INSTANCES', 'GOOGLECALENDAR_CREATE_EVENT', 'GOOGLECALENDAR_UPDATE_EVENT', 'GOOGLECALENDAR_PATCH_EVENT', 'GOOGLECALENDAR_DELETE_EVENT', 'GOOGLECALENDAR_QUICK_ADD', 'GOOGLECALENDAR_REMOVE_ATTENDEE', 'GOOGLECALENDAR_FIND_FREE_SLOTS'],
+  googlesheets: ['GOOGLESHEETS_CREATE_GOOGLE_SHEET1', 'GOOGLESHEETS_VALUES_GET', 'GOOGLESHEETS_VALUES_UPDATE', 'GOOGLESHEETS_SPREADSHEETS_VALUES_APPEND', 'GOOGLESHEETS_UPDATE_VALUES_BATCH', 'GOOGLESHEETS_BATCH_UPDATE', 'GOOGLESHEETS_EXECUTE_SQL', 'GOOGLESHEETS_ADD_SHEET', 'GOOGLESHEETS_SEARCH_SPREADSHEETS', 'GOOGLESHEETS_GET_SHEET_NAMES', 'GOOGLESHEETS_GET_SPREADSHEET_INFO'],
+  googledocs: ['GOOGLEDOCS_CREATE_DOCUMENT_MARKDOWN', 'GOOGLEDOCS_GET_DOCUMENT_PLAINTEXT', 'GOOGLEDOCS_INSERT_TEXT_ACTION', 'GOOGLEDOCS_REPLACE_ALL_TEXT', 'GOOGLEDOCS_UPDATE_DOCUMENT_MARKDOWN', 'GOOGLEDOCS_SEARCH_DOCUMENTS'],
 };
 
 const write = (rel, data) => {
@@ -107,7 +110,7 @@ async function schemas() {
   const summary = {};
   for (const [toolkit, slugs] of Object.entries(SLUGS)) {
     for (const slug of slugs) {
-      const t = await rest(`/tools/${slug}`);
+      const t = await rest(`/tools/${slug}?version=${PINNED}`);
       summary[slug] = { toolkit, version: t.version, required: t.input_parameters?.required ?? [], params: Object.keys(t.input_parameters?.properties ?? {}) };
       write(`schemas/${slug}.json`, { slug, version: t.version, description: t.description, input_parameters: t.input_parameters, output_parameters: t.output_parameters });
     }
@@ -309,7 +312,30 @@ async function reredact() {
   console.log('Re-redacted', dir);
 }
 
+/**
+ * What changed in Composio's latest toolkit versions for the actions the app uses: arguments removed
+ * or newly required break a call; new optional ones do not. Bots run through Composio's router, which
+ * uses the latest version, so this is worth running before moving the pin.
+ */
+async function drift() {
+  let breaking = 0;
+  for (const slugs of Object.values(SLUGS)) {
+    for (const slug of slugs) {
+      const [pinned, latest] = await Promise.all([rest(`/tools/${slug}?version=${PINNED}`), rest(`/tools/${slug}`)]);
+      if (pinned.version === latest.version) continue;
+      const a = Object.keys(pinned.input_parameters?.properties ?? {});
+      const b = Object.keys(latest.input_parameters?.properties ?? {});
+      const removed = a.filter((k) => !b.includes(k));
+      const required = (latest.input_parameters?.required ?? []).filter((k) => !(pinned.input_parameters?.required ?? []).includes(k));
+      const added = b.filter((k) => !a.includes(k));
+      if (removed.length || required.length) breaking++;
+      console.log(`${slug} ${pinned.version} -> ${latest.version}${removed.length ? ` REMOVED ${removed.join(',')}` : ''}${required.length ? ` NOW REQUIRED ${required.join(',')}` : ''}${added.length ? ` added ${added.join(',')}` : ''}`);
+    }
+  }
+  console.log(breaking ? `${breaking} action(s) would break on the latest version.` : 'Nothing the app uses breaks on the latest versions.');
+}
+
 const mode = process.argv[2];
-const modes = { schemas, connect, status, capture, reredact };
+const modes = { schemas, connect, status, capture, reredact, drift };
 if (!modes[mode]) { console.error('Usage: node scripts/composio-shapes.mjs <schemas|connect|status|capture>'); process.exit(1); }
 await modes[mode]();

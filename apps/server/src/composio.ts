@@ -96,6 +96,10 @@ interface ConnectedAccountPage {
 }
 
 export async function connectedToolkits(userId: string): Promise<Set<string>> {
+  return composioIO.connected(userId);
+}
+
+async function activeToolkits(userId: string): Promise<Set<string>> {
   if (!composioEnabled()) return new Set();
   const r = (await composio.connectedAccounts.list({ userIds: [userId], statuses: ['ACTIVE'] })) as unknown as ConnectedAccountPage;
   const items = r.items ?? [];
@@ -196,6 +200,8 @@ let pinnedClient: Composio<OpenAIResponsesProvider> | null = null;
  * should call the SDK for tool execution.
  */
 export const composioIO = {
+  /** The apps this person has connected (active accounts only). */
+  connected: (userId: string): Promise<Set<string>> => activeToolkits(userId),
   async executeMeta(userId: string, name: string, args: Record<string, unknown>): Promise<MetaResult> {
     const session = await sessionFor(userId);
     return (await session.execute(name, args)) as MetaResult;

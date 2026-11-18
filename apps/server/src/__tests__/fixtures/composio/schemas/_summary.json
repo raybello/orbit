@@ -123,6 +123,46 @@
       "include_signature"
     ]
   },
+  "GMAIL_FETCH_EMAILS": {
+    "toolkit": "gmail",
+    "version": "20261116_00",
+    "required": [],
+    "params": [
+      "query",
+      "user_id",
+      "verbose",
+      "ids_only",
+      "label_ids",
+      "page_token",
+      "max_results",
+      "include_payload",
+      "include_spam_trash"
+    ]
+  },
+  "GMAIL_FETCH_MESSAGE_BY_THREAD_ID": {
+    "toolkit": "gmail",
+    "version": "20261116_00",
+    "required": [
+      "thread_id"
+    ],
+    "params": [
+      "user_id",
+      "thread_id",
+      "page_token"
+    ]
+  },
+  "GMAIL_LIST_THREADS": {
+    "toolkit": "gmail",
+    "version": "20261116_00",
+    "required": [],
+    "params": [
+      "query",
+      "user_id",
+      "verbose",
+      "page_token",
+      "max_results"
+    ]
+  },
   "GOOGLECALENDAR_LIST_CALENDARS": {
     "toolkit": "googlecalendar",
     "version": "20261116_00",
@@ -338,6 +378,19 @@
       "attendee_email"
     ]
   },
+  "GOOGLECALENDAR_FIND_FREE_SLOTS": {
+    "toolkit": "googlecalendar",
+    "version": "20261116_00",
+    "required": [],
+    "params": [
+      "items",
+      "time_max",
+      "time_min",
+      "timezone",
+      "group_expansion_max",
+      "calendar_expansion_max"
+    ]
+  },
   "GOOGLESHEETS_CREATE_GOOGLE_SHEET1": {
     "toolkit": "googlesheets",
     "version": "20261116_00",
@@ -468,6 +521,47 @@
       "spreadsheet_id"
     ]
   },
+  "GOOGLESHEETS_SEARCH_SPREADSHEETS": {
+    "toolkit": "googlesheets",
+    "version": "20261116_00",
+    "required": [],
+    "params": [
+      "query",
+      "order_by",
+      "page_token",
+      "max_results",
+      "search_type",
+      "starred_only",
+      "created_after",
+      "modified_after",
+      "shared_with_me",
+      "include_trashed",
+      "include_shared_drives"
+    ]
+  },
+  "GOOGLESHEETS_GET_SHEET_NAMES": {
+    "toolkit": "googlesheets",
+    "version": "20261116_00",
+    "required": [
+      "spreadsheet_id"
+    ],
+    "params": [
+      "exclude_hidden",
+      "spreadsheet_id"
+    ]
+  },
+  "GOOGLESHEETS_GET_SPREADSHEET_INFO": {
+    "toolkit": "googlesheets",
+    "version": "20261116_00",
+    "required": [],
+    "params": [
+      "fields",
+      "ranges",
+      "spreadsheet_id",
+      "include_grid_data",
+      "exclude_tables_in_banded_ranges"
+    ]
+  },
   "GOOGLEDOCS_CREATE_DOCUMENT_MARKDOWN": {
     "toolkit": "googledocs",
     "version": "20261116_00",
@@ -542,6 +636,24 @@
       "id",
       "tab_id",
       "markdown"
+    ]
+  },
+  "GOOGLEDOCS_SEARCH_DOCUMENTS": {
+    "toolkit": "googledocs",
+    "version": "20261116_00",
+    "required": [],
+    "params": [
+      "query",
+      "order_by",
+      "page_token",
+      "max_results",
+      "starred_only",
+      "created_after",
+      "modified_after",
+      "shared_with_me",
+      "include_trashed",
+      "response_detail",
+      "include_shared_drives"
     ]
   }
 }

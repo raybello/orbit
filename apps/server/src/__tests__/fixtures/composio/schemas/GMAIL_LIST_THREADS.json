@@ -1,0 +1,154 @@
+{
+  "slug": "GMAIL_LIST_THREADS",
+  "version": "20261116_00",
+  "description": "Retrieves a list of email threads from a Gmail account, identified by `user_id` (email address or 'me'), supporting filtering and pagination. Spam and trash are excluded by default unless explicitly targeted via `label:spam` or `label:trash` in the query.",
+  "input_parameters": {
+    "type": "object",
+    "title": "ListThreadsRequest",
+    "properties": {
+      "query": {
+        "type": "string",
+        "title": "Query",
+        "default": "",
+        "examples": [
+          "is:unread",
+          "from:john.doe@example.com",
+          "subject:important"
+        ],
+        "description": "Filter for threads, using Gmail search query syntax (e.g., 'from:user@example.com is:unread'). Supported operators include `from:`, `to:`, `subject:`, `label:`, `is:unread`, `has:attachment`, `after:`, `before:`. Dates must use `YYYY/MM/DD` format; date operators are UTC-based. Exact subject phrases require quotes (e.g., `subject:'meeting notes'`).",
+        "human_parameter_name": "Query",
+        "human_parameter_description": "Use this field to search for specific threads based on criteria like sender or subject."
+      },
+      "user_id": {
+        "type": "string",
+        "title": "User Id",
+        "default": "me",
+        "examples": [
+          "me",
+          "user@example.com"
+        ],
+        "description": "The user's email address or 'me' to specify the authenticated Gmail account.",
+        "human_parameter_name": "User ID",
+        "human_parameter_description": "Provide the email address or 'me' to refer to your own Gmail account."
+      },
+      "verbose": {
+        "type": "boolean",
+        "title": "Verbose",
+        "default": false,
+        "examples": [
+          true,
+          false
+        ],
+        "description": "If false, returns threads with basic fields (id, snippet, historyId). If true, returns threads with complete message details including headers, body, attachments, and metadata for each message in the thread. Combining `verbose=true` with large `max_results` produces very large responses; keep `max_results` modest when verbose is enabled.",
+        "human_parameter_name": "Verbose",
+        "human_parameter_description": "Choose whether you want just the basic thread info or detailed message content."
+      },
+      "page_token": {
+        "type": "string",
+        "title": "Page Token",
+        "default": "",
+        "examples": [
+          "abcPageToken123"
+        ],
+        "description": "Token from a previous response to retrieve a specific page of results; omit for the first page.",
+        "human_parameter_name": "Page Token",
+        "human_parameter_description": "If you're looking for more threads, use this token to get the next set of results."
+      },
+      "max_results": {
+        "type": "integer",
+        "title": "Max Results",
+        "default": 10,
+        "maximum": 500,
+        "minimum": 1,
+        "examples": [
+          "10",
+          "50",
+          "100"
+        ],
+        "description": "Maximum number of threads to return. Hard cap is ~500 per call. For full mailbox coverage, loop using `nextPageToken` via `page_token` until absent.",
+        "human_parameter_name": "Max Results",
+        "human_parameter_description": "Specify how many threads you would like to see in the response, up to 500."
+      }
+    }
+  },
+  "output_parameters": {
+    "type": "object",
+    "$defs": {
+      "Thread": {
+        "type": "object",
+        "title": "Thread",
+        "required": [
+          "id"
+        ],
+        "properties": {
+          "id": {
+            "type": "string",
+            "title": "Id",
+            "description": "Unique identifier of the thread."
+          },
+          "snippet": {
+            "type": "string",
+            "title": "Snippet",
+            "description": "A short preview of the thread's message content."
+          },
+          "historyId": {
+            "type": "string",
+            "title": "History Id",
+            "description": "ID of the last history record for the thread."
+          }
+        },
+        "description": "Represents a Gmail thread with basic metadata."
+      },
+      "ListThreadsResponse": {
+        "type": "object",
+        "title": "ListThreadsResponse",
+        "required": [
+          "threads"
+        ],
+        "properties": {
+          "threads": {
+            "type": "array",
+            "items": {
+              "$ref": "#/$defs/Thread"
+            },
+            "title": "Threads",
+            "description": "List of email thread resources. Each thread contains an id, and may optionally include historyId and snippet depending on the request."
+          },
+          "nextPageToken": {
+            "type": "string",
+            "title": "Next Page Token",
+            "description": "Token for the next page of results; if present, use as page_token in a subsequent request to fetch more threads."
+          },
+          "resultSizeEstimate": {
+            "type": "integer",
+            "title": "Result Size Estimate",
+            "default": 0,
+            "description": "Estimated total threads matching the query (not just this page)."
+          }
+        }
+      }
+    },
+    "title": "ListThreadsResponseWrapper",
+    "required": [
+      "data",
+      "successful"
+    ],
+    "properties": {
+      "data": {
+        "$ref": "#/$defs/ListThreadsResponse",
+        "title": "Data",
+        "description": "Data from the action execution"
+      },
+      "error": {
+        "type": "string",
+        "title": "Error",
+        "description": "Error if any occurred during the execution of the action"
+      },
+      "successful": {
+        "type": "boolean",
+        "title": "Successful",
+        "description": "Whether or not the action execution was successful or not"
+      }
+    }
+  }
+}

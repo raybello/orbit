@@ -170,6 +170,8 @@ addColumn('bots', 'avatar_enabled', 'INTEGER NOT NULL DEFAULT 0');
 // approval cards offer "Always allow for <Bot>" and what the person allows is kept in bot_policies,
 // for that bot only. Turning it off keeps the list but stops using it.
 addColumn('bots', 'always_allow', 'INTEGER NOT NULL DEFAULT 0');
+// The person's timezone (IANA), sent by their device; it goes into the bots' instructions.
+addColumn('users', 'timezone', 'TEXT');
 // The Google Calendar mirror (calendar/mirror.ts). Everything that names or describes a calendar or an
 // event is sealed with DB_ENCRYPTION_KEY; only opaque keys, times and status are stored in the clear.
 db.exec(`CREATE TABLE IF NOT EXISTS gcal_calendars (

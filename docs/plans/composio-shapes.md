@@ -44,3 +44,9 @@ Fixtures (redacted: addresses, names, Google ids and links replaced with stable 
 
 - The SDK reports 0.30.0 is available. This PR stays on 0.28.0, the version the fixtures were captured with.
 - `GMAIL_WHO_AM_I` returns an OpenID profile (`email`, `name`, `sub`); it is a read and is catalogued as one.
+
+## Found later
+
+12. **`event_duration_minutes` is capped at 59** on `GOOGLECALENDAR_CREATE_EVENT` (Composio rejects 60). Whole hours go in `event_duration_hour`, or the call gives `end_datetime`. The bot manifest says so (phase 10); the app's own calls always send `end_datetime`.
+
+13. **Toolkit versions move under the app.** Composio published Gmail `20261118_00` two days after phase 0 (it only adds an optional `timezone` to drafts and replies). The server's own calls are pinned to `20261116_00`, but bots call through Composio's router, which uses the latest version. Schemas are now captured at the pinned version (`node scripts/composio-shapes.mjs schemas`), and `node scripts/composio-shapes.mjs drift` lists removed or newly required arguments in the latest versions; run it before moving the pin.

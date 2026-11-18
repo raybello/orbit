@@ -105,6 +105,7 @@ export const useStore = create<State>((set, get) => ({
     try {
       const { user, devLogin } = await api.me();
       set({ user, devLogin, authChecked: true });
+      if (user) void api.setTimezone(Intl.DateTimeFormat().resolvedOptions().timeZone).catch(() => {});
     } catch {
       set({ user: null, authChecked: true });
     }

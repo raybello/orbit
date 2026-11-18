@@ -5,6 +5,7 @@ import { composioTools, innerToolCalls, innerToolSlugs, runAction } from './comp
 import { applyReviewEdits, buildReview, type PreStep } from './review/index.js';
 import { showDrafts } from './review/drafts.js';
 import { showFiles } from './review/files.js';
+import { MCP_INSTRUCTIONS } from './agent/app-sheets.js';
 import { connectionWatch, expiredAppNotice } from './core/connection-watch.js';
 import { mcpToken, primaryBotId } from './engine.js';
 import { addPendingFiles, claimToolRow, enqueue, enqueueBotMessage, markSilent, noteToolOutcome, requestApproval, turnDepth, turnGroupDepth } from './agent/loop.js';
@@ -259,7 +260,7 @@ async function handle(msg: unknown, botId: string | null): Promise<object | null
           protocolVersion: SUPPORTED.includes(asked) ? asked : SUPPORTED[0],
           capabilities: { tools: { listChanged: false } },
           serverInfo: { name: 'hq', title: 'Team app', version: '1.0.0' },
-          instructions: 'Tools of the team app: connected apps, files for the user, tasks, routines, other agents on the team.',
+          instructions: MCP_INSTRUCTIONS,
         },
       };
     }

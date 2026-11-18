@@ -36,6 +36,8 @@ export interface TeamTemplateSummary {
 
 export const api = {
   me: () => req<{ user: User | null; devLogin: boolean }>('GET', '/auth/me'),
+  /** Tell the server this device's timezone (bots use it for times). */
+  setTimezone: (timezone: string) => req<{ user: User }>('PATCH', '/auth/me', { timezone }),
   updateMe: (patch: { avatarUrl?: string | null }) => req<{ user: User }>('PATCH', '/auth/me', patch),
   uploadAvatar: async (file: File): Promise<{ url: string }> => {
     const form = new FormData();

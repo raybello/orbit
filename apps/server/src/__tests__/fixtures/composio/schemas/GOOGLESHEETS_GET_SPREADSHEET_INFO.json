@@ -1,0 +1,1842 @@
+{
+  "slug": "GOOGLESHEETS_GET_SPREADSHEET_INFO",
+  "version": "20261116_00",
+  "description": "Retrieves metadata for a Google Spreadsheet using its ID. By default, returns essential information (ID, title, sheet properties) to avoid payload size issues. Use the fields parameter for comprehensive metadata or specific fields.",
+  "input_parameters": {
+    "type": "object",
+    "title": "GetSpreadsheetInfoRequest",
+    "properties": {
+      "fields": {
+        "type": "string",
+        "title": "Fields",
+        "examples": [
+          "sheets.properties(sheetId,title)",
+          "properties.title,sheets.properties",
+          "spreadsheetId,properties.title,sheets.properties(sheetId,title,index)"
+        ],
+        "description": "Optional. Field mask specifying which fields to return. Uses Google's field mask syntax (comma-separated, dot-notation for nested fields). If not specified, a default mask returning common fields (spreadsheet ID, title, sheet properties) is applied to avoid payload size issues. For full metadata, use '*' (not recommended for large spreadsheets). When set, includeGridData is ignored. Examples: 'sheets.properties(sheetId,title)', 'properties.title,sheets.properties.sheetId'.",
+        "human_parameter_name": "Fields",
+        "human_parameter_description": "Specify which spreadsheet fields to return using field mask syntax. Leave empty for a sensible default that includes basic spreadsheet and sheet information."
+      },
+      "ranges": {
+        "type": "array",
+        "items": {
+          "type": "string"
+        },
+        "title": "Ranges",
+        "examples": [
+          [
+            "Sheet1!A1:D5"
+          ],
+          [
+            "Sheet1!A1:B10",
+            "Sheet2!C1:E20"
+          ]
+        ],
+        "description": "Optional. The ranges to retrieve from the spreadsheet, specified using A1 notation (e.g., 'Sheet1!A1:D5', 'Sheet2!A1:C4'). Multiple ranges can be requested simultaneously. If not specified, metadata for the entire spreadsheet is returned without grid data.",
+        "human_parameter_name": "Ranges",
+        "human_parameter_description": "Optional list of specific ranges to retrieve using A1 notation. Leave empty to get full spreadsheet metadata."
+      },
+      "spreadsheet_id": {
+        "type": "string",
+        "title": "Spreadsheet Id",
+        "examples": [
+          "1BxiMVs0XRA5nFMdKvBdBZjgmUUqptlbs74OgvE2upms",
+          "https://docs.google.com/spreadsheets/d/1BxiMVs0XRA5nFMdKvBdBZjgmUUqptlbs74OgvE2upms/edit"
+        ],
+        "minLength": 1,
+        "description": "Required. The Google Sheets spreadsheet ID or full URL. Accepts either the ID alone (e.g., '1BxiMVs0XRA5nFMdKvBdBZjgmUUqptlbs74OgvE2upms') or a full Google Sheets URL (e.g., 'https://docs.google.com/spreadsheets/d/1BxiMVs0XRA5nFMdKvBdBZjgmUUqptlbs74OgvE2upms/edit'). The ID will be automatically extracted from URLs. Note: Published/embedded URLs (containing '/d/e/2PACX-...') are not supported.",
+        "human_parameter_name": "Spreadsheet ID or URL",
+        "human_parameter_description": "The Google Sheets spreadsheet ID or full URL. You can paste the entire URL from your browser and the ID will be extracted automatically. Note: Published/embedded URLs are not supported; use the original spreadsheet URL instead."
+      },
+      "include_grid_data": {
+        "type": "boolean",
+        "title": "Include Grid Data",
+        "examples": [
+          true,
+          false
+        ],
+        "description": "Optional. If true, grid data will be returned. This parameter is ignored if a field mask was set in the request. When false or not specified, only metadata is returned without cell values.",
+        "human_parameter_name": "Include Grid Data",
+        "human_parameter_description": "Set to true to include cell values and grid data in the response. Default is false (metadata only)."
+      },
+      "exclude_tables_in_banded_ranges": {
+        "type": "boolean",
+        "title": "Exclude Tables In Banded Ranges",
+        "examples": [
+          true,
+          false
+        ],
+        "description": "Optional. If true, tables within banded ranges will be omitted from the response. Default is false when not specified.",
+        "human_parameter_name": "Exclude Tables In Banded Ranges",
+        "human_parameter_description": "Set to true to exclude tables that appear in banded ranges. Default is false."
+      }
+    },
+    "description": "Request model for getting spreadsheet information."
+  },
+  "output_parameters": {
+    "type": "object",
+    "$defs": {
+      "Link": {
+        "type": "object",
+        "title": "Link",
+        "properties": {
+          "uri": {
+            "type": "string",
+            "title": "Uri",
+            "description": "Link target URI."
+          }
+        },
+        "description": "Hyperlink in a text format."
+      },
+      "Color": {
+        "type": "object",
+        "title": "Color",
+        "properties": {
+          "red": {
+            "type": "number",
+            "title": "Red",
+            "description": "Red component (0-1)."
+          },
+          "blue": {
+            "type": "number",
+            "title": "Blue",
+            "description": "Blue component (0-1)."
+          },
+          "alpha": {
+            "type": "number",
+            "title": "Alpha",
+            "description": "Alpha/opacity (0-1)."
+          },
+          "green": {
+            "type": "number",
+            "title": "Green",
+            "description": "Green component (0-1)."
+          }
+        },
+        "description": "RGBA color representation."
+      },
+      "Sheet": {
+        "type": "object",
+        "title": "Sheet",
+        "properties": {
+          "data": {
+            "type": "array",
+            "items": {
+              "$ref": "#/$defs/GridData"
+            },
+            "title": "Data",
+            "description": "Data in the grid if requested."
+          },
+          "charts": {
+            "type": "array",
+            "items": {
+              "$ref": "#/$defs/EmbeddedChart"
+            },
+            "title": "Charts",
+            "description": "Charts on the sheet."
+          },
+          "merges": {
+            "type": "array",
+            "items": {
+              "$ref": "#/$defs/GridRange"
+            },
+            "title": "Merges",
+            "description": "Merged cell ranges."
+          },
+          "tables": {
+            "type": "array",
+            "items": {
+              "$ref": "#/$defs/Table"
+            },
+            "title": "Tables",
+            "description": "Tables on the sheet."
+          },
+          "slicers": {
+            "type": "array",
+            "items": {
+              "$ref": "#/$defs/Slicer"
+            },
+            "title": "Slicers",
+            "description": "Slicers on the sheet."
+          },
+          "rowGroups": {
+            "type": "array",
+            "items": {
+              "$ref": "#/$defs/DimensionGroup"
+            },
+            "title": "Row Groups",
+            "description": "Row groups."
+          },
+          "properties": {
+            "$ref": "#/$defs/SheetProperties",
+            "title": "Properties",
+            "description": "The properties of the sheet."
+          },
+          "basicFilter": {
+            "$ref": "#/$defs/BasicFilter",
+            "title": "Basic Filter",
+            "description": "The default filter."
+          },
+          "filterViews": {
+            "type": "array",
+            "items": {
+              "$ref": "#/$defs/FilterView"
+            },
+            "title": "Filter Views",
+            "description": "Filter views."
+          },
+          "bandedRanges": {
+            "type": "array",
+            "items": {
+              "$ref": "#/$defs/BandedRange"
+            },
+            "title": "Banded Ranges",
+            "description": "Banded (alternating colors) ranges."
+          },
+          "columnGroups": {
+            "type": "array",
+            "items": {
+              "$ref": "#/$defs/DimensionGroup"
+            },
+            "title": "Column Groups",
+            "description": "Column groups."
+          },
+          "protectedRanges": {
+            "type": "array",
+            "items": {
+              "$ref": "#/$defs/ProtectedRange"
+            },
+            "title": "Protected Ranges",
+            "description": "Protected ranges."
+          },
+          "developerMetadata": {
+            "type": "array",
+            "items": {
+              "$ref": "#/$defs/DeveloperMetadata"
+            },
+            "title": "Developer Metadata",
+            "description": "Developer metadata."
+          },
+          "conditionalFormats": {
+            "type": "array",
+            "items": {
+              "$ref": "#/$defs/ConditionalFormatRule"
+            },
+            "title": "Conditional Formats",
+            "description": "Conditional format rules."
+          }
+        },
+        "description": "A sheet in a spreadsheet."
+      },
+      "Table": {
+        "type": "object",
+        "title": "Table",
+        "properties": {
+          "tableId": {
+            "type": "string",
+            "title": "Table Id",
+            "description": "Table ID."
+          },
+          "tableRange": {
+            "$ref": "#/$defs/GridRange",
+            "title": "Table Range",
+            "description": "Table range."
+          },
+          "columnCount": {
+            "type": "integer",
+            "title": "Column Count",
+            "description": "Number of columns."
+          },
+          "dataSourceId": {
+            "type": "string",
+            "title": "Data Source Id",
+            "description": "Data source ID."
+          }
+        },
+        "description": "Table on a sheet."
+      },
+      "Border": {
+        "type": "object",
+        "title": "Border",
+        "properties": {
+          "color": {
+            "$ref": "#/$defs/Color",
+            "title": "Color",
+            "description": "Border color (deprecated)."
+          },
+          "style": {
+            "type": "string",
+            "title": "Style",
+            "description": "Border line style."
+          },
+          "width": {
+            "type": "integer",
+            "title": "Width",
+            "description": "Border width in pixels (deprecated)."
+          },
+          "colorStyle": {
+            "$ref": "#/$defs/ColorStyle",
+            "title": "Color Style",
+            "description": "Border color."
+          }
+        },
+        "description": "Border style along a cell edge."
+      },
+      "Slicer": {
+        "type": "object",
+        "title": "Slicer",
+        "properties": {
+          "spec": {
+            "type": "object",
+            "title": "Spec",
+            "description": "Slicer specification.",
+            "additionalProperties": true
+          },
+          "position": {
+            "$ref": "#/$defs/EmbeddedObjectPosition",
+            "title": "Position",
+            "description": "Slicer position."
+          },
+          "slicerId": {
+            "type": "integer",
+            "title": "Slicer Id",
+            "description": "Slicer ID."
+          }
+        },
+        "description": "Slicer on a sheet."
+      },
+      "Borders": {
+        "type": "object",
+        "title": "Borders",
+        "properties": {
+          "top": {
+            "$ref": "#/$defs/Border",
+            "title": "Top",
+            "description": "Top border."
+          },
+          "left": {
+            "$ref": "#/$defs/Border",
+            "title": "Left",
+            "description": "Left border."
+          },
+          "right": {
+            "$ref": "#/$defs/Border",
+            "title": "Right",
+            "description": "Right border."
+          },
+          "bottom": {
+            "$ref": "#/$defs/Border",
+            "title": "Bottom",
+            "description": "Bottom border."
+          }
+        },
+        "description": "Cell border configuration."
+      },
+      "Editors": {
+        "type": "object",
+        "title": "Editors",
+        "properties": {
+          "users": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "title": "Users",
+            "description": "User emails with edit access."
+          },
+          "groups": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "title": "Groups",
+            "description": "Group emails with edit access."
+          },
+          "domainUsersCanEdit": {
+            "type": "boolean",
+            "title": "Domain Users Can Edit",
+            "description": "Domain users can edit."
+          }
+        },
+        "description": "Users/groups with edit access."
+      },
+      "Padding": {
+        "type": "object",
+        "title": "Padding",
+        "properties": {
+          "top": {
+            "type": "integer",
+            "title": "Top",
+            "description": "Top padding."
+          },
+          "left": {
+            "type": "integer",
+            "title": "Left",
+            "description": "Left padding."
+          },
+          "right": {
+            "type": "integer",
+            "title": "Right",
+            "description": "Right padding."
+          },
+          "bottom": {
+            "type": "integer",
+            "title": "Bottom",
+            "description": "Bottom padding."
+          }
+        },
+        "description": "Cell padding in pixels."
+      },
+      "RowData": {
+        "type": "object",
+        "title": "RowData",
+        "properties": {
+          "values": {
+            "type": "array",
+            "items": {
+              "$ref": "#/$defs/CellData"
+            },
+            "title": "Values",
+            "description": "Cell data for this row."
+          }
+        },
+        "description": "Data about each cell in a row."
+      },
+      "CellData": {
+        "type": "object",
+        "title": "CellData",
+        "properties": {
+          "note": {
+            "type": "string",
+            "title": "Note",
+            "description": "Cell note."
+          },
+          "hyperlink": {
+            "type": "string",
+            "title": "Hyperlink",
+            "description": "Hyperlink URL."
+          },
+          "pivotTable": {
+            "type": "object",
+            "title": "Pivot Table",
+            "description": "Pivot table anchored at this cell.",
+            "additionalProperties": true
+          },
+          "dataValidation": {
+            "type": "object",
+            "title": "Data Validation",
+            "description": "Data validation rule.",
+            "additionalProperties": true
+          },
+          "effectiveValue": {
+            "type": "object",
+            "title": "Effective Value",
+            "description": "Effective value (ExtendedValue).",
+            "additionalProperties": true
+          },
+          "formattedValue": {
+            "type": "string",
+            "title": "Formatted Value",
+            "description": "Formatted value."
+          },
+          "textFormatRuns": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "additionalProperties": true
+            },
+            "title": "Text Format Runs",
+            "description": "Text format runs."
+          },
+          "dataSourceTable": {
+            "type": "object",
+            "title": "Data Source Table",
+            "description": "Data source table.",
+            "additionalProperties": true
+          },
+          "effectiveFormat": {
+            "$ref": "#/$defs/CellFormat",
+            "title": "Effective Format",
+            "description": "Effective format."
+          },
+          "userEnteredValue": {
+            "type": "object",
+            "title": "User Entered Value",
+            "description": "User-entered value (ExtendedValue).",
+            "additionalProperties": true
+          },
+          "dataSourceFormula": {
+            "type": "object",
+            "title": "Data Source Formula",
+            "description": "Data source formula.",
+            "additionalProperties": true
+          },
+          "userEnteredFormat": {
+            "$ref": "#/$defs/CellFormat",
+            "title": "User Entered Format",
+            "description": "User-entered format."
+          }
+        },
+        "description": "Data about a specific cell."
+      },
+      "GridData": {
+        "type": "object",
+        "title": "GridData",
+        "properties": {
+          "rowData": {
+            "type": "array",
+            "items": {
+              "$ref": "#/$defs/RowData"
+            },
+            "title": "Row Data",
+            "description": "Grid data per row."
+          },
+          "startRow": {
+            "type": "integer",
+            "title": "Start Row",
+            "description": "First row (0-based)."
+          },
+          "rowMetadata": {
+            "type": "array",
+            "items": {
+              "$ref": "#/$defs/DimensionProperties"
+            },
+            "title": "Row Metadata",
+            "description": "Row metadata."
+          },
+          "startColumn": {
+            "type": "integer",
+            "title": "Start Column",
+            "description": "First column (0-based)."
+          },
+          "columnMetadata": {
+            "type": "array",
+            "items": {
+              "$ref": "#/$defs/DimensionProperties"
+            },
+            "title": "Column Metadata",
+            "description": "Column metadata."
+          }
+        },
+        "description": "Data in the grid with metadata."
+      },
+      "Interval": {
+        "type": "object",
+        "title": "Interval",
+        "properties": {
+          "endTime": {
+            "type": "string",
+            "title": "End Time"
+          },
+          "startTime": {
+            "type": "string",
+            "title": "Start Time"
+          }
+        },
+        "description": "Time interval."
+      },
+      "SortSpec": {
+        "type": "object",
+        "title": "SortSpec",
+        "properties": {
+          "sortOrder": {
+            "type": "string",
+            "title": "Sort Order",
+            "description": "Sort order (ASCENDING/DESCENDING)."
+          },
+          "dimensionIndex": {
+            "type": "integer",
+            "title": "Dimension Index",
+            "description": "Dimension to sort."
+          },
+          "backgroundColor": {
+            "$ref": "#/$defs/Color",
+            "title": "Background Color",
+            "description": "Background color (deprecated)."
+          },
+          "foregroundColor": {
+            "$ref": "#/$defs/Color",
+            "title": "Foreground Color",
+            "description": "Foreground color (deprecated)."
+          },
+          "backgroundColorStyle": {
+            "$ref": "#/$defs/ColorStyle",
+            "title": "Background Color Style",
+            "description": "Background color."
+          },
+          "foregroundColorStyle": {
+            "$ref": "#/$defs/ColorStyle",
+            "title": "Foreground Color Style",
+            "description": "Foreground color."
+          },
+          "dataSourceColumnReference": {
+            "type": "object",
+            "title": "Data Source Column Reference",
+            "additionalProperties": true
+          }
+        },
+        "description": "Sort specification for a dimension."
+      },
+      "GridRange": {
+        "type": "object",
+        "title": "GridRange",
+        "properties": {
+          "sheetId": {
+            "type": "integer",
+            "title": "Sheet Id",
+            "description": "The sheet this range is on."
+          },
+          "endRowIndex": {
+            "type": "integer",
+            "title": "End Row Index",
+            "description": "The end row (0-based, exclusive)."
+          },
+          "startRowIndex": {
+            "type": "integer",
+            "title": "Start Row Index",
+            "description": "The start row (0-based, inclusive)."
+          },
+          "endColumnIndex": {
+            "type": "integer",
+            "title": "End Column Index",
+            "description": "The end column (0-based, exclusive)."
+          },
+          "startColumnIndex": {
+            "type": "integer",
+            "title": "Start Column Index",
+            "description": "The start column (0-based, inclusive)."
+          }
+        },
+        "description": "A range on a grid."
+      },
+      "SheetType": {
+        "enum": [
+          "GRID",
+          "OBJECT",
+          "DATA_SOURCE"
+        ],
+        "type": "string",
+        "title": "SheetType",
+        "description": "Type of sheet."
+      },
+      "CellFormat": {
+        "type": "object",
+        "title": "CellFormat",
+        "properties": {
+          "borders": {
+            "$ref": "#/$defs/Borders",
+            "title": "Borders"
+          },
+          "padding": {
+            "$ref": "#/$defs/Padding",
+            "title": "Padding"
+          },
+          "textFormat": {
+            "$ref": "#/$defs/TextFormat",
+            "title": "Text Format"
+          },
+          "numberFormat": {
+            "$ref": "#/$defs/NumberFormat",
+            "title": "Number Format"
+          },
+          "textRotation": {
+            "$ref": "#/$defs/TextRotation",
+            "title": "Text Rotation"
+          },
+          "wrapStrategy": {
+            "type": "string",
+            "title": "Wrap Strategy"
+          },
+          "textDirection": {
+            "type": "string",
+            "title": "Text Direction"
+          },
+          "backgroundColor": {
+            "$ref": "#/$defs/Color",
+            "title": "Background Color"
+          },
+          "verticalAlignment": {
+            "type": "string",
+            "title": "Vertical Alignment"
+          },
+          "horizontalAlignment": {
+            "type": "string",
+            "title": "Horizontal Alignment"
+          },
+          "backgroundColorStyle": {
+            "$ref": "#/$defs/ColorStyle",
+            "title": "Background Color Style"
+          },
+          "hyperlinkDisplayType": {
+            "type": "string",
+            "title": "Hyperlink Display Type"
+          }
+        },
+        "description": "Default cell formatting."
+      },
+      "ColorStyle": {
+        "type": "object",
+        "title": "ColorStyle",
+        "properties": {
+          "rgbColor": {
+            "$ref": "#/$defs/Color",
+            "title": "Rgb Color",
+            "description": "RGB color."
+          },
+          "themeColor": {
+            "type": "string",
+            "title": "Theme Color",
+            "description": "Theme color type."
+          }
+        },
+        "description": "Color value using either RGB or theme color."
+      },
+      "DataSource": {
+        "type": "object",
+        "title": "DataSource",
+        "properties": {
+          "spec": {
+            "$ref": "#/$defs/DataSourceSpec",
+            "title": "Spec",
+            "description": "The DataSourceSpec for the data source."
+          },
+          "sheetId": {
+            "type": "integer",
+            "title": "Sheet Id",
+            "description": "The ID of the Sheet connected with the data source."
+          },
+          "dataSourceId": {
+            "type": "string",
+            "title": "Data Source Id",
+            "description": "Unique ID that identifies the data source."
+          },
+          "calculatedColumns": {
+            "type": "array",
+            "items": {
+              "$ref": "#/$defs/DataSourceColumn"
+            },
+            "title": "Calculated Columns",
+            "description": "All calculated columns in the data source."
+          }
+        },
+        "description": "External data source connected with the spreadsheet."
+      },
+      "FilterSpec": {
+        "type": "object",
+        "title": "FilterSpec",
+        "properties": {
+          "columnIndex": {
+            "type": "integer",
+            "title": "Column Index",
+            "description": "Column to filter."
+          },
+          "filterCriteria": {
+            "type": "object",
+            "title": "Filter Criteria",
+            "description": "Filter criteria.",
+            "additionalProperties": true
+          },
+          "dataSourceColumnReference": {
+            "type": "object",
+            "title": "Data Source Column Reference",
+            "additionalProperties": true
+          }
+        },
+        "description": "Filter specification for a column."
+      },
+      "FilterView": {
+        "type": "object",
+        "title": "FilterView",
+        "properties": {
+          "range": {
+            "$ref": "#/$defs/GridRange",
+            "title": "Range",
+            "description": "Range this filter view covers."
+          },
+          "title": {
+            "type": "string",
+            "title": "Title",
+            "description": "Filter view name."
+          },
+          "tableId": {
+            "type": "string",
+            "title": "Table Id",
+            "description": "Table backing."
+          },
+          "sortSpecs": {
+            "type": "array",
+            "items": {
+              "$ref": "#/$defs/SortSpec"
+            },
+            "title": "Sort Specs",
+            "description": "Sort order."
+          },
+          "filterSpecs": {
+            "type": "array",
+            "items": {
+              "$ref": "#/$defs/FilterSpec"
+            },
+            "title": "Filter Specs",
+            "description": "Filter criteria."
+          },
+          "filterViewId": {
+            "type": "integer",
+            "title": "Filter View Id",
+            "description": "Filter view ID."
+          },
+          "namedRangeId": {
+            "type": "string",
+            "title": "Named Range Id",
+            "description": "Named range backing."
+          }
+        },
+        "description": "Filter view."
+      },
+      "NamedRange": {
+        "type": "object",
+        "title": "NamedRange",
+        "properties": {
+          "name": {
+            "type": "string",
+            "title": "Name",
+            "description": "The name of the named range."
+          },
+          "range": {
+            "$ref": "#/$defs/GridRange",
+            "title": "Range",
+            "description": "The range this represents."
+          },
+          "namedRangeId": {
+            "type": "string",
+            "title": "Named Range Id",
+            "description": "The ID of the named range."
+          }
+        },
+        "description": "A named range."
+      },
+      "TextFormat": {
+        "type": "object",
+        "title": "TextFormat",
+        "properties": {
+          "bold": {
+            "type": "boolean",
+            "title": "Bold",
+            "description": "Bold text."
+          },
+          "link": {
+            "$ref": "#/$defs/Link",
+            "title": "Link",
+            "description": "Hyperlink."
+          },
+          "italic": {
+            "type": "boolean",
+            "title": "Italic",
+            "description": "Italic text."
+          },
+          "fontSize": {
+            "type": "integer",
+            "title": "Font Size",
+            "description": "Font size."
+          },
+          "underline": {
+            "type": "boolean",
+            "title": "Underline",
+            "description": "Underline text."
+          },
+          "fontFamily": {
+            "type": "string",
+            "title": "Font Family",
+            "description": "Font family."
+          },
+          "strikethrough": {
+            "type": "boolean",
+            "title": "Strikethrough",
+            "description": "Strikethrough text."
+          },
+          "foregroundColor": {
+            "$ref": "#/$defs/Color",
+            "title": "Foreground Color",
+            "description": "Text color (deprecated)."
+          },
+          "foregroundColorStyle": {
+            "$ref": "#/$defs/ColorStyle",
+            "title": "Foreground Color Style",
+            "description": "Text color."
+          }
+        },
+        "description": "Text formatting specification."
+      },
+      "BandedRange": {
+        "type": "object",
+        "title": "BandedRange",
+        "properties": {
+          "range": {
+            "$ref": "#/$defs/GridRange",
+            "title": "Range",
+            "description": "Range for banding."
+          },
+          "bandedRangeId": {
+            "type": "integer",
+            "title": "Banded Range Id",
+            "description": "Banded range ID."
+          },
+          "rowProperties": {
+            "$ref": "#/$defs/BandingProperties",
+            "title": "Row Properties",
+            "description": "Row banding properties."
+          },
+          "columnProperties": {
+            "$ref": "#/$defs/BandingProperties",
+            "title": "Column Properties",
+            "description": "Column banding properties."
+          }
+        },
+        "description": "Banded (alternating colors) range."
+      },
+      "BasicFilter": {
+        "type": "object",
+        "title": "BasicFilter",
+        "properties": {
+          "range": {
+            "$ref": "#/$defs/GridRange",
+            "title": "Range",
+            "description": "Range the filter covers."
+          },
+          "tableId": {
+            "type": "string",
+            "title": "Table Id",
+            "description": "Table backing."
+          },
+          "sortSpecs": {
+            "type": "array",
+            "items": {
+              "$ref": "#/$defs/SortSpec"
+            },
+            "title": "Sort Specs",
+            "description": "Sort order."
+          },
+          "filterSpecs": {
+            "type": "array",
+            "items": {
+              "$ref": "#/$defs/FilterSpec"
+            },
+            "title": "Filter Specs",
+            "description": "Filter criteria."
+          }
+        },
+        "description": "Default filter for a sheet."
+      },
+      "BooleanRule": {
+        "type": "object",
+        "title": "BooleanRule",
+        "properties": {
+          "format": {
+            "$ref": "#/$defs/CellFormat",
+            "title": "Format",
+            "description": "Format to apply when condition is true."
+          },
+          "condition": {
+            "type": "object",
+            "title": "Condition",
+            "description": "Condition (BooleanCondition).",
+            "additionalProperties": true
+          }
+        },
+        "description": "Boolean conditional format rule."
+      },
+      "GradientRule": {
+        "type": "object",
+        "title": "GradientRule",
+        "properties": {
+          "maxpoint": {
+            "type": "object",
+            "title": "Maxpoint",
+            "description": "Maximum interpolation point.",
+            "additionalProperties": true
+          },
+          "midpoint": {
+            "type": "object",
+            "title": "Midpoint",
+            "description": "Middle interpolation point.",
+            "additionalProperties": true
+          },
+          "minpoint": {
+            "type": "object",
+            "title": "Minpoint",
+            "description": "Minimum interpolation point.",
+            "additionalProperties": true
+          }
+        },
+        "description": "Gradient conditional format rule."
+      },
+      "NumberFormat": {
+        "type": "object",
+        "title": "NumberFormat",
+        "properties": {
+          "type": {
+            "type": "string",
+            "title": "Type",
+            "description": "Number format type (required when writing)."
+          },
+          "pattern": {
+            "type": "string",
+            "title": "Pattern",
+            "description": "Custom format pattern (uses spreadsheet locale if not set)."
+          }
+        },
+        "description": "Number formatting specification."
+      },
+      "TextRotation": {
+        "type": "object",
+        "title": "TextRotation",
+        "properties": {
+          "angle": {
+            "type": "integer",
+            "title": "Angle",
+            "description": "Rotation angle in degrees (-90 to 90)."
+          },
+          "vertical": {
+            "type": "boolean",
+            "title": "Vertical",
+            "description": "Text reads top to bottom if true."
+          }
+        },
+        "description": "Text rotation in a cell."
+      },
+      "EmbeddedChart": {
+        "type": "object",
+        "title": "EmbeddedChart",
+        "properties": {
+          "spec": {
+            "type": "object",
+            "title": "Spec",
+            "description": "Chart specification (ChartSpec).",
+            "additionalProperties": true
+          },
+          "border": {
+            "type": "object",
+            "title": "Border",
+            "description": "Chart border.",
+            "additionalProperties": true
+          },
+          "chartId": {
+            "type": "integer",
+            "title": "Chart Id",
+            "description": "Chart ID."
+          },
+          "position": {
+            "$ref": "#/$defs/EmbeddedObjectPosition",
+            "title": "Position",
+            "description": "Chart position."
+          }
+        },
+        "description": "Chart embedded in a sheet."
+      },
+      "DataSourceSpec": {
+        "type": "object",
+        "title": "DataSourceSpec",
+        "properties": {
+          "looker": {
+            "$ref": "#/$defs/LookerDataSourceSpec",
+            "title": "Looker",
+            "description": "Looker data source spec."
+          },
+          "bigQuery": {
+            "$ref": "#/$defs/BigQueryDataSourceSpec",
+            "title": "Big Query",
+            "description": "BigQuery data source spec."
+          },
+          "parameters": {
+            "type": "array",
+            "items": {
+              "$ref": "#/$defs/DataSourceParameter"
+            },
+            "title": "Parameters",
+            "description": "Data source parameters."
+          }
+        },
+        "description": "Data source specification."
+      },
+      "DimensionGroup": {
+        "type": "object",
+        "title": "DimensionGroup",
+        "properties": {
+          "depth": {
+            "type": "integer",
+            "title": "Depth",
+            "description": "Group depth."
+          },
+          "range": {
+            "$ref": "#/$defs/DimensionRange",
+            "title": "Range",
+            "description": "Dimension range."
+          },
+          "collapsed": {
+            "type": "boolean",
+            "title": "Collapsed",
+            "description": "Group collapsed."
+          }
+        },
+        "description": "Group of rows or columns."
+      },
+      "DimensionRange": {
+        "type": "object",
+        "title": "DimensionRange",
+        "properties": {
+          "sheetId": {
+            "type": "integer",
+            "title": "Sheet Id"
+          },
+          "endIndex": {
+            "type": "integer",
+            "title": "End Index"
+          },
+          "dimension": {
+            "type": "string",
+            "title": "Dimension"
+          },
+          "startIndex": {
+            "type": "integer",
+            "title": "Start Index"
+          }
+        },
+        "description": "A range along a dimension."
+      },
+      "GridProperties": {
+        "type": "object",
+        "title": "GridProperties",
+        "properties": {
+          "rowCount": {
+            "type": "integer",
+            "title": "Row Count"
+          },
+          "columnCount": {
+            "type": "integer",
+            "title": "Column Count"
+          },
+          "hideGridlines": {
+            "type": "boolean",
+            "title": "Hide Gridlines"
+          },
+          "frozenRowCount": {
+            "type": "integer",
+            "title": "Frozen Row Count"
+          },
+          "frozenColumnCount": {
+            "type": "integer",
+            "title": "Frozen Column Count"
+          },
+          "rowGroupControlAfter": {
+            "type": "boolean",
+            "title": "Row Group Control After"
+          },
+          "columnGroupControlAfter": {
+            "type": "boolean",
+            "title": "Column Group Control After"
+          }
+        },
+        "description": "Grid properties of a sheet."
+      },
+      "ProtectedRange": {
+        "type": "object",
+        "title": "ProtectedRange",
+        "properties": {
+          "range": {
+            "$ref": "#/$defs/GridRange",
+            "title": "Range",
+            "description": "Range being protected."
+          },
+          "editors": {
+            "$ref": "#/$defs/Editors",
+            "title": "Editors",
+            "description": "Users/groups with edit access."
+          },
+          "tableId": {
+            "type": "string",
+            "title": "Table Id",
+            "description": "Table backing."
+          },
+          "description": {
+            "type": "string",
+            "title": "Description",
+            "description": "Protection description."
+          },
+          "warningOnly": {
+            "type": "boolean",
+            "title": "Warning Only",
+            "description": "Show warning when editing."
+          },
+          "namedRangeId": {
+            "type": "string",
+            "title": "Named Range Id",
+            "description": "Named range backing."
+          },
+          "protectedRangeId": {
+            "type": "integer",
+            "title": "Protected Range Id",
+            "description": "Protected range ID (read-only)."
+          },
+          "unprotectedRanges": {
+            "type": "array",
+            "items": {
+              "$ref": "#/$defs/GridRange"
+            },
+            "title": "Unprotected Ranges",
+            "description": "Unprotected ranges within sheet."
+          },
+          "requestingUserCanEdit": {
+            "type": "boolean",
+            "title": "Requesting User Can Edit",
+            "description": "User can edit (read-only)."
+          }
+        },
+        "description": "Protected range."
+      },
+      "ThemeColorPair": {
+        "type": "object",
+        "title": "ThemeColorPair",
+        "properties": {
+          "color": {
+            "$ref": "#/$defs/ColorStyle",
+            "title": "Color",
+            "description": "Concrete color value."
+          },
+          "colorType": {
+            "type": "string",
+            "title": "Color Type",
+            "description": "Theme color type."
+          }
+        },
+        "description": "Theme color mapping."
+      },
+      "SheetProperties": {
+        "type": "object",
+        "title": "SheetProperties",
+        "properties": {
+          "index": {
+            "type": "integer",
+            "title": "Index",
+            "description": "The index of the sheet within the spreadsheet."
+          },
+          "title": {
+            "type": "string",
+            "title": "Title",
+            "description": "The name of the sheet."
+          },
+          "hidden": {
+            "type": "boolean",
+            "title": "Hidden",
+            "description": "True if the sheet is hidden."
+          },
+          "sheetId": {
+            "type": "integer",
+            "title": "Sheet Id",
+            "description": "The ID of the sheet."
+          },
+          "tabColor": {
+            "$ref": "#/$defs/Color",
+            "title": "Tab Color",
+            "description": "Tab color (deprecated)."
+          },
+          "sheetType": {
+            "$ref": "#/$defs/SheetType",
+            "title": "Sheet Type",
+            "description": "The type of sheet."
+          },
+          "rightToLeft": {
+            "type": "boolean",
+            "title": "Right To Left",
+            "description": "True if the sheet is an RTL sheet."
+          },
+          "tabColorStyle": {
+            "$ref": "#/$defs/ColorStyle",
+            "title": "Tab Color Style",
+            "description": "Tab color."
+          },
+          "gridProperties": {
+            "$ref": "#/$defs/GridProperties",
+            "title": "Grid Properties",
+            "description": "Grid properties if this is a grid sheet."
+          },
+          "dataSourceSheetProperties": {
+            "$ref": "#/$defs/DataSourceSheetProperties",
+            "title": "Data Source Sheet Properties",
+            "description": "Data source sheet properties."
+          }
+        },
+        "description": "Properties of a sheet."
+      },
+      "DataSourceColumn": {
+        "type": "object",
+        "title": "DataSourceColumn",
+        "properties": {
+          "formula": {
+            "type": "string",
+            "title": "Formula",
+            "description": "Calculated column formula."
+          },
+          "reference": {
+            "type": "object",
+            "title": "Reference",
+            "description": "Column reference (DataSourceColumnReference).",
+            "additionalProperties": true
+          }
+        },
+        "description": "Column in a data source."
+      },
+      "SpreadsheetTheme": {
+        "type": "object",
+        "title": "SpreadsheetTheme",
+        "properties": {
+          "themeColors": {
+            "type": "array",
+            "items": {
+              "$ref": "#/$defs/ThemeColorPair"
+            },
+            "title": "Theme Colors"
+          },
+          "primaryFontFamily": {
+            "type": "string",
+            "title": "Primary Font Family"
+          }
+        },
+        "description": "Theme applied to the spreadsheet."
+      },
+      "BandingProperties": {
+        "type": "object",
+        "title": "BandingProperties",
+        "properties": {
+          "footerColor": {
+            "$ref": "#/$defs/Color",
+            "title": "Footer Color",
+            "description": "Footer color (deprecated)."
+          },
+          "headerColor": {
+            "$ref": "#/$defs/Color",
+            "title": "Header Color",
+            "description": "Header color (deprecated)."
+          },
+          "firstBandColor": {
+            "$ref": "#/$defs/Color",
+            "title": "First Band Color",
+            "description": "First band color (deprecated)."
+          },
+          "secondBandColor": {
+            "$ref": "#/$defs/Color",
+            "title": "Second Band Color",
+            "description": "Second band color (deprecated)."
+          },
+          "footerColorStyle": {
+            "$ref": "#/$defs/ColorStyle",
+            "title": "Footer Color Style",
+            "description": "Footer color."
+          },
+          "headerColorStyle": {
+            "$ref": "#/$defs/ColorStyle",
+            "title": "Header Color Style",
+            "description": "Header color."
+          },
+          "firstBandColorStyle": {
+            "$ref": "#/$defs/ColorStyle",
+            "title": "First Band Color Style",
+            "description": "First band color."
+          },
+          "secondBandColorStyle": {
+            "$ref": "#/$defs/ColorStyle",
+            "title": "Second Band Color Style",
+            "description": "Second band color."
+          }
+        },
+        "description": "Banding properties."
+      },
+      "DeveloperMetadata": {
+        "type": "object",
+        "title": "DeveloperMetadata",
+        "properties": {
+          "location": {
+            "$ref": "#/$defs/DeveloperMetadataLocation",
+            "title": "Location",
+            "description": "Where the metadata is associated."
+          },
+          "metadataId": {
+            "type": "integer",
+            "title": "Metadata Id",
+            "description": "Spreadsheet-scoped unique identifier."
+          },
+          "visibility": {
+            "$ref": "#/$defs/DeveloperMetadataVisibility",
+            "title": "Visibility",
+            "description": "Required visibility setting."
+          },
+          "metadataKey": {
+            "type": "string",
+            "title": "Metadata Key",
+            "description": "Required metadata identifier."
+          },
+          "metadataValue": {
+            "type": "string",
+            "title": "Metadata Value",
+            "description": "Data value associated with the metadata key."
+          }
+        },
+        "description": "Developer metadata associated with a location."
+      },
+      "DataExecutionStatus": {
+        "type": "object",
+        "title": "DataExecutionStatus",
+        "properties": {
+          "state": {
+            "type": "string",
+            "title": "State",
+            "description": "Execution state."
+          },
+          "errorCode": {
+            "type": "string",
+            "title": "Error Code",
+            "description": "Error code if failed."
+          },
+          "errorMessage": {
+            "type": "string",
+            "title": "Error Message",
+            "description": "Error message if failed."
+          },
+          "lastExecutionTime": {
+            "type": "string",
+            "title": "Last Execution Time",
+            "description": "Last execution time."
+          }
+        },
+        "description": "Status of data execution."
+      },
+      "DataSourceParameter": {
+        "type": "object",
+        "title": "DataSourceParameter",
+        "properties": {
+          "name": {
+            "type": "string",
+            "title": "Name",
+            "description": "Parameter name."
+          },
+          "namedRangeId": {
+            "type": "string",
+            "title": "Named Range Id",
+            "description": "Named range ID."
+          }
+        },
+        "description": "Parameter for a data source."
+      },
+      "DimensionProperties": {
+        "type": "object",
+        "title": "DimensionProperties",
+        "properties": {
+          "pixelSize": {
+            "type": "integer",
+            "title": "Pixel Size"
+          },
+          "hiddenByUser": {
+            "type": "boolean",
+            "title": "Hidden By User"
+          },
+          "hiddenByFilter": {
+            "type": "boolean",
+            "title": "Hidden By Filter"
+          },
+          "developerMetadata": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "additionalProperties": true
+            },
+            "title": "Developer Metadata"
+          },
+          "dataSourceColumnReference": {
+            "type": "object",
+            "title": "Data Source Column Reference",
+            "additionalProperties": true
+          }
+        },
+        "description": "Properties about a dimension (row or column)."
+      },
+      "LookerDataSourceSpec": {
+        "type": "object",
+        "title": "LookerDataSourceSpec",
+        "properties": {
+          "modelName": {
+            "type": "string",
+            "title": "Model Name",
+            "description": "Model name."
+          },
+          "exploreUri": {
+            "type": "string",
+            "title": "Explore Uri",
+            "description": "Explore URI."
+          },
+          "exploreName": {
+            "type": "string",
+            "title": "Explore Name",
+            "description": "Explore name."
+          },
+          "instanceUri": {
+            "type": "string",
+            "title": "Instance Uri",
+            "description": "Looker instance URI."
+          }
+        },
+        "description": "Looker data source specification."
+      },
+      "ConditionalFormatRule": {
+        "type": "object",
+        "title": "ConditionalFormatRule",
+        "properties": {
+          "ranges": {
+            "type": "array",
+            "items": {
+              "$ref": "#/$defs/GridRange"
+            },
+            "title": "Ranges",
+            "description": "Ranges to format."
+          },
+          "booleanRule": {
+            "$ref": "#/$defs/BooleanRule",
+            "title": "Boolean Rule",
+            "description": "Boolean rule."
+          },
+          "gradientRule": {
+            "$ref": "#/$defs/GradientRule",
+            "title": "Gradient Rule",
+            "description": "Gradient rule."
+          }
+        },
+        "description": "Conditional format rule."
+      },
+      "RecalculationInterval": {
+        "enum": [
+          "ON_CHANGE",
+          "MINUTE",
+          "HOUR"
+        ],
+        "type": "string",
+        "title": "RecalculationInterval",
+        "description": "Amount of time to wait before volatile functions are recalculated."
+      },
+      "SpreadsheetProperties": {
+        "type": "object",
+        "title": "SpreadsheetProperties",
+        "properties": {
+          "title": {
+            "type": "string",
+            "title": "Title",
+            "description": "The title of the spreadsheet."
+          },
+          "locale": {
+            "type": "string",
+            "title": "Locale",
+            "description": "The spreadsheet's locale in ISO 639 format."
+          },
+          "timeZone": {
+            "type": "string",
+            "title": "Time Zone",
+            "description": "The time zone of the spreadsheet in CLDR format."
+          },
+          "autoRecalc": {
+            "$ref": "#/$defs/RecalculationInterval",
+            "title": "Auto Recalc",
+            "description": "The amount of time to wait before volatile functions are recalculated."
+          },
+          "defaultFormat": {
+            "$ref": "#/$defs/CellFormat",
+            "title": "Default Format",
+            "description": "Default formatting applied across all spreadsheet cells."
+          },
+          "spreadsheetTheme": {
+            "$ref": "#/$defs/SpreadsheetTheme",
+            "title": "Spreadsheet Theme",
+            "description": "Theme applied to the spreadsheet."
+          },
+          "iterativeCalculationSettings": {
+            "$ref": "#/$defs/IterativeCalculationSettings",
+            "title": "Iterative Calculation Settings",
+            "description": "Configures how circular references are resolved."
+          },
+          "importFunctionsExternalUrlAccessAllowed": {
+            "type": "boolean",
+            "title": "Import Functions External Url Access Allowed",
+            "description": "Controls external URL access for image and import functions."
+          }
+        },
+        "description": "Overall spreadsheet properties."
+      },
+      "BigQueryDataSourceSpec": {
+        "type": "object",
+        "title": "BigQueryDataSourceSpec",
+        "properties": {
+          "projectId": {
+            "type": "string",
+            "title": "Project Id",
+            "description": "BigQuery project ID."
+          },
+          "querySpec": {
+            "type": "object",
+            "title": "Query Spec",
+            "description": "Query specification.",
+            "additionalProperties": true
+          },
+          "tableSpec": {
+            "type": "object",
+            "title": "Table Spec",
+            "description": "Table specification.",
+            "additionalProperties": true
+          }
+        },
+        "description": "BigQuery data source specification."
+      },
+      "DataSourceRefreshScope": {
+        "enum": [
+          "ALL_DATA_SOURCES"
+        ],
+        "type": "string",
+        "title": "DataSourceRefreshScope",
+        "description": "Scope of refresh."
+      },
+      "EmbeddedObjectPosition": {
+        "type": "object",
+        "title": "EmbeddedObjectPosition",
+        "properties": {
+          "sheetId": {
+            "type": "integer",
+            "title": "Sheet Id"
+          },
+          "newSheet": {
+            "type": "boolean",
+            "title": "New Sheet"
+          },
+          "overlayPosition": {
+            "type": "object",
+            "title": "Overlay Position",
+            "additionalProperties": true
+          }
+        },
+        "description": "Position of an embedded object."
+      },
+      "DataSourceRefreshSchedule": {
+        "type": "object",
+        "title": "DataSourceRefreshSchedule",
+        "properties": {
+          "enabled": {
+            "type": "boolean",
+            "title": "Enabled",
+            "description": "True if the refresh schedule is enabled."
+          },
+          "nextRun": {
+            "$ref": "#/$defs/Interval",
+            "title": "Next Run",
+            "description": "Output only. The time interval of the next run."
+          },
+          "refreshScope": {
+            "$ref": "#/$defs/DataSourceRefreshScope",
+            "title": "Refresh Scope",
+            "description": "The scope of the refresh."
+          },
+          "dailySchedule": {
+            "type": "object",
+            "title": "Daily Schedule",
+            "description": "Daily refresh schedule.",
+            "additionalProperties": true
+          },
+          "weeklySchedule": {
+            "type": "object",
+            "title": "Weekly Schedule",
+            "description": "Weekly refresh schedule.",
+            "additionalProperties": true
+          },
+          "monthlySchedule": {
+            "type": "object",
+            "title": "Monthly Schedule",
+            "description": "Monthly refresh schedule.",
+            "additionalProperties": true
+          }
+        },
+        "description": "Schedule for refreshing data sources."
+      },
+      "DataSourceSheetProperties": {
+        "type": "object",
+        "title": "DataSourceSheetProperties",
+        "properties": {
+          "columns": {
+            "type": "array",
+            "items": {
+              "$ref": "#/$defs/DataSourceColumn"
+            },
+            "title": "Columns",
+            "description": "Data source columns."
+          },
+          "dataSourceId": {
+            "type": "string",
+            "title": "Data Source Id",
+            "description": "Data source ID."
+          },
+          "dataExecutionStatus": {
+            "$ref": "#/$defs/DataExecutionStatus",
+            "title": "Data Execution Status",
+            "description": "Data execution status."
+          }
+        },
+        "description": "Properties specific to data source sheets."
+      },
+      "DeveloperMetadataLocation": {
+        "type": "object",
+        "title": "DeveloperMetadataLocation",
+        "properties": {
+          "sheetId": {
+            "type": "integer",
+            "title": "Sheet Id",
+            "description": "Sheet identifier."
+          },
+          "spreadsheet": {
+            "type": "boolean",
+            "title": "Spreadsheet",
+            "description": "True when associated with entire spreadsheet."
+          },
+          "locationType": {
+            "$ref": "#/$defs/DeveloperMetadataLocationType",
+            "title": "Location Type",
+            "description": "The type of location."
+          },
+          "dimensionRange": {
+            "$ref": "#/$defs/DimensionRange",
+            "title": "Dimension Range",
+            "description": "Single row or column reference."
+          }
+        },
+        "description": "Location of developer metadata."
+      },
+      "GetSpreadsheetInfoResponse": {
+        "type": "object",
+        "title": "GetSpreadsheetInfoResponse",
+        "required": [
+          "spreadsheetId"
+        ],
+        "properties": {
+          "sheets": {
+            "type": "array",
+            "items": {
+              "$ref": "#/$defs/Sheet"
+            },
+            "title": "Sheets",
+            "description": "Sheets (tabs) in the spreadsheet with per-sheet properties like sheetId, title, index, sheetType, gridProperties, and more."
+          },
+          "properties": {
+            "$ref": "#/$defs/SpreadsheetProperties",
+            "title": "Properties",
+            "description": "Overall spreadsheet properties including title, locale, timeZone, autoRecalc, defaultFormat, iterativeCalculationSettings, spreadsheetTheme, importFunctionsExternalUrlAccessAllowed."
+          },
+          "dataSources": {
+            "type": "array",
+            "items": {
+              "$ref": "#/$defs/DataSource"
+            },
+            "title": "Data Sources",
+            "description": "External data sources connected with the spreadsheet (e.g., BigQuery, Looker)."
+          },
+          "display_url": {
+            "type": "string",
+            "title": "Display Url",
+            "description": "The display URL for the spreadsheet. This is the URL that can be opened in a browser to view the spreadsheet."
+          },
+          "namedRanges": {
+            "type": "array",
+            "items": {
+              "$ref": "#/$defs/NamedRange"
+            },
+            "title": "Named Ranges",
+            "description": "Named ranges defined in the spreadsheet."
+          },
+          "spreadsheetId": {
+            "type": "string",
+            "title": "Spreadsheet Id",
+            "description": "The spreadsheet ID. Read-only."
+          },
+          "spreadsheetUrl": {
+            "type": "string",
+            "title": "Spreadsheet Url",
+            "description": "The URL of the spreadsheet. Read-only."
+          },
+          "developerMetadata": {
+            "type": "array",
+            "items": {
+              "$ref": "#/$defs/DeveloperMetadata"
+            },
+            "title": "Developer Metadata",
+            "description": "Spreadsheet-level developer metadata entries."
+          },
+          "dataSourceSchedules": {
+            "type": "array",
+            "items": {
+              "$ref": "#/$defs/DataSourceRefreshSchedule"
+            },
+            "title": "Data Source Schedules",
+            "description": "Refresh schedules for external data sources (output only)."
+          }
+        }
+      },
+      "DeveloperMetadataVisibility": {
+        "enum": [
+          "DOCUMENT",
+          "PROJECT"
+        ],
+        "type": "string",
+        "title": "DeveloperMetadataVisibility",
+        "description": "Visibility of developer metadata."
+      },
+      "IterativeCalculationSettings": {
+        "type": "object",
+        "title": "IterativeCalculationSettings",
+        "properties": {
+          "maxIterations": {
+            "type": "integer",
+            "title": "Max Iterations"
+          },
+          "convergenceThreshold": {
+            "type": "number",
+            "title": "Convergence Threshold"
+          }
+        },
+        "description": "Settings for iterative calculation."
+      },
+      "DeveloperMetadataLocationType": {
+        "enum": [
+          "ROW",
+          "COLUMN",
+          "SHEET",
+          "SPREADSHEET"
+        ],
+        "type": "string",
+        "title": "DeveloperMetadataLocationType",
+        "description": "Type of location for developer metadata."
+      }
+    },
+    "title": "GetSpreadsheetInfoResponseWrapper",
+    "required": [
+      "data",
+      "successful"
+    ],
+    "properties": {
+      "data": {
+        "$ref": "#/$defs/GetSpreadsheetInfoResponse",
+        "title": "Data",
+        "description": "Data from the action execution"
+      },
+      "error": {
+        "type": "string",
+        "title": "Error",
+        "description": "Error if any occurred during the execution of the action"
+      },
+      "successful": {
+        "type": "boolean",
+        "title": "Successful",
+        "description": "Whether or not the action execution was successful or not"
+      }
+    }
+  }
+}

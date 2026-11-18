@@ -1,0 +1,255 @@
+{
+  "slug": "GMAIL_FETCH_EMAILS",
+  "version": "20261116_00",
+  "description": "Lists Gmail messages with query and label filtering, pagination, and optional message details. Individual detail fetches returning 404, 429, or 503 are skipped, so a page can contain fewer messages than the list result.",
+  "input_parameters": {
+    "type": "object",
+    "title": "FetchEmailsRequest",
+    "properties": {
+      "query": {
+        "type": "string",
+        "title": "Query",
+        "examples": [
+          "from:john@example.com is:unread",
+          "subject:meeting has:attachment",
+          "after:2024/01/01 before:2024/02/01",
+          "is:snoozed",
+          "is:important OR is:starred",
+          "label:work -label:spam"
+        ],
+        "description": "Gmail advanced search query (e.g., 'from:user subject:meeting'). Supported operators: 'from:', 'to:', 'subject:', 'label:', 'has:', 'is:', 'in:', 'category:', 'after:YYYY/MM/DD', 'before:YYYY/MM/DD', AND/OR/NOT. IMPORTANT - 'is:' vs 'label:' usage: Use 'is:' for special mail states: is:snoozed, is:unread, is:read, is:starred, is:important. Use 'label:' ONLY for user-created labels (e.g., 'label:work', 'label:projects'). Note: 'muted' may work with both 'is:muted' and 'label:muted' based on community reports. Common mistake: 'label:snoozed' is WRONG - use 'is:snoozed' instead. Use quotes for exact phrases. Omit for no query filter. after:/before: evaluate whole calendar days in UTC; before: is exclusive — adjust for local timezone to avoid off-by-one-day gaps.",
+        "human_parameter_name": "Search query",
+        "human_parameter_description": "Input a search term to filter your emails. Use 'is:' for special states (is:snoozed, is:unread, is:read, is:starred, is:important). Use 'label:' only for user-created labels (exception: 'muted' may work with both)."
+      },
+      "user_id": {
+        "type": "string",
+        "title": "User Id",
+        "default": "me",
+        "examples": [
+          "me",
+          "user@example.com"
+        ],
+        "description": "User's email address or 'me' for the authenticated user. Non-'me' addresses require domain-level delegation; without it, authentication or not-found errors result.",
+        "human_parameter_name": "User ID",
+        "human_parameter_description": "Provide the email address of the user whose mailbox you want to access. You can use 'me' to refer to your own mailbox."
+      },
+      "verbose": {
+        "type": "boolean",
+        "title": "Verbose",
+        "default": true,
+        "examples": [
+          true,
+          false
+        ],
+        "description": "If false, uses optimized concurrent metadata fetching for faster performance (~75% improvement). If true, uses standard detailed message fetching. When false, only essential fields (subject, sender, recipient, time, labels) are guaranteed. Body content and attachment details require verbose=true even when include_payload=true.",
+        "human_parameter_name": "Verbose mode?",
+        "human_parameter_description": "Select this to get detailed information for each email or to speed up the process and get just the basics."
+      },
+      "ids_only": {
+        "type": "boolean",
+        "title": "Ids Only",
+        "default": false,
+        "examples": [
+          true,
+          false
+        ],
+        "description": "If true, only returns message IDs from the list API without fetching individual message details. Fastest option for getting just message IDs and thread IDs.",
+        "human_parameter_name": "IDs only?",
+        "human_parameter_description": "Use this option if you just want the IDs of emails without loading their full details, making the request quicker."
+      },
+      "label_ids": {
+        "type": "array",
+        "items": {
+          "type": "string"
+        },
+        "title": "Label Ids",
+        "examples": [
+          "INBOX",
+          "UNREAD",
+          "Label_123456"
+        ],
+        "description": "Filter by label IDs; only messages with all specified labels are returned (AND logic). Optional - omit or use empty list to fetch all messages without label filtering. System label IDs: 'INBOX', 'SPAM', 'TRASH', 'UNREAD', 'STARRED', 'IMPORTANT', 'CATEGORY_PRIMARY' (alias 'CATEGORY_PERSONAL'), 'CATEGORY_SOCIAL', 'CATEGORY_PROMOTIONS', 'CATEGORY_UPDATES', 'CATEGORY_FORUMS'. For custom/user-created labels, you MUST use the label ID (e.g., 'Label_123456'), NOT the display name. Use the 'listLabels' action to find label IDs for custom labels. Combining label_ids with label: in query applies AND logic across both, which can silently over-restrict results; use one strategy consistently.",
+        "human_parameter_name": "Label IDs",
+        "human_parameter_description": "List the label IDs to filter which messages to fetch. System labels (INBOX, SPAM, etc.) can be used directly by name. For custom labels, you must use the listLabels action first to get the label ID - do not use the label name you see in Gmail."
+      },
+      "page_token": {
+        "type": "string",
+        "title": "Page Token",
+        "description": "Token for retrieving a specific page, obtained from a previous response's `nextPageToken`. Must be a valid opaque token string from a previous API response. Do not pass arbitrary values. Omit for the first page. Loop calls using nextPageToken until it is absent to avoid silently missing messages. resultSizeEstimate is approximate — do not use as a stopping condition.",
+        "human_parameter_name": "Page token",
+        "human_parameter_description": "If you've paginated results, use this token to get the next set of messages. Leave blank for the first page."
+      },
+      "max_results": {
+        "type": "integer",
+        "title": "Max Results",
+        "default": 1,
+        "maximum": 500,
+        "minimum": 1,
+        "examples": [
+          "10",
+          "100",
+          "500"
+        ],
+        "description": "Maximum number of messages to retrieve per page. Default of 1 retrieves only a single message; set higher for practical use. Hard cap is 500 per page.",
+        "human_parameter_name": "Maximum results",
+        "human_parameter_description": "Specify how many email messages you want to retrieve in one request, from 1 to 500."
+      },
+      "include_payload": {
+        "type": "boolean",
+        "title": "Include Payload",
+        "default": true,
+        "examples": [
+          true,
+          false
+        ],
+        "description": "Set to true to include full message payload (headers, body, attachments); false for metadata only. payload may still be null even when true; use GMAIL_FETCH_MESSAGE_BY_MESSAGE_ID for guaranteed complete content. When payload is present, bodies are base64url-encoded in payload.parts; replace '-'→'+' and '_'→'/' and fix padding before decoding, and check both text/plain and text/html parts.",
+        "human_parameter_name": "Include full payload?",
+        "human_parameter_description": "Choose whether to get the full content of each email, including attachments and body, or just the essential metadata."
+      },
+      "include_spam_trash": {
+        "type": "boolean",
+        "title": "Include Spam Trash",
+        "default": false,
+        "examples": [
+          true,
+          false
+        ],
+        "description": "Set to true to include messages from 'SPAM' and 'TRASH'.",
+        "human_parameter_name": "Include spam and trash?",
+        "human_parameter_description": "Decide if you want to see emails that are normally filtered into your SPAM or TRASH folders."
+      }
+    }
+  },
+  "output_parameters": {
+    "type": "object",
+    "$defs": {
+      "MessageBody": {
+        "type": "object",
+        "title": "MessageBody",
+        "properties": {
+          "to": {
+            "type": "string",
+            "title": "To",
+            "description": "The recipient of the message"
+          },
+          "sender": {
+            "type": "string",
+            "title": "Sender",
+            "description": "The sender of the message"
+          },
+          "payload": {
+            "type": "object",
+            "title": "Payload",
+            "description": "The payload of the message",
+            "additionalProperties": true
+          },
+          "preview": {
+            "type": "object",
+            "title": "Preview",
+            "description": "The preview of the message",
+            "additionalProperties": true
+          },
+          "subject": {
+            "type": "string",
+            "title": "Subject",
+            "description": "The subject of the message"
+          },
+          "labelIds": {
+            "type": "array",
+            "items": {},
+            "title": "Label Ids",
+            "description": "The label IDs of the message"
+          },
+          "threadId": {
+            "type": "string",
+            "title": "Thread Id",
+            "description": "The thread ID of the message"
+          },
+          "messageId": {
+            "type": "string",
+            "title": "Message Id",
+            "description": "The message ID of the message"
+          },
+          "display_url": {
+            "type": "string",
+            "title": "Display Url",
+            "description": "Web UI link for this resource - clickable URL pointing to the Gmail web interface"
+          },
+          "messageText": {
+            "type": "string",
+            "title": "Message Text",
+            "description": "The text of the message"
+          },
+          "attachmentList": {
+            "type": "array",
+            "items": {},
+            "title": "Attachment List",
+            "description": "The list of attachments"
+          },
+          "messageTimestamp": {
+            "type": "string",
+            "title": "Message Timestamp",
+            "description": "The timestamp of the message"
+          }
+        },
+        "description": "This model represents the body a Gmail message."
+      },
+      "FetchEmailsResponse": {
+        "type": "object",
+        "title": "FetchEmailsResponse",
+        "required": [
+          "nextPageToken",
+          "resultSizeEstimate",
+          "messages"
+        ],
+        "properties": {
+          "messages": {
+            "type": "array",
+            "items": {
+              "$ref": "#/$defs/MessageBody"
+            },
+            "title": "Messages",
+            "description": "List of retrieved email messages. Includes full content if `include_payload` was true, otherwise metadata."
+          },
+          "nextPageToken": {
+            "type": "string",
+            "title": "Next Page Token",
+            "description": "Token for the next page of results; use in subsequent `page_token` request. Empty if no more results."
+          },
+          "resultSizeEstimate": {
+            "type": "integer",
+            "title": "Result Size Estimate",
+            "description": "Estimated total messages matching the query (not just this page)."
+          },
+          "composio_execution_message": {
+            "type": "string",
+            "title": "Composio Execution Message",
+            "description": "Helpful guidance message when search returns empty results. Contains hints about potential query issues like future dates, narrow time windows, or complex queries."
+          }
+        }
+      }
+    },
+    "title": "FetchEmailsResponseWrapper",
+    "required": [
+      "data",
+      "successful"
+    ],
+    "properties": {
+      "data": {
+        "$ref": "#/$defs/FetchEmailsResponse",
+        "title": "Data",
+        "description": "Data from the action execution"
+      },
+      "error": {
+        "type": "string",
+        "title": "Error",
+        "description": "Error if any occurred during the execution of the action"
+      },
+      "successful": {
+        "type": "boolean",
+        "title": "Successful",
+        "description": "Whether or not the action execution was successful or not"
+      }
+    }
+  }
+}

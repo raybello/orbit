@@ -93,9 +93,18 @@ api.get('/auth/me', (c) => {
 
 api.patch('/auth/me', requireUser, async (c) => {
   const userId = c.get('user').id;
-  const body = await c.req.json() as { avatarUrl?: string | null };
+  const body = await c.req.json() as { avatarUrl?: string | null; timezone?: unknown };
   if (body.avatarUrl !== undefined) {
     db.prepare('UPDATE users SET avatar_url=? WHERE id=?').run(body.avatarUrl ?? null, userId);
+  }
+  // The device's timezone, so bots read and write times in the person's own time.
+  if (typeof body.timezone === 'string' && body.timezone.length <= 64) {
+    try {
+      new Intl.DateTimeFormat('en', { timeZone: body.timezone });
+      db.prepare('UPDATE users SET timezone=? WHERE id=?').run(body.timezone, userId);
+    } catch {
+      return c.json({ error: 'Not a timezone.' }, 400);
+    }
   }
   return c.json({ user: { ...c.get('user'), avatarUrl: body.avatarUrl ?? c.get('user').avatarUrl } });
 });
