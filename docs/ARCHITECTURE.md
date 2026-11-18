@@ -16,12 +16,14 @@ browser ── HTTP + SSE ──► server ── POST /v1/responses ──► H
 | API + realtime | `server/src/routes*.ts`, `lib/hub.ts` | JSON over HTTP, plus one Server-Sent Events stream per user (`GET /api/events`) carrying row updates, live state, roster changes and computer state |
 | Turns | `server/src/agent/loop.ts` | Per-Bot serial queue. A turn posts the message to the Bot's Hermes gateway (`/v1/responses`, streaming) and turns the event stream into rows (messages, tool calls) and live state (what the Bot is doing now). Before each turn it makes sure the Bot's screen is ready |
 | Engines | `server/src/engine.ts` | Which Hermes runs which Bot. The **primary** engine is the gateway that already runs on the computer; the app only calls its API. A **managed** engine is a Hermes home under `ENGINES_DIR/<botId>` with its own `hermes gateway run`, its own port (from 8650), credentials, model and browser helper (`BH_HOME`). Also: model and provider settings, and opening Hermes' subscription sign-in in a terminal on the Bot's screen |
-| App tools | `server/src/mcp.ts`, `agent/tools.ts` | An MCP endpoint per Bot (`POST /mcp/<botId>`, `POST /mcp/primary`; bearer token derived from `SESSION_SECRET`). Tools: `x_search`, `save_file`, routines, tasks, check-ins, `send_to_bot`, group chats, `ask_user`, `request_app_connection`, plus the user's Composio tools |
+| App tools | `server/src/mcp.ts`, `agent/tools.ts` | An MCP endpoint per Bot (`POST /mcp/<botId>`, `POST /mcp/primary`; bearer token derived from `SESSION_SECRET`). Tools: `x_search`, `save_file`, routines, tasks, check-ins, `calendar_list`, `send_to_bot`, group chats, `ask_user`, `request_app_connection`, plus the user's Composio tools. `agent/prompt.ts` states each Bot's core capabilities and, per connected Google app, a short action sheet (`agent/app-sheets.ts`) checked against Composio's schemas |
 | Memory | `server/src/engine-memory.ts` | Memory lives in each Bot's Hermes home (`memories/MEMORY.md`, `USER.md`). The app shows the entries and lets the user remove one |
 | Computers | `server/src/computer-provider.ts`, `computer-provider-registry.ts`, `computer.ts`, `docker-provider.ts`, `docker/*` | `ComputerProvider` is the only way the rest of the server reaches a Bot's computer. `OrgoComputerProvider` (`computer.ts`) keeps the shared Orgo computer: the primary Bot uses the default screen, every other Bot leases an Orgo screen. `DockerComputerProvider` gives a managed Bot its own container (Xvfb + x11vnc + Chrome, `/home/bot` bind-mounted from `COMPUTER_HOME_DIR/homes/<botId>`), and suspends it after an idle timeout. Which one a Bot uses is fixed in `bot_computers` when the Bot is created; see `docs/per-bot-computers.md` |
 | Screens | `server/src/desk.ts`, `box.ts`, `server/box/*` | `desk.ts` installs the scripts in `server/box/` under `/opt/hq` and calls them through a `Box` to dress a screen: wallpaper, dock, light theme, a Chrome with its own profile and DevTools port (9200 + display number), and a home screen as the new tab page. `box.ts` runs commands locally (`HQ_LOCAL=1`), through Orgo's API, or inside a container |
 | Viewer | `server/src/vnc.ts` | WebSocket relay between the browser (noVNC) and the screen's VNC server, over Orgo's websockify or a container's x11vnc port. The server does the VNC auth, so the computer's password never reaches the browser. In *watch* mode, keyboard, pointer and clipboard messages are dropped on the server; a control viewer may type |
-| Apps | `server/src/composio.ts`, `triggers.ts` | Catalog, per-user sessions, connect links, tool execution, and triggers for event routines. Sign-in uses a Composio-managed Google connection |
+| Apps | `server/src/composio.ts`, `triggers.ts` | Catalog, per-user sessions, connect links, tool execution, and triggers for event routines. Sign-in uses a Composio-managed Google connection. The server's own Google calls (`runAction`) are pinned to one toolkit version |
+| Review cards | `server/src/review/*`, `domain/google-actions.ts` | What each Gmail, Calendar, Sheets and Docs action is (read, runs at once, or reviewed), and for reviewed ones how the approval card shows it and applies the person's edits. Drafts (`review/drafts.ts`) and created or changed files (`review/files.ts`) appear in the chat |
+| Calendar | `server/src/calendar/*`, `routes-calendar.ts` | The encrypted Google Calendar mirror and its sync, the person's own Google event changes from Orbit, and Orbit events made from Google events (`calendar/links.ts`) |
 | Scheduling | `server/src/routines.ts`, `proactive.ts` | Cron routines, event routines, and check-ins for the primary Bot. Each run is a turn |
 | Voice | `server/src/voice.ts`, `web/src/voice/*` | Mints short-lived xAI realtime client secrets; the browser connects to xAI directly. The voice agent hands real work to the Bot's turn queue and speaks the result. Also proxies TTS previews and dictation |
 | UI | `web/src` | React + zustand. Sidebar, chat with a "thinking" chip that follows the Bot's activity, details panel (screen preview, activity, tasks, Library, engine), settings, viewer, voice call bar |
@@ -55,9 +57,11 @@ The model's own history is Hermes' business; the app keeps only what it shows.
 
 Approvals happen inside the MCP call, so they work the same for every engine:
 
-- Composio tools that only read run at once.
+- Composio actions that only read run at once. For Gmail, Calendar, Sheets and Docs an explicit catalogue (`domain/google-actions.ts`) decides instead of the action's name: writing an email draft and creating a new sheet or doc also run at once.
 - Anything else posts an **approval card** and the tool call waits. **Allow** runs it once, **Always allow** stores a per-tool policy, **Don't allow** returns a refusal that tells the agent not to retry.
-- A new user message, or no answer in time, closes the card and the call returns "skipped".
+- Sending email always asks: a stored "Always allow" does not cover it and the card does not offer it, unless the person turned on **per-bot Always allow** for that Bot (`bots.always_allow`), in which case "Always allow for <Bot>" is kept for that Bot only (`bot_policies`).
+- For a Google action the card shows what will happen (the email, the event and what it was, the cells before and after, the text) and the person may edit it before allowing. What runs is their version, checked by the action's review adapter; the result tells the Bot what changed. A batch call gets one card per action that asks. Every calendar change runs as a patch, so a Bot's `UPDATE_EVENT` cannot drop guests.
+- A new user message, or no answer in time, closes the card and the call returns "skipped". Editing keeps the call waiting, up to two hours.
 
 Not covered: what a Bot does through its browser or shell, and Hermes' own prompts for risky commands.
 
@@ -69,7 +73,9 @@ Not covered: what a Bot does through its browser or shell, and Hermes' own promp
 
 ## Data
 
-SQLite (`DB_PATH`, WAL): users and sessions, Bots, rows, approvals and policies, routines, tasks, skills, screen leases, per-Bot computers and their screens, Composio session ids. Each managed Bot's Hermes home is under `ENGINES_DIR`. On the computer: Chrome profiles in `/root/grokbot/profiles/<botId>`, Library files in `/root/grokbot/files/<botId>`. Deleting a Bot removes its gateway, home, profile, files and screen.
+SQLite (`DB_PATH`, WAL): users and sessions, Bots, rows, approvals and policies (and per-bot policies), routines, tasks, skills, screen leases, per-Bot computers and their screens, Composio session ids, and the Google Calendar mirror. Each managed Bot's Hermes home is under `ENGINES_DIR`. On the computer: Chrome profiles in `/root/grokbot/profiles/<botId>`, Library files in `/root/grokbot/files/<botId>`. Deleting a Bot removes its gateway, home, profile, files and screen.
+
+The Google Calendar mirror (`gcal_calendars`, `gcal_events`) and the snapshot an Orbit event keeps of the Google event it was made from (`routines.parent_sealed`) are encrypted with `DB_ENCRYPTION_KEY` (AES-256-GCM, bound to their row); rows are found by HMAC keys, so only times and flags are stored readable. Without the key the mirror is off.
 
 Secrets live in `.env` on the server and in each Hermes home.
 

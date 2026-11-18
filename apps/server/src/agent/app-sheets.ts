@@ -71,4 +71,5 @@ export const MCP_INSTRUCTIONS = `Tools of the person's team app (Orbit): their c
 - Email: write a draft with GMAIL_CREATE_EMAIL_DRAFT; the person sends it from the app. Do not send it yourself.
 - Calendar: read with calendar_list; change events with GOOGLECALENDAR_PATCH_EVENT, never UPDATE_EVENT (it drops guests and details).
 - Times are in the person's timezone unless they say otherwise.
+- If tools are loaded on demand (tool_search / tool_call), find these with tool_search and call them by the exact name it returns.
 - Never say something is done unless a tool result shows it.`;

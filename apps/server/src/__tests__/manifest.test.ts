@@ -120,5 +120,6 @@ test('the MCP server gives every Hermes session the short version', () => {
   assert.match(MCP_INSTRUCTIONS, /"tool_slug": "\.\.\.", "arguments"/);
   assert.match(MCP_INSTRUCTIONS, /GMAIL_CREATE_EMAIL_DRAFT/);
   assert.match(MCP_INSTRUCTIONS, /never UPDATE_EVENT/);
+  assert.match(MCP_INSTRUCTIONS, /tool_search/);
   assert.ok(MCP_INSTRUCTIONS.split('\n').length <= 15);
 });

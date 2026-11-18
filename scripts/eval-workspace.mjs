@@ -206,7 +206,7 @@ async function evalBot(bot, ctx) {
   });
 
   await step('7. write a new doc (no card; a file card appears)', async () => {
-    const from = await say(bot.id, `Write a short Google Doc titled "Orbit eval ${tag} doc" summarising this week's plan in three bullets.`);
+    const from = await say(bot.id, `Create a new Google Doc titled "Orbit eval ${tag} doc" with three bullets: ship the calendar sync, review the eval, plan next week.`);
     const rs = await waitIdle(bot.id, from);
     if (rs.some((r) => pendingCard()(r))) throw new Error('creating a doc asked for approval');
     const notice = rs.find((r) => r.kind === 'notice' && r.body.kind === 'workspace-file');
@@ -237,6 +237,8 @@ async function evalBot(bot, ctx) {
 await signIn();
 const me = (await api('GET', '/auth/me')).user;
 if (!me) throw new Error('not signed in');
+// As a phone or browser would at sign-in: bots give and take times in the person's timezone.
+await api('PATCH', '/auth/me', { timezone: Intl.DateTimeFormat().resolvedOptions().timeZone });
 composioUser = me.id;
 const connected = new Set((await api('GET', '/apps?limit=1')).connected ?? []);
 const missing = ['gmail', 'googlecalendar', 'googlesheets', 'googledocs'].filter((t) => !connected.has(t));

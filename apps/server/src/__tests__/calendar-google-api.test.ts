@@ -141,4 +141,21 @@ test('one calendar for Google and Orbit', async (t) => {
     assert.ok(out.google.some((e: Json) => e.title === 'Design review' && e.location === 'Room 9' && e.calendar === 'Me'));
     assert.ok(out.routines.some((e: Json) => e.title === 'Prep notes'));
   });
+
+  await t.test('a bot whose person just connected Calendar gets events, not "not connected"', async () => {
+    const fresh = await signIn('cal-google-fresh@example.test');
+    composioIO.connected = async () => new Set(['googlecalendar']);
+    try {
+      const r = await app.request(`/mcp/${fresh.botId}`, {
+        method: 'POST',
+        headers: { 'content-type': 'application/json', authorization: `Bearer ${mcpToken(fresh.botId)}` },
+        body: JSON.stringify({ jsonrpc: '2.0', id: 1, method: 'tools/call', params: { name: 'calendar_list', arguments: { from: day(0), to: day(3) } } }),
+      });
+      const out = JSON.parse(((await r.json()) as Json).result.content[0].text);
+      assert.ok(Array.isArray(out.google), `got ${JSON.stringify(out.google)}`);
+      assert.ok(out.google.some((e: Json) => e.title === 'Design review'));
+    } finally {
+      composioIO.connected = async () => new Set();
+    }
+  });
 });

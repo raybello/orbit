@@ -6,7 +6,7 @@ import { env } from '../env.js';
 import { safetyIdentifier } from '../lib/xai.js';
 import { appendRow, getBotRow, listRoutines, toRoutine, describeCron, type RoutineRow } from '../store.js';
 import type { Trigger } from './loop.js';
-import { executeComposio, innerToolCalls, toolkitInfo } from '../composio.js';
+import { connectedToolkits, executeComposio, innerToolCalls, toolkitInfo } from '../composio.js';
 import { classifyGoogleCall, isReadOnlySlug, type ReviewCard } from '../domain/google-actions.js';
 import { scheduleRoutine, unscheduleRoutine } from '../routines.js';
 import { createEventRoutine, deleteEventTrigger, describeEvent, listTriggerTypes } from '../triggers.js';
@@ -18,7 +18,7 @@ import { COMPUTER_TOOLS } from '../computer-tools.js';
 import { RESEARCH_TOOLS } from '../computer-research.js';
 import { BOT_TOOLS } from './bot-tools.js';
 import { VAULT_TOOLS } from '../vault-tools.js';
-import { listCalendars, listMirror, mirrorState } from '../calendar/mirror.js';
+import { listCalendars, listMirror, mirrorState, syncCalendar } from '../calendar/mirror.js';
 import { buildCalendar, type CalendarRoutineRow } from '../routes-calendar.js';
 
 /** Tool arguments as the model sent them: a JSON object, read field by field. */
@@ -245,8 +245,14 @@ export const TOOLS: ToolDef[] = [
         const state = mirrorState();
         if (!state.available) out.google = { unavailable: state.reason };
         else {
-          const cals = new Map(listCalendars(ctx.userId).map((c) => [c.key, c]));
-          if (!cals.size) out.google = { unavailable: 'Google Calendar is not connected or has not synced yet. Use request_app_connection with googlecalendar if the user wants it.' };
+          let cals = new Map(listCalendars(ctx.userId).map((c) => [c.key, c]));
+          // Connected but never synced (just connected, or the scheduler is off): sync now rather than
+          // telling the bot Calendar is not connected.
+          if (!cals.size && (await connectedToolkits(ctx.userId).catch(() => new Set<string>())).has('googlecalendar')) {
+            await syncCalendar(ctx.userId).catch(() => null);
+            cals = new Map(listCalendars(ctx.userId).map((c) => [c.key, c]));
+          }
+          if (!cals.size) out.google = { unavailable: 'Google Calendar is not connected. Use request_app_connection with googlecalendar if the user wants it.' };
           else out.google = listMirror(ctx.userId, from, to).slice(0, 200).map((e) => ({
             title: e.title, start: e.start, end: e.end, all_day: e.allDay, timezone: e.timezone, ...(e.location ? { location: e.location } : {}),
             ...(e.attendees.length ? { guests: e.attendees } : {}), calendar: cals.get(e.calendarKey)?.name, event_id: e.eventId, calendar_id: e.calendarId,

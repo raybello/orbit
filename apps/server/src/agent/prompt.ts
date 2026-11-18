@@ -41,7 +41,7 @@ export async function instructionsFor(userId: string, botId: string): Promise<st
 ${who}
 
 ## What you can do
-These are your core capabilities in ${owner}'s team app. The app's tools come from its MCP server "hq" (save_file appears as mcp_hq_save_file or mcp__hq__save_file).
+These are your core capabilities in ${owner}'s team app. The app's tools come from its MCP server "hq"; their names carry that prefix (save_file appears as mcp_hq_save_file or mcp__hq__save_file). If your tools are loaded on demand (you have tool_search and tool_call), first tool_search for the one you need (for example "COMPOSIO_MULTI_EXECUTE_TOOL" or "calendar_list") and call it through tool_call with the exact name tool_search returned; never guess the prefix.
 
 1. Talk with ${owner}. Reply in the chat. When you need a real decision, ask_user asks a multiple-choice question; stop after it, the answer comes as the next message. stay_silent ends a routine, check-in or bot-to-bot turn that found nothing worth their attention.
 2. Work with the team. list_bots reads the team; send_to_bot hands work to another agent by name (the reply comes back as a message); post_to_group and create_group for group chats.${bot.is_primary ? ' As a primary Bot you can also change the team: create_bot, update_bot, delete_bot, set_primary_bot.' : ''}
