@@ -1,0 +1,17 @@
+{
+  "slug": "GOOGLECALENDAR_REMOVE_ATTENDEE",
+  "ok": false,
+  "ms": 693,
+  "request": {
+    "calendar_id": "id_17",
+    "event_id": "id_22",
+    "attendee_email": "person_1@example.test"
+  },
+  "response": {
+    "data": {
+      "message": "Attendee not found on this event. Provide an attendee email that exists on the event.",
+      "status_code": 200
+    },
+    "error": "Attendee not found on this event. Provide an attendee email that exists on the event."
+  }
+}

@@ -1,0 +1,165 @@
+{
+  "slug": "GOOGLESHEETS_EXECUTE_SQL",
+  "version": "20261116_00",
+  "description": "Deprecated SQL facade for selecting, inserting, updating, and deleting data in automatically detected spreadsheet tables, including limited WITH queries; discovery reads at most 10,000 rows per sheet. For detected header-based tables, the first data row is skipped and update/delete row targeting can be offset.",
+  "input_parameters": {
+    "type": "object",
+    "title": "ExecuteSqlRequest",
+    "required": [
+      "spreadsheet_id",
+      "sql"
+    ],
+    "properties": {
+      "sql": {
+        "type": "string",
+        "title": "Sql",
+        "examples": [
+          "SELECT * FROM \"Sales_Data\" LIMIT 10",
+          "WITH ActiveUsers AS (SELECT * FROM \"Users\" WHERE status = 'active') SELECT name, email FROM ActiveUsers",
+          "INSERT INTO \"Customers\" (name, email) VALUES ('John Doe', 'john@example.com')",
+          "UPDATE \"Inventory\" SET quantity = quantity - 10 WHERE sku = 'ABC123'",
+          "DELETE FROM \"Old_Data\" WHERE date < '2023-01-01'"
+        ],
+        "description": "Complete SQL query to execute. Must begin with SELECT, INSERT, UPDATE, DELETE, or WITH. Supports Common Table Expressions (CTEs) using WITH clause for complex queries. Note: WITH clauses require the sqlglot library for full support; simple SELECT/INSERT/UPDATE/DELETE operations work without it. Use table names (sheet names) in FROM/INTO clauses, not A1 range notation. The query must include proper SQL clauses (e.g., SELECT columns FROM table, not just a column name or condition). Example: SELECT * FROM \"Sheet1\" WHERE A = 'value' (correct) instead of just A = 'value' (incorrect).",
+        "human_parameter_name": "SQL query",
+        "human_parameter_description": "Enter the SQL command you wish to execute on the spreadsheet. This allows you to manipulate data directly using familiar SQL syntax."
+      },
+      "dry_run": {
+        "type": "boolean",
+        "title": "Dry Run",
+        "default": false,
+        "description": "Preview changes without applying them (for write operations)",
+        "human_parameter_name": "Preview changes?",
+        "human_parameter_description": "Select this option if you want to see what changes would be made without actually applying them. It's a safe way to check before executing."
+      },
+      "delete_method": {
+        "enum": [
+          "clear",
+          "remove_rows"
+        ],
+        "type": "string",
+        "title": "Delete Method",
+        "default": "clear",
+        "description": "For DELETE operations: 'clear' preserves row structure, 'remove_rows' shifts data up",
+        "human_parameter_name": "Delete method",
+        "human_parameter_description": "Choose how you want to delete data. 'Clear' removes the content but keeps the structure, while 'remove_rows' deletes rows and shifts the remaining data up."
+      },
+      "spreadsheet_id": {
+        "type": "string",
+        "title": "Spreadsheet Id",
+        "examples": [
+          "1BxiMVs0XRA5nFMdKvBdBZjgmUUqptlbs74OgvE2upms"
+        ],
+        "description": "The unique alphanumeric ID of the Google Spreadsheet extracted from the URL. Format: A long string of letters, numbers, hyphens, and underscores (typically 44 characters). Find it in the URL: https://docs.google.com/spreadsheets/d/{SPREADSHEET_ID}/edit. Must be a valid ID - values like 'auto' are NOT valid and will fail.",
+        "human_parameter_name": "Google Sheets ID",
+        "human_parameter_description": "Provide the unique ID of the Google Spreadsheet you want to work with. This is NOT 'auto' or any placeholder - it must be the actual ID from the spreadsheet URL. Example URL: https://docs.google.com/spreadsheets/d/1BxiMVs0XRA5nFMdKvBdBZjgmUUqptlbs74OgvE2upms/edit - the ID is '1BxiMVs0XRA5nFMdKvBdBZjgmUUqptlbs74OgvE2upms'."
+      }
+    }
+  },
+  "output_parameters": {
+    "type": "object",
+    "$defs": {
+      "TableSchemaColumn": {
+        "type": "object",
+        "title": "TableSchemaColumn",
+        "required": [
+          "name",
+          "type"
+        ],
+        "properties": {
+          "name": {
+            "type": "string",
+            "title": "Name",
+            "description": "Column name."
+          },
+          "type": {
+            "type": "string",
+            "title": "Type",
+            "description": "Column data type as reported by the engine (e.g., 'TEXT', 'INTEGER')."
+          }
+        }
+      },
+      "ExecuteSqlResponse": {
+        "type": "object",
+        "title": "ExecuteSqlResponse",
+        "required": [
+          "affected_rows",
+          "message",
+          "operation",
+          "successful"
+        ],
+        "properties": {
+          "data": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "additionalProperties": true
+            },
+            "title": "Data",
+            "description": "Array of data returned by the executed SQL query. For SELECT, each item is an object representing a row; empty when no rows are returned or for non-SELECT operations."
+          },
+          "error": {
+            "type": "string",
+            "title": "Error",
+            "description": "Error message if an error occurred during execution. Present when successful is false; absent otherwise."
+          },
+          "message": {
+            "type": "string",
+            "title": "Message",
+            "description": "Human-readable status message describing the result of the operation (e.g., 'Retrieved 21 rows')."
+          },
+          "operation": {
+            "type": "string",
+            "title": "Operation",
+            "description": "The SQL operation type executed (e.g., SELECT, INSERT, UPDATE, DELETE)."
+          },
+          "successful": {
+            "type": "boolean",
+            "title": "Successful",
+            "description": "Indicates whether the operation completed successfully."
+          },
+          "display_url": {
+            "type": "string",
+            "title": "Display Url",
+            "description": "URL to view the spreadsheet in Google Sheets web interface."
+          },
+          "table_schema": {
+            "type": "array",
+            "items": {
+              "$ref": "#/$defs/TableSchemaColumn"
+            },
+            "title": "Table Schema",
+            "description": "Array containing table schema information relevant to the operation. For SELECT, describes result set columns; empty array if no columns are returned or for non-SELECT operations."
+          },
+          "affected_rows": {
+            "type": "integer",
+            "title": "Affected Rows",
+            "description": "Number of rows affected by the executed SQL operation. For SELECT operations, this equals the number of rows retrieved; for INSERT/UPDATE/DELETE, it equals the number of rows inserted/updated/deleted."
+          }
+        }
+      }
+    },
+    "title": "ExecuteSqlResponseWrapper",
+    "required": [
+      "data",
+      "successful"
+    ],
+    "properties": {
+      "data": {
+        "$ref": "#/$defs/ExecuteSqlResponse",
+        "title": "Data",
+        "description": "Data from the action execution"
+      },
+      "error": {
+        "type": "string",
+        "title": "Error",
+        "description": "Error if any occurred during the execution of the action"
+      },
+      "successful": {
+        "type": "boolean",
+        "title": "Successful",
+        "description": "Whether or not the action execution was successful or not"
+      }
+    }
+  }
+}

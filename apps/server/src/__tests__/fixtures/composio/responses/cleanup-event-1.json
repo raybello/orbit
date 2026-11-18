@@ -1,0 +1,18 @@
+{
+  "slug": "GOOGLECALENDAR_DELETE_EVENT",
+  "ok": true,
+  "ms": 1141,
+  "request": {
+    "calendar_id": "id_17",
+    "event_id": "id_29",
+    "send_updates": "none"
+  },
+  "response": {
+    "data": {
+      "response_data": {
+        "status": "success"
+      }
+    },
+    "error": null
+  }
+}

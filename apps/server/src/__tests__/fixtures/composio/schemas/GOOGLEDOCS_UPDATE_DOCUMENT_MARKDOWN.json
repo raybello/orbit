@@ -1,0 +1,278 @@
+{
+  "slug": "GOOGLEDOCS_UPDATE_DOCUMENT_MARKDOWN",
+  "version": "20261116_00",
+  "description": "Replaces the body content of a Google Docs tab with rendered Markdown; requires edit permissions. If no tab is specified, the first tab is updated.",
+  "input_parameters": {
+    "type": "object",
+    "title": "UpdateDocumentMarkdownRequest",
+    "required": [
+      "id",
+      "markdown"
+    ],
+    "properties": {
+      "id": {
+        "type": "string",
+        "title": "Id",
+        "examples": [
+          "1BxiMVs0XRA5nFMdKvBdBZjgmUUqptlbs74OgvE2upms",
+          "https://docs.google.com/document/d/1BxiMVs0XRA5nFMdKvBdBZjgmUUqptlbs74OgvE2upms/edit"
+        ],
+        "description": "The unique identifier for the Google Docs document to update. Accepts either a document ID (alphanumeric string, length varies by document age - newer documents typically have 44-character IDs) or a full Google Docs URL (e.g., https://docs.google.com/document/d/{DOCUMENT_ID}/edit). When a URL is provided, the document ID will be automatically extracted.",
+        "human_parameter_name": "Document ID or URL",
+        "human_parameter_description": "The unique identifier or URL of the Google Docs document you want to update. You can paste either the document ID or the full Google Docs URL - the ID will be extracted automatically."
+      },
+      "tab_id": {
+        "type": "string",
+        "title": "Tab Id",
+        "examples": [
+          "t.abc123"
+        ],
+        "description": "Optional tab ID to replace with the rendered Markdown. When omitted, the first tab is updated."
+      },
+      "markdown": {
+        "type": "string",
+        "title": "Markdown",
+        "examples": [
+          "# Document Title\n\nThis is a paragraph with **bold** and *italic* text.\n\n- Unordered list item 1\n- Unordered list item 2\n\n1. Ordered list item 1\n2. Ordered list item 2\n\nAn image: ![Alt text for image](https://www.example.com/image.png)",
+          "## Advanced Markdown\n\n\n# Example Python code\ndef greet(name):\n    print(f'Hello, {name}!')\ngreet('World')\n\n\n| Column A | Column B |\n|----------|----------|\n|   Data 1 |   Data 2 |\n|   Data 3 |   Data 4 |\n\n> This is a blockquote."
+        ],
+        "description": "Markdown content that will replace the document's entire existing content. Supports standard Markdown features.",
+        "human_parameter_name": "New Markdown Text",
+        "human_parameter_description": "The new Markdown content that you want to replace the current content of the document with. Make sure it follows Markdown formatting."
+      }
+    },
+    "description": "Defines the request schema for updating an existing Google Docs document by replacing its content with new text formatted in Markdown."
+  },
+  "output_parameters": {
+    "type": "object",
+    "$defs": {
+      "WriteControl": {
+        "type": "object",
+        "title": "WriteControl",
+        "properties": {
+          "targetRevisionId": {
+            "type": "string",
+            "title": "Target Revision Id",
+            "description": "The target revision ID of the document that the write request was applied to. If collaborator changes occurred after the document was read, changes from this write request will be transformed against the collaborator changes, resulting in a new revision that incorporates both sets of changes."
+          },
+          "requiredRevisionId": {
+            "type": "string",
+            "title": "Required Revision Id",
+            "description": "The revision ID of the document that the write request was applied to. If this is not the latest revision of the document, the request will not be processed and will return a 400 bad request error."
+          }
+        },
+        "description": "Write control information after applying the request.\nOnly one of requiredRevisionId or targetRevisionId should be set."
+      },
+      "ResponseObject": {
+        "type": "object",
+        "title": "ResponseObject",
+        "properties": {
+          "create_footer": {
+            "$ref": "#/$defs/CreateFooterResponse",
+            "title": "Create Footer",
+            "description": "Response from a CreateFooterRequest."
+          },
+          "create_header": {
+            "$ref": "#/$defs/CreateHeaderResponse",
+            "title": "Create Header",
+            "description": "Response from a CreateHeaderRequest."
+          },
+          "create_footnote": {
+            "$ref": "#/$defs/CreateFootnoteResponse",
+            "title": "Create Footnote",
+            "description": "Response from a CreateFootnoteRequest."
+          },
+          "replace_all_text": {
+            "$ref": "#/$defs/ReplaceAllTextResponse",
+            "title": "Replace All Text",
+            "description": "Response from a ReplaceAllTextRequest."
+          },
+          "create_named_range": {
+            "$ref": "#/$defs/CreateNamedRangeResponse",
+            "title": "Create Named Range",
+            "description": "Response from a CreateNamedRangeRequest."
+          },
+          "insert_inline_image": {
+            "$ref": "#/$defs/InsertInlineImageResponse",
+            "title": "Insert Inline Image",
+            "description": "Response from an InsertInlineImageRequest."
+          },
+          "insert_inline_sheets_chart": {
+            "$ref": "#/$defs/InsertInlineSheetsChartResponse",
+            "title": "Insert Inline Sheets Chart",
+            "description": "Response from an InsertInlineSheetsChartRequest."
+          }
+        },
+        "description": "A single response from an update. Contains one of the union field response types.\nRequests that do not return information will have all fields as None."
+      },
+      "CreateFooterResponse": {
+        "type": "object",
+        "title": "CreateFooterResponse",
+        "required": [
+          "footer_id"
+        ],
+        "properties": {
+          "footer_id": {
+            "type": "string",
+            "title": "Footer Id",
+            "description": "The ID of the created footer."
+          }
+        },
+        "description": "Response from a CreateFooterRequest."
+      },
+      "CreateHeaderResponse": {
+        "type": "object",
+        "title": "CreateHeaderResponse",
+        "required": [
+          "header_id"
+        ],
+        "properties": {
+          "header_id": {
+            "type": "string",
+            "title": "Header Id",
+            "description": "The ID of the created header."
+          }
+        },
+        "description": "Response from a CreateHeaderRequest."
+      },
+      "CreateFootnoteResponse": {
+        "type": "object",
+        "title": "CreateFootnoteResponse",
+        "required": [
+          "footnote_id"
+        ],
+        "properties": {
+          "footnote_id": {
+            "type": "string",
+            "title": "Footnote Id",
+            "description": "The ID of the created footnote."
+          }
+        },
+        "description": "Response from a CreateFootnoteRequest."
+      },
+      "ReplaceAllTextResponse": {
+        "type": "object",
+        "title": "ReplaceAllTextResponse",
+        "required": [
+          "occurrences_changed"
+        ],
+        "properties": {
+          "occurrences_changed": {
+            "type": "integer",
+            "title": "Occurrences Changed",
+            "description": "The number of occurrences changed by replacing all text."
+          }
+        },
+        "description": "Response from a ReplaceAllTextRequest."
+      },
+      "CreateNamedRangeResponse": {
+        "type": "object",
+        "title": "CreateNamedRangeResponse",
+        "required": [
+          "named_range_id"
+        ],
+        "properties": {
+          "named_range_id": {
+            "type": "string",
+            "title": "Named Range Id",
+            "description": "The ID of the created named range."
+          }
+        },
+        "description": "Response from a CreateNamedRangeRequest."
+      },
+      "InsertInlineImageResponse": {
+        "type": "object",
+        "title": "InsertInlineImageResponse",
+        "required": [
+          "object_id"
+        ],
+        "properties": {
+          "object_id": {
+            "type": "string",
+            "title": "Object Id",
+            "description": "The ID of the created InlineObject."
+          }
+        },
+        "description": "Response from an InsertInlineImageRequest."
+      },
+      "UpdateDocumentMarkdownResponse": {
+        "type": "object",
+        "title": "UpdateDocumentMarkdownResponse",
+        "required": [
+          "documentId",
+          "document_url",
+          "display_url",
+          "replies"
+        ],
+        "properties": {
+          "replies": {
+            "type": "array",
+            "items": {
+              "$ref": "#/$defs/ResponseObject"
+            },
+            "title": "Replies",
+            "description": "The replies from the updates. Each reply corresponds to a request at the same index. Some requests don't return information and will have empty replies."
+          },
+          "documentId": {
+            "type": "string",
+            "title": "Document Id",
+            "description": "The ID of the document to which the updates were applied."
+          },
+          "display_url": {
+            "type": "string",
+            "title": "Display Url",
+            "description": "The display URL to access and edit the document in Google Docs."
+          },
+          "document_url": {
+            "type": "string",
+            "title": "Document Url",
+            "description": "The URL to access and edit the document in Google Docs."
+          },
+          "write_control": {
+            "$ref": "#/$defs/WriteControl",
+            "title": "Write Control",
+            "description": "The updated write control after applying the request, showing the revision information."
+          }
+        },
+        "description": "Response from documents.batchUpdate method in Google Docs API v1."
+      },
+      "InsertInlineSheetsChartResponse": {
+        "type": "object",
+        "title": "InsertInlineSheetsChartResponse",
+        "required": [
+          "object_id"
+        ],
+        "properties": {
+          "object_id": {
+            "type": "string",
+            "title": "Object Id",
+            "description": "The object ID of the inserted chart."
+          }
+        },
+        "description": "Response from an InsertInlineSheetsChartRequest."
+      }
+    },
+    "title": "UpdateDocumentMarkdownResponseWrapper",
+    "required": [
+      "data",
+      "successful"
+    ],
+    "properties": {
+      "data": {
+        "$ref": "#/$defs/UpdateDocumentMarkdownResponse",
+        "title": "Data",
+        "description": "Data from the action execution"
+      },
+      "error": {
+        "type": "string",
+        "title": "Error",
+        "description": "Error if any occurred during the execution of the action"
+      },
+      "successful": {
+        "type": "boolean",
+        "title": "Successful",
+        "description": "Whether or not the action execution was successful or not"
+      }
+    }
+  }
+}

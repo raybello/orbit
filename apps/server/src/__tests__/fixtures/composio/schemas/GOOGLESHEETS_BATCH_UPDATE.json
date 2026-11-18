@@ -1,0 +1,302 @@
+{
+  "slug": "GOOGLESHEETS_BATCH_UPDATE",
+  "version": "20261116_00",
+  "description": "Deprecated: Writes values to one range in a Google Sheet, or appends rows when no start cell is given. It may expand the sheet grid; if a recognized default sheet name is not found, it uses the first sheet instead.",
+  "input_parameters": {
+    "type": "object",
+    "title": "BatchUpdateRequest",
+    "required": [
+      "spreadsheet_id",
+      "sheet_name",
+      "values"
+    ],
+    "properties": {
+      "values": {
+        "type": "array",
+        "items": {
+          "type": "array",
+          "items": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "integer"
+              },
+              {
+                "type": "number"
+              },
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          }
+        },
+        "title": "Values",
+        "examples": [
+          [
+            [
+              "Item",
+              "Cost",
+              "Stocked",
+              "Ship Date"
+            ],
+            [
+              "Wheel",
+              20.5,
+              true,
+              "2020-06-01"
+            ],
+            [
+              "Screw",
+              0.5,
+              true,
+              "2020-06-03"
+            ],
+            [
+              "Nut",
+              0.25,
+              false,
+              "2020-06-02"
+            ]
+          ]
+        ],
+        "description": "A 2D array of cell values where each inner array represents a row. Values can be strings, numbers, booleans, or None/null for empty cells. Ensure columns are properly aligned across rows.",
+        "human_parameter_name": "Values",
+        "human_parameter_description": "Provide the actual data you want to enter into the sheet, organized in rows and columns."
+      },
+      "sheet_name": {
+        "type": "string",
+        "title": "Sheet Name",
+        "examples": [
+          "Sheet1",
+          "Sales Data",
+          "Budget"
+        ],
+        "description": "The name of the specific sheet (tab) within the spreadsheet to update (required, separate from cell reference). Case-insensitive matching is supported (e.g., 'sheet1' will match 'Sheet1'). Note: Default sheet names are locale-dependent (e.g., 'Sheet1' in English, 'Foglio1' in Italian, 'Hoja 1' in Spanish, '시트1' in Korean, 'Feuille 1' in French). If you specify a common default name like 'Sheet1' and it doesn't exist, the action will automatically use the first sheet in the spreadsheet.",
+        "human_parameter_name": "Sheet Name",
+        "human_parameter_description": "Provide the name of the sheet you want to update. Case-insensitive matching is supported, so 'sheet1' will match 'Sheet1'."
+      },
+      "spreadsheet_id": {
+        "type": "string",
+        "title": "Spreadsheet Id",
+        "examples": [
+          "1BxiMVs0XRA5nFMdKvBdBZjgmUUqptlbs74OgvE2upms"
+        ],
+        "description": "The unique identifier of the Google Sheets spreadsheet to be updated. Must be an alphanumeric string (with hyphens and underscores allowed) typically 44 characters long. Can be found in the spreadsheet URL between '/d/' and '/edit'. Example: 'https://docs.google.com/spreadsheets/d/1BxiMVs0XRA5nFMdKvBdBZjgmUUqptlbs74OgvE2upms/edit' has ID '1BxiMVs0XRA5nFMdKvBdBZjgmUUqptlbs74OgvE2upms'.",
+        "human_parameter_name": "Spreadsheet ID",
+        "human_parameter_description": "The identifier for the Google Sheets document you want to modify. This can typically be found in the URL of the sheet."
+      },
+      "value_input_option": {
+        "enum": [
+          "RAW",
+          "USER_ENTERED"
+        ],
+        "type": "string",
+        "title": "Value Input Option",
+        "default": "USER_ENTERED",
+        "examples": [
+          "USER_ENTERED",
+          "RAW"
+        ],
+        "description": "How input data should be interpreted. 'USER_ENTERED': Values are parsed as if typed by a user (e.g., strings may become numbers/dates, formulas are calculated). 'RAW': Values are stored exactly as provided without parsing (e.g., '123' stays as string, '=SUM(A1:B1)' is not calculated).",
+        "human_parameter_name": "Value Input Option",
+        "human_parameter_description": "Specify how you would like the data to be treated when entered – either as user-typed values or as raw data."
+      },
+      "first_cell_location": {
+        "type": "string",
+        "title": "First Cell Location",
+        "examples": [
+          "A1",
+          "D3",
+          "AA931"
+        ],
+        "description": "The starting cell for the update range, specified as a single cell in A1 notation WITHOUT sheet prefix (e.g., 'A1', 'B2', 'AA931'). The update will extend from this cell to the right and down based on the provided values. Sheet name must be provided separately in the 'sheet_name' field. If omitted or set to null, values are appended as new rows to the sheet. Note: Use only a single cell reference (e.g., 'AA931'), NOT a range (e.g., 'AA931:AF931') or sheet-prefixed notation (e.g., 'Sheet1!A1').",
+        "human_parameter_name": "First Cell Location",
+        "human_parameter_description": "Indicate where the update should start in the sheet. Use coordinates like 'A1' for the top-left cell."
+      },
+      "include_values_in_response": {
+        "type": "boolean",
+        "title": "Include Values In Response",
+        "default": false,
+        "examples": [
+          true,
+          false
+        ],
+        "description": "If set to True, the response will include the updated values in the 'spreadsheet.responses[].updatedData' field. The updatedData object contains 'range' (A1 notation), 'majorDimension' (ROWS), and 'values' (2D array of the actual cell values after the update).",
+        "human_parameter_name": "Include Values in Response?",
+        "human_parameter_description": "Choose whether you want to see the updated values in the response after the operation. When enabled, look for the data in the 'spreadsheet.responses[].updatedData.values' field."
+      }
+    },
+    "description": "Write values to ONE range in a Google Sheet, or append as new rows if no start cell is given.\n\nIMPORTANT: This tool does NOT accept the Google Sheets API's native batch format.\n- WRONG: {\"data\": [{\"range\": \"Sheet1!A1\", \"values\": [[...]]}], ...}  (Google API format)\n- CORRECT: {\"sheet_name\": \"Sheet1\", \"values\": [[...]], \"first_cell_location\": \"A1\", ...}\n\nTo update MULTIPLE ranges, make separate calls to this tool for each range.",
+    "additionalProperties": true
+  },
+  "output_parameters": {
+    "type": "object",
+    "$defs": {
+      "Dimension": {
+        "enum": [
+          "DIMENSION_UNSPECIFIED",
+          "ROWS",
+          "COLUMNS"
+        ],
+        "type": "string",
+        "title": "Dimension",
+        "description": "Dimension enum for Google Sheets API."
+      },
+      "ValueRange": {
+        "type": "object",
+        "title": "ValueRange",
+        "properties": {
+          "range": {
+            "type": "string",
+            "title": "Range",
+            "description": "The range the values cover, in A1 notation (e.g., 'Sheet1!A1:C3')."
+          },
+          "values": {
+            "type": "array",
+            "items": {
+              "type": "array",
+              "items": {}
+            },
+            "title": "Values",
+            "description": "The data values as a 2D array where each inner array represents a row (or column if majorDimension is COLUMNS)."
+          },
+          "majorDimension": {
+            "$ref": "#/$defs/Dimension",
+            "title": "Major Dimension",
+            "description": "Indicates which dimension the values are organized by (ROWS or COLUMNS)."
+          }
+        },
+        "description": "Represents a range of values in a spreadsheet.\n\nThis model matches the Google Sheets API ValueRange object structure."
+      },
+      "BatchUpdateResponse": {
+        "type": "object",
+        "title": "BatchUpdateResponse",
+        "required": [
+          "spreadsheet"
+        ],
+        "properties": {
+          "display_url": {
+            "type": "string",
+            "title": "Display Url",
+            "description": "URL to view the spreadsheet in Google Sheets web interface."
+          },
+          "spreadsheet": {
+            "$ref": "#/$defs/BatchUpdateSpreadsheetWrapper",
+            "title": "Spreadsheet",
+            "description": "Container for aggregated update stats and per-request update replies for the updated spreadsheet."
+          },
+          "composio_execution_message": {
+            "type": "string",
+            "title": "Composio Execution Message",
+            "description": "Optional message explaining any automatic modifications made to the request parameters."
+          }
+        },
+        "description": "Merged response for spreadsheets.batchUpdate focusing on the practical `spreadsheet` wrapper used in this action.\n\nNote: The official Google response may include fields like `spreadsheetId`, `replies`, or `updatedSpreadsheet` when\nincludeSpreadsheetInResponse=true is used. This action returns the practical `spreadsheet` aggregate wrapper\nthat summarizes updates and per-operation responses."
+      },
+      "BatchUpdateOperationResponse": {
+        "type": "object",
+        "title": "BatchUpdateOperationResponse",
+        "properties": {
+          "updatedData": {
+            "$ref": "#/$defs/ValueRange",
+            "title": "Updated Data",
+            "description": "Contains the updated cell values when includeValuesInResponse is True. Will be null when includeValuesInResponse is False or not set."
+          },
+          "updatedRows": {
+            "type": "integer",
+            "title": "Updated Rows",
+            "description": "Number of rows impacted by this operation."
+          },
+          "updatedCells": {
+            "type": "integer",
+            "title": "Updated Cells",
+            "description": "Number of cells that were updated by this operation."
+          },
+          "updatedRange": {
+            "type": "string",
+            "title": "Updated Range",
+            "description": "A1-notation range that was updated by this operation. May be null if the API did not return a specific range."
+          },
+          "spreadsheetId": {
+            "type": "string",
+            "title": "Spreadsheet Id",
+            "description": "The unique ID of the spreadsheet for this specific update response (typically same as the parent spreadsheetId)."
+          },
+          "updatedColumns": {
+            "type": "integer",
+            "title": "Updated Columns",
+            "description": "Number of columns impacted by this operation."
+          }
+        },
+        "description": "Details of a single update operation within the batch.\n\nMirrors the practical per-operation response structure capturing the updated range and counts,\nconsistent with Google Sheets batch update summaries."
+      },
+      "BatchUpdateSpreadsheetWrapper": {
+        "type": "object",
+        "title": "BatchUpdateSpreadsheetWrapper",
+        "properties": {
+          "responses": {
+            "type": "array",
+            "items": {
+              "$ref": "#/$defs/BatchUpdateOperationResponse"
+            },
+            "title": "Responses",
+            "description": "List of individual update responses corresponding to each request in the batch."
+          },
+          "spreadsheetId": {
+            "type": "string",
+            "title": "Spreadsheet Id",
+            "description": "The unique ID of the Google Sheets spreadsheet affected by the batch update."
+          },
+          "totalUpdatedRows": {
+            "type": "integer",
+            "title": "Total Updated Rows",
+            "description": "Aggregate total number of rows impacted across all operations in the batch."
+          },
+          "totalUpdatedCells": {
+            "type": "integer",
+            "title": "Total Updated Cells",
+            "description": "Aggregate total number of cells updated across all operations in the batch."
+          },
+          "totalUpdatedSheets": {
+            "type": "integer",
+            "title": "Total Updated Sheets",
+            "description": "Number of sheets within the spreadsheet that were affected by the batch update."
+          },
+          "totalUpdatedColumns": {
+            "type": "integer",
+            "title": "Total Updated Columns",
+            "description": "Aggregate total number of columns impacted across all operations in the batch."
+          }
+        },
+        "description": "Container for aggregated update stats and per-request update replies for a Google Sheets spreadsheet.\n\nThis mirrors the practical `spreadsheet` wrapper that aggregates the per-operation replies and totals."
+      }
+    },
+    "title": "BatchUpdateResponseWrapper",
+    "required": [
+      "data",
+      "successful"
+    ],
+    "properties": {
+      "data": {
+        "$ref": "#/$defs/BatchUpdateResponse",
+        "title": "Data",
+        "description": "Data from the action execution"
+      },
+      "error": {
+        "type": "string",
+        "title": "Error",
+        "description": "Error if any occurred during the execution of the action"
+      },
+      "successful": {
+        "type": "boolean",
+        "title": "Successful",
+        "description": "Whether or not the action execution was successful or not"
+      }
+    }
+  }
+}

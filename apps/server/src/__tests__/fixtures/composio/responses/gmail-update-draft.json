@@ -1,0 +1,24 @@
+{
+  "slug": "GMAIL_UPDATE_DRAFT",
+  "ok": true,
+  "ms": 982,
+  "request": {
+    "draft_id": "id_2",
+    "subject": "Orbit eval draft 2026-11-18T05:32 (edited)",
+    "body": "Edited version of the draft."
+  },
+  "response": {
+    "data": {
+      "display_url": "https://example.test/link_15",
+      "id": "id_2",
+      "message": {
+        "id": "id_4",
+        "labelIds": [
+          "DRAFT"
+        ],
+        "threadId": "id_4"
+      }
+    },
+    "error": null
+  }
+}

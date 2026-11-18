@@ -137,21 +137,6 @@ CREATE TABLE IF NOT EXISTS composio_sessions (
   user_id TEXT PRIMARY KEY REFERENCES users(id) ON DELETE CASCADE,
   session_id TEXT NOT NULL
 );
-CREATE TABLE IF NOT EXISTS google_tokens (
-  user_id TEXT PRIMARY KEY REFERENCES users(id) ON DELETE CASCADE,
-  access_token_enc TEXT NOT NULL,
-  refresh_token_enc TEXT NOT NULL,
-  expires_at INTEGER NOT NULL,
-  email TEXT,
-  scopes TEXT,
-  updated_at INTEGER NOT NULL
-);
-CREATE TABLE IF NOT EXISTS google_oauth_states (
-  state TEXT PRIMARY KEY,
-  user_id TEXT NOT NULL,
-  code_verifier TEXT NOT NULL,
-  created_at INTEGER NOT NULL
-);
 -- Expo push tokens for the mobile client. A token is unique: re-registering it moves it to the
 -- user who holds the phone now.
 CREATE TABLE IF NOT EXISTS push_tokens (
@@ -181,6 +166,55 @@ addColumn('bots', 'voice_model', "TEXT NOT NULL DEFAULT 'piper-lessac-medium'");
 // portrait (a 512x512 JPEG on the data volume; see voice-audiocpp-endpoints.ts).
 addColumn('bots', 'audiocpp_voice', "TEXT NOT NULL DEFAULT 'american_english_female'");
 addColumn('bots', 'avatar_enabled', 'INTEGER NOT NULL DEFAULT 0');
+// Per-bot "Always allow": off for every bot until the person turns it on. While on, the bot's
+// approval cards offer "Always allow for <Bot>" and what the person allows is kept in bot_policies,
+// for that bot only. Turning it off keeps the list but stops using it.
+addColumn('bots', 'always_allow', 'INTEGER NOT NULL DEFAULT 0');
+// The person's timezone (IANA), sent by their device; it goes into the bots' instructions.
+addColumn('users', 'timezone', 'TEXT');
+// The Google Calendar mirror (calendar/mirror.ts). Everything that names or describes a calendar or an
+// event is sealed with DB_ENCRYPTION_KEY; only opaque keys, times and status are stored in the clear.
+db.exec(`CREATE TABLE IF NOT EXISTS gcal_calendars (
+  user_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  cal_key TEXT NOT NULL,
+  sealed TEXT NOT NULL,
+  color TEXT,
+  is_primary INTEGER NOT NULL DEFAULT 0,
+  enabled INTEGER NOT NULL DEFAULT 0,
+  PRIMARY KEY (user_id, cal_key)
+)`);
+db.exec(`CREATE TABLE IF NOT EXISTS gcal_events (
+  user_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  event_key TEXT NOT NULL,
+  cal_key TEXT NOT NULL,
+  start_ms INTEGER NOT NULL,
+  end_ms INTEGER NOT NULL,
+  all_day INTEGER NOT NULL DEFAULT 0,
+  recurring INTEGER NOT NULL DEFAULT 0,
+  sealed TEXT NOT NULL,
+  payload_hash TEXT NOT NULL,
+  updated_at INTEGER NOT NULL,
+  PRIMARY KEY (user_id, event_key)
+)`);
+db.exec('CREATE INDEX IF NOT EXISTS gcal_events_window ON gcal_events(user_id, start_ms)');
+// An Orbit event made from a Google event (calendar/links.ts): the mirror key of its parent, how long
+// before or after the parent it runs, and a sealed snapshot of the parent for the bot's context.
+addColumn('routines', 'parent_event_key', 'TEXT');
+addColumn('routines', 'parent_offset_ms', 'INTEGER');
+addColumn('routines', 'parent_sealed', 'TEXT');
+db.exec(`CREATE TABLE IF NOT EXISTS gcal_sync (
+  user_id TEXT PRIMARY KEY REFERENCES users(id) ON DELETE CASCADE,
+  last_sync_at INTEGER,
+  last_error TEXT,
+  failures INTEGER NOT NULL DEFAULT 0,
+  next_attempt_at INTEGER NOT NULL DEFAULT 0
+)`);
+db.exec(`CREATE TABLE IF NOT EXISTS bot_policies (
+  bot_id TEXT NOT NULL REFERENCES bots(id) ON DELETE CASCADE,
+  tool TEXT NOT NULL,
+  created_at INTEGER NOT NULL,
+  PRIMARY KEY (bot_id, tool)
+)`);
 addColumn('bots', 'avatar_portrait_path', 'TEXT');
 migrateUnsetVoiceProviders(db);
 // Hermes engine: per-bot model choice, which engine runs the bot ('primary' = the existing agent,

@@ -1,0 +1,90 @@
+{
+  "slug": "GOOGLEDOCS_CREATE_DOCUMENT_MARKDOWN",
+  "ok": true,
+  "ms": 2256,
+  "request": {
+    "title": "Orbit eval doc 2026-11-18T05:32",
+    "markdown_text": "# Weekly notes\n\n- First point\n- Second point\n\nClosing line."
+  },
+  "response": {
+    "data": {
+      "default_tab_id": "id_42",
+      "display_url": "https://example.test/link_1",
+      "documentId": "id_43",
+      "request_data": [
+        {
+          "insertText": {
+            "location": {
+              "index": 1
+            },
+            "text": "Weekly notes\n"
+          }
+        },
+        {
+          "updateParagraphStyle": {
+            "fields": "namedStyleType",
+            "paragraphStyle": {
+              "namedStyleType": "HEADING_1"
+            },
+            "range": {
+              "endIndex": 13,
+              "startIndex": 1
+            }
+          }
+        },
+        {
+          "updateTextStyle": {
+            "fields": "bold",
+            "range": {
+              "endIndex": 13,
+              "startIndex": 1
+            },
+            "textStyle": {
+              "bold": true
+            }
+          }
+        },
+        {
+          "insertText": {
+            "location": {
+              "index": 14
+            },
+            "text": "First point\n"
+          }
+        },
+        {
+          "insertText": {
+            "location": {
+              "index": 26
+            },
+            "text": "Second point\n"
+          }
+        },
+        {
+          "insertText": {
+            "location": {
+              "index": 39
+            },
+            "text": "Closing line.\n"
+          }
+        },
+        {
+          "createParagraphBullets": {
+            "bulletPreset": "BULLET_DISC_CIRCLE_SQUARE",
+            "range": {
+              "endIndex": 39,
+              "startIndex": 14
+            }
+          }
+        }
+      ],
+      "revisionId": "id_44",
+      "suggestionsViewMode": "SUGGESTIONS_INLINE",
+      "tab_ids": [
+        "t.0"
+      ],
+      "title": "Orbit eval doc 2026-11-18T05:32"
+    },
+    "error": null
+  }
+}

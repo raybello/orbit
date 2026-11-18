@@ -1,0 +1,90 @@
+{
+  "slug": "GOOGLESHEETS_GET_SHEET_NAMES",
+  "version": "20261116_00",
+  "description": "Lists all worksheet names from a specified Google Spreadsheet (which must exist), useful for discovering sheets before further operations.",
+  "input_parameters": {
+    "type": "object",
+    "title": "GetSheetNamesRequest",
+    "required": [
+      "spreadsheet_id"
+    ],
+    "properties": {
+      "exclude_hidden": {
+        "type": "boolean",
+        "title": "Exclude Hidden",
+        "default": false,
+        "description": "When True, hidden sheets will be excluded from the results. When False (default), all sheets including hidden ones are returned. Hidden sheets are sheets that have been hidden via the 'Hide sheet' option in Google Sheets UI.",
+        "human_parameter_name": "Exclude Hidden Sheets",
+        "human_parameter_description": "Whether to exclude hidden sheets from the results."
+      },
+      "spreadsheet_id": {
+        "type": "string",
+        "title": "Spreadsheet Id",
+        "examples": [
+          "1qpyC0XzvTcKT6EISywY_7H7D7No1tpxEXAMPLE_ID"
+        ],
+        "description": "The unique identifier of the Google Spreadsheet (alphanumeric string, typically 44 characters). Extract only the ID portion from URLs - do not include leading/trailing slashes, '/edit' suffixes, query parameters, or URL fragments. From 'https://docs.google.com/spreadsheets/d/1qpyC0XzvTcKT6EISywY/edit#gid=0', use only '1qpyC0XzvTcKT6EISywY'.",
+        "human_parameter_name": "Spreadsheet ID",
+        "human_parameter_description": "The spreadsheet id value."
+      }
+    }
+  },
+  "output_parameters": {
+    "type": "object",
+    "$defs": {
+      "GetSheetNamesResponse": {
+        "type": "object",
+        "title": "GetSheetNamesResponse",
+        "required": [
+          "sheet_names"
+        ],
+        "properties": {
+          "sheets": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "title": "Sheets",
+            "description": "Alias for 'sheet_names' provided for compatibility with common API naming patterns. Contains the same list of worksheet names as 'sheet_names'. Prefer using 'sheet_names' as the canonical field."
+          },
+          "display_url": {
+            "type": "string",
+            "title": "Display Url",
+            "description": "URL to view the spreadsheet in Google Sheets web interface. Format: https://docs.google.com/spreadsheets/d/{spreadsheet_id} Note: This URL intentionally omits the /edit suffix."
+          },
+          "sheet_names": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "title": "Sheet Names",
+            "description": "List of sheet/tab names in the spreadsheet, in the order they appear. Names are unique within a spreadsheet and may be empty if the spreadsheet has no sheets. This is the primary response field. An alias 'sheets' is also available with identical data."
+          }
+        },
+        "description": "Response containing worksheet names from the spreadsheet.\n\nThe primary field is 'sheet_names' which contains the list of worksheet names.\nAn alias 'sheets' is also provided for compatibility with common API naming patterns.\nBoth fields return identical data."
+      }
+    },
+    "title": "GetSheetNamesResponseWrapper",
+    "required": [
+      "data",
+      "successful"
+    ],
+    "properties": {
+      "data": {
+        "$ref": "#/$defs/GetSheetNamesResponse",
+        "title": "Data",
+        "description": "Data from the action execution"
+      },
+      "error": {
+        "type": "string",
+        "title": "Error",
+        "description": "Error if any occurred during the execution of the action"
+      },
+      "successful": {
+        "type": "boolean",
+        "title": "Successful",
+        "description": "Whether or not the action execution was successful or not"
+      }
+    }
+  }
+}

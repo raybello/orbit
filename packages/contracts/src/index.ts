@@ -6,6 +6,7 @@ export * from './branded-types.js';
 export * from './templates.js';
 // Auto-review rules (F9).
 export * from './rules.js';
+export * from './review.js';
 // Voice model management (F, on-device default).
 export * from './voice.js';
 import type { VoiceModelItem } from './voice.js';
@@ -50,6 +51,8 @@ export interface Bot {
   avatarEnabled?: boolean;
   /** audio.cpp: a portrait has been uploaded (GET /api/voice/audiocpp/portrait/:botId). */
   hasPortrait?: boolean;
+  /** The person lets this Bot's approval cards offer "Always allow for <Bot>", kept for this Bot only. Off by default. */
+  alwaysAllow?: boolean;
   /** Hermes engine: model id and provider for this bot; null = the engine's default. */
   model: string | null;
   provider: string | null;
@@ -130,6 +133,14 @@ export type CardBody =
       args: unknown;
       /** The auto-review rule that raised this card. "Always allow" cannot override a rule, so the card does not offer it. */
       rule?: { id: string; description: string };
+      /** False for an action that must ask every time (sending email): the card does not offer "Always allow". */
+      offerAlways?: boolean;
+      /** Set when the person turned on per-bot "Always allow" for this Bot: the button reads "Always allow for <Bot>" and is kept for this Bot only. */
+      alwaysFor?: { botId: string; botName: string };
+      /** What the action will do, for Gmail, Calendar, Sheets and Docs: shown in full, and editable before approving. */
+      review?: import('./review.js').ReviewPayload;
+      /** The person changed the action before allowing it; `review` shows their version. */
+      edited?: boolean;
       status: 'pending' | 'allowed' | 'always' | 'denied' | 'expired';
     }
   | {
@@ -159,6 +170,8 @@ export type CardBody =
       subject?: string;
       text: string;
       approvalId: string;
+      /** A real Gmail draft the bot made: shown in full, editable, and sent or deleted from the card. */
+      email?: import('./review.js').EmailReview;
       status: 'pending' | 'sent' | 'discarded';
     }
   | SecureFormCardBody;
@@ -209,9 +222,19 @@ export interface VoiceLocalStatus {
 }
 
 /** What a notice reports, so a client can style or filter it. A plain notice has none. */
-export type NoticeKind = 'context-compacted';
+export type NoticeKind = 'context-compacted' | 'workspace-file';
 
-export interface NoticeBody { type: 'notice'; text: string; tone?: 'info' | 'warn' | 'error'; kind?: NoticeKind }
+/** A Google Sheet or Doc a bot created or changed: shown in the chat with a link and a short preview. */
+export interface WorkspaceFile {
+  app: 'googlesheets' | 'googledocs';
+  action: 'created' | 'updated';
+  title: string;
+  url: string;
+  /** For a sheet, rows of cells; for a doc, lines of text. A few at most. */
+  preview: string[][];
+}
+
+export interface NoticeBody { type: 'notice'; text: string; tone?: 'info' | 'warn' | 'error'; kind?: NoticeKind; file?: WorkspaceFile }
 
 export type ActivityKind =
   | 'thinking' | 'working' | 'searching_web' | 'reading_web' | 'browsing_web' | 'on_its_computer'
@@ -326,6 +349,8 @@ export type ServerEvent =
   | { type: 'activity'; item: ActivityItem }
   | { type: 'computer-status'; status: BotComputerStatus }
   | { type: 'files-updated'; botId: string }
+  /** The Google Calendar mirror changed: reload the calendar view. */
+  | { type: 'calendar' }
   | { type: 'ping' };
 
 // ------------------------------------------------------------------ nav
@@ -358,10 +383,63 @@ export interface CalendarEvent {
   recurrenceRule: string | null;
   eventType: 'recurring' | 'one_time';
   completedAt: string | null;
+  /** Made from a Google event: its title, shown as a chip. The Orbit event follows it when it moves. */
+  parentTitle?: string;
+  /** Switched off: it will not run. A linked event pauses when its Google event is cancelled. */
+  paused?: boolean;
 }
 
+/** GET /api/calendar/google/events/:key/duplicate → what an Orbit event made from this Google event starts with. */
+export interface DuplicateDefaults {
+  title: string;
+  /** The Google event's start (ISO) and timezone: the default time of the Orbit event. */
+  start: string;
+  timezone: string;
+  prompt: string;
+  /** The Google event repeats. */
+  recurring: boolean;
+  /** The repeat as cron, when cron can say it; otherwise why not. */
+  cron: string | null;
+  cronReason?: string;
+}
+
+/** A Google Calendar event from the person's mirror (no bot: it is theirs). Times are ISO; all-day ends are exclusive midnights (UTC). */
+export interface GoogleCalendarEvent {
+  /** Opaque key, used to change, delete or duplicate it through the app. */
+  key: string;
+  calendarKey: string;
+  calendarName: string;
+  color: string | null;
+  title: string;
+  description: string;
+  location: string;
+  attendees: string[];
+  start: string;
+  end: string;
+  allDay: boolean;
+  timezone: string;
+  meetLink: string;
+  htmlLink: string;
+  /** Part of a repeating series. */
+  recurring: boolean;
+}
+
+/** How the Google side of the calendar is doing. */
+export interface GoogleCalendarState {
+  available: boolean;
+  /** Why Google events are not shown, when they are not. */
+  reason?: string;
+  /** At least one Google calendar is known (Google Calendar is connected and has synced). */
+  connected: boolean;
+  lastSyncAt: number | null;
+  lastError: string | null;
+}
+
+/** A Google calendar of the person's, and whether the Orbit calendar shows it. */
+export interface GoogleCalendarInfo { key: string; name: string; color: string | null; primary: boolean; enabled: boolean }
+
 /** GET /api/calendar?from=&to= */
-export interface CalendarResponse { events: CalendarEvent[] }
+export interface CalendarResponse { events: CalendarEvent[]; google?: GoogleCalendarEvent[]; googleState?: GoogleCalendarState }
 
 /** POST /api/routines */
 export interface CreateRoutineRequest {
@@ -375,6 +453,8 @@ export interface CreateRoutineRequest {
   eventDate?: string;
   timezone?: string;
   description?: string;
+  /** Made from this Google event (its key from GET /api/calendar): the Orbit event follows it when it moves. */
+  parentEventKey?: string;
 }
 
 // ------------------------------------------------------------------ files

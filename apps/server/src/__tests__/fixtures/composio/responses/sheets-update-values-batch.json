@@ -1,0 +1,73 @@
+{
+  "slug": "GOOGLESHEETS_UPDATE_VALUES_BATCH",
+  "ok": true,
+  "ms": 870,
+  "request": {
+    "spreadsheet_id": "id_41",
+    "valueInputOption": "USER_ENTERED",
+    "data": [
+      {
+        "range": "Sheet1!B2",
+        "values": [
+          [
+            10
+          ]
+        ]
+      },
+      {
+        "range": "Sheet1!C3",
+        "values": [
+          [
+            "changed"
+          ]
+        ]
+      }
+    ],
+    "includeValuesInResponse": true
+  },
+  "response": {
+    "data": {
+      "display_url": "https://example.test/link_22",
+      "responses": [
+        {
+          "spreadsheetId": "id_41",
+          "updatedCells": 1,
+          "updatedColumns": 1,
+          "updatedData": {
+            "majorDimension": "ROWS",
+            "range": "Sheet1!B2",
+            "values": [
+              [
+                "10"
+              ]
+            ]
+          },
+          "updatedRange": "Sheet1!B2",
+          "updatedRows": 1
+        },
+        {
+          "spreadsheetId": "id_41",
+          "updatedCells": 1,
+          "updatedColumns": 1,
+          "updatedData": {
+            "majorDimension": "ROWS",
+            "range": "Sheet1!C3",
+            "values": [
+              [
+                "changed"
+              ]
+            ]
+          },
+          "updatedRange": "Sheet1!C3",
+          "updatedRows": 1
+        }
+      ],
+      "spreadsheetId": "id_41",
+      "totalUpdatedCells": 2,
+      "totalUpdatedColumns": 2,
+      "totalUpdatedRows": 2,
+      "totalUpdatedSheets": 1
+    },
+    "error": null
+  }
+}

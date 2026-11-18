@@ -1,0 +1,305 @@
+{
+  "slug": "GMAIL_REPLY_TO_THREAD",
+  "version": "20261116_00",
+  "description": "Sends a reply to a Gmail thread using its original subject and quoting the last returned message. Requires a thread ID and at least one recipient, and supports optional file attachments.",
+  "input_parameters": {
+    "type": "object",
+    "title": "ReplyToThreadRequest",
+    "required": [
+      "thread_id"
+    ],
+    "properties": {
+      "cc": {
+        "type": "array",
+        "items": {
+          "type": "string"
+        },
+        "title": "Cc",
+        "default": [],
+        "examples": [
+          [
+            "cc.recipient1@example.com",
+            "cc.recipient2@example.com"
+          ]
+        ],
+        "description": "Carbon Copy (CC) recipients' email addresses in format 'user@domain.com'. Each address must include both username and domain separated by '@'. At least one of cc, bcc, or recipient_email must be provided.",
+        "human_parameter_name": "CC Recipients",
+        "human_parameter_description": "Email addresses for people you want to keep in the loop but not address directly. At least one recipient is necessary."
+      },
+      "bcc": {
+        "type": "array",
+        "items": {
+          "type": "string"
+        },
+        "title": "Bcc",
+        "default": [],
+        "examples": [
+          [
+            "bcc.recipient@example.com"
+          ]
+        ],
+        "description": "Blind Carbon Copy (BCC) recipients' email addresses in format 'user@domain.com'. Each address must include both username and domain separated by '@'. At least one of cc, bcc, or recipient_email must be provided.",
+        "human_parameter_name": "BCC Recipients",
+        "human_parameter_description": "Recipients who will receive your reply without others knowing their email addresses. At least one recipient is necessary."
+      },
+      "is_html": {
+        "type": "boolean",
+        "title": "Is Html",
+        "default": false,
+        "examples": [
+          true,
+          false
+        ],
+        "description": "Indicates if `message_body` is HTML; if True, body must be valid HTML, if False, body should not contain HTML tags. Mismatch causes recipients to see raw HTML tags as plain text.",
+        "human_parameter_name": "Is HTML?",
+        "human_parameter_description": "Specify whether your message body is in HTML format. Set to true if it contains HTML tags."
+      },
+      "user_id": {
+        "type": "string",
+        "title": "User Id",
+        "default": "me",
+        "examples": [
+          "me",
+          "user@example.com"
+        ],
+        "description": "Identifier for the user sending the reply; 'me' refers to the authenticated user.",
+        "human_parameter_name": "User ID",
+        "human_parameter_description": "The identifier for the user sending the reply. Use 'me' for your own account or provide your email address."
+      },
+      "thread_id": {
+        "type": "string",
+        "title": "Thread Id",
+        "examples": [
+          "169eefc8138e68ca",
+          "msg-f:169eefc8138e68ca"
+        ],
+        "description": "Identifier of the Gmail thread for the reply. Must be a valid hexadecimal string, typically 15-16 characters long (e.g., '169eefc8138e68ca'). Prefixes like 'msg-f:' or 'thread-f:' are automatically stripped. Note: Format validation only checks the ID structure; the thread must also exist and be accessible in your Gmail account. Use GMAIL_LIST_THREADS or GMAIL_FETCH_EMAILS to retrieve valid thread IDs. Must be a threadId, not a messageId; passing a messageId can cause the reply to fail or start an unintended new thread."
+      },
+      "attachment": {
+        "anyOf": [
+          {
+            "type": "object",
+            "title": "FileUploadable",
+            "required": [
+              "name",
+              "mimetype",
+              "s3key"
+            ],
+            "properties": {
+              "name": {
+                "type": "string",
+                "title": "Name",
+                "examples": [
+                  "document.pdf",
+                  "image.jpg",
+                  "report.docx"
+                ],
+                "description": "The filename that will be used when uploading the file to the destination service"
+              },
+              "s3key": {
+                "type": "string",
+                "title": "S3Key",
+                "examples": [
+                  "47563/gmail/GET_ATTACHMENT/response/12345"
+                ],
+                "description": "The S3 key of a publicly accessible file, typically returned from a previous download action that stored the file in S3. This key references an existing file that can be uploaded to another service."
+              },
+              "mimetype": {
+                "type": "string",
+                "title": "Mimetype",
+                "examples": [
+                  "application/pdf",
+                  "image/jpeg",
+                  "application/vnd.openxmlformats-officedocument.wordprocessingml.document"
+                ],
+                "description": "The MIME type of the file"
+              }
+            },
+            "file_uploadable": true
+          },
+          {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "title": "FileUploadable",
+              "required": [
+                "name",
+                "mimetype",
+                "s3key"
+              ],
+              "properties": {
+                "name": {
+                  "type": "string",
+                  "title": "Name",
+                  "examples": [
+                    "document.pdf",
+                    "image.jpg",
+                    "report.docx"
+                  ],
+                  "description": "The filename that will be used when uploading the file to the destination service"
+                },
+                "s3key": {
+                  "type": "string",
+                  "title": "S3Key",
+                  "examples": [
+                    "47563/gmail/GET_ATTACHMENT/response/12345"
+                  ],
+                  "description": "The S3 key of a publicly accessible file, typically returned from a previous download action that stored the file in S3. This key references an existing file that can be uploaded to another service."
+                },
+                "mimetype": {
+                  "type": "string",
+                  "title": "Mimetype",
+                  "examples": [
+                    "application/pdf",
+                    "image/jpeg",
+                    "application/vnd.openxmlformats-officedocument.wordprocessingml.document"
+                  ],
+                  "description": "The MIME type of the file"
+                }
+              },
+              "file_uploadable": true
+            }
+          }
+        ],
+        "title": "Attachment",
+        "description": "File(s) to attach to the reply. Accepts a single file or a list of files. Total message size including attachments must stay under 25 MB (400 badRequest if exceeded); use Drive links for large files.",
+        "human_parameter_name": "Attachment(s)",
+        "human_parameter_description": "File(s) you want to attach to your reply. Can be a single file or multiple files."
+      },
+      "message_body": {
+        "type": "string",
+        "title": "Message Body",
+        "default": "",
+        "examples": [
+          "Dear Sir, Nice talking to you. Yours respectfully, John"
+        ],
+        "description": "Content of the reply message, either plain text or HTML.",
+        "human_parameter_name": "Message Body",
+        "human_parameter_description": "The actual message you want to send as a reply. It can be plain text or formatted in HTML."
+      },
+      "recipient_email": {
+        "type": "string",
+        "title": "Recipient Email",
+        "examples": [
+          "john@doe.com"
+        ],
+        "description": "Primary recipient's email address in format 'user@domain.com'. Must include both username and domain separated by '@'. Required if cc and bcc is not provided, else can be optional. Use extra_recipients if you want to send to multiple recipients.",
+        "human_parameter_name": "Recipient Email",
+        "human_parameter_description": "The email address of the main recipient for your reply. This is required unless you're using cc or bcc."
+      },
+      "extra_recipients": {
+        "type": "array",
+        "items": {
+          "type": "string"
+        },
+        "title": "Extra Recipients",
+        "default": [],
+        "examples": [
+          [
+            "jane.doe@example.com",
+            "another.person@example.com"
+          ]
+        ],
+        "description": "Additional 'To' recipients' email addresses in format 'user@domain.com' (not Cc or Bcc). Each address must include both username and domain separated by '@'. Should only be used if recipient_email is also provided.",
+        "human_parameter_name": "Additional Recipients",
+        "human_parameter_description": "Any additional email addresses you want to include in the 'To' field for this reply."
+      },
+      "include_signature": {
+        "type": "boolean",
+        "title": "Include Signature",
+        "default": true,
+        "description": "Append the sender's Gmail signature (the 'Send mail as' signature configured in Gmail settings) to the message body, ahead of any quoted or forwarded content. Skipped when the body already ends with that signature, when no signature is configured, or when the connection lacks permission to read Gmail settings. Set to false to send the body exactly as provided.",
+        "human_parameter_name": "Include Gmail signature?",
+        "human_parameter_description": "Append the sender's configured Gmail signature to the message."
+      }
+    }
+  },
+  "output_parameters": {
+    "type": "object",
+    "$defs": {
+      "GmailMessageResponse": {
+        "type": "object",
+        "title": "GmailMessageResponse",
+        "properties": {
+          "id": {
+            "type": "string",
+            "title": "Id",
+            "description": "The immutable ID of the sent message."
+          },
+          "raw": {
+            "type": "string",
+            "title": "Raw",
+            "description": "The entire email message in RFC 2822 format, base64url-encoded."
+          },
+          "payload": {
+            "type": "object",
+            "title": "Payload",
+            "description": "The parsed email structure, including headers and body parts.",
+            "additionalProperties": true
+          },
+          "snippet": {
+            "type": "string",
+            "title": "Snippet",
+            "description": "A short extract of the message text."
+          },
+          "labelIds": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "title": "Label Ids",
+            "description": "List of IDs of labels applied to this message."
+          },
+          "threadId": {
+            "type": "string",
+            "title": "Thread Id",
+            "description": "The ID of the thread the message belongs to."
+          },
+          "historyId": {
+            "type": "string",
+            "title": "History Id",
+            "description": "The ID of the last history record that modified this message."
+          },
+          "display_url": {
+            "type": "string",
+            "title": "Display Url",
+            "description": "Web UI link for this resource - set by each action's execute()."
+          },
+          "internalDate": {
+            "type": "string",
+            "title": "Internal Date",
+            "description": "The internal timestamp of the message in milliseconds since epoch."
+          },
+          "sizeEstimate": {
+            "type": "integer",
+            "title": "Size Estimate",
+            "description": "Estimated size of the message in bytes."
+          }
+        },
+        "description": "Standard Gmail message response returned by Gmail API for sent messages.\nUsed by actions like send_email and send_draft."
+      }
+    },
+    "title": "GmailMessageResponseWrapper",
+    "required": [
+      "data",
+      "successful"
+    ],
+    "properties": {
+      "data": {
+        "$ref": "#/$defs/GmailMessageResponse",
+        "title": "Data",
+        "description": "Data from the action execution"
+      },
+      "error": {
+        "type": "string",
+        "title": "Error",
+        "description": "Error if any occurred during the execution of the action"
+      },
+      "successful": {
+        "type": "boolean",
+        "title": "Successful",
+        "description": "Whether or not the action execution was successful or not"
+      }
+    }
+  }
+}

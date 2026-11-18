@@ -1,0 +1,198 @@
+[
+  {
+    "name": "gmail-get-profile",
+    "slug": "GMAIL_GET_PROFILE",
+    "ok": true
+  },
+  {
+    "name": "gmail-who-am-i",
+    "slug": "GMAIL_WHO_AM_I",
+    "ok": true
+  },
+  {
+    "name": "gmail-create-draft",
+    "slug": "GMAIL_CREATE_EMAIL_DRAFT",
+    "ok": true
+  },
+  {
+    "name": "gmail-get-draft",
+    "slug": "GMAIL_GET_DRAFT",
+    "ok": true
+  },
+  {
+    "name": "gmail-update-draft",
+    "slug": "GMAIL_UPDATE_DRAFT",
+    "ok": true
+  },
+  {
+    "name": "gmail-send-draft",
+    "slug": "GMAIL_SEND_DRAFT",
+    "ok": true
+  },
+  {
+    "name": "gmail-create-draft-2",
+    "slug": "GMAIL_CREATE_EMAIL_DRAFT",
+    "ok": true
+  },
+  {
+    "name": "gmail-delete-draft",
+    "slug": "GMAIL_DELETE_DRAFT",
+    "ok": true
+  },
+  {
+    "name": "gmail-send-email",
+    "slug": "GMAIL_SEND_EMAIL",
+    "ok": true
+  },
+  {
+    "name": "gmail-reply-to-thread",
+    "slug": "GMAIL_REPLY_TO_THREAD",
+    "ok": true
+  },
+  {
+    "name": "gcal-list-calendars",
+    "slug": "GOOGLECALENDAR_LIST_CALENDARS",
+    "ok": true
+  },
+  {
+    "name": "gcal-create-event",
+    "slug": "GOOGLECALENDAR_CREATE_EVENT",
+    "ok": true
+  },
+  {
+    "name": "gcal-events-get",
+    "slug": "GOOGLECALENDAR_EVENTS_GET",
+    "ok": true
+  },
+  {
+    "name": "gcal-patch-event",
+    "slug": "GOOGLECALENDAR_PATCH_EVENT",
+    "ok": true
+  },
+  {
+    "name": "gcal-update-event",
+    "slug": "GOOGLECALENDAR_UPDATE_EVENT",
+    "ok": true
+  },
+  {
+    "name": "gcal-remove-attendee",
+    "slug": "GOOGLECALENDAR_REMOVE_ATTENDEE",
+    "ok": false,
+    "error": "Attendee not found on this event. Provide an attendee email that exists on the event."
+  },
+  {
+    "name": "gcal-create-recurring",
+    "slug": "GOOGLECALENDAR_CREATE_EVENT",
+    "ok": true
+  },
+  {
+    "name": "gcal-events-instances",
+    "slug": "GOOGLECALENDAR_EVENTS_INSTANCES",
+    "ok": true
+  },
+  {
+    "name": "gcal-patch-instance",
+    "slug": "GOOGLECALENDAR_PATCH_EVENT",
+    "ok": true
+  },
+  {
+    "name": "gcal-quick-add",
+    "slug": "GOOGLECALENDAR_QUICK_ADD",
+    "ok": true
+  },
+  {
+    "name": "gcal-list-all-summary",
+    "slug": "GOOGLECALENDAR_EVENTS_LIST_ALL_CALENDARS",
+    "ok": true
+  },
+  {
+    "name": "gcal-list-all-full",
+    "slug": "GOOGLECALENDAR_EVENTS_LIST_ALL_CALENDARS",
+    "ok": true
+  },
+  {
+    "name": "sheets-create",
+    "slug": "GOOGLESHEETS_CREATE_GOOGLE_SHEET1",
+    "ok": true
+  },
+  {
+    "name": "sheets-values-update",
+    "slug": "GOOGLESHEETS_VALUES_UPDATE",
+    "ok": true
+  },
+  {
+    "name": "sheets-values-get",
+    "slug": "GOOGLESHEETS_VALUES_GET",
+    "ok": true
+  },
+  {
+    "name": "sheets-values-append",
+    "slug": "GOOGLESHEETS_SPREADSHEETS_VALUES_APPEND",
+    "ok": true
+  },
+  {
+    "name": "sheets-update-values-batch",
+    "slug": "GOOGLESHEETS_UPDATE_VALUES_BATCH",
+    "ok": true
+  },
+  {
+    "name": "sheets-batch-update",
+    "slug": "GOOGLESHEETS_BATCH_UPDATE",
+    "ok": true
+  },
+  {
+    "name": "sheets-add-sheet",
+    "slug": "GOOGLESHEETS_ADD_SHEET",
+    "ok": true
+  },
+  {
+    "name": "sheets-execute-sql-select",
+    "slug": "GOOGLESHEETS_EXECUTE_SQL",
+    "ok": true
+  },
+  {
+    "name": "docs-create-markdown",
+    "slug": "GOOGLEDOCS_CREATE_DOCUMENT_MARKDOWN",
+    "ok": true
+  },
+  {
+    "name": "docs-get-plaintext",
+    "slug": "GOOGLEDOCS_GET_DOCUMENT_PLAINTEXT",
+    "ok": true
+  },
+  {
+    "name": "docs-insert-text",
+    "slug": "GOOGLEDOCS_INSERT_TEXT_ACTION",
+    "ok": true
+  },
+  {
+    "name": "docs-replace-all-text",
+    "slug": "GOOGLEDOCS_REPLACE_ALL_TEXT",
+    "ok": true
+  },
+  {
+    "name": "docs-update-markdown",
+    "slug": "GOOGLEDOCS_UPDATE_DOCUMENT_MARKDOWN",
+    "ok": true
+  },
+  {
+    "name": "docs-get-plaintext-after",
+    "slug": "GOOGLEDOCS_GET_DOCUMENT_PLAINTEXT",
+    "ok": true
+  },
+  {
+    "name": "gcal-delete-event",
+    "slug": "GOOGLECALENDAR_DELETE_EVENT",
+    "ok": true
+  },
+  {
+    "name": "cleanup-event-1",
+    "slug": "GOOGLECALENDAR_DELETE_EVENT",
+    "ok": true
+  },
+  {
+    "name": "cleanup-event-2",
+    "slug": "GOOGLECALENDAR_DELETE_EVENT",
+    "ok": true
+  }
+]

@@ -52,3 +52,75 @@
 .draft-card__subject { padding-top: 12px; font-size: 14px; font-weight: 600; line-height: 20px; }
 .draft-card__text { padding-top: 12px; font-size: 14px; line-height: 20px; letter-spacing: 0.14px; color: var(--color-ink); white-space: pre-wrap; overflow-wrap: anywhere; }
 .draft-card__actions { display: flex; gap: 8px; padding: 10px 16px 16px; }
+
+/* email card: a Gmail draft, or a send waiting for approval */
+.email-card { width: 480px; }
+.email-card__edit { display: inline-flex; align-items: center; gap: 4px; padding: 4px 8px; border-radius: 6px; font-size: 13px; line-height: 18px; color: var(--color-text-secondary); }
+.email-card__edit:hover { background: var(--color-bg-hover); color: var(--color-ink); }
+.email-card__content { display: flex; flex-direction: column; padding: 10px 16px 0; min-width: 0; }
+.email-card__content.is-editing { gap: 8px; }
+.email-card__row { display: flex; gap: 8px; padding: 6px 0; border-bottom: 1px solid var(--color-border-tertiary); font-size: 14px; line-height: 20px; min-width: 0; }
+.email-card__row:first-child { border-top: 1px solid var(--color-border-tertiary); }
+.email-card__label { flex: 0 0 52px; color: var(--color-text-secondary); font-size: 13px; line-height: 20px; }
+.email-card__value { min-width: 0; overflow-wrap: anywhere; color: var(--color-ink); }
+.email-card__subject { padding-top: 12px; font-size: 14px; font-weight: 600; line-height: 20px; overflow-wrap: anywhere; }
+.email-card__text { padding-top: 8px; font-size: 14px; line-height: 20px; letter-spacing: 0.14px; color: var(--color-ink); white-space: pre-wrap; overflow-wrap: anywhere; max-height: 360px; overflow-y: auto; }
+.email-card__field { display: flex; align-items: center; gap: 8px; min-width: 0; }
+.email-card__input { flex: 1 1 auto; min-width: 0; }
+.email-card__field--body { align-items: stretch; }
+.email-card__textarea { width: 100%; min-height: 160px; resize: vertical; font: inherit; line-height: 20px; }
+.email-card__hint { font-size: 12px; color: var(--color-text-tertiary); }
+.email-card.is-resolved .email-card__text { color: var(--color-text-secondary); }
+
+/* event card: a Google Calendar change waiting for approval */
+.event-card { width: 480px; }
+.event-card__content { display: flex; flex-direction: column; gap: 6px; padding: 10px 16px 0; min-width: 0; }
+.event-card__content.is-deleting .event-card__summary { text-decoration: line-through; text-decoration-color: var(--color-danger-text); }
+.event-card__summary { font-size: 15px; font-weight: 600; line-height: 22px; overflow-wrap: anywhere; display: flex; flex-direction: column; }
+.event-card__line { display: flex; gap: 8px; font-size: 14px; line-height: 20px; min-width: 0; }
+.event-card__icon { flex: 0 0 18px; text-align: center; }
+.event-card__value { display: flex; flex-direction: column; min-width: 0; overflow-wrap: anywhere; color: var(--color-ink); }
+.event-card__tz { color: var(--color-text-tertiary); font-size: 12px; }
+.event-card__was { font-size: 12px; font-weight: 400; line-height: 16px; color: var(--color-text-tertiary); text-decoration: line-through; }
+.event-card__description { font-size: 13px; line-height: 18px; color: var(--color-text-secondary); white-space: pre-wrap; max-height: 120px; overflow-y: auto; }
+.event-card__content.is-editing { gap: 8px; }
+.event-card__field { display: flex; flex-direction: column; gap: 4px; font-size: 12px; color: var(--color-text-secondary); min-width: 0; flex: 1 1 0; }
+.event-card__times { display: flex; gap: 8px; flex-wrap: wrap; }
+.event-card__check { display: flex; align-items: center; gap: 6px; font-size: 13px; line-height: 18px; color: var(--color-ink); }
+.event-card__textarea { resize: vertical; font: inherit; }
+.event-card__scope { display: flex; gap: 4px; flex-wrap: wrap; padding: 12px 16px 0; }
+.event-card__scope-option { display: inline-flex; align-items: center; gap: 4px; padding: 4px 10px; border-radius: 999px; font-size: 13px; line-height: 18px; border: 1px solid var(--color-border-tertiary); cursor: pointer; }
+.event-card__scope-option input { position: absolute; opacity: 0; pointer-events: none; }
+.event-card__scope-option.is-on { background: var(--color-primary); color: var(--color-on-primary); border-color: transparent; }
+.event-card__scope-option:focus-within { outline: 2px solid var(--accent-500); outline-offset: 1px; }
+.event-card__notify { padding: 10px 16px 0; }
+.btn--danger { background: var(--color-danger); color: #FFFFFF; }
+.btn--danger:hover:not(:disabled) { background: var(--color-danger-hover); }
+
+/* Google Sheets and Docs cards */
+.ws-card { width: 520px; }
+.ws-card__steps { margin: 8px 16px 0; padding-left: 18px; font-size: 14px; line-height: 20px; color: var(--color-ink); }
+.ws-card__grid-wrap { margin: 10px 16px 0; overflow-x: auto; max-height: 320px; overflow-y: auto; border: 1px solid var(--color-border-tertiary); border-radius: 8px; }
+.ws-card__grid { width: 100%; border-collapse: collapse; font-size: 13px; line-height: 18px; font-variant-numeric: tabular-nums; }
+.ws-card__grid th, .ws-card__grid td { padding: 5px 8px; border-bottom: 1px solid var(--color-border-tertiary); text-align: left; vertical-align: top; overflow-wrap: anywhere; }
+.ws-card__grid thead th { position: sticky; top: 0; background: var(--color-bg-pane); font-weight: 500; color: var(--color-text-secondary); }
+.ws-card__grid tbody th { font-weight: 500; color: var(--color-text-secondary); white-space: nowrap; }
+.ws-card__grid tr.is-same td { color: var(--color-text-tertiary); }
+.ws-card__before { color: var(--color-text-secondary); }
+.ws-card__cell { width: 100%; min-width: 80px; padding: 2px 6px; border-radius: 4px; border: 1px solid var(--color-border-tertiary); background: transparent; color: var(--color-ink); font: inherit; }
+.ws-card__cell:focus { outline: 2px solid var(--accent-500); outline-offset: -1px; }
+.ws-card__empty { color: var(--color-text-quaternary); font-style: italic; }
+.ws-card__more { padding: 6px 8px; font-size: 12px; color: var(--color-text-tertiary); }
+.ws-card__insert, .ws-card__diff { margin: 10px 16px 0; padding: 8px 10px; max-height: 260px; overflow: auto; border-radius: 8px; background: var(--color-bg-tertiary); font-size: 13px; line-height: 18px; white-space: pre-wrap; overflow-wrap: anywhere; }
+.ws-card__diff .is-add { color: var(--color-success-text, #2e7d32); }
+.ws-card__diff .is-del { color: var(--color-danger-text); text-decoration: line-through; }
+.ws-card__text { margin: 10px 16px 0; width: calc(100% - 32px); resize: vertical; font: inherit; }
+.ws-card__replace { display: flex; flex-direction: column; gap: 6px; padding: 10px 16px 0; font-size: 14px; line-height: 20px; }
+.ws-card__label { display: inline-block; width: 40px; color: var(--color-text-secondary); font-size: 13px; }
+.ws-card__del { background: color-mix(in srgb, var(--color-danger-text) 18%, transparent); color: inherit; border-radius: 3px; padding: 0 2px; }
+.ws-card__add { background: color-mix(in srgb, #2e7d32 20%, transparent); color: inherit; border-radius: 3px; padding: 0 2px; }
+.ws-file { width: 480px; }
+.ws-file__open { flex: 0 0 auto; padding: 6px 12px; text-decoration: none; }
+.ws-file__grid td { color: var(--color-ink); }
+.ws-file__lines { padding: 8px 16px 0; font-size: 13px; line-height: 18px; color: var(--color-text-secondary); }
+.ws-file__pad { height: 14px; }

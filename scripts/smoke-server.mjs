@@ -134,6 +134,20 @@ function checkShape(name, res, want, keys) {
   });
 }
 
+// A database left by a server that still had the direct Google OAuth integration. Starting this
+// server must drop both tables (retire-google-oauth.ts, called from index.ts). No token rows, so the
+// smoke run makes no call to Google.
+{
+  const Database = createRequire(path.join(root, 'apps/server/package.json'))('better-sqlite3');
+  const legacy = new Database(dbPath);
+  legacy.exec(`
+    CREATE TABLE google_tokens (user_id TEXT PRIMARY KEY, access_token_enc TEXT NOT NULL, refresh_token_enc TEXT NOT NULL, expires_at INTEGER NOT NULL, email TEXT, scopes TEXT, updated_at INTEGER NOT NULL);
+    CREATE TABLE google_oauth_states (state TEXT PRIMARY KEY, user_id TEXT NOT NULL, code_verifier TEXT NOT NULL, created_at INTEGER NOT NULL);
+    INSERT INTO google_oauth_states VALUES ('st_smoke', 'u_smoke', 'verifier', 0);
+  `);
+  legacy.close();
+}
+
 const child = spawn(process.execPath, [entry], {
   cwd: root,
   env: {
@@ -257,6 +271,17 @@ try {
   const health = await request('/api/health');
   check('GET /api/health', health.status === 200 && health.body?.ok === true, JSON.stringify(health.body));
   check('health reports a version', typeof health.body?.version === 'string');
+
+  {
+    const Database = createRequire(path.join(root, 'apps/server/package.json'))('better-sqlite3');
+    const googleTables = () => {
+      const db = new Database(dbPath, { readonly: true });
+      try { return db.prepare("SELECT name FROM sqlite_master WHERE type='table' AND name IN ('google_tokens','google_oauth_states')").all().map((r) => r.name); } finally { db.close(); }
+    };
+    let left = googleTables();
+    for (let i = 0; i < 20 && left.length; i++) { await new Promise((r) => setTimeout(r, 250)); left = googleTables(); }
+    check('start-up drops the retired Google OAuth tables', left.length === 0, left.join(', '), { expected: [], actual: left });
+  }
 
   const verified = await request('/api/health', { headers: { 'x-orbit-stack-token': stackToken } });
   check('health marks a matching stack token', verified.body?.stackToken === 'verified');

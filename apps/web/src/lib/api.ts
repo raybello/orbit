@@ -1,7 +1,4 @@
-import type {
-  Bot, CalendarResponse, ComputersResponse, CreateRoutineRequest, FileEntry, FilesResponse,
-  ComputerState, LiveState, Routine, Row, SkillEntry, SkillsResponse, Toolkit, User,
-} from '@orbit/contracts';
+import type { Bot, CalendarResponse, ComputersResponse, CreateRoutineRequest, FileEntry, FilesResponse, ComputerState, LiveState, Routine, Row, SkillEntry, SkillsResponse, Toolkit, User, EventEdits, EventFields, GoogleCalendarInfo, DuplicateDefaults } from '@orbit/contracts';
 
 export class ApiError extends Error {
   constructor(public status: number, message: string) { super(message); }
@@ -39,6 +36,8 @@ export interface TeamTemplateSummary {
 
 export const api = {
   me: () => req<{ user: User | null; devLogin: boolean }>('GET', '/auth/me'),
+  /** Tell the server this device's timezone (bots use it for times). */
+  setTimezone: (timezone: string) => req<{ user: User }>('PATCH', '/auth/me', { timezone }),
   updateMe: (patch: { avatarUrl?: string | null }) => req<{ user: User }>('PATCH', '/auth/me', patch),
   uploadAvatar: async (file: File): Promise<{ url: string }> => {
     const form = new FormData();
@@ -75,7 +74,12 @@ export const api = {
   interrupt: (id: string) => req<{ ok: true }>('POST', `/bots/${id}/interrupt`),
   fresh: (id: string) => req<{ ok: true }>('POST', `/bots/${id}/fresh`),
 
-  approve: (approvalId: string, decision: 'allow' | 'always' | 'deny') => req<{ ok: true }>('POST', `/approvals/${approvalId}`, { decision }),
+  approve: (approvalId: string, decision: 'allow' | 'always' | 'deny', edits?: unknown) => req<{ ok: true }>('POST', `/approvals/${approvalId}`, edits ? { decision, edits } : { decision }),
+  /** Keep an approval card's call waiting while the person edits it. */
+  approvalEditing: (approvalId: string) => req<{ ok: boolean }>('POST', `/approvals/${approvalId}/editing`),
+  /** Save, send or discard a Gmail draft from its email card. */
+  draftAction: (botId: string, seq: number, action: 'save' | 'send' | 'discard', edits?: unknown) =>
+    req<{ card: unknown }>('POST', `/bots/${botId}/cards/${seq}/draft`, edits ? { action, edits } : { action }),
   answer: (id: string, seq: number, answer: string) => req<{ ok: true }>('POST', `/bots/${id}/cards/${seq}/answer`, { answer }),
   dismiss: (id: string, seq: number) => req<{ ok: true }>('POST', `/bots/${id}/cards/${seq}/dismiss`),
 
@@ -89,8 +93,6 @@ export const api = {
   connect: (slug: string, botId?: string, seq?: number) => req<{ redirectUrl: string }>('POST', `/apps/${slug}/connect`, { botId, seq }),
   disconnect: (slug: string) => req<{ ok: true }>('DELETE', `/apps/${slug}`),
 
-  googleStatus: () => req<{ configured: boolean; connected: boolean; email: string | null }>('GET', '/google/status'),
-  googleConnect: () => req<{ redirectUrl: string }>('GET', '/google/connect'),
   googleDisconnect: () => req<{ ok: true }>('DELETE', '/google'),
 
   roomMembers: (id: string) => req<{ members: RoomMember[] }>('GET', `/rooms/${id}/members`),
@@ -99,6 +101,16 @@ export const api = {
   deleteRoom: (id: string) => req<{ ok: true }>('DELETE', `/rooms/${id}`),
 
   calendar: (from: string, to: string) => req<CalendarResponse>('GET', `/calendar?from=${encodeURIComponent(from)}&to=${encodeURIComponent(to)}`),
+  /** The person's Google calendars and which ones the Orbit calendar shows. */
+  googleCalendars: () => req<{ state: { available: boolean; reason?: string }; calendars: GoogleCalendarInfo[]; sync: { lastSyncAt: number | null; lastError: string | null } }>('GET', '/calendar/google'),
+  setGoogleCalendar: (key: string, enabled: boolean) => req<{ ok: true }>('PATCH', `/calendar/google/${encodeURIComponent(key)}`, { enabled }),
+  /** What an Orbit event made from this Google event starts with. */
+  duplicateDefaults: (key: string) => req<DuplicateDefaults>('GET', `/calendar/google/events/${encodeURIComponent(key)}/duplicate`),
+  syncGoogle: () => req<{ ok: true; changes: number }>('POST', '/calendar/google/sync'),
+  createGoogleEvent: (body: { calendarKey?: string; fields: EventFields; notifyGuests?: boolean }) => req<{ ok: true; eventId: string }>('POST', '/calendar/google/events', body),
+  updateGoogleEvent: (key: string, edits: EventEdits) => req<{ ok: true }>('PATCH', `/calendar/google/events/${encodeURIComponent(key)}`, { edits }),
+  deleteGoogleEvent: (key: string, opts: { scope?: 'this' | 'following' | 'all'; notify?: boolean }) =>
+    req<{ ok: true }>('DELETE', `/calendar/google/events/${encodeURIComponent(key)}?${new URLSearchParams({ ...(opts.scope ? { scope: opts.scope } : {}), ...(opts.notify !== undefined ? { notify: opts.notify ? '1' : '0' } : {}) })}`),
   createRoutine: (r: CreateRoutineRequest) => req<{ routine: Routine }>('POST', '/routines', r),
 
   files: (opts: { botId?: string; type?: string; search?: string; page?: number; pageSize?: number } = {}) => {

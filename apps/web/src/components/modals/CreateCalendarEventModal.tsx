@@ -1,5 +1,5 @@
 import { useMemo, useState } from 'react';
-import type { CreateRoutineRequest } from '@orbit/contracts';
+import type { CreateRoutineRequest, DuplicateDefaults } from '@orbit/contracts';
 import { api } from '../../lib/api';
 import { useStore } from '../../store';
 import { Field, Segmented } from '../config/ui';
@@ -27,21 +27,34 @@ function toLocalInput(d: Date): string {
 /** Cron needs five (or six) whitespace-separated fields. */
 const looksLikeCron = (s: string) => /^\s*\S+(\s+\S+){4,5}\s*$/.test(s);
 
-interface Props { initialDate: Date; onClose: () => void; onSaved: () => void }
+/** Made from a Google event: its key and the defaults the server suggested. */
+export interface DuplicateFrom { key: string; defaults: DuplicateDefaults }
 
-export function CreateCalendarEventModal({ initialDate, onClose, onSaved }: Props) {
+interface Props { initialDate: Date; onClose: () => void; onSaved: () => void; duplicate?: DuplicateFrom }
+
+/** When the Orbit event runs, relative to the Google event it was made from. */
+const TIMINGS: { value: string; label: string; at: (start: Date) => Date }[] = [
+  { value: 'same', label: 'Same time', at: (s) => s },
+  { value: '15m', label: '15 min before', at: (s) => new Date(s.getTime() - 15 * 60_000) },
+  { value: '1h', label: '1 hour before', at: (s) => new Date(s.getTime() - 60 * 60_000) },
+  { value: 'eve', label: '9:00 the day before', at: (s) => new Date(s.getFullYear(), s.getMonth(), s.getDate() - 1, 9, 0) },
+];
+
+export function CreateCalendarEventModal({ initialDate, onClose, onSaved, duplicate }: Props) {
   const bots = useStore((s) => s.bots);
   const selectedBotId = useStore((s) => s.selectedBotId);
   const agents = useMemo(() => bots.filter((b) => b.kind !== 'room'), [bots]);
 
-  const [title, setTitle] = useState('');
+  const parentStart = duplicate ? new Date(duplicate.defaults.start) : null;
+  const [title, setTitle] = useState(duplicate?.defaults.title ?? '');
+  const [timing, setTiming] = useState('same');
   const [botId, setBotId] = useState(() => {
     const preferred = agents.find((b) => b.id === selectedBotId) ?? agents.find((b) => b.isPrimary) ?? agents[0];
     return preferred?.id ?? '';
   });
-  const [prompt, setPrompt] = useState('');
+  const [prompt, setPrompt] = useState(duplicate?.defaults.prompt ?? '');
   const [eventType, setEventType] = useState<EventType>('one_time');
-  const [dateLocal, setDateLocal] = useState(() => toLocalInput(initialDate));
+  const [dateLocal, setDateLocal] = useState(() => toLocalInput(parentStart ?? initialDate));
   const [preset, setPreset] = useState('daily');
   const [cron, setCron] = useState(PRESETS[0].cron);
   const [errors, setErrors] = useState<Record<string, string>>({});
@@ -89,6 +102,11 @@ export function CreateCalendarEventModal({ initialDate, onClose, onSaved }: Prop
     };
     if (eventType === 'one_time') request.eventDate = new Date(dateLocal).toISOString();
     else request.schedule = cron.trim();
+    if (duplicate) {
+      request.parentEventKey = duplicate.key;
+      // A repeat taken from Google is at the event's own wall-clock time.
+      if (eventType === 'recurring' && duplicate.defaults.cron && cron.trim() === duplicate.defaults.cron) request.timezone = duplicate.defaults.timezone;
+    }
 
     setBusy(true);
     try {
@@ -104,13 +122,18 @@ export function CreateCalendarEventModal({ initialDate, onClose, onSaved }: Prop
     <Modal onClose={onClose} className="cal-modal" label="New Event">
       <form onSubmit={(e) => { e.preventDefault(); void save(); }}>
         <div className="modal__header">
-          <div className="modal__title">New event</div>
+          <div className="modal__title">{duplicate ? 'Duplicate as Orbit event' : 'New event'}</div>
           <button type="button" className="modal__close" onClick={onClose} aria-label="Close">
             <Icon name="close" size={14} opacity={0.68} />
           </button>
         </div>
 
         <div className="cal-modal__body">
+          {duplicate && (
+            <div className="cal-modal__parent">
+              Made from your Google event “{duplicate.defaults.title}”. A one-time Orbit event moves when it moves, and pauses if it is cancelled.
+            </div>
+          )}
           <Field label="Title" htmlFor="cal-title">
             <input
               id="cal-title"
@@ -151,14 +174,30 @@ export function CreateCalendarEventModal({ initialDate, onClose, onSaved }: Prop
             {errors.prompt && <span className="cal-modal__error">{errors.prompt}</span>}
           </Field>
 
-          <Field label="Event type">
+          <Field label="Event type" hint={duplicate && !duplicate.defaults.cron && duplicate.defaults.recurring ? duplicate.defaults.cronReason : undefined}>
             <Segmented
               value={eventType}
-              options={[{ value: 'one_time', label: 'One-time' }, { value: 'recurring', label: 'Recurring' }]}
-              onChange={(v) => { setEventType(v); clear('dateLocal'); clear('cron'); }}
+              options={duplicate && !duplicate.defaults.cron ? [{ value: 'one_time', label: 'One-time' }] : [{ value: 'one_time', label: 'One-time' }, { value: 'recurring', label: 'Recurring' }]}
+              onChange={(v) => {
+                setEventType(v); clear('dateLocal'); clear('cron');
+                if (v === 'recurring' && duplicate?.defaults.cron) { setCron(duplicate.defaults.cron); setPreset('custom'); }
+              }}
               label="Event type"
             />
           </Field>
+
+          {duplicate && parentStart && eventType === 'one_time' && (
+            <Field label="Runs">
+              <div className="cal-modal__timings" role="radiogroup" aria-label="When it runs">
+                {TIMINGS.map((t) => (
+                  <button key={t.value} type="button" role="radio" aria-checked={timing === t.value} className={`cal-chip${timing === t.value ? ' is-on' : ''}`}
+                    onClick={() => { setTiming(t.value); setDateLocal(toLocalInput(t.at(parentStart))); clear('dateLocal'); }}>
+                    {t.label}
+                  </button>
+                ))}
+              </div>
+            </Field>
+          )}
 
           {eventType === 'one_time' ? (
             <Field label="Date and time" htmlFor="cal-date">

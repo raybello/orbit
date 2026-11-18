@@ -4,13 +4,15 @@ import { newId } from '../lib/ids.js';
 import { hub } from '../lib/hub.js';
 import { appendRow, emitBot, getBotRow, getLive, getRow, setLive, updateRow } from '../store.js';
 import type { ActivityKind, CardBody, MessageBody, MessageFile, ToolCallBody } from '../types.js';
+import type { ReviewPayload } from '@orbit/contracts';
 import { toolkitInfo } from '../composio.js';
 import { screenForWork } from '../computer.js';
 import { computerKindFor } from '../computer-provider-registry.js';
 import { dockerProvider } from '../docker-provider.js';
 import { engineFor } from '../engine.js';
 import { instructionsFor } from './prompt.js';
-import { activityFor, appToolName, humanizeSlug, LIBRARY_ROOT, policyFor } from './tools.js';
+import { activityFor, appToolName, humanizeSlug, LIBRARY_ROOT, policyFor, rememberAlwaysAllow } from './tools.js';
+import { checkReviewEdits } from '../review/index.js';
 import { MIME_BY_EXTENSION } from '../lib/mime.js';
 import { sendPushNotification } from '../push.js';
 import { recordRoutineOutcome } from '../initiative-store.js';
@@ -169,15 +171,19 @@ function patchToolRow(botId: string, seq: number, patch: Partial<ToolCallBody>) 
 }
 
 export type ApprovalDecision = 'allow' | 'deny' | 'expired';
+/** The person's answer, with their edits to the action when they changed it before allowing. */
+export interface ApprovalAnswer { decision: ApprovalDecision; edits?: unknown }
 
 /** Longest a tool call waits for the user. Kept under the engines' 30 minute tool timeout. */
 const APPROVAL_WAIT_MS = 25 * 60_000;
+/** While the person edits a card the wait restarts on each save, but never past this from when the card appeared. */
+const APPROVAL_EDIT_CAP_MS = 2 * 60 * 60_000;
 /** How long a turn waits for its bot's screen before answering without it (it keeps starting). */
 const SCREEN_READY_WAIT_MS = Number(process.env.SCREEN_READY_WAIT_MS) || 20_000;
 /** Screens a turn stopped waiting for while they kept starting, so the next turn doesn't wait again. */
 const screensComingUp = new Map<string, Promise<void>>();
 
-const waiters = new Map<string, { botId: string; resolve: (d: ApprovalDecision) => void }>();
+const waiters = new Map<string, { botId: string; resolve: (a: ApprovalAnswer) => void; timer?: NodeJS.Timeout; since: number }>();
 
 /** An `approvals` row; `user_id` is joined in by resolveApproval. */
 interface ApprovalRow {
@@ -189,11 +195,14 @@ interface ApprovalRow {
   user_id?: string;
 }
 
-function setApprovalCard(botId: string, rowSeq: number, approvalId: string, status: string) {
+function setApprovalCard(botId: string, rowSeq: number, approvalId: string, status: string, more: Partial<Extract<CardBody, { card: 'approval' }>> = {}) {
+  const card = approvalCard(botId, rowSeq, approvalId);
+  if (card) updateRow(botId, rowSeq, { ...card, ...more, status } as CardBody);
+}
+
+function approvalCard(botId: string, rowSeq: number, approvalId: string): Extract<CardBody, { card: 'approval' }> | undefined {
   const card = getRow(botId, rowSeq);
-  if (card && card.body.type === 'card' && card.body.card === 'approval' && card.body.approvalId === approvalId) {
-    updateRow(botId, rowSeq, { ...card.body, status } as CardBody);
-  }
+  return card && card.body.type === 'card' && card.body.card === 'approval' && card.body.approvalId === approvalId ? card.body : undefined;
 }
 
 const pendingApprovals = (botId: string) => db.prepare("SELECT * FROM approvals WHERE bot_id=? AND status='pending'").all(botId) as ApprovalRow[];
@@ -201,10 +210,11 @@ const pendingApprovals = (botId: string) => db.prepare("SELECT * FROM approvals 
 /** Put an approval card in the conversation and wait for the user's answer. */
 export async function requestApproval(
   who: { userId: string; botId: string },
-  pol: { key: string; toolkit?: string; title: string; rule?: { id: string; description: string } },
+  pol: { key: string; toolkit?: string; title: string; rule?: { id: string; description: string }; offerAlways?: boolean; alwaysFor?: { botId: string; botName: string } },
   args: unknown,
   rowSeq: number | null,
-): Promise<ApprovalDecision> {
+  review?: ReviewPayload,
+): Promise<ApprovalAnswer> {
   const { userId, botId } = who;
   const approvalId = newId('apr');
   const tk = pol.toolkit ? await toolkitInfo(pol.toolkit).catch(() => undefined) : undefined;
@@ -212,6 +222,9 @@ export async function requestApproval(
     type: 'card', card: 'approval', approvalId, title: `Allow ${getBotRow(botId).name} to ${pol.title.split(': ')[1] ?? pol.title}?`,
     detail: describeArgs(args), tool: pol.key, toolkit: pol.toolkit, toolkitName: tk?.name, logo: tk?.logo, args, status: 'pending',
     ...(pol.rule ? { rule: pol.rule } : {}),
+    ...(pol.offerAlways === false ? { offerAlways: false } : {}),
+    ...(pol.alwaysFor ? { alwaysFor: pol.alwaysFor } : {}),
+    ...(review ? { review } : {}),
   });
   db.prepare('INSERT INTO approvals(id,bot_id,row_seq,call_id,tool,status,created_at) VALUES (?,?,?,?,?,?,?)').run(approvalId, botId, card.seq, '', pol.key, 'pending', now());
   db.prepare('UPDATE bots SET unread = unread + 1 WHERE id=?').run(botId);
@@ -227,13 +240,12 @@ export async function requestApproval(
     data: { botId },
   });
 
-  let timer: NodeJS.Timeout | undefined;
-  const decision = await new Promise<ApprovalDecision>((resolve) => {
-    waiters.set(approvalId, { botId, resolve });
-    timer = setTimeout(() => expireApproval(approvalId), APPROVAL_WAIT_MS);
+  const answer = await new Promise<ApprovalAnswer>((resolve) => {
+    waiters.set(approvalId, { botId, resolve, since: Date.now(), timer: setTimeout(() => expireApproval(approvalId), APPROVAL_WAIT_MS) });
   });
-  clearTimeout(timer);
+  clearTimeout(waiters.get(approvalId)?.timer);
   waiters.delete(approvalId);
+  const { decision } = answer;
 
   if (rowSeq !== null) {
     if (decision === 'allow') patchToolRow(botId, rowSeq, { status: 'running' });
@@ -244,7 +256,20 @@ export async function requestApproval(
     else setLive(botId, { isRunning: false, activity: null, awaiting: null, startedAt: null });
   }
   hub.emit(userId, { type: 'tasks', botId });
-  return decision;
+  return answer;
+}
+
+/** The person is editing this card: give them a fresh wait, up to APPROVAL_EDIT_CAP_MS in all. */
+export function touchApproval(userId: string, approvalId: string): boolean {
+  const ap = db.prepare('SELECT a.*, b.user_id FROM approvals a JOIN bots b ON b.id=a.bot_id WHERE a.id=?').get(approvalId) as ApprovalRow | undefined;
+  if (!ap || ap.user_id !== userId) throw new Error('not found');
+  const w = waiters.get(approvalId);
+  if (ap.status !== 'pending' || !w) return false;
+  const left = w.since + APPROVAL_EDIT_CAP_MS - Date.now();
+  if (left <= 0) return false;
+  clearTimeout(w.timer);
+  w.timer = setTimeout(() => expireApproval(approvalId), Math.min(APPROVAL_WAIT_MS, left));
+  return true;
 }
 
 function expireApproval(approvalId: string) {
@@ -253,7 +278,7 @@ function expireApproval(approvalId: string) {
     db.prepare("UPDATE approvals SET status='expired', resolved_at=? WHERE id=?").run(now(), approvalId);
     setApprovalCard(ap.bot_id, ap.row_seq, approvalId, 'expired');
   }
-  waiters.get(approvalId)?.resolve('expired');
+  waiters.get(approvalId)?.resolve({ decision: 'expired' });
 }
 
 export function expireApprovals(botId: string) {
@@ -266,17 +291,24 @@ export function expireStaleApprovals() {
 }
 
 /** Resolve an approval card from the UI. */
-export function resolveApproval(userId: string, approvalId: string, decision: 'allow' | 'always' | 'deny') {
+export function resolveApproval(userId: string, approvalId: string, decision: 'allow' | 'always' | 'deny', edits?: unknown) {
   const ap = db.prepare('SELECT a.*, b.user_id FROM approvals a JOIN bots b ON b.id=a.bot_id WHERE a.id=?').get(approvalId) as ApprovalRow | undefined;
   if (!ap || ap.user_id !== userId) throw new Error('not found');
   if (ap.status !== 'pending') return;
   const waiter = waiters.get(approvalId);
   if (!waiter) return expireApproval(approvalId);
-  const status = decision === 'deny' ? 'denied' : decision === 'always' ? 'always' : 'allowed';
+  // Edits are checked before anything is decided: a change that cannot run leaves the card open.
+  const body = approvalCard(ap.bot_id, ap.row_seq, approvalId);
+  const editing = decision !== 'deny' && edits !== undefined && edits !== null;
+  if (editing) checkReviewEdits(ap.tool, body?.review, edits);
+  // "Always allow" is kept for this bot when its per-bot setting is on, otherwise for the person;
+  // on an action that must ask every time (sending email) without the per-bot setting, it allows once.
+  const always = decision === 'always' && rememberAlwaysAllow(userId, ap.bot_id, ap.tool) !== null;
+  const status = decision === 'deny' ? 'denied' : always ? 'always' : 'allowed';
   db.prepare('UPDATE approvals SET status=?, resolved_at=? WHERE id=?').run(status, now(), approvalId);
-  if (decision === 'always') db.prepare("INSERT OR REPLACE INTO policies(user_id,tool,mode) VALUES (?,?,'always_allow')").run(userId, ap.tool);
-  setApprovalCard(ap.bot_id, ap.row_seq, approvalId, status);
-  waiter.resolve(decision === 'deny' ? 'deny' : 'allow');
+  const shown = editing && body?.review && Object.keys(edits as object).length ? { review: { ...body.review, ...(edits as object) } as ReviewPayload, edited: true } : {};
+  setApprovalCard(ap.bot_id, ap.row_seq, approvalId, status, shown);
+  waiter.resolve(decision === 'deny' ? { decision: 'deny' } : { decision: 'allow', ...(editing ? { edits } : {}) });
 }
 
 function describeArgs(args: unknown): string {

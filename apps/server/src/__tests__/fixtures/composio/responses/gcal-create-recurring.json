@@ -1,0 +1,93 @@
+{
+  "slug": "GOOGLECALENDAR_CREATE_EVENT",
+  "ok": true,
+  "ms": 1218,
+  "request": {
+    "calendar_id": "id_17",
+    "summary": "Orbit eval weekly 2026-11-18T05:32",
+    "start_datetime": "2026-11-19T09:00:00",
+    "event_duration_minutes": 15,
+    "timezone": "America/Toronto",
+    "recurrence": [
+      "RRULE:FREQ=WEEKLY;COUNT=4"
+    ],
+    "send_updates": "none"
+  },
+  "response": {
+    "data": {
+      "composio_execution_message": null,
+      "display_url": "https://example.test/link_5",
+      "response_data": {
+        "attendees": [
+          {
+            "email": "person_2@example.test",
+            "organizer": true,
+            "responseStatus": "needsAction",
+            "self": true
+          }
+        ],
+        "conferenceData": {
+          "conferenceId": "id_25",
+          "conferenceSolution": {
+            "iconUri": "https://example.test/link_3",
+            "key": {
+              "type": "hangoutsMeet"
+            },
+            "name": "Google Meet"
+          },
+          "createRequest": {
+            "conferenceSolutionKey": {
+              "type": "hangoutsMeet"
+            },
+            "requestId": "id_26",
+            "status": {
+              "statusCode": "success"
+            }
+          },
+          "entryPoints": [
+            {
+              "entryPointType": "video",
+              "label": "meet.google.com/hrv-irbt-xgo",
+              "uri": "https://example.test/link_6"
+            }
+          ]
+        },
+        "created": "2026-11-18T05:32:31.000Z",
+        "creator": {
+          "email": "person_2@example.test",
+          "self": true
+        },
+        "end": {
+          "dateTime": "2026-11-19T14:15:00Z",
+          "timeZone": "America/Toronto"
+        },
+        "etag": "id_27",
+        "eventType": "default",
+        "hangoutLink": "https://example.test/link_6",
+        "htmlLink": "https://example.test/link_5",
+        "iCalUID": "id_28",
+        "id": "id_29",
+        "kind": "calendar#event",
+        "organizer": {
+          "email": "person_2@example.test",
+          "self": true
+        },
+        "recurrence": [
+          "RRULE:FREQ=WEEKLY;COUNT=4"
+        ],
+        "reminders": {
+          "useDefault": true
+        },
+        "sequence": 0,
+        "start": {
+          "dateTime": "2026-11-19T14:00:00Z",
+          "timeZone": "America/Toronto"
+        },
+        "status": "confirmed",
+        "summary": "Orbit eval weekly 2026-11-18T05:32",
+        "updated": "2026-11-18T05:32:32.124Z"
+      }
+    },
+    "error": null
+  }
+}

@@ -14,7 +14,10 @@ import { stackTokenMatches } from './lib/stack.js';
 import { hermesConnected } from './lib/hermes-probe.js';
 import { registerPushToken, removePushToken, removePushTokens } from './push.js';
 import { allLive, appendRow, clearConversation, emitBot, getBot, getRow, listBots, listRoutines, listRows, listTasks, toRoutine, updateRow, type RoutineRow, type TaskRow } from './store.js';
-import { enqueue, interrupt, resolveApproval } from './agent/loop.js';
+import { enqueue, interrupt, resolveApproval, touchApproval } from './agent/loop.js';
+import { ReviewEditError } from './review/index.js';
+import { actOnDraft, DraftActionError } from './review/drafts.js';
+import { clearMirror } from './calendar/mirror.js';
 import { computerState, ensureComputer, refreshComputer, suspendComputer } from './computer.js';
 import { computerKindFor, providerFor } from './computer-provider-registry.js';
 import { deleteMemory, listMemories, memoryBot } from './engine-memory.js';
@@ -23,7 +26,6 @@ import { catalog, composioEnabled, connectedToolkits, connectionHealthOf, delete
 import { connectionWatch } from './core/connection-watch.js';
 import { libraryRoot, safeRel } from './files.js';
 import { mediaTypeFor } from './lib/mime.js';
-import { generateAuthUrl, exchangeCode, hasGoogleAccess, googleEmail, revokeGoogle } from './google-oauth.js';
 import { runRoutine, scheduleRoutine, unscheduleRoutine } from './routines.js';
 import { deleteEventTrigger } from './triggers.js';
 import { dispatchRoomMessage } from './agent/rooms.js';
@@ -38,6 +40,7 @@ import { botRow, botRowsForUser, type BotRow } from './infra/bot-repository.js';
 import {
   AppConnectSchema,
   ApprovalDecisionSchema,
+  DraftActionSchema,
   CardAnswerSchema,
   CardDismissSchema,
   CreateBotSchema,
@@ -90,9 +93,18 @@ api.get('/auth/me', (c) => {
 
 api.patch('/auth/me', requireUser, async (c) => {
   const userId = c.get('user').id;
-  const body = await c.req.json() as { avatarUrl?: string | null };
+  const body = await c.req.json() as { avatarUrl?: string | null; timezone?: unknown };
   if (body.avatarUrl !== undefined) {
     db.prepare('UPDATE users SET avatar_url=? WHERE id=?').run(body.avatarUrl ?? null, userId);
+  }
+  // The device's timezone, so bots read and write times in the person's own time.
+  if (typeof body.timezone === 'string' && body.timezone.length <= 64) {
+    try {
+      new Intl.DateTimeFormat('en', { timeZone: body.timezone });
+      db.prepare('UPDATE users SET timezone=? WHERE id=?').run(body.timezone, userId);
+    } catch {
+      return c.json({ error: 'Not a timezone.' }, 400);
+    }
   }
   return c.json({ user: { ...c.get('user'), avatarUrl: body.avatarUrl ?? c.get('user').avatarUrl } });
 });
@@ -449,9 +461,38 @@ api.post('/bots/:id/fresh', (c) => {
 });
 
 api.post('/approvals/:id', async (c) => {
-  const { decision } = await requireBody(c, ApprovalDecisionSchema);
-  try { resolveApproval(c.get('user').id, c.req.param('id'), decision); } catch { return c.json({ error: 'not found' }, 404); }
+  const { decision, edits } = await requireBody(c, ApprovalDecisionSchema);
+  try {
+    resolveApproval(c.get('user').id, c.req.param('id'), decision, edits);
+  } catch (e) {
+    if (e instanceof ReviewEditError) return c.json({ error: e.message }, 400);
+    return c.json({ error: 'not found' }, 404);
+  }
   return c.json({ ok: true });
+});
+
+/** Save, send or discard a Gmail draft a bot wrote, from its email card. */
+api.post('/bots/:id/cards/:seq/draft', async (c) => {
+  const b = ownBot(c.get('user').id, c.req.param('id'));
+  if (!b) return c.json({ error: 'not found' }, 404);
+  const { action, edits } = await requireBody(c, DraftActionSchema);
+  try {
+    const { card, tell } = await actOnDraft(c.get('user').id, b.id, Number(c.req.param('seq')), action, edits);
+    if (tell) enqueue(b.id, { type: 'system', text: tell });
+    return c.json({ card });
+  } catch (e) {
+    if (e instanceof DraftActionError) return c.json({ error: e.message }, e.status);
+    throw e;
+  }
+});
+
+/** The person is editing an approval card: keep the bot's call waiting for them (up to two hours in all). */
+api.post('/approvals/:id/editing', (c) => {
+  try {
+    return c.json({ ok: touchApproval(c.get('user').id, c.req.param('id')) });
+  } catch {
+    return c.json({ error: 'not found' }, 404);
+  }
 });
 
 /**
@@ -692,6 +733,8 @@ api.get('/apps/callback', async (c) => {
 
 api.delete('/apps/:slug', async (c) => {
   await disconnect(c.get('user').id, c.req.param('slug'));
+  // Disconnecting Google Calendar forgets its mirrored events.
+  if (c.req.param('slug') === 'googlecalendar') clearMirror(c.get('user').id);
   hub.emit(c.get('user').id, { type: 'connections' });
   return c.json({ ok: true });
 });
@@ -702,51 +745,18 @@ api.delete('/policies/:tool', (c) => {
   return c.json({ ok: true });
 });
 
-// ---------- Google OAuth2 (direct, no Composio) ----------
-
-api.get('/google/status', (c) => {
-  const userId = c.get('user').id;
-  if (!env.googleClientId) return c.json({ configured: false, connected: false });
-  return c.json({ configured: true, connected: hasGoogleAccess(userId), email: googleEmail(userId) });
+// Per-bot "Always allow": what the person always-allowed for one Bot (used only while that Bot's
+// alwaysAllow setting is on), and removing one.
+api.get('/bots/:id/policies', (c) => {
+  const b = ownBot(c.get('user').id, c.req.param('id'));
+  if (!b) return c.json({ error: 'not found' }, 404);
+  const rows = db.prepare('SELECT tool, created_at FROM bot_policies WHERE bot_id=? ORDER BY created_at').all(b.id) as { tool: string; created_at: number }[];
+  return c.json({ policies: rows.map((r) => ({ tool: r.tool, createdAt: r.created_at })) });
 });
-
-api.get('/google/connect', async (c) => {
-  if (!env.googleClientId || !env.googleClientSecret) return c.json({ error: 'Google OAuth is not configured on this server. Add GOOGLE_CLIENT_ID and GOOGLE_CLIENT_SECRET to .env.' }, 503);
-  const userId = c.get('user').id;
-  const cb = `${env.serverUrl}/api/google/callback`;
-  try {
-    const url = generateAuthUrl(userId, cb);
-    return c.json({ redirectUrl: url });
-  } catch (e) {
-    return c.json({ error: messageOf(e) }, 500);
-  }
-});
-
-api.get('/google/callback', async (c) => {
-  const state = c.req.query('state') ?? '';
-  const code = c.req.query('code') ?? '';
-  const error = c.req.query('error');
-  const cb = `${env.serverUrl}/api/google/callback`;
-  const ok = !error && !!code && !!state;
-  if (ok) {
-    try {
-      await exchangeCode(state, code, cb);
-    } catch (e) {
-      console.error('[google-oauth] callback error', (e as Error).message);
-      return c.html(`<!doctype html><meta charset="utf-8"><title>Google</title><body style="font-family:system-ui;padding:40px;text-align:center">Could not connect Google account. Please try again.<script>try{window.opener&&window.opener.postMessage({type:'grokbot-connected',provider:'google',ok:false},'*')}catch(e){}setTimeout(()=>window.close(),2000)</script></body>`);
-    }
-    hub.emit(
-      (db.prepare('SELECT user_id FROM google_oauth_states WHERE state=?').get(state) as { user_id: string } | undefined)?.user_id ?? '',
-      { type: 'connections' },
-    );
-  }
-  const msg = ok ? 'Google account connected. You can close this window.' : 'Connection failed or was cancelled.';
-  return c.html(`<!doctype html><meta charset="utf-8"><title>Google</title><body style="font-family:system-ui;padding:40px;text-align:center">${msg}<script>try{window.opener&&window.opener.postMessage({type:'grokbot-connected',provider:'google',ok:${ok}},'*')}catch(e){}setTimeout(()=>window.close(),800)</script></body>`);
-});
-
-api.delete('/google', async (c) => {
-  await revokeGoogle(c.get('user').id);
-  hub.emit(c.get('user').id, { type: 'connections' });
+api.delete('/bots/:id/policies/:tool', (c) => {
+  const b = ownBot(c.get('user').id, c.req.param('id'));
+  if (!b) return c.json({ error: 'not found' }, 404);
+  db.prepare('DELETE FROM bot_policies WHERE bot_id=? AND tool=?').run(b.id, c.req.param('tool'));
   return c.json({ ok: true });
 });
 

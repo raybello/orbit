@@ -4,6 +4,7 @@ import { db } from './db.js';
 import { env } from './env.js';
 import type { Toolkit } from './types.js';
 import { connectionHealth, type ConnectionAccount, type ConnectionHealth } from './domain/connections.js';
+import { GOOGLE_TOOLKIT_VERSION } from './domain/google-actions.js';
 
 /**
  * Constructed on first use: an empty COMPOSIO_API_KEY must not stop the server booting —
@@ -95,6 +96,10 @@ interface ConnectedAccountPage {
 }
 
 export async function connectedToolkits(userId: string): Promise<Set<string>> {
+  return composioIO.connected(userId);
+}
+
+async function activeToolkits(userId: string): Promise<Set<string>> {
   if (!composioEnabled()) return new Set();
   const r = (await composio.connectedAccounts.list({ userIds: [userId], statuses: ['ACTIVE'] })) as unknown as ConnectedAccountPage;
   const items = r.items ?? [];
@@ -177,30 +182,71 @@ export async function composioTools(userId: string): Promise<unknown[]> {
   }
 }
 
-export async function executeComposio(userId: string, name: string, args: Record<string, unknown>) {
-  const session = await sessionFor(userId);
-  const r = await session.execute(name, args);
-  return r as { data?: unknown; error?: unknown; resultType?: string; logId?: string };
+/** What a Composio meta-tool call answers. */
+export interface MetaResult { data?: unknown; error?: unknown; resultType?: string; logId?: string }
+/** What one directly run action answers. */
+export interface ActionResult { successful: boolean; data: unknown; error: unknown }
+
+/**
+ * Toolkit versions for the actions the server runs itself (approval cards reading what a change
+ * replaces, sending a reviewed draft). Pinned to the version the app's catalogue and fixtures were
+ * captured from (domain/google-actions.ts); Composio refuses an unpinned direct call.
+ */
+const PINNED_TOOLKITS = { gmail: GOOGLE_TOOLKIT_VERSION, googlecalendar: GOOGLE_TOOLKIT_VERSION, googlesheets: GOOGLE_TOOLKIT_VERSION, googledocs: GOOGLE_TOOLKIT_VERSION };
+let pinnedClient: Composio<OpenAIResponsesProvider> | null = null;
+
+/**
+ * The two ways the server reaches Composio for a user. Tests replace these functions; nothing else
+ * should call the SDK for tool execution.
+ */
+export const composioIO = {
+  /** The apps this person has connected (active accounts only). */
+  connected: (userId: string): Promise<Set<string>> => activeToolkits(userId),
+  async executeMeta(userId: string, name: string, args: Record<string, unknown>): Promise<MetaResult> {
+    const session = await sessionFor(userId);
+    return (await session.execute(name, args)) as MetaResult;
+  },
+  async runAction(userId: string, slug: string, args: Record<string, unknown>): Promise<ActionResult> {
+    pinnedClient ??= new Composio({ apiKey: env.composioKey, provider: new OpenAIResponsesProvider(), toolkitVersions: PINNED_TOOLKITS });
+    const r = (await pinnedClient.tools.execute(slug, { userId, arguments: args })) as { successful?: boolean; data?: unknown; error?: unknown };
+    return { successful: r.successful !== false && !r.error, data: r.data ?? null, error: r.error ?? null };
+  },
+};
+
+export const executeComposio = (userId: string, name: string, args: Record<string, unknown>) => composioIO.executeMeta(userId, name, args);
+
+/** Run one Gmail, Calendar, Sheets or Docs action for this user, outside any bot's session. */
+export const runAction = (userId: string, slug: string, args: Record<string, unknown>) => composioIO.runAction(userId, slug, args);
+
+/** One app action inside a Composio call: its slug and the arguments it will run with. */
+export interface InnerCall { slug: string; args: Record<string, unknown> }
+
+const asObject = (v: unknown): Record<string, unknown> =>
+  v && typeof v === 'object' && !Array.isArray(v) ? (v as Record<string, unknown>) : {};
+
+/**
+ * Which app actions a Composio call would run, with their arguments (for approval checks).
+ * COMPOSIO_MULTI_EXECUTE_TOOL documents `tools: [{ tool_slug, arguments }]`; the router also accepts
+ * `tool_params`, and older callers used `tool_calls` / `actions` / `slug`, so all of them are read.
+ */
+export function innerToolCalls(name: string, args: unknown): InnerCall[] {
+  if (name === 'COMPOSIO_MULTI_EXECUTE_TOOL') {
+    const a = asObject(args);
+    const list = a.tools ?? a.tool_calls ?? a.actions ?? [];
+    return (Array.isArray(list) ? list : []).flatMap((t) => {
+      const o = asObject(t);
+      const slug = String(o.tool_slug ?? o.slug ?? o.name ?? o.tool ?? '');
+      return slug ? [{ slug, args: asObject(o.arguments ?? o.tool_params ?? o.args) }] : [];
+    });
+  }
+  if (name.startsWith('COMPOSIO_')) return [];
+  return [{ slug: name, args: asObject(args) }];
 }
 
 /** Which inner tool slugs a Composio meta-tool call would run (for approval checks). */
-export function innerToolSlugs(name: string, args: unknown): string[] {
-  if (name === 'COMPOSIO_MULTI_EXECUTE_TOOL') {
-    const a = (args ?? {}) as { tools?: unknown; tool_calls?: unknown; actions?: unknown };
-    const list = a.tools ?? a.tool_calls ?? a.actions ?? [];
-    return (Array.isArray(list) ? list : [])
-      .map((t) => {
-        const o = t as { tool_slug?: unknown; slug?: unknown; name?: unknown; tool?: unknown };
-        return String(o.tool_slug ?? o.slug ?? o.name ?? o.tool ?? '');
-      })
-      .filter(Boolean);
-  }
-  if (name.startsWith('COMPOSIO_')) return [];
-  return [name];
-}
+export const innerToolSlugs = (name: string, args: unknown): string[] => innerToolCalls(name, args).map((c) => c.slug);
 
-const READ_RE = /_(GET|LIST|SEARCH|FETCH|FIND|READ|RETRIEVE|QUERY|LOOKUP|CHECK|DESCRIBE|VIEW|COUNT)(_|$)/;
-export const isReadOnlySlug = (slug: string) => READ_RE.test(slug.toUpperCase());
+export { isReadOnlySlug } from './domain/google-actions.js';
 
 // ---------- sign-in via Composio-managed Google (Gmail) connection ----------
 

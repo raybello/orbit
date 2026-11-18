@@ -1,0 +1,333 @@
+{
+  "slug": "GMAIL_CREATE_EMAIL_DRAFT",
+  "version": "20261116_00",
+  "description": "Creates a Gmail draft with optional recipients, subject, plain or HTML body, attachments, and threading. When a requested thread cannot be fetched, the draft is created without threading; a provided subject is used instead of the thread subject.",
+  "input_parameters": {
+    "type": "object",
+    "title": "CreateEmailDraftRequest",
+    "properties": {
+      "cc": {
+        "type": "array",
+        "items": {
+          "type": "string"
+        },
+        "title": "Cc",
+        "default": [],
+        "examples": [
+          [
+            "cc.recipient1@example.com",
+            "CC User <cc.recipient2@example.com>"
+          ]
+        ],
+        "description": "Carbon Copy (CC) recipients' email addresses. Each must be a valid email address (e.g., 'user@example.com') or display name format (e.g., 'John Doe <user@example.com>'). Plain names without email addresses are NOT valid. Optional for drafts (recipients can be added later before sending)."
+      },
+      "bcc": {
+        "type": "array",
+        "items": {
+          "type": "string"
+        },
+        "title": "Bcc",
+        "default": [],
+        "examples": [
+          [
+            "bcc.recipient@example.com",
+            "BCC User <bcc.user@example.com>"
+          ]
+        ],
+        "description": "Blind Carbon Copy (BCC) recipients' email addresses. Each must be a valid email address (e.g., 'user@example.com') or display name format (e.g., 'Bob Jones <user@example.com>'). Plain names without email addresses are NOT valid. Optional for drafts (recipients can be added later before sending)."
+      },
+      "body": {
+        "type": "string",
+        "title": "Body",
+        "examples": [
+          "Hello Team,\n\nPlease find the attached report for your review.\n\nBest regards,\nYour Name",
+          "<h1>Meeting Confirmation</h1><p>This email confirms our meeting scheduled for next Tuesday.</p>"
+        ],
+        "description": "Email body content (plain text or HTML); `is_html` must be True if HTML. Optional - drafts can be created without a body and edited later before sending. Can also be provided as 'message_body'.",
+        "human_parameter_name": "Email Body",
+        "human_parameter_description": "Write the main content of your email here. This can be plain text or HTML, depending on your preference."
+      },
+      "is_html": {
+        "type": "boolean",
+        "title": "Is Html",
+        "default": false,
+        "examples": [
+          true,
+          false
+        ],
+        "description": "Set to True if `body` is already formatted HTML. When False, plain text newlines are auto-converted to <br/> tags. Both modes result in HTML email; this flag controls whether the body content is treated as raw HTML or plain text that gets HTML formatting applied.",
+        "human_parameter_name": "Is HTML?",
+        "human_parameter_description": "Set to True if your email body is already HTML. When False, plain text formatting (newlines, tabs) will be automatically converted to HTML for proper display."
+      },
+      "subject": {
+        "type": "string",
+        "title": "Subject",
+        "examples": [
+          "Project Update Q3",
+          "Meeting Reminder"
+        ],
+        "description": "Email subject line. Optional - drafts can be created without a subject and edited later before sending. When creating a draft reply to an existing thread (thread_id provided), leave this empty to stay in the same thread. Setting a subject will create a NEW thread instead.",
+        "human_parameter_name": "Subject",
+        "human_parameter_description": "Enter the subject of your email. This helps the recipient understand what the email is about."
+      },
+      "user_id": {
+        "type": "string",
+        "title": "User Id",
+        "default": "me",
+        "examples": [
+          "me",
+          "user@example.com"
+        ],
+        "description": "User's email address or 'me' for the authenticated user.",
+        "human_parameter_name": "User ID",
+        "human_parameter_description": "Provide the user ID or the email address of the user. Use 'me' to refer to the currently authenticated user."
+      },
+      "thread_id": {
+        "type": "string",
+        "title": "Thread Id",
+        "examples": [
+          "17f45ec49a9c3f1b"
+        ],
+        "description": "ID of an existing Gmail thread to reply to; omit for new thread. If the thread ID is invalid or inaccessible, the draft will be created as a new thread instead of failing.",
+        "human_parameter_name": "Thread ID",
+        "human_parameter_description": "If you want to reply to an ongoing conversation, provide the thread ID here. Leave it blank for a new message."
+      },
+      "attachment": {
+        "anyOf": [
+          {
+            "type": "object",
+            "title": "FileUploadable",
+            "required": [
+              "name",
+              "mimetype",
+              "s3key"
+            ],
+            "properties": {
+              "name": {
+                "type": "string",
+                "title": "Name",
+                "examples": [
+                  "document.pdf",
+                  "image.jpg",
+                  "report.docx"
+                ],
+                "description": "The filename that will be used when uploading the file to the destination service"
+              },
+              "s3key": {
+                "type": "string",
+                "title": "S3Key",
+                "examples": [
+                  "47563/gmail/GET_ATTACHMENT/response/12345"
+                ],
+                "description": "The S3 key of a publicly accessible file, typically returned from a previous download action that stored the file in S3. This key references an existing file that can be uploaded to another service."
+              },
+              "mimetype": {
+                "type": "string",
+                "title": "Mimetype",
+                "examples": [
+                  "application/pdf",
+                  "image/jpeg",
+                  "application/vnd.openxmlformats-officedocument.wordprocessingml.document"
+                ],
+                "description": "The MIME type of the file"
+              }
+            },
+            "file_uploadable": true
+          },
+          {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "title": "FileUploadable",
+              "required": [
+                "name",
+                "mimetype",
+                "s3key"
+              ],
+              "properties": {
+                "name": {
+                  "type": "string",
+                  "title": "Name",
+                  "examples": [
+                    "document.pdf",
+                    "image.jpg",
+                    "report.docx"
+                  ],
+                  "description": "The filename that will be used when uploading the file to the destination service"
+                },
+                "s3key": {
+                  "type": "string",
+                  "title": "S3Key",
+                  "examples": [
+                    "47563/gmail/GET_ATTACHMENT/response/12345"
+                  ],
+                  "description": "The S3 key of a publicly accessible file, typically returned from a previous download action that stored the file in S3. This key references an existing file that can be uploaded to another service."
+                },
+                "mimetype": {
+                  "type": "string",
+                  "title": "Mimetype",
+                  "examples": [
+                    "application/pdf",
+                    "image/jpeg",
+                    "application/vnd.openxmlformats-officedocument.wordprocessingml.document"
+                  ],
+                  "description": "The MIME type of the file"
+                }
+              },
+              "file_uploadable": true
+            }
+          }
+        ],
+        "title": "Attachment",
+        "description": "File(s) to attach to the email. Accepts a single file or a list of files. Total message size including base64-encoded attachments must be under 25 MB; use shareable links (e.g., Google Drive) for larger files.",
+        "human_parameter_name": "Attachment(s)",
+        "human_parameter_description": "Upload file(s) you want to include with the email. Can be a single file or multiple files."
+      },
+      "recipient_email": {
+        "type": "string",
+        "title": "Recipient Email",
+        "examples": [
+          "john.doe@example.com",
+          "John Doe <john.doe@example.com>"
+        ],
+        "description": "Primary recipient's email address. Must be a valid email address (e.g., 'user@example.com') or display name format (e.g., 'John Doe <user@example.com>'). A plain name without an email address (e.g., 'John Doe') is NOT valid - the '@' symbol and domain are required. Optional for drafts (recipients can be added later before sending). Use extra_recipients if you want to send to multiple recipients."
+      },
+      "extra_recipients": {
+        "type": "array",
+        "items": {
+          "type": "string"
+        },
+        "title": "Extra Recipients",
+        "default": [],
+        "examples": [
+          [
+            "jane.doe@example.com",
+            "Jane Doe <jane.doe@example.com>"
+          ]
+        ],
+        "description": "Additional 'To' recipients' email addresses (not Cc or Bcc). Each must be a valid email address (e.g., 'user@example.com'), display name format (e.g., 'Jane Doe <user@example.com>'), or 'me' for the authenticated user. Plain names without email addresses are NOT valid. Should only be used if recipient_email is also provided."
+      },
+      "include_signature": {
+        "type": "boolean",
+        "title": "Include Signature",
+        "default": true,
+        "description": "Append the sender's Gmail signature (the 'Send mail as' signature configured in Gmail settings) to the message body, ahead of any quoted or forwarded content. Skipped when the body already ends with that signature, when no signature is configured, or when the connection lacks permission to read Gmail settings. Set to false to send the body exactly as provided.",
+        "human_parameter_name": "Include Gmail signature?",
+        "human_parameter_description": "Append the sender's configured Gmail signature to the message."
+      }
+    }
+  },
+  "output_parameters": {
+    "type": "object",
+    "$defs": {
+      "GmailMessageResponse": {
+        "type": "object",
+        "title": "GmailMessageResponse",
+        "properties": {
+          "id": {
+            "type": "string",
+            "title": "Id",
+            "description": "The immutable ID of the sent message."
+          },
+          "raw": {
+            "type": "string",
+            "title": "Raw",
+            "description": "The entire email message in RFC 2822 format, base64url-encoded."
+          },
+          "payload": {
+            "type": "object",
+            "title": "Payload",
+            "description": "The parsed email structure, including headers and body parts.",
+            "additionalProperties": true
+          },
+          "snippet": {
+            "type": "string",
+            "title": "Snippet",
+            "description": "A short extract of the message text."
+          },
+          "labelIds": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "title": "Label Ids",
+            "description": "List of IDs of labels applied to this message."
+          },
+          "threadId": {
+            "type": "string",
+            "title": "Thread Id",
+            "description": "The ID of the thread the message belongs to."
+          },
+          "historyId": {
+            "type": "string",
+            "title": "History Id",
+            "description": "The ID of the last history record that modified this message."
+          },
+          "display_url": {
+            "type": "string",
+            "title": "Display Url",
+            "description": "Web UI link for this resource - set by each action's execute()."
+          },
+          "internalDate": {
+            "type": "string",
+            "title": "Internal Date",
+            "description": "The internal timestamp of the message in milliseconds since epoch."
+          },
+          "sizeEstimate": {
+            "type": "integer",
+            "title": "Size Estimate",
+            "description": "Estimated size of the message in bytes."
+          }
+        },
+        "description": "Standard Gmail message response returned by Gmail API for sent messages.\nUsed by actions like send_email and send_draft."
+      },
+      "CreateEmailDraftResponse": {
+        "type": "object",
+        "title": "CreateEmailDraftResponse",
+        "required": [
+          "id",
+          "message"
+        ],
+        "properties": {
+          "id": {
+            "type": "string",
+            "title": "Id",
+            "description": "Immutable ID of the draft."
+          },
+          "message": {
+            "$ref": "#/$defs/GmailMessageResponse",
+            "title": "Message",
+            "description": "The created draft message resource."
+          },
+          "display_url": {
+            "type": "string",
+            "title": "Display Url",
+            "description": "URL to view the draft in Gmail."
+          }
+        }
+      }
+    },
+    "title": "CreateEmailDraftResponseWrapper",
+    "required": [
+      "data",
+      "successful"
+    ],
+    "properties": {
+      "data": {
+        "$ref": "#/$defs/CreateEmailDraftResponse",
+        "title": "Data",
+        "description": "Data from the action execution"
+      },
+      "error": {
+        "type": "string",
+        "title": "Error",
+        "description": "Error if any occurred during the execution of the action"
+      },
+      "successful": {
+        "type": "boolean",
+        "title": "Successful",
+        "description": "Whether or not the action execution was successful or not"
+      }
+    }
+  }
+}

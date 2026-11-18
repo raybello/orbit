@@ -14,6 +14,7 @@ import { useOrbitStore } from '../lib/store';
 import { useMobileTokens } from '../lib/native';
 import { botIdFromResponse, configureNotificationHandler, registerPushNotifications } from '../lib/push';
 import { queryKeys } from '../lib/queries';
+import { sendTimezone } from '../lib/queries';
 
 const queryClient = new QueryClient({
   defaultOptions: {
@@ -55,6 +56,8 @@ function AuthGate({ onSessionChange }: { onSessionChange: () => void }) {
       if (signedIn.current !== nowSignedIn) {
         signedIn.current = nowSignedIn;
         onSessionChange();
+        // Bots give and take times in the person's timezone.
+        if (nowSignedIn) void sendTimezone().catch(() => {});
       }
 
       const needsServer = !saved && !hasBakedApiBase();

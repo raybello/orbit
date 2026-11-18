@@ -21,6 +21,7 @@ import { durationLabel } from '../../lib/format';
 import { useMobileTokens, type MobileTokens } from '../../lib/native';
 import { useApproval, useInterrupt, useMarkRead, useQuestionCard, useRowsQuery, useSendMessage } from '../../lib/queries';
 import { useOrbitStore } from '../../lib/store';
+import { MobileDocApproval, MobileDraftEmail, MobileEmailApproval, MobileEventApproval, MobileFileNotice, MobileSheetApproval } from '../../components/ReviewCards';
 
 /** One transcript item: a single row, or a run of tool calls folded into one chip. */
 type Block =
@@ -326,6 +327,7 @@ function RowView({
       return <ToolRunChip rows={[row]} tokens={tokens} />;
     case 'event':
     case 'notice':
+      if (body.type === 'notice' && body.kind === 'workspace-file' && body.file) return <MobileFileNotice file={body.file} tokens={tokens} />;
       return (
         <Text
           style={{
@@ -414,7 +416,14 @@ function ToolRunChip({ rows, tokens }: { rows: Row[]; tokens: MobileTokens }) {
 }
 
 function CardView({ body, seq, botId, tokens }: { body: Extract<CardBody, { type: 'card' }>; seq: number; botId: string; tokens: MobileTokens }) {
-  if (body.card === 'approval') return <ApprovalCard body={body} tokens={tokens} botId={botId} />;
+  if (body.card === 'approval') {
+    if (body.review?.kind === 'email') return <MobileEmailApproval body={body} botId={botId} tokens={tokens} />;
+    if (body.review?.kind === 'event') return <MobileEventApproval body={body} botId={botId} tokens={tokens} />;
+    if (body.review?.kind === 'sheet') return <MobileSheetApproval body={body} botId={botId} tokens={tokens} />;
+    if (body.review?.kind === 'doc') return <MobileDocApproval body={body} botId={botId} tokens={tokens} />;
+    return <ApprovalCard body={body} tokens={tokens} botId={botId} />;
+  }
+  if (body.card === 'draft' && body.email) return <MobileDraftEmail body={body} seq={seq} botId={botId} tokens={tokens} />;
   if (body.card === 'question') return <QuestionCard body={body} seq={seq} botId={botId} tokens={tokens} />;
 
   // Connect, secure-form and draft cards are informational on the phone: the work happens on the web app.
@@ -456,12 +465,14 @@ function ApprovalCard({ body, botId, tokens }: { body: Extract<CardBody, { card:
             busy={approval.isPending}
             onPress={() => approval.mutate({ approvalId: body.approvalId, decision: 'allow' })}
           />
-          <CardButton
-            tokens={tokens}
-            label="Always"
-            busy={approval.isPending}
-            onPress={() => approval.mutate({ approvalId: body.approvalId, decision: 'always' })}
-          />
+          {!body.rule && (body.alwaysFor || body.offerAlways !== false) ? (
+            <CardButton
+              tokens={tokens}
+              label={body.alwaysFor ? `Always for ${body.alwaysFor.botName}` : 'Always'}
+              busy={approval.isPending}
+              onPress={() => approval.mutate({ approvalId: body.approvalId, decision: 'always' })}
+            />
+          ) : null}
           <CardButton
             tokens={tokens}
             label="Deny"

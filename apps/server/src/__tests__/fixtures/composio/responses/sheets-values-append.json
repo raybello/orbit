@@ -1,0 +1,53 @@
+{
+  "slug": "GOOGLESHEETS_SPREADSHEETS_VALUES_APPEND",
+  "ok": true,
+  "ms": 810,
+  "request": {
+    "spreadsheetId": "id_41",
+    "range": "Sheet1!A1",
+    "valueInputOption": "USER_ENTERED",
+    "values": [
+      [
+        "beta",
+        2,
+        "second"
+      ],
+      [
+        "gamma",
+        3,
+        "third"
+      ]
+    ],
+    "includeValuesInResponse": true
+  },
+  "response": {
+    "data": {
+      "spreadsheetId": "id_41",
+      "tableRange": "Sheet1!A1:C2",
+      "updates": {
+        "spreadsheetId": "id_41",
+        "updatedCells": 6,
+        "updatedColumns": 3,
+        "updatedData": {
+          "majorDimension": "ROWS",
+          "range": "Sheet1!A3:C4",
+          "values": [
+            [
+              "beta",
+              "2",
+              "second"
+            ],
+            [
+              "gamma",
+              "3",
+              "third"
+            ]
+          ]
+        },
+        "updatedRange": "Sheet1!A3:C4",
+        "updatedRows": 2
+      }
+    },
+    "error": null
+  }
+}

@@ -1,0 +1,16 @@
+{
+  "slug": "GMAIL_GET_PROFILE",
+  "ok": true,
+  "ms": 609,
+  "request": {},
+  "response": {
+    "data": {
+      "display_url": "https://example.test/link_17",
+      "emailAddress": "person_2@example.test",
+      "historyId": "id_1",
+      "messagesTotal": 8515,
+      "threadsTotal": 8227
+    },
+    "error": null
+  }
+}

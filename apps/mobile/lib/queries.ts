@@ -11,8 +11,12 @@ import type {
   SendMessageResponse,
   SkillEntry,
   SkillsResponse,
+  DuplicateDefaults,
+  EventEdits,
+  EventFields,
+  GoogleCalendarInfo,
 } from '@orbit/contracts';
-import { orbitGet, orbitPost, orbitPut } from './api';
+import { orbitDelete, orbitGet, orbitPatch, orbitPost, orbitPut } from './api';
 import { currentApiBase } from './api-server';
 import { useOrbitStore } from './store';
 
@@ -101,15 +105,42 @@ export type ApprovalDecision = 'allow' | 'always' | 'deny';
 export function useApproval(botId: string) {
   const queryClient = useQueryClient();
   return useMutation({
-    mutationFn: async ({ approvalId, decision }: { approvalId: string; decision: ApprovalDecision }) => {
+    mutationFn: async ({ approvalId, decision, edits }: { approvalId: string; decision: ApprovalDecision; edits?: unknown }) => {
       const apiBase = await currentApiBase();
-      return orbitPost<{ ok: boolean }>(apiBase, `/api/approvals/${encodeURIComponent(approvalId)}`, { decision });
+      return orbitPost<{ ok: boolean }>(apiBase, `/api/approvals/${encodeURIComponent(approvalId)}`, edits ? { decision, edits } : { decision });
     },
     onSettled: () => {
       void queryClient.invalidateQueries({ queryKey: queryKeys.rows(botId) });
       void queryClient.invalidateQueries({ queryKey: queryKeys.bots });
     },
   });
+}
+
+/** POST /api/approvals/:id/editing — keep the bot's call waiting while the person edits its card. */
+export async function touchApproval(approvalId: string) {
+  const apiBase = await currentApiBase();
+  return orbitPost<{ ok: boolean }>(apiBase, `/api/approvals/${encodeURIComponent(approvalId)}/editing`, {});
+}
+
+/** POST /api/bots/:id/cards/:seq/draft — save, send or discard a Gmail draft from its email card. */
+export function useDraftAction(botId: string) {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: async ({ seq, action, edits }: { seq: number; action: 'save' | 'send' | 'discard'; edits?: unknown }) => {
+      const apiBase = await currentApiBase();
+      return orbitPost<{ card: unknown }>(apiBase, `/api/bots/${encodeURIComponent(botId)}/cards/${seq}/draft`, edits ? { action, edits } : { action });
+    },
+    onSettled: () => {
+      void queryClient.invalidateQueries({ queryKey: queryKeys.rows(botId) });
+    },
+  });
+}
+
+/** PATCH /api/auth/me — tell the server this phone's timezone (bots use it for times). */
+export async function sendTimezone() {
+  const apiBase = await currentApiBase();
+  const timezone = Intl.DateTimeFormat().resolvedOptions().timeZone;
+  if (timezone) await orbitPatch(apiBase, '/api/auth/me', { timezone });
 }
 
 /** POST /api/bots/:id/cards/:seq/answer | /dismiss — answers a question card. */
@@ -171,10 +202,49 @@ export function useCalendarQuery(fromIso: string, toIso: string) {
     queryFn: async () => {
       const apiBase = await currentApiBase();
       const search = `?from=${encodeURIComponent(fromIso)}&to=${encodeURIComponent(toIso)}`;
-      const { events } = await orbitGet<CalendarResponse>(apiBase, `/api/calendar${search}`);
-      return events;
+      return orbitGet<CalendarResponse>(apiBase, `/api/calendar${search}`);
     },
   });
+}
+
+/** GET /api/calendar/google — the person's Google calendars and which ones show. */
+export function useGoogleCalendarsQuery(enabled: boolean) {
+  return useQuery({
+    queryKey: ['google-calendars'],
+    enabled,
+    queryFn: async () => {
+      const apiBase = await currentApiBase();
+      return orbitGet<{ calendars: GoogleCalendarInfo[] }>(apiBase, '/api/calendar/google');
+    },
+  });
+}
+
+/** The person's own Google event changes (no bot): show/hide a calendar, create, change, delete. */
+export function useGoogleCalendarActions() {
+  const queryClient = useQueryClient();
+  const done = () => {
+    void queryClient.invalidateQueries({ queryKey: ['calendar'] });
+    void queryClient.invalidateQueries({ queryKey: ['google-calendars'] });
+  };
+  const base = () => currentApiBase();
+  return {
+    toggle: useMutation({ mutationFn: async ({ key, enabled }: { key: string; enabled: boolean }) => orbitPatch(await base(), `/api/calendar/google/${encodeURIComponent(key)}`, { enabled }), onSettled: done }),
+    create: useMutation({ mutationFn: async (body: { calendarKey?: string; fields: EventFields; notifyGuests?: boolean }) => orbitPost(await base(), '/api/calendar/google/events', body), onSettled: done }),
+    update: useMutation({ mutationFn: async ({ key, edits }: { key: string; edits: EventEdits }) => orbitPatch(await base(), `/api/calendar/google/events/${encodeURIComponent(key)}`, { edits }), onSettled: done }),
+    remove: useMutation({
+      mutationFn: async ({ key, scope, notify }: { key: string; scope?: 'this' | 'following' | 'all'; notify?: boolean }) => {
+        const q = new URLSearchParams({ ...(scope ? { scope } : {}), ...(notify !== undefined ? { notify: notify ? '1' : '0' } : {}) });
+        return orbitDelete(await base(), `/api/calendar/google/events/${encodeURIComponent(key)}?${q}`);
+      },
+      onSettled: done,
+    }),
+  };
+}
+
+/** GET /api/calendar/google/events/:key/duplicate — what an Orbit event made from this one starts with. */
+export async function fetchDuplicateDefaults(key: string) {
+  const apiBase = await currentApiBase();
+  return orbitGet<DuplicateDefaults>(apiBase, `/api/calendar/google/events/${encodeURIComponent(key)}/duplicate`);
 }
 
 /** POST /api/routines — a calendar event is a routine with calendar metadata. */

@@ -2,7 +2,7 @@
 <p class="lede">Give a bot a job, connect the apps it needs, and follow its work in chat. This page walks through each part of the app in the order you will meet it.</p>
 
 <h2 id="sign-in">Signing in</h2>
-<p>Orbit signs you in with Google when <code>GOOGLE_CLIENT_ID</code> and <code>GOOGLE_CLIENT_SECRET</code> are set. For local work, <code>DEV_LOGIN=1</code> turns on an email-only form; never set it on a public address. <code>ALLOWED_EMAILS</code> limits who may sign in. On a remote install without Google configured, <code>scripts/sign-in-link.sh you@example.com</code> prints a one-time sign-in link.</p>
+<p>Orbit signs you in with Google through Composio when <code>COMPOSIO_API_KEY</code> is set. For local work, <code>DEV_LOGIN=1</code> turns on an email-only form; never set it on a public address. <code>ALLOWED_EMAILS</code> limits who may sign in. On a remote install without Google configured, <code>scripts/sign-in-link.sh you@example.com</code> prints a one-time sign-in link.</p>
 <p>The mobile app and other native clients sign in with <code>POST /api/auth/sign-in</code> and keep a bearer token; the browser and desktop app use a session cookie. Sessions last 30 days.</p>
 
 <h2 id="layout">Finding your way around</h2>
@@ -14,7 +14,7 @@
   <li>Give it a name, pick an avatar shape and colour, and choose <strong>personal</strong> or <strong>teammate</strong> mode.</li>
   <li>Orbit creates a Hermes home and engine for it, registers a computer, and gives it its own memory. The bot is ready once both its engine and its screen are up.</li>
 </ol>
-<p>The default ceiling is four bots (<code>MAX_BOTS=4</code>), because each desktop takes a screen, a browser and roughly 1–2 GB of RAM. A new managed bot inherits the primary agent's provider and API keys.</p>
+<p>The default ceiling is ten bots (<code>MAX_BOTS=10</code>), sized for a 16 GB machine giving Docker 10 GB: a working bot's desktop and browser take about 0.3–0.75 GB, and idle bots are frozen, then stopped. A new managed bot inherits the primary agent's provider and API keys.</p>
 <p>Open a bot's settings to change its name, label, description and instructions, its reasoning effort (<code>low</code> to <code>xhigh</code>), its voice, and to pin it. <strong>Make primary</strong> promotes a bot to team coordinator.</p>
 
 <h2 id="chat">Chatting</h2>
@@ -29,10 +29,10 @@
 <div class="table-wrap"><table>
 <thead><tr><th>Card</th><th>Appears when</th><th>Your options</th></tr></thead>
 <tbody>
-<tr><td>Approval</td><td>A bot wants to run a Composio action that writes (send, post, delete).</td><td><strong>Allow</strong> once, <strong>Always</strong> (saves a policy for that tool), or <strong>Deny</strong>. Unanswered approvals expire.</td></tr>
+<tr><td>Approval</td><td>A bot wants to run a Composio action that writes (send, post, delete).</td><td><strong>Allow</strong> once, <strong>Always</strong> (lets this bot run that action without asking; off until you choose it, and listed under <strong>Always allow</strong> in settings), or <strong>Don't allow</strong>. Google actions show a review card you can <strong>Edit</strong> first (see <a href="#workspace">Google Workspace</a>). Unanswered approvals expire.</td></tr>
 <tr><td>Question</td><td>A bot calls <code>ask_user</code> with a question and options.</td><td>Pick an option or type an answer; or dismiss.</td></tr>
 <tr><td>Connect</td><td>A bot needs an app you have not connected (<code>request_app_connection</code>).</td><td>Connect through Composio's OAuth flow, or skip.</td></tr>
-<tr><td>Draft</td><td>A bot prepared an email, Slack or chat message.</td><td>Send it or discard it.</td></tr>
+<tr><td>Draft</td><td>A bot prepared an email, Slack or chat message.</td><td>Edit it, send it or discard it. A Gmail draft is a real draft in your account until you send it.</td></tr>
 </tbody></table></div>
 <p>Saved "always" policies are listed under Settings and can be removed there.</p>
 
@@ -67,7 +67,28 @@
 <p>Talk naturally: about 600 ms of silence ends your turn, and talking over the bot stops it. With the agent on a cloud model such as Claude Sonnet 4.5, the first words of the answer come about 2 seconds after you stop talking, and an 8 GB card is enough because the GPU only runs the voice models. To call from a phone, open Orbit over the sidecar's HTTPS address (<a href="setup.html#gpu-voice-lan">set up in Setup</a>), since browsers only allow the microphone on secure pages. Setup, every way to run it, and troubleshooting: <a href="setup.html#gpu-voice">Setup → GPU voice</a>. Protocol and design: <a href="https://github.com/raybello/orbit/blob/main/docs/voice-audiocpp.md">docs/voice-audiocpp.md</a>.</p>
 
 <h2 id="apps">Connected apps</h2>
-<p>Open <strong>Connect apps</strong> to link accounts through Composio (needs <code>COMPOSIO_API_KEY</code>). Google (Gmail and Calendar) can also be connected directly with your own OAuth client. Bots ask for an app when they need one; reads run directly, writes wait for an approval card.</p>
+<p>Open <strong>Connect apps</strong> to link accounts through Composio (the server needs <code>COMPOSIO_API_KEY</code>; see <a href="setup.html#composio">Connecting apps with Composio</a>). Google apps connect through Composio too. Bots ask for an app when they need one; reads run directly, writes wait for an approval card.</p>
+
+<h2 id="workspace">Google Workspace</h2>
+<p>With Gmail, Google Calendar, Google Sheets or Google Docs connected, every bot is told what it can do in each one, and anything that changes your data waits for you on a card made for it:</p>
+<ul>
+  <li><strong>Email:</strong> a bot writes a draft, and you see it as an email card. <strong>Edit</strong> changes the recipients, subject or text; <strong>Send</strong> sends it from your account; <strong>Discard</strong> deletes the draft. If a bot asks to send directly, it always waits for you.</li>
+  <li><strong>Calendar events:</strong> creating, changing or deleting an event shows its title, time, place and guests. Edit any of them before you allow it, choose <strong>this event</strong>, <strong>this and following</strong> or <strong>all events</strong> for a repeating one, and decide whether Google emails the guests (on by default).</li>
+  <li><strong>Sheets and Docs:</strong> a new sheet or doc is made at once and shows a card with its link. Changes to an existing one show each cell, or the text, before and after.</li>
+  <li><strong>Reads</strong> (searching mail, listing events, reading a sheet) run without asking and show as a line in the chat.</li>
+</ul>
+<div class="shots">
+  <figure><img src="screenshots/workspace/ios-event-card.png" alt="A calendar event card on iPhone with Edit, Don't allow, Always and Allow." loading="lazy"><figcaption>A bot asks to create an event</figcaption></figure>
+  <figure><img src="screenshots/workspace/ios-event-edit.png" alt="The event card in edit mode: title, start, end, location, guests and description." loading="lazy"><figcaption>Edit it before you allow it</figcaption></figure>
+  <figure><img src="screenshots/workspace/ios-email-draft.png" alt="A Gmail draft card on iPhone with Discard, Edit and Send." loading="lazy"><figcaption>An email draft to send or edit</figcaption></figure>
+</div>
+<h3>Your Google Calendar in Orbit</h3>
+<p>Once Google Calendar is connected, its events appear in Orbit's calendar every few minutes, from 30 days back to 90 days ahead, stored encrypted. Google events are outlined; your bots' events are filled. Choose which calendars to show with the <strong>Calendars…</strong> button. Click a Google event to edit or delete it in Google (no bot involved), or <strong>Duplicate as Orbit event</strong>: Orbit prefills a "Prepare me for…" task for your primary bot at the event's time, and you can pick another bot, a time before the meeting, or make it repeat. A one-time duplicate moves when its Google event moves, and is paused if the event is cancelled.</p>
+<div class="shots">
+  <figure><img src="screenshots/workspace/ios-duplicate.png" alt="Duplicating a Google event as an Orbit event on iPhone." loading="lazy"><figcaption>Duplicate a meeting for a bot</figcaption></figure>
+  <figure><img src="screenshots/workspace/ios-calendar-linked.png" alt="The iPhone calendar with a linked Orbit event and its Google event." loading="lazy"><figcaption>Both kinds on one calendar</figcaption></figure>
+  <figure><img src="screenshots/workspace/ios-calendar-paused.png" alt="The linked Orbit event marked Paused after its Google event was cancelled." loading="lazy"><figcaption>Paused when the meeting is cancelled</figcaption></figure>
+</div>
 
 <h2 id="engine">Models and subscriptions</h2>
 <p>In a bot's <strong>Engine</strong> panel, pick a provider and model, or leave both on the agent's default. <strong>Sign in to a subscription</strong> opens a terminal on the bot's own screen running Hermes' sign-in for that provider (for example Claude Pro/Max); finish it in the viewer and the bot uses that subscription from then on. Check your provider's terms before running an agent on a consumer subscription. Codex subscriptions always need their own sign-in.</p>
@@ -76,4 +97,4 @@
 <p>The <strong>Skills</strong> section lists the MCP servers available to each bot and lets you turn them on or off per bot. In a bot's settings you can also write custom skills: a name, a description and a body of instructions.</p>
 
 <h2 id="mobile">On your phone</h2>
-<p>The Expo app for iOS and Android has tabs for chats, activity, calendar, files, computers and settings, a thread view per bot, and a live VNC viewer. On first launch, point it at your Orbit server's URL (or bake <code>EXPO_PUBLIC_API_URL</code> into the build) and sign in. Push notifications are registered with <code>POST /api/push/register</code>.</p>
+<p>The Expo app for iOS and Android has tabs for chats, activity, calendar, files, computers and settings, a thread view per bot, and a live VNC viewer. Review cards and the Google Calendar features above work on the phone too. On first launch, point it at your Orbit server's URL (or bake <code>EXPO_PUBLIC_API_URL</code> into the build) and sign in. Push notifications are registered with <code>POST /api/push/register</code>.</p>

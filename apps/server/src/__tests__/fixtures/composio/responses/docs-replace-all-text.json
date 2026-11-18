@@ -1,0 +1,29 @@
+{
+  "slug": "GOOGLEDOCS_REPLACE_ALL_TEXT",
+  "ok": true,
+  "ms": 783,
+  "request": {
+    "document_id": "id_43",
+    "find_text": "Second point",
+    "replace_text": "Second point (revised)",
+    "match_case": true
+  },
+  "response": {
+    "data": {
+      "display_url": "https://example.test/link_1",
+      "document_id": "id_43",
+      "document_url": "https://example.test/link_1",
+      "replies": [
+        {
+          "replace_all_text": {
+            "occurrences_changed": 1
+          }
+        }
+      ],
+      "write_control": {
+        "required_revision_id": "id_46"
+      }
+    },
+    "error": null
+  }
+}

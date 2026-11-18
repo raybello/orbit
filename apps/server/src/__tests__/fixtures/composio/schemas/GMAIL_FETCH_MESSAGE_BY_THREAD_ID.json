@@ -1,0 +1,178 @@
+{
+  "slug": "GMAIL_FETCH_MESSAGE_BY_THREAD_ID",
+  "version": "20261116_00",
+  "description": "Retrieves messages from an accessible Gmail thread by thread ID, returning thread details and a messages array. Message order is not guaranteed; use messageTimestamp to identify oldest or newest messages and labelIds to filter drafts.",
+  "input_parameters": {
+    "type": "object",
+    "title": "FetchMessageByThreadIdRequest",
+    "required": [
+      "thread_id"
+    ],
+    "properties": {
+      "user_id": {
+        "type": "string",
+        "title": "User Id",
+        "default": "me",
+        "examples": [
+          "me",
+          "user@example.com"
+        ],
+        "description": "The email address of the user.",
+        "human_parameter_name": "User ID",
+        "human_parameter_description": "The email address or identifier of the user whose mailbox you want to access. Use 'me' to access your own mailbox."
+      },
+      "thread_id": {
+        "type": "string",
+        "title": "Thread Id",
+        "examples": [
+          "19bf77729bcb3a44",
+          "msg-f:19bf77729bcb3a44"
+        ],
+        "description": "Hexadecimal thread ID from Gmail API (e.g., '19bf77729bcb3a44'). Obtain from GMAIL_LIST_THREADS or GMAIL_FETCH_EMAILS. Prefixes like 'msg-f:' or 'thread-f:' are auto-stripped. Legacy Gmail web UI IDs (e.g., 'FMfcgzQfBZdVqKZcSVBhqwWLKWCtDdWQ') are NOT supported - use the API thread ID instead. Deduplicate thread_ids before calling when multiple listed messages share the same threadId to avoid redundant calls.",
+        "human_parameter_name": "Thread ID",
+        "human_parameter_description": "The unique hexadecimal identifier of the email thread (e.g., '19bf77729bcb3a44'). Obtain this from GMAIL_LIST_THREADS or GMAIL_FETCH_EMAILS actions. Legacy Gmail web UI IDs are not supported."
+      },
+      "page_token": {
+        "type": "string",
+        "title": "Page Token",
+        "default": "",
+        "examples": [
+          "CiAKGhIKJdealEffectivelyPageToken"
+        ],
+        "description": "Opaque page token for fetching a specific page of messages if results are paginated. Iterate calls by passing the returned `nextPageToken` until it is absent; stopping early will miss messages in long threads.",
+        "human_parameter_name": "Page Token",
+        "human_parameter_description": "Use this token to navigate to a specific set of messages if there are many. It helps in paginating through results."
+      }
+    }
+  },
+  "output_parameters": {
+    "type": "object",
+    "$defs": {
+      "MessageBody": {
+        "type": "object",
+        "title": "MessageBody",
+        "properties": {
+          "to": {
+            "type": "string",
+            "title": "To",
+            "description": "The recipient of the message"
+          },
+          "sender": {
+            "type": "string",
+            "title": "Sender",
+            "description": "The sender of the message"
+          },
+          "payload": {
+            "type": "object",
+            "title": "Payload",
+            "description": "The payload of the message",
+            "additionalProperties": true
+          },
+          "preview": {
+            "type": "object",
+            "title": "Preview",
+            "description": "The preview of the message",
+            "additionalProperties": true
+          },
+          "subject": {
+            "type": "string",
+            "title": "Subject",
+            "description": "The subject of the message"
+          },
+          "labelIds": {
+            "type": "array",
+            "items": {},
+            "title": "Label Ids",
+            "description": "The label IDs of the message"
+          },
+          "threadId": {
+            "type": "string",
+            "title": "Thread Id",
+            "description": "The thread ID of the message"
+          },
+          "messageId": {
+            "type": "string",
+            "title": "Message Id",
+            "description": "The message ID of the message"
+          },
+          "display_url": {
+            "type": "string",
+            "title": "Display Url",
+            "description": "Web UI link for this resource - clickable URL pointing to the Gmail web interface"
+          },
+          "messageText": {
+            "type": "string",
+            "title": "Message Text",
+            "description": "The text of the message"
+          },
+          "attachmentList": {
+            "type": "array",
+            "items": {},
+            "title": "Attachment List",
+            "description": "The list of attachments"
+          },
+          "messageTimestamp": {
+            "type": "string",
+            "title": "Message Timestamp",
+            "description": "The timestamp of the message"
+          }
+        },
+        "description": "This model represents the body a Gmail message."
+      },
+      "FetchMessageByThreadIdResponse": {
+        "type": "object",
+        "title": "FetchMessageByThreadIdResponse",
+        "required": [
+          "messages"
+        ],
+        "properties": {
+          "messages": {
+            "type": "array",
+            "items": {
+              "$ref": "#/$defs/MessageBody"
+            },
+            "title": "Messages",
+            "description": "List of messages in the thread."
+          },
+          "threadId": {
+            "type": "string",
+            "title": "Thread Id",
+            "description": "The ID of the thread."
+          },
+          "historyId": {
+            "type": "string",
+            "title": "History Id",
+            "description": "The ID of the last history record that modified this thread."
+          },
+          "display_url": {
+            "type": "string",
+            "title": "Display Url",
+            "description": "Web UI link to view this thread in Gmail."
+          }
+        }
+      }
+    },
+    "title": "FetchMessageByThreadIdResponseWrapper",
+    "required": [
+      "data",
+      "successful"
+    ],
+    "properties": {
+      "data": {
+        "$ref": "#/$defs/FetchMessageByThreadIdResponse",
+        "title": "Data",
+        "description": "Data from the action execution"
+      },
+      "error": {
+        "type": "string",
+        "title": "Error",
+        "description": "Error if any occurred during the execution of the action"
+      },
+      "successful": {
+        "type": "boolean",
+        "title": "Successful",
+        "description": "Whether or not the action execution was successful or not"
+      }
+    }
+  }
+}

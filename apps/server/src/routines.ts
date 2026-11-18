@@ -6,6 +6,10 @@ import type { Routine } from './types.js';
 import type { Trigger } from './agent/loop.js';
 import { isEventSchedule, setEventRoutineEnabled } from './triggers.js';
 import { routinePrompt, scheduledRunAllowed } from './initiative-store.js';
+import { parentContext, setLinkScheduler } from './calendar/links.js';
+import { oneShotCron } from './lib/one-shot-cron.js';
+
+export { oneShotCron };
 
 const jobs = new Map<string, Cron>();
 let enqueueFn: ((botId: string, t: Trigger) => void) | null = null;
@@ -48,7 +52,8 @@ export function runRoutine(id: string) {
   db.prepare("UPDATE routines SET last_run_at=?, last_run_status='running' WHERE id=?").run(at, id);
   appendRow(r.bot_id, 'event', { type: 'event', event: 'routine-run', text: `Running routine: ${r.name}`, ref: id });
   // A calendar event can be assigned to another bot; it still logs on the bot that owns it.
-  enqueueFn(r.assigned_bot_id || r.bot_id, { type: 'routine', routineId: id, name: r.name, prompt: routinePrompt(r, at) });
+  // An Orbit event made from a Google event also gets that event's details.
+  enqueueFn(r.assigned_bot_id || r.bot_id, { type: 'routine', routineId: id, name: r.name, prompt: routinePrompt(r, at) + parentContext(r as RoutineRow & { parent_sealed?: string | null }) });
   // A one-time event is done once it has run: record it, stop it, and leave it on the calendar as
   // completed rather than deleting it.
   if (r.event_type === 'one_time') {
@@ -68,21 +73,6 @@ export interface CreateRoutineInput {
   description?: string;
   /** Defaults to on; a seeded routine starts off until the person turns it on. */
   enabled?: boolean;
-}
-
-/** The date's wall-clock fields in `timeZone`, so a one-shot cron fires at the instant asked for. */
-function zonedFields(d: Date, timeZone: string) {
-  const fmt = new Intl.DateTimeFormat('en-US', {
-    timeZone, hourCycle: 'h23', year: 'numeric', month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit',
-  });
-  const parts = Object.fromEntries(fmt.formatToParts(d).filter((p) => p.type !== 'literal').map((p) => [p.type, p.value]));
-  return { minute: Number(parts.minute), hour: Number(parts.hour), day: Number(parts.day), month: Number(parts.month) };
-}
-
-/** A cron expression for exactly one run at `d`: "minute hour day month *". */
-export function oneShotCron(d: Date, timeZone = 'UTC'): string {
-  const f = zonedFields(d, timeZone);
-  return `${f.minute} ${f.hour} ${f.day} ${f.month} *`;
 }
 
 /**
@@ -127,3 +117,12 @@ export function createRoutine(input: CreateRoutineInput): Routine {
   if (routine.enabled) scheduleRoutine(routine);
   return routine;
 }
+
+// Orbit events made from Google events move with them (calendar/links.ts asks the scheduler to re-arm one).
+setLinkScheduler({
+  reschedule: (id) => {
+    const row = db.prepare('SELECT * FROM routines WHERE id=?').get(id) as RoutineRow | undefined;
+    if (row) { unscheduleRoutine(id); scheduleRoutine(toRoutine(row)); }
+  },
+  unschedule: (id) => unscheduleRoutine(id),
+});

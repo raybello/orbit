@@ -1,15 +1,16 @@
 import { useMemo, useState } from 'react';
-import { Alert, FlatList, Pressable, RefreshControl, StyleSheet, Text, View } from 'react-native';
+import { Alert, FlatList, Linking, Pressable, RefreshControl, ScrollView, StyleSheet, Switch, Text, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Calendar, type DateData } from 'react-native-calendars';
 import { router } from 'expo-router';
-import type { CalendarEvent } from '@orbit/contracts';
+import type { CalendarEvent, DuplicateDefaults, GoogleCalendarEvent } from '@orbit/contracts';
 import { botColor } from '../../components/bot-avatar';
 import { CalendarEventModal } from '../../components/CalendarEventModal';
-import { Card, PrimaryButton, ScreenHeader, Tag } from '../../components/ui';
+import { Card, Chip, PrimaryButton, ScreenHeader, Tag } from '../../components/ui';
+import { GoogleEventSheet } from '../../components/GoogleEventSheet';
 import { dayFromKey, dayKey } from '../../lib/format';
 import { useMobileTokens, type MobileTokens } from '../../lib/native';
-import { useBotsQuery, useCalendarQuery } from '../../lib/queries';
+import { fetchDuplicateDefaults, useBotsQuery, useCalendarQuery, useGoogleCalendarActions, useGoogleCalendarsQuery } from '../../lib/queries';
 import { useOrbitStore } from '../../lib/store';
 
 /**
@@ -29,6 +30,23 @@ function gridRange(cursor: Date): { start: Date; end: Date } {
   return { start, end };
 }
 
+/** One row of the day list: a Bot's Orbit event, or one of the person's Google events. */
+type Item = { kind: 'orbit'; ev: CalendarEvent; start: string } | { kind: 'google'; ev: GoogleCalendarEvent; start: string };
+const GOOGLE = 'google';
+const addDaysKey = (key: string, n: number) => { const d = new Date(`${key}T00:00:00Z`); d.setUTCDate(d.getUTCDate() + n); return d.toISOString().slice(0, 10); };
+/** The local days an event covers (all-day events by their own dates, end exclusive). */
+function daysOf(e: GoogleCalendarEvent): string[] {
+  const out: string[] = [];
+  if (e.allDay) {
+    for (let d = e.start.slice(0, 10); d < e.end.slice(0, 10) && out.length < 62; d = addDaysKey(d, 1)) out.push(d);
+    return out.length ? out : [e.start.slice(0, 10)];
+  }
+  const s = new Date(e.start);
+  const end = new Date(Math.max(Date.parse(e.end) - 1, s.getTime()));
+  for (let d = new Date(s.getFullYear(), s.getMonth(), s.getDate()); d <= end && out.length < 62; d = new Date(d.getFullYear(), d.getMonth(), d.getDate() + 1)) out.push(dayKey(d));
+  return out;
+}
+
 const timeLabel = (iso: string) => new Date(iso).toLocaleTimeString(undefined, { hour: 'numeric', minute: '2-digit' });
 
 /** "Thu, Nov 20" — the heading over the selected day's list. */
@@ -43,6 +61,11 @@ export default function CalendarScreen() {
   const [cursor, setCursor] = useState<Date>(() => new Date());
   const [selected, setSelected] = useState<string>(() => dayKey(new Date()));
   const [creating, setCreating] = useState<Date | null>(null);
+  const [hidden, setHidden] = useState<Set<string>>(() => new Set());
+  const [showCalendars, setShowCalendars] = useState(false);
+  const [googleSheet, setGoogleSheet] = useState<{ event?: GoogleCalendarEvent; date?: Date } | null>(null);
+  const [duplicating, setDuplicating] = useState<{ key: string; defaults: DuplicateDefaults } | null>(null);
+  const actions = useGoogleCalendarActions();
 
   const range = useMemo(() => gridRange(cursor), [cursor]);
   const fromIso = range.start.toISOString();
@@ -53,21 +76,25 @@ export default function CalendarScreen() {
   useBotsQuery();
 
   const events = useMemo(
-    () => [...(data ?? [])].sort((a, b) => a.start.localeCompare(b.start) || a.title.localeCompare(b.title)),
+    () => [...(data?.events ?? [])].sort((a, b) => a.start.localeCompare(b.start) || a.title.localeCompare(b.title)),
     [data],
   );
+  const google = data?.google ?? [];
+  const googleState = data?.googleState;
+  const connected = Boolean(googleState?.connected && googleState.available);
+  const { data: calendarList } = useGoogleCalendarsQuery(connected);
+  const calendars = calendarList?.calendars ?? [];
+  const toggle = (id: string) => setHidden((h) => { const n = new Set(h); if (n.has(id)) n.delete(id); else n.add(id); return n; });
 
   /** Events by local day, each list already in start order. */
   const byDay = useMemo(() => {
-    const map = new Map<string, CalendarEvent[]>();
-    for (const event of events) {
-      const key = dayKey(new Date(event.start));
-      const list = map.get(key);
-      if (list) list.push(event);
-      else map.set(key, [event]);
-    }
+    const map = new Map<string, Item[]>();
+    const add = (key: string, item: Item) => { const list = map.get(key); if (list) list.push(item); else map.set(key, [item]); };
+    for (const ev of events) if (!hidden.has(ev.botId)) add(dayKey(new Date(ev.start)), { kind: 'orbit', ev, start: ev.start });
+    if (!hidden.has(GOOGLE)) for (const ev of google) for (const key of daysOf(ev)) add(key, { kind: 'google', ev, start: ev.allDay ? `${key}T00:00:00` : ev.start });
+    for (const list of map.values()) list.sort((a, b) => new Date(a.start).getTime() - new Date(b.start).getTime());
     return map;
-  }, [events]);
+  }, [events, google, hidden]);
 
   const colorFor = useMemo(() => {
     const byId = new Map(bots.map((b) => [b.id, b.avatarColor]));
@@ -78,7 +105,7 @@ export default function CalendarScreen() {
   const markedDates = useMemo(() => {
     const marks: Record<string, { dots?: { color: string }[]; selected?: boolean; selectedColor?: string }> = {};
     for (const [key, list] of byDay) {
-      marks[key] = { dots: list.slice(0, 4).map((event) => ({ color: colorFor(event.botId) })) };
+      marks[key] = { dots: list.slice(0, 4).map((it) => ({ color: it.kind === 'orbit' ? colorFor(it.ev.botId) : it.ev.color ?? tokens.colors.accent })) };
     }
     const day = marks[selected] ?? {};
     marks[selected] = { ...day, selected: true, selectedColor: tokens.colors.accent };
@@ -91,7 +118,45 @@ export default function CalendarScreen() {
 
   const openCreate = (key: string) => {
     const day = dayFromKey(key);
-    setCreating(new Date(day.getFullYear(), day.getMonth(), day.getDate(), 9, 0, 0, 0));
+    const at = new Date(day.getFullYear(), day.getMonth(), day.getDate(), 9, 0, 0, 0);
+    // With Google Calendar connected, a new event can be either kind.
+    if (!connected) return setCreating(at);
+    Alert.alert('New event', undefined, [
+      { text: 'Orbit event (a Bot does something)', onPress: () => setCreating(at) },
+      { text: 'Google Calendar event', onPress: () => setGoogleSheet({ date: at }) },
+      { text: 'Cancel', style: 'cancel' },
+    ]);
+  };
+
+  const deleteGoogle = (ev: GoogleCalendarEvent) => {
+    const remove = (scope: 'this' | 'following' | 'all' | undefined, notify: boolean) => actions.remove.mutate({ key: ev.key, ...(scope ? { scope } : {}), ...(ev.attendees.length ? { notify } : {}) }, { onError: (e) => Alert.alert('Not deleted', (e as Error).message) });
+    // With guests, ask whether Google emails them the cancellation (the default, as on the web).
+    const go = (scope?: 'this' | 'following' | 'all') => {
+      if (!ev.attendees.length) return remove(scope, false);
+      Alert.alert('Email the guests?', 'Google can tell the guests that it is cancelled.', [
+        { text: 'Delete and email guests', style: 'destructive', onPress: () => remove(scope, true) },
+        { text: 'Delete without emailing', style: 'destructive', onPress: () => remove(scope, false) },
+        { text: 'Cancel', style: 'cancel' },
+      ]);
+    };
+    Alert.alert(`Delete “${ev.title || 'Untitled'}”?`, ev.recurring ? 'This event repeats.' : 'It is removed from your Google Calendar.', ev.recurring ? [
+      { text: 'This event', style: 'destructive', onPress: () => go('this') },
+      { text: 'This and following', style: 'destructive', onPress: () => go('following') },
+      { text: 'All events', style: 'destructive', onPress: () => go('all') },
+      { text: 'Cancel', style: 'cancel' },
+    ] : [{ text: 'Delete', style: 'destructive', onPress: () => go() }, { text: 'Cancel', style: 'cancel' }]);
+  };
+
+  const showGoogle = (ev: GoogleCalendarEvent) => {
+    const when = ev.allDay ? 'All day' : `${timeLabel(ev.start)} – ${timeLabel(ev.end)}`;
+    const lines = [`${ev.calendarName} · Google Calendar${ev.recurring ? ' · repeats' : ''}`, when, ev.location, ev.attendees.length ? `With ${ev.attendees.join(', ')}` : ''].filter(Boolean);
+    Alert.alert(ev.title || 'Untitled', lines.join('\n'), [
+      { text: 'Duplicate as Orbit event', onPress: () => void fetchDuplicateDefaults(ev.key).then((defaults) => setDuplicating({ key: ev.key, defaults })).catch((e) => Alert.alert('Not available', (e as Error).message)) },
+      { text: 'Edit', onPress: () => setGoogleSheet({ event: ev }) },
+      { text: 'Delete', style: 'destructive', onPress: () => deleteGoogle(ev) },
+      ...(ev.htmlLink ? [{ text: 'Open in Google', onPress: () => void Linking.openURL(ev.htmlLink) }] : []),
+      { text: 'Close', style: 'cancel' as const },
+    ]);
   };
 
   const showEvent = (event: CalendarEvent) => {
@@ -102,6 +167,7 @@ export default function CalendarScreen() {
         : `Repeats · ${event.recurrenceRule ?? 'scheduled'}`,
       `Runs on ${event.botName}`,
     ];
+    if (event.parentTitle) lines.push(`Made from your Google event “${event.parentTitle}”`);
     if (event.completedAt) lines.push('Completed');
     Alert.alert(event.title, lines.join('\n'), [
       { text: 'Open chat', onPress: () => router.push(`/thread/${event.botId}`) },
@@ -149,6 +215,25 @@ export default function CalendarScreen() {
           />
         </Card>
       </View>
+
+      <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={{ gap: tokens.space.sm, paddingHorizontal: tokens.space.xl, paddingBottom: tokens.space.sm }}>
+        {googleState?.connected ? <Chip label="Google Calendar" active={!hidden.has(GOOGLE)} onPress={() => toggle(GOOGLE)} /> : null}
+        {bots.filter((b) => b.kind !== 'room').map((b) => <Chip key={b.id} label={b.name} active={!hidden.has(b.id)} onPress={() => toggle(b.id)} />)}
+        {connected ? <Chip label="Calendars…" active={showCalendars} onPress={() => setShowCalendars((v) => !v)} /> : null}
+      </ScrollView>
+      {googleState && !googleState.available && googleState.reason ? (
+        <Text style={{ color: tokens.colors.fgTertiary, fontSize: tokens.fontSizes.caption, paddingHorizontal: tokens.space.xl, paddingBottom: tokens.space.sm }}>{googleState.reason}</Text>
+      ) : null}
+      {showCalendars ? (
+        <View style={{ paddingHorizontal: tokens.space.xl, paddingBottom: tokens.space.sm, gap: tokens.space.xs }}>
+          {calendars.map((c) => (
+            <View key={c.key} style={{ flexDirection: 'row', alignItems: 'center', gap: tokens.space.sm }}>
+              <Switch value={c.enabled} onValueChange={(enabled) => actions.toggle.mutate({ key: c.key, enabled })} accessibilityLabel={`Show ${c.name}`} />
+              <Text style={{ color: tokens.colors.fg, fontSize: tokens.fontSizes.sm }}>{c.name}{c.primary ? ' (main)' : ''}</Text>
+            </View>
+          ))}
+        </View>
+      ) : null}
 
       {isLoading ? (
         <Text style={{ color: tokens.colors.fgTertiary, fontSize: tokens.fontSizes.caption, paddingHorizontal: tokens.space.xl }}>
@@ -208,7 +293,7 @@ export default function CalendarScreen() {
     <View style={{ flex: 1, backgroundColor: tokens.colors.bg }}>
       <FlatList
         data={selectedEvents}
-        keyExtractor={(event) => `${event.routineId}-${event.start}`}
+        keyExtractor={(it) => (it.kind === 'orbit' ? `${it.ev.routineId}-${it.ev.start}` : `g-${it.ev.key}`)}
         ListHeaderComponent={header}
         contentContainerStyle={{ paddingBottom: insets.bottom + tokens.space.xxl }}
         refreshControl={
@@ -226,9 +311,28 @@ export default function CalendarScreen() {
             ) : null}
           </View>
         }
-        renderItem={({ item }) => (
+        renderItem={({ item: it }) => it.kind === 'google' ? (
           <Pressable
-            onPress={() => showEvent(item)}
+            onPress={() => showGoogle(it.ev)}
+            accessibilityRole="button"
+            accessibilityLabel={`${it.ev.title || 'Untitled'}, Google Calendar`}
+            style={({ pressed }) => ({
+              flexDirection: 'row', alignItems: 'flex-start', gap: tokens.space.md, marginHorizontal: tokens.space.xl, marginBottom: tokens.space.sm,
+              padding: tokens.space.md, borderRadius: tokens.radii.md, borderWidth: 1.5, borderColor: it.ev.color ?? tokens.colors.accent,
+              backgroundColor: pressed ? tokens.colors.bgHover : tokens.colors.bg,
+            })}
+          >
+            <View style={{ flex: 1, gap: 2 }}>
+              <Text style={{ color: tokens.colors.fg, fontSize: tokens.fontSizes.message, fontWeight: '500' }} numberOfLines={2}>{it.ev.title || 'Untitled'}</Text>
+              <Text numberOfLines={1} style={{ color: tokens.colors.fgSecondary, fontSize: tokens.fontSizes.caption }}>
+                {it.ev.allDay ? 'All day' : `${timeLabel(it.ev.start)} – ${timeLabel(it.ev.end)}`} · {it.ev.calendarName}
+              </Text>
+            </View>
+            <Tag label="Google" />
+          </Pressable>
+        ) : (
+          <Pressable
+            onPress={() => showEvent(it.ev)}
             accessibilityRole="button"
             style={({ pressed }) => ({
               flexDirection: 'row',
@@ -243,27 +347,39 @@ export default function CalendarScreen() {
               backgroundColor: pressed ? tokens.colors.bgHover : tokens.colors.bgElevated,
             })}
           >
-            <View style={{ width: 3, alignSelf: 'stretch', borderRadius: 2, backgroundColor: colorFor(item.botId) }} />
+            <View style={{ width: 3, alignSelf: 'stretch', borderRadius: 2, backgroundColor: colorFor(it.ev.botId) }} />
             <View style={{ flex: 1, gap: 2 }}>
               <Text
                 style={{
                   color: tokens.colors.fg,
                   fontSize: tokens.fontSizes.message,
                   fontWeight: '500',
-                  textDecorationLine: item.completedAt ? 'line-through' : 'none',
+                  textDecorationLine: it.ev.completedAt ? 'line-through' : 'none',
                 }}
                 numberOfLines={2}
               >
-                {item.title}
+                {it.ev.title}
               </Text>
               <Text numberOfLines={1} style={{ color: tokens.colors.fgSecondary, fontSize: tokens.fontSizes.caption }}>
-                {item.eventType === 'one_time' ? timeLabel(item.start) : `${timeLabel(item.start)} · repeats`} · {item.botName}
+                {it.ev.eventType === 'one_time' ? timeLabel(it.ev.start) : `${timeLabel(it.ev.start)} · repeats`} · {it.ev.botName}{it.ev.paused ? (it.ev.parentTitle ? ' · paused, its Google event was cancelled' : ' · paused') : ''}
               </Text>
             </View>
-            <Tag label={item.eventType === 'one_time' ? 'Once' : 'Repeats'} tone={item.completedAt ? 'success' : 'muted'} />
+            <Tag label={it.ev.paused ? 'Paused' : it.ev.parentTitle ? '↗ Linked' : it.ev.eventType === 'one_time' ? 'Once' : 'Repeats'} tone={it.ev.paused ? 'warn' : it.ev.completedAt ? 'success' : 'muted'} />
           </Pressable>
         )}
       />
+
+      {googleSheet ? <GoogleEventSheet event={googleSheet.event} date={googleSheet.date} calendars={calendars.filter((c) => c.enabled)} onClose={() => { setGoogleSheet(null); void refetch(); }} /> : null}
+
+      {duplicating ? (
+        <CalendarEventModal
+          initialDate={new Date(duplicating.defaults.start)}
+          bots={bots}
+          duplicate={duplicating}
+          onClose={() => setDuplicating(null)}
+          onSaved={() => { setDuplicating(null); void refetch(); }}
+        />
+      ) : null}
 
       {creating ? (
         <CalendarEventModal

@@ -1,0 +1,48 @@
+{
+  "slug": "GOOGLECALENDAR_QUICK_ADD",
+  "ok": true,
+  "ms": 823,
+  "request": {
+    "calendar_id": "id_17",
+    "text": "Orbit eval quick add 2026-11-18T05:32 tomorrow at 11am",
+    "send_updates": "none"
+  },
+  "response": {
+    "data": {
+      "display_url": "https://example.test/link_10",
+      "event": {
+        "created": "2026-11-18T05:32:34.000Z",
+        "creator": {
+          "email": "person_2@example.test",
+          "self": true
+        },
+        "end": {
+          "dateTime": "2026-11-19T12:00:00Z",
+          "timeZone": "UTC"
+        },
+        "etag": "id_37",
+        "eventType": "default",
+        "htmlLink": "https://example.test/link_10",
+        "iCalUID": "id_38",
+        "id": "id_39",
+        "kind": "calendar#event",
+        "organizer": {
+          "email": "person_2@example.test",
+          "self": true
+        },
+        "reminders": {
+          "useDefault": true
+        },
+        "sequence": 0,
+        "start": {
+          "dateTime": "2026-11-19T11:00:00Z",
+          "timeZone": "UTC"
+        },
+        "status": "confirmed",
+        "summary": "Orbit eval quick add T05:32",
+        "updated": "2026-11-18T05:32:34.812Z"
+      }
+    },
+    "error": null
+  }
+}

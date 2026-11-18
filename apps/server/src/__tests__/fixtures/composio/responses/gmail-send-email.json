@@ -1,0 +1,23 @@
+{
+  "slug": "GMAIL_SEND_EMAIL",
+  "ok": true,
+  "ms": 1812,
+  "request": {
+    "recipient_email": "person_2@example.test",
+    "subject": "Orbit eval send 2026-11-18T05:32",
+    "body": "Sent directly by the shapes script."
+  },
+  "response": {
+    "data": {
+      "display_url": "https://example.test/link_20",
+      "id": "id_8",
+      "labelIds": [
+        "UNREAD",
+        "SENT",
+        "INBOX"
+      ],
+      "threadId": "id_8"
+    },
+    "error": null
+  }
+}

@@ -1,0 +1,1451 @@
+{
+  "slug": "GOOGLECALENDAR_PATCH_EVENT",
+  "version": "20261116_00",
+  "description": "Update specified fields of an existing event in a Google Calendar using patch semantics (array fields like `attendees` are fully replaced if provided); ensure the `calendar_id` and `event_id` are valid and the user has write access to the calendar.",
+  "input_parameters": {
+    "type": "object",
+    "title": "PatchEventRequest",
+    "required": [
+      "calendar_id",
+      "event_id"
+    ],
+    "properties": {
+      "source": {
+        "type": "object",
+        "title": "SourceInput",
+        "properties": {
+          "url": {
+            "type": "string",
+            "title": "Url",
+            "description": "Source URL"
+          },
+          "title": {
+            "type": "string",
+            "title": "Title",
+            "description": "Source title"
+          }
+        },
+        "description": "Input model for event source.",
+        "additionalProperties": false
+      },
+      "status": {
+        "enum": [
+          "confirmed",
+          "tentative",
+          "cancelled"
+        ],
+        "type": "string",
+        "title": "Status",
+        "examples": [
+          "confirmed",
+          "tentative",
+          "cancelled"
+        ],
+        "description": "Status of the event."
+      },
+      "summary": {
+        "type": "string",
+        "title": "Summary",
+        "examples": [
+          "Updated Team Meeting"
+        ],
+        "description": "New title for the event.",
+        "human_parameter_description": "What you want to call the event. This becomes the event's title people will see in their calendars."
+      },
+      "color_id": {
+        "type": "string",
+        "title": "Color Id",
+        "pattern": "^([1-9]|1[0-1])$",
+        "examples": [
+          "1",
+          "5",
+          "11"
+        ],
+        "description": "Color ID for the event (1-11). Use GOOGLECALENDAR_COLORS_GET to retrieve available colors."
+      },
+      "end_time": {
+        "type": "string",
+        "title": "End Time",
+        "examples": [
+          "2024-07-01T11:00:00-07:00",
+          "2024-07-02"
+        ],
+        "description": "New end time (RFC3339 timestamp, e.g., '2024-07-01T11:00:00-07:00'). Explicit timezone information (Z or an offset) is preserved; offset-less values are interpreted in `timezone`, or UTC when it is omitted. For all-day events, use YYYY-MM-DD format (exclusive end date). Optional when updating start_time - the original event duration will be preserved if end_time is not specified. Must be strictly after `start_time`; mismatched or mixed formats cause HTTP 400 `timeRangeEmpty`.",
+        "human_parameter_name": "End Time",
+        "human_parameter_description": "When the event should end. Provide a date and time or the next day for all-day events. Optional when changing start time - the event duration will be kept the same."
+      },
+      "event_id": {
+        "type": "string",
+        "title": "Event Id",
+        "examples": [
+          "pna920peji8r3jj2a18m6bk8ms",
+          "abc123def456_20260115T100000Z"
+        ],
+        "description": "The unique technical identifier of the event to update. IMPORTANT: This is NOT the event title/name. Event IDs are opaque strings typically base32hex encoded (5-1024 characters using lowercase a-v and digits 0-9). For recurring event instances, the ID format is 'baseEventId_YYYYMMDDTHHMMSSZ' with an underscore separator (e.g., 'abc123def456_20260115T100000Z'). To get an event ID, first use GOOGLECALENDAR_FIND_EVENT or GOOGLECALENDAR_EVENTS_LIST to search for events and retrieve their IDs. Use master event ID to update the entire recurring series; use instance ID to update only that occurrence — confirm scope before patching.",
+        "human_parameter_name": "Event ID",
+        "human_parameter_description": "The unique technical identifier of the event (NOT the event title). For recurring event instances, the ID includes an underscore followed by the instance date. To find this ID, first list or search events in the calendar."
+      },
+      "location": {
+        "type": "string",
+        "title": "Location",
+        "examples": [
+          "Conference Room B",
+          "https://hangouts.google.com/foo"
+        ],
+        "description": "New geographic location (physical address or virtual meeting link).",
+        "human_parameter_description": "Where the event takes place, such as a room name, address, or meeting link."
+      },
+      "sequence": {
+        "type": "integer",
+        "title": "Sequence",
+        "minimum": 0,
+        "examples": [
+          0,
+          1,
+          2
+        ],
+        "description": "Sequence number as per iCalendar specification. Incremented on each event update."
+      },
+      "timezone": {
+        "type": "string",
+        "title": "Timezone",
+        "examples": [
+          "America/Los_Angeles",
+          "Europe/Berlin"
+        ],
+        "description": "IANA Time Zone Database name for start/end times (e.g., 'America/Los_Angeles'). Interprets offset-less values and sets the display/recurrence zone; Z or numeric offsets still identify the instant. When provided without start_time or end_time, updates the display zone of an existing timed event while preserving its instants. All-day events do not have a time zone.",
+        "human_parameter_name": "Time Zone",
+        "human_parameter_description": "The display and recurrence time zone. It interprets date-times without a Z suffix or numeric offset; explicit offsets still identify the instant."
+      },
+      "attendees": {
+        "type": "array",
+        "items": {
+          "type": "string"
+        },
+        "title": "Attendees",
+        "examples": [
+          [
+            "user1@example.com",
+            "user2@example.com"
+          ],
+          []
+        ],
+        "description": "List of valid email addresses for attendees (e.g., 'user@example.com'). Replaces existing attendees. Provide an empty list to remove all.",
+        "human_parameter_name": "Attendees",
+        "human_parameter_description": "Email addresses of people you want to include on the event. Supplying this replaces the current attendee list; send an empty list to remove everyone."
+      },
+      "reminders": {
+        "type": "object",
+        "title": "RemindersInput",
+        "required": [
+          "useDefault"
+        ],
+        "properties": {
+          "overrides": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "title": "ReminderOverrideInput",
+              "required": [
+                "method",
+                "minutes"
+              ],
+              "properties": {
+                "method": {
+                  "enum": [
+                    "email",
+                    "popup"
+                  ],
+                  "type": "string",
+                  "title": "Method",
+                  "description": "Reminder method"
+                },
+                "minutes": {
+                  "type": "integer",
+                  "title": "Minutes",
+                  "minimum": 0,
+                  "description": "Minutes before start to trigger"
+                }
+              },
+              "description": "Input model for reminder override."
+            },
+            "title": "Overrides",
+            "maxItems": 5,
+            "description": "Override reminders (max 5)"
+          },
+          "useDefault": {
+            "type": "boolean",
+            "title": "Use Default",
+            "description": "Whether to use default calendar reminders"
+          }
+        },
+        "description": "Input model for reminders.",
+        "additionalProperties": false
+      },
+      "recurrence": {
+        "type": "array",
+        "items": {
+          "type": "string"
+        },
+        "title": "Recurrence",
+        "examples": [
+          [
+            "RRULE:FREQ=WEEKLY;BYDAY=TU;COUNT=10"
+          ],
+          [
+            "RRULE:FREQ=DAILY;INTERVAL=2"
+          ]
+        ],
+        "description": "RRULE, EXRULE, RDATE and EXDATE lines per RFC5545 for recurring events. Replaces existing recurrence rules if provided."
+      },
+      "start_time": {
+        "type": "string",
+        "title": "Start Time",
+        "examples": [
+          "2024-07-01T10:00:00-07:00",
+          "2024-07-01"
+        ],
+        "description": "New start time (RFC3339 timestamp, e.g., '2024-07-01T10:00:00-07:00'). Explicit timezone information (Z or an offset) is preserved; offset-less values are interpreted in `timezone`, or UTC when it is omitted. For all-day events, use YYYY-MM-DD format. When only start_time is provided without end_time, the event's original duration is preserved automatically.",
+        "human_parameter_name": "Start Time",
+        "human_parameter_description": "When the event should start. Provide a date and time or just a date for all-day events. A Z suffix or numeric offset identifies the instant; otherwise the time zone below is used. If you only change the start time, the event duration is preserved."
+      },
+      "visibility": {
+        "enum": [
+          "default",
+          "public",
+          "private",
+          "confidential"
+        ],
+        "type": "string",
+        "title": "Visibility",
+        "examples": [
+          "default",
+          "public",
+          "private",
+          "confidential"
+        ],
+        "description": "Visibility of the event."
+      },
+      "attachments": {
+        "type": "array",
+        "items": {
+          "type": "object",
+          "title": "AttachmentInput",
+          "required": [
+            "fileUrl"
+          ],
+          "properties": {
+            "title": {
+              "type": "string",
+              "title": "Title",
+              "description": "Title of the attachment"
+            },
+            "fileUrl": {
+              "type": "string",
+              "title": "File Url",
+              "description": "URL of the file attachment"
+            },
+            "mimeType": {
+              "type": "string",
+              "title": "Mime Type",
+              "description": "MIME type of the attachment"
+            }
+          },
+          "description": "Input model for event attachments."
+        },
+        "title": "Attachments",
+        "maxItems": 25,
+        "description": "File attachments (max 25). Each with 'fileUrl' (required) and optional 'title', 'mimeType'. Requires supportsAttachments=true."
+      },
+      "calendar_id": {
+        "type": "string",
+        "title": "Calendar Id",
+        "examples": [
+          "primary",
+          "secondary_calendar_id"
+        ],
+        "description": "Identifier of the calendar. Use 'primary' for the primary calendar of the logged-in user. To find other calendar IDs, use the `calendarList.list` method. Must be provided in snake_case format.",
+        "human_parameter_name": "Calendar ID",
+        "human_parameter_description": "The calendar where the event lives. Use 'primary' to update your main calendar, or paste the ID of another calendar you can edit."
+      },
+      "description": {
+        "type": "string",
+        "title": "Description",
+        "examples": [
+          "Weekly team sync meeting to discuss project updates."
+        ],
+        "description": "New description for the event; can include HTML.",
+        "human_parameter_description": "Details you want to include for the event, like agenda, notes, or links. You can use plain text or HTML."
+      },
+      "send_updates": {
+        "enum": [
+          "all",
+          "externalOnly",
+          "none"
+        ],
+        "type": "string",
+        "title": "Send Updates",
+        "examples": [
+          "all",
+          "externalOnly",
+          "none"
+        ],
+        "description": "Whether to send update notifications to attendees. Uses default user behavior if unspecified. Set explicitly to avoid unintended notifications when removing attendees or making bulk updates.",
+        "human_parameter_name": "Send Updates",
+        "human_parameter_description": "Choose whether guests should receive email notifications about these changes."
+      },
+      "transparency": {
+        "enum": [
+          "opaque",
+          "transparent"
+        ],
+        "type": "string",
+        "title": "Transparency",
+        "examples": [
+          "opaque",
+          "transparent"
+        ],
+        "description": "Whether the event blocks time on the calendar. 'opaque' (default) blocks time, 'transparent' does not."
+      },
+      "max_attendees": {
+        "type": "integer",
+        "title": "Max Attendees",
+        "examples": [
+          10,
+          100
+        ],
+        "description": "Maximum attendees in response; does not affect invited count. If more, response includes organizer only. Must be positive.",
+        "exclusiveMinimum": 0,
+        "human_parameter_name": "Max Attendees",
+        "human_parameter_description": "Limit how many attendees are returned in the response (doesn't change who is invited). Useful to keep responses small."
+      },
+      "rsvp_response": {
+        "enum": [
+          "needsAction",
+          "declined",
+          "tentative",
+          "accepted"
+        ],
+        "type": "string",
+        "title": "Rsvp Response",
+        "examples": [
+          "accepted",
+          "declined",
+          "tentative",
+          "needsAction"
+        ],
+        "description": "RSVP response status for the authenticated user. Updates only the current user's response status without affecting other attendees. Note: RSVP is only supported for regular calendar events (eventType='default'); attempting to RSVP to focusTime, outOfOffice, birthday, or workingLocation events will result in an error.",
+        "human_parameter_name": "RSVP Response",
+        "human_parameter_description": "How you want to respond to this event as the signed-in user (accepted, tentative, declined, or needs action). This won't change other attendees. Only works for regular calendar events, not for special event types like focus time or out-of-office."
+      },
+      "conference_data": {
+        "type": "object",
+        "title": "ConferenceDataInput",
+        "properties": {
+          "createRequest": {
+            "type": "object",
+            "title": "ConferenceCreateRequestInput",
+            "required": [
+              "requestId",
+              "conferenceSolutionKey"
+            ],
+            "properties": {
+              "requestId": {
+                "type": "string",
+                "title": "Request Id",
+                "description": "Unique client-generated request ID"
+              },
+              "conferenceSolutionKey": {
+                "type": "object",
+                "title": "Conference Solution Key",
+                "required": [
+                  "type"
+                ],
+                "properties": {
+                  "type": {
+                    "type": "string",
+                    "title": "Type",
+                    "description": "Conference solution type (e.g., hangoutsMeet)"
+                  }
+                },
+                "description": "Input model for conference solution key.",
+                "additionalProperties": false
+              }
+            },
+            "description": "Input model for conference create request.",
+            "additionalProperties": false
+          }
+        },
+        "description": "Input model for conference data.",
+        "additionalProperties": false
+      },
+      "attendees_omitted": {
+        "type": "boolean",
+        "title": "Attendees Omitted",
+        "examples": [
+          true,
+          false
+        ],
+        "description": "Whether attendees may have been omitted from the event's representation."
+      },
+      "guests_can_modify": {
+        "type": "boolean",
+        "title": "Guests Can Modify",
+        "examples": [
+          true,
+          false
+        ],
+        "description": "Whether attendees other than the organizer can modify the event (default: false)."
+      },
+      "anyone_can_add_self": {
+        "type": "boolean",
+        "title": "Anyone Can Add Self",
+        "examples": [
+          true,
+          false
+        ],
+        "description": "Whether anyone can invite themselves to the event (default: false)."
+      },
+      "extended_properties": {
+        "type": "object",
+        "title": "ExtendedPropertiesInput",
+        "properties": {
+          "shared": {
+            "type": "object",
+            "title": "Shared",
+            "description": "Shared key-value properties",
+            "additionalProperties": {
+              "type": "string"
+            }
+          },
+          "private": {
+            "type": "object",
+            "title": "Private",
+            "description": "Private key-value properties",
+            "additionalProperties": {
+              "type": "string"
+            }
+          }
+        },
+        "description": "Input model for extended properties.",
+        "additionalProperties": false
+      },
+      "supports_attachments": {
+        "type": "boolean",
+        "title": "Supports Attachments",
+        "examples": [
+          true,
+          false
+        ],
+        "description": "Client application supports event attachments. Set to `True` if so.",
+        "human_parameter_name": "Supports Attachments",
+        "human_parameter_description": "Let us know if your app can handle event attachments. Turn this on if you want to work with attached files."
+      },
+      "focus_time_properties": {
+        "type": "object",
+        "title": "FocusTimePropertiesInput",
+        "properties": {
+          "chatStatus": {
+            "enum": [
+              "available",
+              "doNotDisturb"
+            ],
+            "type": "string",
+            "title": "Chat Status",
+            "description": "Chat status during focus time"
+          },
+          "declineMessage": {
+            "type": "string",
+            "title": "Decline Message",
+            "description": "Message for declined invitations"
+          },
+          "autoDeclineMode": {
+            "enum": [
+              "declineNone",
+              "declineAllConflictingInvitations",
+              "declineOnlyNewConflictingInvitations"
+            ],
+            "type": "string",
+            "title": "Auto Decline Mode",
+            "description": "Auto-decline mode for conflicting invitations"
+          }
+        },
+        "description": "Input model for focus time properties.",
+        "additionalProperties": false
+      },
+      "conference_data_version": {
+        "type": "integer",
+        "title": "Conference Data Version",
+        "maximum": 1,
+        "minimum": 0,
+        "examples": [
+          0,
+          1
+        ],
+        "description": "API client's conference data support version. Set to 1 to manage conference details (e.g., Google Meet links); 0 (default) ignores conference data. Setting to 1 enables reading/preserving conference data but does not generate a new Meet link — use GOOGLECALENDAR_UPDATE_EVENT with `create_meeting_room=true` to create one.",
+        "human_parameter_name": "Conference Data Version",
+        "human_parameter_description": "Enable support for conference details like Google Meet links. Set to 1 to manage meeting links; leave blank to ignore."
+      },
+      "guests_can_invite_others": {
+        "type": "boolean",
+        "title": "Guests Can Invite Others",
+        "examples": [
+          true,
+          false
+        ],
+        "description": "Whether attendees other than the organizer can invite others (default: true)."
+      },
+      "out_of_office_properties": {
+        "type": "object",
+        "title": "OutOfOfficePropertiesInput",
+        "properties": {
+          "declineMessage": {
+            "type": "string",
+            "title": "Decline Message",
+            "description": "Message for declined invitations"
+          },
+          "autoDeclineMode": {
+            "enum": [
+              "declineNone",
+              "declineAllConflictingInvitations",
+              "declineOnlyNewConflictingInvitations"
+            ],
+            "type": "string",
+            "title": "Auto Decline Mode",
+            "description": "Auto-decline mode for conflicting invitations"
+          }
+        },
+        "description": "Input model for out-of-office properties.",
+        "additionalProperties": false
+      },
+      "guests_can_see_other_guests": {
+        "type": "boolean",
+        "title": "Guests Can See Other Guests",
+        "examples": [
+          true,
+          false
+        ],
+        "description": "Whether attendees can see who the event's attendees are (default: true)."
+      },
+      "working_location_properties": {
+        "type": "object",
+        "title": "WorkingLocationPropertiesInput",
+        "required": [
+          "type"
+        ],
+        "properties": {
+          "type": {
+            "enum": [
+              "homeOffice",
+              "officeLocation",
+              "customLocation"
+            ],
+            "type": "string",
+            "title": "Type",
+            "description": "Type of working location"
+          },
+          "homeOffice": {
+            "type": "object",
+            "title": "WorkingLocationHomeOfficeInput",
+            "properties": {
+              "label": {
+                "type": "string",
+                "title": "Label",
+                "description": "Label for the location"
+              }
+            },
+            "description": "Input model for home office location.",
+            "additionalProperties": false
+          },
+          "customLocation": {
+            "type": "object",
+            "title": "WorkingLocationCustomInput",
+            "properties": {
+              "label": {
+                "type": "string",
+                "title": "Label",
+                "description": "Label for the location"
+              }
+            },
+            "description": "Input model for custom location.",
+            "additionalProperties": false
+          },
+          "officeLocation": {
+            "type": "object",
+            "title": "WorkingLocationOfficeInput",
+            "properties": {
+              "label": {
+                "type": "string",
+                "title": "Label",
+                "description": "Label for the location"
+              },
+              "deskId": {
+                "type": "string",
+                "title": "Desk Id",
+                "description": "Desk ID"
+              },
+              "floorId": {
+                "type": "string",
+                "title": "Floor Id",
+                "description": "Floor ID"
+              },
+              "buildingId": {
+                "type": "string",
+                "title": "Building Id",
+                "description": "Building ID"
+              },
+              "floorSectionId": {
+                "type": "string",
+                "title": "Floor Section Id",
+                "description": "Floor section ID"
+              }
+            },
+            "description": "Input model for office location.",
+            "additionalProperties": false
+          }
+        },
+        "description": "Input model for working location properties.",
+        "additionalProperties": false
+      }
+    },
+    "description": "Request model for patching a Google Calendar event.\n\nIMPORTANT API NOTES:\n- This action uses the events.patch endpoint, NOT events.list\n- Valid query params: sendUpdates, conferenceDataVersion, maxAttendees, supportsAttachments\n- Event times use 'start' and 'end' objects in the request body (each with dateTime/date and timeZone)\n- NEVER use 'timeMin' or 'timeMax' - those are events.list query parameters and will cause API errors"
+  },
+  "output_parameters": {
+    "type": "object",
+    "$defs": {
+      "Key": {
+        "type": "object",
+        "title": "Key",
+        "properties": {
+          "type": {
+            "type": "string",
+            "title": "Type",
+            "description": "Conference solution type: 'eventHangout', 'eventNamedHangout', 'hangoutsMeet', or 'addOn'."
+          }
+        }
+      },
+      "Gadget": {
+        "type": "object",
+        "title": "Gadget",
+        "properties": {
+          "link": {
+            "type": "string",
+            "title": "Link"
+          },
+          "type": {
+            "type": "string",
+            "title": "Type"
+          },
+          "title": {
+            "type": "string",
+            "title": "Title"
+          },
+          "width": {
+            "type": "integer",
+            "title": "Width"
+          },
+          "height": {
+            "type": "integer",
+            "title": "Height"
+          },
+          "display": {
+            "type": "string",
+            "title": "Display"
+          },
+          "iconLink": {
+            "type": "string",
+            "title": "Icon Link"
+          },
+          "preferences": {
+            "type": "object",
+            "title": "Preferences",
+            "additionalProperties": {
+              "type": "string"
+            }
+          }
+        }
+      },
+      "Source": {
+        "type": "object",
+        "title": "Source",
+        "properties": {
+          "url": {
+            "type": "string",
+            "title": "Url",
+            "description": "Source URL"
+          },
+          "title": {
+            "type": "string",
+            "title": "Title",
+            "description": "Source title"
+          }
+        }
+      },
+      "Attendee": {
+        "type": "object",
+        "title": "Attendee",
+        "required": [
+          "email",
+          "responseStatus"
+        ],
+        "properties": {
+          "id": {
+            "type": "string",
+            "title": "Id",
+            "description": "Attendee profile ID."
+          },
+          "self": {
+            "type": "boolean",
+            "title": "Self",
+            "description": "Is this the authenticated user's calendar."
+          },
+          "email": {
+            "type": "string",
+            "title": "Email",
+            "description": "Attendee email address."
+          },
+          "comment": {
+            "type": "string",
+            "title": "Comment",
+            "description": "Response comment."
+          },
+          "optional": {
+            "type": "boolean",
+            "title": "Optional",
+            "description": "Is optional."
+          },
+          "resource": {
+            "type": "boolean",
+            "title": "Resource",
+            "description": "Is the attendee a resource (e.g., a room)."
+          },
+          "organizer": {
+            "type": "boolean",
+            "title": "Organizer",
+            "description": "Is organizer."
+          },
+          "displayName": {
+            "type": "string",
+            "title": "Display Name",
+            "description": "Attendee name."
+          },
+          "responseStatus": {
+            "enum": [
+              "needsAction",
+              "declined",
+              "tentative",
+              "accepted"
+            ],
+            "type": "string",
+            "title": "Response Status",
+            "description": "Attendee response status: 'needsAction', 'declined', 'tentative', or 'accepted'."
+          },
+          "additionalGuests": {
+            "type": "integer",
+            "title": "Additional Guests",
+            "description": "Number of additional guests brought by the attendee."
+          }
+        }
+      },
+      "Reminders": {
+        "type": "object",
+        "title": "Reminders",
+        "required": [
+          "useDefault"
+        ],
+        "properties": {
+          "overrides": {
+            "type": "array",
+            "items": {
+              "$ref": "#/$defs/ReminderOverride"
+            },
+            "title": "Overrides",
+            "description": "Override reminders if useDefault is false."
+          },
+          "useDefault": {
+            "type": "boolean",
+            "title": "Use Default",
+            "description": "Whether the default reminders of the calendar are used."
+          }
+        }
+      },
+      "Attachment": {
+        "type": "object",
+        "title": "Attachment",
+        "properties": {
+          "title": {
+            "type": "string",
+            "title": "Title"
+          },
+          "fileId": {
+            "type": "string",
+            "title": "File Id"
+          },
+          "fileUrl": {
+            "type": "string",
+            "title": "File Url"
+          },
+          "iconLink": {
+            "type": "string",
+            "title": "Icon Link"
+          },
+          "mimeType": {
+            "type": "string",
+            "title": "Mime Type"
+          }
+        }
+      },
+      "EventPerson": {
+        "type": "object",
+        "title": "EventPerson",
+        "required": [
+          "email"
+        ],
+        "properties": {
+          "id": {
+            "type": "string",
+            "title": "Id",
+            "description": "Profile ID, if available."
+          },
+          "self": {
+            "type": "boolean",
+            "title": "Self",
+            "description": "Whether this person corresponds to the calendar on which this copy of the event appears."
+          },
+          "email": {
+            "type": "string",
+            "title": "Email",
+            "description": "Email address of the user."
+          },
+          "displayName": {
+            "type": "string",
+            "title": "Display Name",
+            "description": "Display name of the user."
+          }
+        },
+        "description": "Creator/Organizer object."
+      },
+      "EventDateTime": {
+        "type": "object",
+        "title": "EventDateTime",
+        "properties": {
+          "date": {
+            "type": "string",
+            "title": "Date",
+            "description": "Date for all-day events (YYYY-MM-DD)."
+          },
+          "dateTime": {
+            "type": "string",
+            "title": "Date Time",
+            "description": "RFC3339 date-time for timed events."
+          },
+          "timeZone": {
+            "type": "string",
+            "title": "Time Zone",
+            "description": "Time zone for the time specified."
+          }
+        },
+        "description": "Start/End/originalStartTime object."
+      },
+      "ConferenceData": {
+        "type": "object",
+        "title": "ConferenceData",
+        "properties": {
+          "notes": {
+            "type": "string",
+            "title": "Notes",
+            "description": "Conference notes"
+          },
+          "signature": {
+            "type": "string",
+            "title": "Signature",
+            "description": "Opaque signature for validation"
+          },
+          "entryPoints": {
+            "type": "array",
+            "items": {
+              "$ref": "#/$defs/ConferenceEntryPoint"
+            },
+            "title": "Entry Points"
+          },
+          "conferenceId": {
+            "type": "string",
+            "title": "Conference Id",
+            "description": "Identifier for the conference"
+          },
+          "createRequest": {
+            "$ref": "#/$defs/ConferenceCreateRequest",
+            "title": "Create Request"
+          },
+          "conferenceSolution": {
+            "$ref": "#/$defs/ConferenceSolution",
+            "title": "Conference Solution"
+          }
+        }
+      },
+      "ReminderOverride": {
+        "type": "object",
+        "title": "ReminderOverride",
+        "required": [
+          "method",
+          "minutes"
+        ],
+        "properties": {
+          "method": {
+            "enum": [
+              "email",
+              "popup"
+            ],
+            "type": "string",
+            "title": "Method",
+            "description": "Reminder method: 'email' or 'popup'."
+          },
+          "minutes": {
+            "type": "integer",
+            "title": "Minutes",
+            "description": "Minutes before start to trigger."
+          }
+        }
+      },
+      "ConferenceSolution": {
+        "type": "object",
+        "title": "ConferenceSolution",
+        "properties": {
+          "key": {
+            "$ref": "#/$defs/Key",
+            "title": "Key"
+          },
+          "name": {
+            "type": "string",
+            "title": "Name",
+            "description": "Solution name"
+          },
+          "iconUri": {
+            "type": "string",
+            "title": "Icon Uri",
+            "description": "Icon URI"
+          }
+        }
+      },
+      "ExtendedProperties": {
+        "type": "object",
+        "title": "ExtendedProperties",
+        "properties": {
+          "shared": {
+            "type": "object",
+            "title": "Shared",
+            "description": "Shared key/value properties.",
+            "additionalProperties": {
+              "type": "string"
+            }
+          },
+          "private": {
+            "type": "object",
+            "title": "Private",
+            "description": "Private key/value properties.",
+            "additionalProperties": {
+              "type": "string"
+            }
+          }
+        }
+      },
+      "PatchEventResponse": {
+        "type": "object",
+        "title": "PatchEventResponse",
+        "required": [
+          "id"
+        ],
+        "properties": {
+          "id": {
+            "type": "string",
+            "title": "Id",
+            "description": "Opaque identifier of the event. Unique within a calendar."
+          },
+          "end": {
+            "$ref": "#/$defs/EventDateTime",
+            "title": "End",
+            "description": "End time of the event"
+          },
+          "etag": {
+            "type": "string",
+            "title": "Etag",
+            "description": "ETag of the event resource."
+          },
+          "kind": {
+            "type": "string",
+            "title": "Kind",
+            "description": "Type of the resource. Always 'calendar#event'."
+          },
+          "start": {
+            "$ref": "#/$defs/EventDateTime",
+            "title": "Start",
+            "description": "Start time of the event"
+          },
+          "gadget": {
+            "$ref": "#/$defs/Gadget",
+            "title": "Gadget",
+            "description": "Gadget attached to the event (deprecated)"
+          },
+          "locked": {
+            "type": "boolean",
+            "title": "Locked",
+            "description": "Whether this event is locked and cannot be modified by attendees"
+          },
+          "source": {
+            "$ref": "#/$defs/Source",
+            "title": "Source",
+            "description": "Source from which the event was created"
+          },
+          "status": {
+            "enum": [
+              "confirmed",
+              "tentative",
+              "cancelled"
+            ],
+            "type": "string",
+            "title": "Status",
+            "description": "Event status: 'confirmed', 'tentative', or 'cancelled'."
+          },
+          "colorId": {
+            "type": "string",
+            "title": "Color Id",
+            "description": "ID of the color used to display this event."
+          },
+          "created": {
+            "type": "string",
+            "title": "Created",
+            "description": "Creation time (RFC3339 timestamp)."
+          },
+          "creator": {
+            "$ref": "#/$defs/EventPerson",
+            "title": "Creator",
+            "description": "Creator of the event"
+          },
+          "iCalUID": {
+            "type": "string",
+            "title": "I Cal Uid",
+            "description": "Globally unique identifier as defined in RFC5545."
+          },
+          "summary": {
+            "type": "string",
+            "title": "Summary",
+            "description": "Title of the event."
+          },
+          "updated": {
+            "type": "string",
+            "title": "Updated",
+            "description": "Last modification time (RFC3339 timestamp)."
+          },
+          "htmlLink": {
+            "type": "string",
+            "title": "Html Link",
+            "description": "Absolute link to the Google Calendar Web UI for this event."
+          },
+          "location": {
+            "type": "string",
+            "title": "Location",
+            "description": "Geographic location of the event."
+          },
+          "sequence": {
+            "type": "integer",
+            "title": "Sequence",
+            "description": "Sequence number as defined in RFC5545. Incremented on changes."
+          },
+          "attendees": {
+            "type": "array",
+            "items": {
+              "$ref": "#/$defs/Attendee"
+            },
+            "title": "Attendees",
+            "description": "The attendees of the event."
+          },
+          "eventType": {
+            "enum": [
+              "default",
+              "outOfOffice",
+              "focusTime",
+              "workingLocation",
+              "fromGmail",
+              "birthday"
+            ],
+            "type": "string",
+            "title": "Event Type",
+            "description": "Event type: 'default', 'outOfOffice', 'focusTime', 'workingLocation', 'fromGmail', or 'birthday'."
+          },
+          "organizer": {
+            "$ref": "#/$defs/EventPerson",
+            "title": "Organizer",
+            "description": "Organizer of the event"
+          },
+          "reminders": {
+            "$ref": "#/$defs/Reminders",
+            "title": "Reminders",
+            "description": "Information about the event's reminders for the authenticated user"
+          },
+          "recurrence": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "title": "Recurrence",
+            "description": "List of RRULE/EXRULE/RDATE/EXDATE lines for a recurring event"
+          },
+          "visibility": {
+            "enum": [
+              "default",
+              "public",
+              "private",
+              "confidential"
+            ],
+            "type": "string",
+            "title": "Visibility",
+            "description": "Event visibility: 'default', 'public', 'private', or 'confidential'."
+          },
+          "attachments": {
+            "type": "array",
+            "items": {
+              "$ref": "#/$defs/Attachment"
+            },
+            "title": "Attachments",
+            "description": "File attachments for the event"
+          },
+          "description": {
+            "type": "string",
+            "title": "Description",
+            "description": "Description of the event. May contain HTML."
+          },
+          "display_url": {
+            "type": "string",
+            "title": "Display Url",
+            "description": "URL to view this event in Google Calendar web UI. Auto-populated from htmlLink."
+          },
+          "hangoutLink": {
+            "type": "string",
+            "title": "Hangout Link",
+            "description": "Link to the Google Meet (deprecated in favor of conferenceData)"
+          },
+          "privateCopy": {
+            "type": "boolean",
+            "title": "Private Copy",
+            "description": "Whether this is a private copy of the event"
+          },
+          "transparency": {
+            "enum": [
+              "opaque",
+              "transparent"
+            ],
+            "type": "string",
+            "title": "Transparency",
+            "description": "Event transparency: 'opaque' blocks time; 'transparent' does not."
+          },
+          "conferenceData": {
+            "$ref": "#/$defs/ConferenceData",
+            "title": "Conference Data",
+            "description": "Information about conference solutions attached to the event"
+          },
+          "guestsCanModify": {
+            "type": "boolean",
+            "title": "Guests Can Modify",
+            "description": "Whether attendees other than the organizer can modify the event"
+          },
+          "anyoneCanAddSelf": {
+            "type": "boolean",
+            "title": "Anyone Can Add Self",
+            "description": "Whether attendees other than the organizer can invite themselves"
+          },
+          "attendeesOmitted": {
+            "type": "boolean",
+            "title": "Attendees Omitted",
+            "description": "Whether attendees were omitted from the API response."
+          },
+          "recurringEventId": {
+            "type": "string",
+            "title": "Recurring Event Id",
+            "description": "ID of the recurring event to which this instance belongs"
+          },
+          "originalStartTime": {
+            "$ref": "#/$defs/EventDateTime",
+            "title": "Original Start Time",
+            "description": "For instances of recurring events, the time at which this recurrence instance starts."
+          },
+          "endTimeUnspecified": {
+            "type": "boolean",
+            "title": "End Time Unspecified",
+            "description": "Whether the end time is unspecified"
+          },
+          "extendedProperties": {
+            "$ref": "#/$defs/ExtendedProperties",
+            "title": "Extended Properties",
+            "description": "Extended properties for private and shared use"
+          },
+          "focusTimeProperties": {
+            "$ref": "#/$defs/FocusTimeProperties",
+            "title": "Focus Time Properties",
+            "description": "Properties for a focus time event"
+          },
+          "guestsCanInviteOthers": {
+            "type": "boolean",
+            "title": "Guests Can Invite Others",
+            "description": "Whether attendees can invite others"
+          },
+          "outOfOfficeProperties": {
+            "$ref": "#/$defs/OutOfOfficeProperties",
+            "title": "Out Of Office Properties",
+            "description": "Properties for an out-of-office event"
+          },
+          "guestsCanSeeOtherGuests": {
+            "type": "boolean",
+            "title": "Guests Can See Other Guests",
+            "description": "Whether attendees can see the guest list"
+          },
+          "workingLocationProperties": {
+            "$ref": "#/$defs/WorkingLocationProperties",
+            "title": "Working Location Properties",
+            "description": "Properties for a working location event"
+          }
+        },
+        "description": "Event resource returned by googlecalendar.events.patch.",
+        "additionalProperties": true
+      },
+      "FocusTimeProperties": {
+        "type": "object",
+        "title": "FocusTimeProperties",
+        "properties": {
+          "chatStatus": {
+            "enum": [
+              "available",
+              "doNotDisturb"
+            ],
+            "type": "string",
+            "title": "Chat Status",
+            "description": "Chat status during focus time: 'available' or 'doNotDisturb'."
+          },
+          "declineMessage": {
+            "type": "string",
+            "title": "Decline Message",
+            "description": "Message used for declined invitations"
+          },
+          "autoDeclineMode": {
+            "enum": [
+              "declineNone",
+              "declineAllConflictingInvitations",
+              "declineOnlyNewConflictingInvitations"
+            ],
+            "type": "string",
+            "title": "Auto Decline Mode",
+            "description": "Auto-decline mode: 'declineNone', 'declineAllConflictingInvitations', or 'declineOnlyNewConflictingInvitations'."
+          }
+        }
+      },
+      "ConferenceEntryPoint": {
+        "type": "object",
+        "title": "ConferenceEntryPoint",
+        "properties": {
+          "pin": {
+            "type": "string",
+            "title": "Pin",
+            "description": "Phone PIN"
+          },
+          "uri": {
+            "type": "string",
+            "title": "Uri",
+            "description": "URI for joining"
+          },
+          "label": {
+            "type": "string",
+            "title": "Label",
+            "description": "Display label"
+          },
+          "passcode": {
+            "type": "string",
+            "title": "Passcode",
+            "description": "Passcode"
+          },
+          "password": {
+            "type": "string",
+            "title": "Password",
+            "description": "Password"
+          },
+          "accessCode": {
+            "type": "string",
+            "title": "Access Code",
+            "description": "Access code"
+          },
+          "regionCode": {
+            "type": "string",
+            "title": "Region Code",
+            "description": "Two-letter region code (ISO 3166-1 alpha-2)"
+          },
+          "meetingCode": {
+            "type": "string",
+            "title": "Meeting Code",
+            "description": "Meeting code"
+          },
+          "entryPointType": {
+            "type": "string",
+            "title": "Entry Point Type",
+            "description": "Type: video, phone, sip, or more"
+          }
+        }
+      },
+      "ConferenceSolutionKey": {
+        "type": "object",
+        "title": "ConferenceSolutionKey",
+        "properties": {
+          "type": {
+            "type": "string",
+            "title": "Type",
+            "description": "Conference solution type: 'eventHangout', 'eventNamedHangout', 'hangoutsMeet', or 'addOn'."
+          }
+        }
+      },
+      "OutOfOfficeProperties": {
+        "type": "object",
+        "title": "OutOfOfficeProperties",
+        "properties": {
+          "declineMessage": {
+            "type": "string",
+            "title": "Decline Message",
+            "description": "Message used for auto-declined invitations"
+          },
+          "autoDeclineMode": {
+            "enum": [
+              "declineNone",
+              "declineAllConflictingInvitations",
+              "declineOnlyNewConflictingInvitations"
+            ],
+            "type": "string",
+            "title": "Auto Decline Mode",
+            "description": "Auto-decline mode: 'declineNone', 'declineAllConflictingInvitations', or 'declineOnlyNewConflictingInvitations'."
+          }
+        }
+      },
+      "WorkingLocationCustom": {
+        "type": "object",
+        "title": "WorkingLocationCustom",
+        "properties": {
+          "label": {
+            "type": "string",
+            "title": "Label"
+          }
+        }
+      },
+      "WorkingLocationOffice": {
+        "type": "object",
+        "title": "WorkingLocationOffice",
+        "properties": {
+          "label": {
+            "type": "string",
+            "title": "Label"
+          },
+          "deskId": {
+            "type": "string",
+            "title": "Desk Id"
+          },
+          "floorId": {
+            "type": "string",
+            "title": "Floor Id"
+          },
+          "buildingId": {
+            "type": "string",
+            "title": "Building Id"
+          },
+          "floorSectionId": {
+            "type": "string",
+            "title": "Floor Section Id"
+          }
+        }
+      },
+      "ConferenceCreateStatus": {
+        "type": "object",
+        "title": "ConferenceCreateStatus",
+        "properties": {
+          "statusCode": {
+            "type": "string",
+            "title": "Status Code",
+            "description": "Conference creation status: 'pending', 'success', or 'failure'."
+          }
+        }
+      },
+      "ConferenceCreateRequest": {
+        "type": "object",
+        "title": "ConferenceCreateRequest",
+        "properties": {
+          "status": {
+            "$ref": "#/$defs/ConferenceCreateStatus",
+            "title": "Status"
+          },
+          "requestId": {
+            "type": "string",
+            "title": "Request Id",
+            "description": "Client-specified unique request ID"
+          },
+          "conferenceSolutionKey": {
+            "$ref": "#/$defs/ConferenceSolutionKey",
+            "title": "Conference Solution Key"
+          }
+        }
+      },
+      "WorkingLocationHomeOffice": {
+        "type": "object",
+        "title": "WorkingLocationHomeOffice",
+        "properties": {
+          "label": {
+            "type": "string",
+            "title": "Label"
+          }
+        }
+      },
+      "WorkingLocationProperties": {
+        "type": "object",
+        "title": "WorkingLocationProperties",
+        "properties": {
+          "type": {
+            "enum": [
+              "homeOffice",
+              "officeLocation",
+              "customLocation"
+            ],
+            "type": "string",
+            "title": "Type",
+            "description": "Working location type: 'homeOffice', 'officeLocation', or 'customLocation'."
+          },
+          "homeOffice": {
+            "$ref": "#/$defs/WorkingLocationHomeOffice",
+            "title": "Home Office"
+          },
+          "customLocation": {
+            "$ref": "#/$defs/WorkingLocationCustom",
+            "title": "Custom Location"
+          },
+          "officeLocation": {
+            "$ref": "#/$defs/WorkingLocationOffice",
+            "title": "Office Location"
+          }
+        }
+      }
+    },
+    "title": "PatchEventResponseWrapper",
+    "required": [
+      "data",
+      "successful"
+    ],
+    "properties": {
+      "data": {
+        "$ref": "#/$defs/PatchEventResponse",
+        "title": "Data",
+        "description": "Data from the action execution"
+      },
+      "error": {
+        "type": "string",
+        "title": "Error",
+        "description": "Error if any occurred during the execution of the action"
+      },
+      "successful": {
+        "type": "boolean",
+        "title": "Successful",
+        "description": "Whether or not the action execution was successful or not"
+      }
+    }
+  }
+}

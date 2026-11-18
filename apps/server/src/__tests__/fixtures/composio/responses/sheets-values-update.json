@@ -1,0 +1,50 @@
+{
+  "slug": "GOOGLESHEETS_VALUES_UPDATE",
+  "ok": true,
+  "ms": 1046,
+  "request": {
+    "spreadsheet_id": "id_41",
+    "range": "Sheet1!A1:C2",
+    "value_input_option": "USER_ENTERED",
+    "values": [
+      [
+        "Name",
+        "Count",
+        "Note"
+      ],
+      [
+        "alpha",
+        1,
+        "first"
+      ]
+    ],
+    "include_values_in_response": true
+  },
+  "response": {
+    "data": {
+      "display_url": "https://example.test/link_22",
+      "spreadsheetId": "id_41",
+      "updatedCells": 6,
+      "updatedColumns": 3,
+      "updatedData": {
+        "majorDimension": "ROWS",
+        "range": "Sheet1!A1:C2",
+        "values": [
+          [
+            "Name",
+            "Count",
+            "Note"
+          ],
+          [
+            "alpha",
+            "1",
+            "first"
+          ]
+        ]
+      },
+      "updatedRange": "Sheet1!A1:C2",
+      "updatedRows": 2
+    },
+    "error": null
+  }
+}

@@ -1,0 +1,345 @@
+{
+  "slug": "GOOGLECALENDAR_LIST_CALENDARS",
+  "version": "20261116_00",
+  "description": "Lists calendars accessible through the connected user's CalendarList, returning IDs and user-specific metadata such as access role, color, visibility, selection, and reminders. Hidden calendars are omitted unless show_hidden is true; min_access_role and show_deleted provide additional filtering. Continue with page_token until next_page_token is absent; for incremental synchronization, pass next_sync_token back as sync_token. Use returned IDs, not display names, with event actions, and use GOOGLECALENDAR_GET_CALENDAR for canonical metadata about one known calendar.",
+  "input_parameters": {
+    "type": "object",
+    "title": "ListCalendarsRequest",
+    "properties": {
+      "page_token": {
+        "type": "string",
+        "title": "Page Token",
+        "examples": [
+          " nextPageToken123"
+        ],
+        "description": "Token for the page of results to return, from a previous response.",
+        "human_parameter_name": "Page Token",
+        "human_parameter_description": "If you’re continuing from a previous list, paste the page token here to get the next set of calendars. Leave blank to start from the beginning."
+      },
+      "sync_token": {
+        "type": "string",
+        "title": "Sync Token",
+        "examples": [
+          "syncToken123"
+        ],
+        "description": "Sync token from a previous list request to get only changed entries; showDeleted, showHidden, and pageToken are ignored if provided. Also ignores minAccessRole. An HTTP 410 Gone response means the token has expired; perform a full resync by omitting sync_token.",
+        "human_parameter_name": "Sync Token",
+        "human_parameter_description": "Provide a sync token from a previous run to fetch only calendars that changed since then. Use this for faster incremental updates."
+      },
+      "max_results": {
+        "type": "integer",
+        "title": "Max Results",
+        "default": 100,
+        "maximum": 250,
+        "minimum": 1,
+        "examples": [
+          25,
+          100
+        ],
+        "description": "Maximum calendars to return on one page. Google defaults to 100 and allows at most 250. Follow next_page_token until absent to enumerate every accessible calendar.",
+        "human_parameter_name": "Max Results",
+        "human_parameter_description": "How many calendars to show in one batch. Increase this to see more at once (up to 250)."
+      },
+      "show_hidden": {
+        "type": "boolean",
+        "title": "Show Hidden",
+        "default": false,
+        "examples": [
+          true,
+          false
+        ],
+        "description": "Include calendars not typically shown in the UI.",
+        "human_parameter_name": "Show Hidden",
+        "human_parameter_description": "Include calendars that are hidden in your calendar view. Enable this if you’re looking for calendars you’ve hidden."
+      },
+      "show_deleted": {
+        "type": "boolean",
+        "title": "Show Deleted",
+        "default": false,
+        "examples": [
+          true,
+          false
+        ],
+        "description": "Include deleted calendars in the result.",
+        "human_parameter_name": "Show Deleted",
+        "human_parameter_description": "Turn this on to include calendars you’ve deleted in the results. Most people can leave this off."
+      },
+      "min_access_role": {
+        "enum": [
+          "freeBusyReader",
+          "reader",
+          "writerWithoutPrivateAccess",
+          "writer",
+          "owner"
+        ],
+        "type": "string",
+        "title": "Min Access Role",
+        "examples": [
+          "reader",
+          "owner"
+        ],
+        "description": "Minimum access role for returned calendars: 'freeBusyReader', 'reader', 'writerWithoutPrivateAccess', 'writer', or 'owner'. freeBusyReader calendars expose only free/busy slots. Omit this filter to include every accessible role.",
+        "human_parameter_name": "Min Access Role",
+        "human_parameter_description": "Only include calendars where you have at least this level of access. For example, choose 'owner' to see just calendars you own."
+      }
+    }
+  },
+  "output_parameters": {
+    "type": "object",
+    "$defs": {
+      "Notification": {
+        "type": "object",
+        "title": "Notification",
+        "required": [
+          "type",
+          "method"
+        ],
+        "properties": {
+          "type": {
+            "type": "string",
+            "title": "Type",
+            "description": "Notification type: eventCreation, eventChange, eventCancellation, eventResponse, or agenda."
+          },
+          "method": {
+            "type": "string",
+            "title": "Method",
+            "description": "Delivery method for the notification (typically 'email')."
+          }
+        },
+        "description": "A single notification configuration."
+      },
+      "DefaultReminder": {
+        "type": "object",
+        "title": "DefaultReminder",
+        "required": [
+          "method",
+          "minutes"
+        ],
+        "properties": {
+          "method": {
+            "type": "string",
+            "title": "Method",
+            "description": "Reminder delivery method: 'email' or 'popup'."
+          },
+          "minutes": {
+            "type": "integer",
+            "title": "Minutes",
+            "maximum": 40320,
+            "minimum": 0,
+            "description": "Minutes before event start to trigger reminder (0-40320)."
+          }
+        },
+        "description": "A default reminder for calendar events."
+      },
+      "CalendarListEntry": {
+        "type": "object",
+        "title": "CalendarListEntry",
+        "required": [
+          "kind",
+          "etag",
+          "id"
+        ],
+        "properties": {
+          "id": {
+            "type": "string",
+            "title": "Id",
+            "description": "Calendar identifier."
+          },
+          "etag": {
+            "type": "string",
+            "title": "Etag",
+            "description": "ETag of the resource."
+          },
+          "kind": {
+            "type": "string",
+            "title": "Kind",
+            "description": "Resource type identifier, always 'calendar#calendarListEntry'."
+          },
+          "hidden": {
+            "type": "boolean",
+            "title": "Hidden",
+            "description": "Whether the calendar is hidden from the calendar list."
+          },
+          "colorId": {
+            "type": "string",
+            "title": "Color Id",
+            "description": "Color identifier for the calendar."
+          },
+          "deleted": {
+            "type": "boolean",
+            "title": "Deleted",
+            "description": "Whether the calendar has been deleted from the calendar list."
+          },
+          "primary": {
+            "type": "boolean",
+            "title": "Primary",
+            "description": "Whether this is the user's primary calendar."
+          },
+          "summary": {
+            "type": "string",
+            "title": "Summary",
+            "description": "Title of the calendar."
+          },
+          "location": {
+            "type": "string",
+            "title": "Location",
+            "description": "Geographic location of the calendar as free-form text."
+          },
+          "selected": {
+            "type": "boolean",
+            "title": "Selected",
+            "description": "Whether calendar events appear on the calendar UI."
+          },
+          "timeZone": {
+            "type": "string",
+            "title": "Time Zone",
+            "description": "Time zone of the calendar."
+          },
+          "dataOwner": {
+            "type": "string",
+            "title": "Data Owner",
+            "description": "Email of the calendar owner. Set only for secondary calendars."
+          },
+          "accessRole": {
+            "type": "string",
+            "title": "Access Role",
+            "description": "User's access role: freeBusyReader, reader, writer, or owner."
+          },
+          "description": {
+            "type": "string",
+            "title": "Description",
+            "description": "Description of the calendar."
+          },
+          "display_url": {
+            "type": "string",
+            "title": "Display Url",
+            "description": "URL to view this calendar in the Google Calendar web interface."
+          },
+          "backgroundColor": {
+            "type": "string",
+            "title": "Background Color",
+            "description": "Background color in hexadecimal format (#0088aa)."
+          },
+          "foregroundColor": {
+            "type": "string",
+            "title": "Foreground Color",
+            "description": "Foreground color in hexadecimal format (#ffffff)."
+          },
+          "summaryOverride": {
+            "type": "string",
+            "title": "Summary Override",
+            "description": "User's custom title for the calendar."
+          },
+          "defaultReminders": {
+            "type": "array",
+            "items": {
+              "$ref": "#/$defs/DefaultReminder"
+            },
+            "title": "Default Reminders",
+            "description": "Default reminders for events on this calendar."
+          },
+          "conferenceProperties": {
+            "$ref": "#/$defs/ConferenceProperties",
+            "title": "Conference Properties",
+            "description": "Conference-related properties for events on this calendar."
+          },
+          "notificationSettings": {
+            "$ref": "#/$defs/NotificationSettings",
+            "title": "Notification Settings",
+            "description": "Notification settings for the calendar."
+          },
+          "autoAcceptInvitations": {
+            "type": "boolean",
+            "title": "Auto Accept Invitations",
+            "description": "Whether calendar automatically accepts invitations. Only valid for resource calendars."
+          }
+        },
+        "description": "Represents a calendar in the user's calendar list."
+      },
+      "ConferenceProperties": {
+        "type": "object",
+        "title": "ConferenceProperties",
+        "properties": {
+          "allowedConferenceSolutionTypes": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "title": "Allowed Conference Solution Types",
+            "description": "Conference solution types allowed: eventHangout, eventNamedHangout, or hangoutsMeet."
+          }
+        },
+        "description": "Conference-related properties for a calendar."
+      },
+      "NotificationSettings": {
+        "type": "object",
+        "title": "NotificationSettings",
+        "properties": {
+          "notifications": {
+            "type": "array",
+            "items": {
+              "$ref": "#/$defs/Notification"
+            },
+            "title": "Notifications",
+            "description": "List of notification configurations for this calendar."
+          }
+        },
+        "description": "Notification settings for a calendar."
+      },
+      "ListCalendarsResponse": {
+        "type": "object",
+        "title": "ListCalendarsResponse",
+        "required": [
+          "calendars"
+        ],
+        "properties": {
+          "calendars": {
+            "type": "array",
+            "items": {
+              "$ref": "#/$defs/CalendarListEntry"
+            },
+            "title": "Calendars",
+            "description": "List of calendar entries with full calendar details."
+          },
+          "display_url": {
+            "type": "string",
+            "title": "Display Url",
+            "description": "URL to view the calendar list in the Google Calendar web interface. None for collection-level list responses."
+          },
+          "next_page_token": {
+            "type": "string",
+            "title": "Next Page Token",
+            "description": "Token to retrieve the next page of results. Pass this as page_token in the next request. Absent when there are no more pages."
+          },
+          "next_sync_token": {
+            "type": "string",
+            "title": "Next Sync Token",
+            "description": "Token for incremental sync. Pass this as sync_token in a future request to get only changed entries. Only present on the last page of results."
+          }
+        }
+      }
+    },
+    "title": "ListCalendarsResponseWrapper",
+    "required": [
+      "data",
+      "successful"
+    ],
+    "properties": {
+      "data": {
+        "$ref": "#/$defs/ListCalendarsResponse",
+        "title": "Data",
+        "description": "Data from the action execution"
+      },
+      "error": {
+        "type": "string",
+        "title": "Error",
+        "description": "Error if any occurred during the execution of the action"
+      },
+      "successful": {
+        "type": "boolean",
+        "title": "Successful",
+        "description": "Whether or not the action execution was successful or not"
+      }
+    }
+  }
+}

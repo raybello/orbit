@@ -1,0 +1,355 @@
+{
+  "slug": "GOOGLESHEETS_SEARCH_SPREADSHEETS",
+  "version": "20261116_00",
+  "description": "Search for Google spreadsheets accessible in Drive by name, content, dates, and other filters, including starred and shared-with-me status. Results are paginated, with up to 1,000 items per page; shared drives are included by default and searches across them may be incomplete.",
+  "input_parameters": {
+    "type": "object",
+    "title": "SearchSpreadsheetsRequest",
+    "properties": {
+      "query": {
+        "type": "string",
+        "title": "Query",
+        "examples": [
+          "Budget Report",
+          "quarterly sales",
+          "name contains 'Budget'",
+          "fullText contains 'sales data'",
+          "sharedWithMe = true"
+        ],
+        "description": "Search query to filter spreadsheets. Behavior depends on the 'search_type' parameter. For advanced searches, use Google Drive query syntax with fields like 'name contains', 'fullText contains', or boolean filters like 'sharedWithMe = true'. DO NOT use spreadsheet IDs as search terms. Leave empty to get all spreadsheets.",
+        "human_parameter_name": "Query",
+        "human_parameter_description": "Search query to filter spreadsheets."
+      },
+      "order_by": {
+        "type": "string",
+        "title": "Order By",
+        "default": "modifiedTime desc",
+        "description": "Sort order (comma-separated list for multi-field sorting). Valid fields: createdTime, folder, modifiedByMeTime, modifiedTime, name, name_natural, quotaBytesUsed, recency, sharedWithMeTime, starred, viewedByMeTime. Append ' desc' for descending order (default is ascending). Examples: 'modifiedTime desc', 'folder,name', 'starred,modifiedTime desc'.",
+        "human_parameter_name": "Order By",
+        "human_parameter_description": "Sort order for results."
+      },
+      "page_token": {
+        "type": "string",
+        "title": "Page Token",
+        "description": "Token for retrieving the next page of results. Use the 'next_page_token' value from a previous response to get subsequent pages. Leave empty to get the first page.",
+        "human_parameter_name": "Page Token",
+        "human_parameter_description": "Token for retrieving the next page of results from a previous search."
+      },
+      "max_results": {
+        "type": "integer",
+        "title": "Max Results",
+        "default": 10,
+        "maximum": 1000,
+        "minimum": 1,
+        "description": "Maximum number of spreadsheets to return (1-1000). Defaults to 10.",
+        "human_parameter_name": "Max Results",
+        "human_parameter_description": "Maximum number of spreadsheets to return (1-1000). Defaults to 10."
+      },
+      "search_type": {
+        "enum": [
+          "name",
+          "content",
+          "both"
+        ],
+        "type": "string",
+        "title": "Search Type",
+        "default": "name",
+        "description": "How to search: 'name' searches filenames only (prefix matching from the START of filenames), 'content' uses fullText search which searches file content, name, description, and metadata (Google Drive API limitation: cannot search content exclusively without also matching filenames), 'both' explicitly searches both name OR content with an OR condition. Note: 'name' search only matches from the START of filenames (e.g., 'Budget' finds 'Budget 2024' but NOT 'Q1 Budget').",
+        "human_parameter_name": "Search Type",
+        "human_parameter_description": "How to search: 'name' for filenames, 'content' for file content/metadata, 'both' for either."
+      },
+      "starred_only": {
+        "type": "boolean",
+        "title": "Starred Only",
+        "default": false,
+        "description": "Whether to return only starred spreadsheets. Defaults to False.",
+        "human_parameter_name": "Starred Only",
+        "human_parameter_description": "Whether to return only starred spreadsheets. Defaults to False."
+      },
+      "created_after": {
+        "type": "string",
+        "title": "Created After",
+        "examples": [
+          "2024-01-01T00:00:00Z",
+          "2024-12-01T12:00:00-08:00"
+        ],
+        "description": "Return spreadsheets created after this date. Use RFC 3339 format like '2024-01-01T00:00:00Z'.",
+        "human_parameter_name": "Created After",
+        "human_parameter_description": "Return spreadsheets created after this date. Use RFC 3339 format like"
+      },
+      "modified_after": {
+        "type": "string",
+        "title": "Modified After",
+        "examples": [
+          "2024-01-01T00:00:00Z",
+          "2024-12-01T12:00:00-08:00"
+        ],
+        "description": "Return spreadsheets modified after this date. Use RFC 3339 format like '2024-01-01T00:00:00Z'.",
+        "human_parameter_name": "Modified After",
+        "human_parameter_description": "Return spreadsheets modified after this date. Use RFC 3339 format like"
+      },
+      "shared_with_me": {
+        "type": "boolean",
+        "title": "Shared With Me",
+        "default": false,
+        "description": "Whether to return only spreadsheets shared with the current user. Defaults to False.",
+        "human_parameter_name": "Shared With Me",
+        "human_parameter_description": "Whether to return only spreadsheets shared with the current user. Defaults to False."
+      },
+      "include_trashed": {
+        "type": "boolean",
+        "title": "Include Trashed",
+        "default": false,
+        "description": "Whether to include spreadsheets in trash. Defaults to False.",
+        "human_parameter_name": "Include Trashed",
+        "human_parameter_description": "Whether to include spreadsheets in trash. Defaults to False."
+      },
+      "include_shared_drives": {
+        "type": "boolean",
+        "title": "Include Shared Drives",
+        "default": true,
+        "description": "Whether to include spreadsheets from shared drives you have access to. Defaults to True.",
+        "human_parameter_name": "Include shared drives",
+        "human_parameter_description": "Include spreadsheets from shared drives (team drives) you have access to in the search results."
+      }
+    }
+  },
+  "output_parameters": {
+    "type": "object",
+    "$defs": {
+      "DriveUser": {
+        "type": "object",
+        "title": "DriveUser",
+        "properties": {
+          "me": {
+            "type": "boolean",
+            "title": "Me"
+          },
+          "kind": {
+            "type": "string",
+            "title": "Kind"
+          },
+          "photoLink": {
+            "type": "string",
+            "title": "Photo Link"
+          },
+          "displayName": {
+            "type": "string",
+            "title": "Display Name"
+          },
+          "emailAddress": {
+            "type": "string",
+            "title": "Email Address"
+          },
+          "permissionId": {
+            "type": "string",
+            "title": "Permission Id"
+          }
+        }
+      },
+      "DrivePermission": {
+        "type": "object",
+        "title": "DrivePermission",
+        "properties": {
+          "id": {
+            "type": "string",
+            "title": "Id"
+          },
+          "kind": {
+            "type": "string",
+            "title": "Kind"
+          },
+          "role": {
+            "enum": [
+              "owner",
+              "organizer",
+              "fileOrganizer",
+              "writer",
+              "commenter",
+              "reader"
+            ],
+            "type": "string",
+            "title": "Role"
+          },
+          "type": {
+            "enum": [
+              "user",
+              "group",
+              "domain",
+              "anyone"
+            ],
+            "type": "string",
+            "title": "Type"
+          },
+          "domain": {
+            "type": "string",
+            "title": "Domain"
+          },
+          "deleted": {
+            "type": "boolean",
+            "title": "Deleted"
+          },
+          "photoLink": {
+            "type": "string",
+            "title": "Photo Link"
+          },
+          "displayName": {
+            "type": "string",
+            "title": "Display Name"
+          },
+          "emailAddress": {
+            "type": "string",
+            "title": "Email Address"
+          },
+          "pendingOwner": {
+            "type": "boolean",
+            "title": "Pending Owner"
+          },
+          "allowFileDiscovery": {
+            "type": "boolean",
+            "title": "Allow File Discovery"
+          }
+        }
+      },
+      "SpreadsheetFile": {
+        "type": "object",
+        "title": "SpreadsheetFile",
+        "required": [
+          "id",
+          "name",
+          "mimeType",
+          "createdTime",
+          "modifiedTime",
+          "webViewLink",
+          "starred",
+          "trashed"
+        ],
+        "properties": {
+          "id": {
+            "type": "string",
+            "title": "Id"
+          },
+          "name": {
+            "type": "string",
+            "title": "Name"
+          },
+          "size": {
+            "type": "string",
+            "title": "Size"
+          },
+          "owners": {
+            "type": "array",
+            "items": {
+              "$ref": "#/$defs/DriveUser"
+            },
+            "title": "Owners"
+          },
+          "shared": {
+            "type": "boolean",
+            "title": "Shared"
+          },
+          "starred": {
+            "type": "boolean",
+            "title": "Starred"
+          },
+          "trashed": {
+            "type": "boolean",
+            "title": "Trashed"
+          },
+          "mimeType": {
+            "type": "string",
+            "title": "Mime Type"
+          },
+          "createdTime": {
+            "type": "string",
+            "title": "Created Time"
+          },
+          "display_url": {
+            "type": "string",
+            "title": "Display Url",
+            "description": "Direct link to view this spreadsheet in Google Sheets web interface."
+          },
+          "permissions": {
+            "type": "array",
+            "items": {
+              "$ref": "#/$defs/DrivePermission"
+            },
+            "title": "Permissions"
+          },
+          "webViewLink": {
+            "type": "string",
+            "title": "Web View Link"
+          },
+          "modifiedTime": {
+            "type": "string",
+            "title": "Modified Time"
+          },
+          "lastModifyingUser": {
+            "$ref": "#/$defs/DriveUser",
+            "title": "Last Modifying User"
+          }
+        }
+      },
+      "SearchSpreadsheetsResponse": {
+        "type": "object",
+        "title": "SearchSpreadsheetsResponse",
+        "required": [
+          "spreadsheets",
+          "total_found"
+        ],
+        "properties": {
+          "display_url": {
+            "type": "string",
+            "title": "Display Url",
+            "description": "No collection-level UI page for search results; only per-item URLs are meaningful."
+          },
+          "total_found": {
+            "type": "integer",
+            "title": "Total Found",
+            "description": "Number of spreadsheet items returned in this response page."
+          },
+          "spreadsheets": {
+            "type": "array",
+            "items": {
+              "$ref": "#/$defs/SpreadsheetFile"
+            },
+            "title": "Spreadsheets",
+            "description": "List of matching spreadsheets accessible to the authenticated user."
+          },
+          "search_message": {
+            "type": "string",
+            "title": "Search Message",
+            "description": "Informational message about the search results, including suggestions when no results are found."
+          },
+          "next_page_token": {
+            "type": "string",
+            "title": "Next Page Token",
+            "description": "Opaque token to retrieve the next page of results. Null indicates there are no additional pages."
+          }
+        }
+      }
+    },
+    "title": "SearchSpreadsheetsResponseWrapper",
+    "required": [
+      "data",
+      "successful"
+    ],
+    "properties": {
+      "data": {
+        "$ref": "#/$defs/SearchSpreadsheetsResponse",
+        "title": "Data",
+        "description": "Data from the action execution"
+      },
+      "error": {
+        "type": "string",
+        "title": "Error",
+        "description": "Error if any occurred during the execution of the action"
+      },
+      "successful": {
+        "type": "boolean",
+        "title": "Successful",
+        "description": "Whether or not the action execution was successful or not"
+      }
+    }
+  }
+}

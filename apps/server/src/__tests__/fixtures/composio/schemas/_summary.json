@@ -1,0 +1,659 @@
+{
+  "GMAIL_GET_PROFILE": {
+    "toolkit": "gmail",
+    "version": "20261116_00",
+    "required": [],
+    "params": [
+      "user_id"
+    ]
+  },
+  "GMAIL_WHO_AM_I": {
+    "toolkit": "gmail",
+    "version": "20261116_00",
+    "required": [],
+    "params": []
+  },
+  "GMAIL_CREATE_EMAIL_DRAFT": {
+    "toolkit": "gmail",
+    "version": "20261116_00",
+    "required": [],
+    "params": [
+      "cc",
+      "bcc",
+      "body",
+      "is_html",
+      "subject",
+      "user_id",
+      "thread_id",
+      "attachment",
+      "recipient_email",
+      "extra_recipients",
+      "include_signature"
+    ]
+  },
+  "GMAIL_GET_DRAFT": {
+    "toolkit": "gmail",
+    "version": "20261116_00",
+    "required": [
+      "draft_id"
+    ],
+    "params": [
+      "format",
+      "user_id",
+      "draft_id"
+    ]
+  },
+  "GMAIL_UPDATE_DRAFT": {
+    "toolkit": "gmail",
+    "version": "20261116_00",
+    "required": [
+      "draft_id"
+    ],
+    "params": [
+      "cc",
+      "bcc",
+      "body",
+      "is_html",
+      "subject",
+      "user_id",
+      "draft_id",
+      "thread_id",
+      "attachment",
+      "recipient_email",
+      "extra_recipients",
+      "include_signature"
+    ]
+  },
+  "GMAIL_SEND_DRAFT": {
+    "toolkit": "gmail",
+    "version": "20261116_00",
+    "required": [
+      "draft_id"
+    ],
+    "params": [
+      "user_id",
+      "draft_id"
+    ]
+  },
+  "GMAIL_DELETE_DRAFT": {
+    "toolkit": "gmail",
+    "version": "20261116_00",
+    "required": [
+      "draft_id"
+    ],
+    "params": [
+      "user_id",
+      "draft_id"
+    ]
+  },
+  "GMAIL_SEND_EMAIL": {
+    "toolkit": "gmail",
+    "version": "20261116_00",
+    "required": [],
+    "params": [
+      "cc",
+      "bcc",
+      "body",
+      "is_html",
+      "subject",
+      "user_id",
+      "attachment",
+      "from_email",
+      "recipient_email",
+      "extra_recipients",
+      "include_signature"
+    ]
+  },
+  "GMAIL_REPLY_TO_THREAD": {
+    "toolkit": "gmail",
+    "version": "20261116_00",
+    "required": [
+      "thread_id"
+    ],
+    "params": [
+      "cc",
+      "bcc",
+      "is_html",
+      "user_id",
+      "thread_id",
+      "attachment",
+      "message_body",
+      "recipient_email",
+      "extra_recipients",
+      "include_signature"
+    ]
+  },
+  "GMAIL_FETCH_EMAILS": {
+    "toolkit": "gmail",
+    "version": "20261116_00",
+    "required": [],
+    "params": [
+      "query",
+      "user_id",
+      "verbose",
+      "ids_only",
+      "label_ids",
+      "page_token",
+      "max_results",
+      "include_payload",
+      "include_spam_trash"
+    ]
+  },
+  "GMAIL_FETCH_MESSAGE_BY_THREAD_ID": {
+    "toolkit": "gmail",
+    "version": "20261116_00",
+    "required": [
+      "thread_id"
+    ],
+    "params": [
+      "user_id",
+      "thread_id",
+      "page_token"
+    ]
+  },
+  "GMAIL_LIST_THREADS": {
+    "toolkit": "gmail",
+    "version": "20261116_00",
+    "required": [],
+    "params": [
+      "query",
+      "user_id",
+      "verbose",
+      "page_token",
+      "max_results"
+    ]
+  },
+  "GOOGLECALENDAR_LIST_CALENDARS": {
+    "toolkit": "googlecalendar",
+    "version": "20261116_00",
+    "required": [],
+    "params": [
+      "page_token",
+      "sync_token",
+      "max_results",
+      "show_hidden",
+      "show_deleted",
+      "min_access_role"
+    ]
+  },
+  "GOOGLECALENDAR_EVENTS_LIST_ALL_CALENDARS": {
+    "toolkit": "googlecalendar",
+    "version": "20261116_00",
+    "required": [
+      "time_min",
+      "time_max"
+    ],
+    "params": [
+      "q",
+      "time_max",
+      "time_min",
+      "event_types",
+      "calendar_ids",
+      "show_deleted",
+      "single_events",
+      "response_detail",
+      "max_results_per_calendar"
+    ]
+  },
+  "GOOGLECALENDAR_EVENTS_GET": {
+    "toolkit": "googlecalendar",
+    "version": "20261116_00",
+    "required": [
+      "event_id"
+    ],
+    "params": [
+      "event_id",
+      "time_zone",
+      "calendar_id",
+      "max_attendees"
+    ]
+  },
+  "GOOGLECALENDAR_EVENTS_INSTANCES": {
+    "toolkit": "googlecalendar",
+    "version": "20261116_00",
+    "required": [
+      "calendarId",
+      "eventId"
+    ],
+    "params": [
+      "eventId",
+      "timeMax",
+      "timeMin",
+      "timeZone",
+      "pageToken",
+      "calendarId",
+      "maxResults",
+      "showDeleted",
+      "maxAttendees",
+      "originalStart"
+    ]
+  },
+  "GOOGLECALENDAR_CREATE_EVENT": {
+    "toolkit": "googlecalendar",
+    "version": "20261116_00",
+    "required": [],
+    "params": [
+      "summary",
+      "end_date",
+      "location",
+      "timezone",
+      "attendees",
+      "eventType",
+      "recurrence",
+      "start_date",
+      "visibility",
+      "calendar_id",
+      "description",
+      "end_datetime",
+      "send_updates",
+      "transparency",
+      "start_datetime",
+      "guestsCanModify",
+      "exclude_organizer",
+      "birthdayProperties",
+      "create_meeting_room",
+      "event_duration_hour",
+      "extended_properties",
+      "focusTimeProperties",
+      "guestsCanInviteOthers",
+      "outOfOfficeProperties",
+      "event_duration_minutes",
+      "guestsCanSeeOtherGuests",
+      "workingLocationProperties"
+    ]
+  },
+  "GOOGLECALENDAR_UPDATE_EVENT": {
+    "toolkit": "googlecalendar",
+    "version": "20261116_00",
+    "required": [
+      "start_datetime",
+      "event_id"
+    ],
+    "params": [
+      "summary",
+      "event_id",
+      "location",
+      "timezone",
+      "attendees",
+      "eventType",
+      "recurrence",
+      "visibility",
+      "calendar_id",
+      "description",
+      "end_datetime",
+      "send_updates",
+      "transparency",
+      "start_datetime",
+      "guestsCanModify",
+      "birthdayProperties",
+      "create_meeting_room",
+      "event_duration_hour",
+      "extended_properties",
+      "focusTimeProperties",
+      "guestsCanInviteOthers",
+      "outOfOfficeProperties",
+      "event_duration_minutes",
+      "guestsCanSeeOtherGuests",
+      "workingLocationProperties"
+    ]
+  },
+  "GOOGLECALENDAR_PATCH_EVENT": {
+    "toolkit": "googlecalendar",
+    "version": "20261116_00",
+    "required": [
+      "calendar_id",
+      "event_id"
+    ],
+    "params": [
+      "source",
+      "status",
+      "summary",
+      "color_id",
+      "end_time",
+      "event_id",
+      "location",
+      "sequence",
+      "timezone",
+      "attendees",
+      "reminders",
+      "recurrence",
+      "start_time",
+      "visibility",
+      "attachments",
+      "calendar_id",
+      "description",
+      "send_updates",
+      "transparency",
+      "max_attendees",
+      "rsvp_response",
+      "conference_data",
+      "attendees_omitted",
+      "guests_can_modify",
+      "anyone_can_add_self",
+      "extended_properties",
+      "supports_attachments",
+      "focus_time_properties",
+      "conference_data_version",
+      "guests_can_invite_others",
+      "out_of_office_properties",
+      "guests_can_see_other_guests",
+      "working_location_properties"
+    ]
+  },
+  "GOOGLECALENDAR_DELETE_EVENT": {
+    "toolkit": "googlecalendar",
+    "version": "20261116_00",
+    "required": [
+      "event_id"
+    ],
+    "params": [
+      "event_id",
+      "calendar_id",
+      "send_updates",
+      "send_notifications"
+    ]
+  },
+  "GOOGLECALENDAR_QUICK_ADD": {
+    "toolkit": "googlecalendar",
+    "version": "20261116_00",
+    "required": [
+      "text"
+    ],
+    "params": [
+      "text",
+      "calendar_id",
+      "send_updates"
+    ]
+  },
+  "GOOGLECALENDAR_REMOVE_ATTENDEE": {
+    "toolkit": "googlecalendar",
+    "version": "20261116_00",
+    "required": [
+      "event_id",
+      "attendee_email"
+    ],
+    "params": [
+      "event_id",
+      "calendar_id",
+      "attendee_email"
+    ]
+  },
+  "GOOGLECALENDAR_FIND_FREE_SLOTS": {
+    "toolkit": "googlecalendar",
+    "version": "20261116_00",
+    "required": [],
+    "params": [
+      "items",
+      "time_max",
+      "time_min",
+      "timezone",
+      "group_expansion_max",
+      "calendar_expansion_max"
+    ]
+  },
+  "GOOGLESHEETS_CREATE_GOOGLE_SHEET1": {
+    "toolkit": "googlesheets",
+    "version": "20261116_00",
+    "required": [],
+    "params": [
+      "title",
+      "folder_id",
+      "folder_name"
+    ]
+  },
+  "GOOGLESHEETS_VALUES_GET": {
+    "toolkit": "googlesheets",
+    "version": "20261116_00",
+    "required": [
+      "spreadsheet_id",
+      "range"
+    ],
+    "params": [
+      "range",
+      "end_row",
+      "start_row",
+      "spreadsheet_id",
+      "major_dimension",
+      "value_render_option",
+      "date_time_render_option"
+    ]
+  },
+  "GOOGLESHEETS_VALUES_UPDATE": {
+    "toolkit": "googlesheets",
+    "version": "20261116_00",
+    "required": [
+      "spreadsheet_id",
+      "range",
+      "value_input_option",
+      "values"
+    ],
+    "params": [
+      "range",
+      "values",
+      "spreadsheet_id",
+      "major_dimension",
+      "auto_expand_sheet",
+      "value_input_option",
+      "include_values_in_response",
+      "response_value_render_option",
+      "response_datetime_render_option"
+    ]
+  },
+  "GOOGLESHEETS_SPREADSHEETS_VALUES_APPEND": {
+    "toolkit": "googlesheets",
+    "version": "20261116_00",
+    "required": [
+      "spreadsheetId",
+      "range",
+      "valueInputOption",
+      "values"
+    ],
+    "params": [
+      "range",
+      "values",
+      "spreadsheetId",
+      "majorDimension",
+      "insertDataOption",
+      "valueInputOption",
+      "includeValuesInResponse",
+      "responseValueRenderOption",
+      "responseDateTimeRenderOption"
+    ]
+  },
+  "GOOGLESHEETS_UPDATE_VALUES_BATCH": {
+    "toolkit": "googlesheets",
+    "version": "20261116_00",
+    "required": [
+      "spreadsheet_id",
+      "valueInputOption",
+      "data"
+    ],
+    "params": [
+      "data",
+      "spreadsheet_id",
+      "valueInputOption",
+      "includeValuesInResponse",
+      "responseValueRenderOption",
+      "responseDateTimeRenderOption"
+    ]
+  },
+  "GOOGLESHEETS_BATCH_UPDATE": {
+    "toolkit": "googlesheets",
+    "version": "20261116_00",
+    "required": [
+      "spreadsheet_id",
+      "sheet_name",
+      "values"
+    ],
+    "params": [
+      "values",
+      "sheet_name",
+      "spreadsheet_id",
+      "value_input_option",
+      "first_cell_location",
+      "include_values_in_response"
+    ]
+  },
+  "GOOGLESHEETS_EXECUTE_SQL": {
+    "toolkit": "googlesheets",
+    "version": "20261116_00",
+    "required": [
+      "spreadsheet_id",
+      "sql"
+    ],
+    "params": [
+      "sql",
+      "dry_run",
+      "delete_method",
+      "spreadsheet_id"
+    ]
+  },
+  "GOOGLESHEETS_ADD_SHEET": {
+    "toolkit": "googlesheets",
+    "version": "20261116_00",
+    "required": [
+      "spreadsheet_id"
+    ],
+    "params": [
+      "title",
+      "properties",
+      "force_unique",
+      "spreadsheet_id"
+    ]
+  },
+  "GOOGLESHEETS_SEARCH_SPREADSHEETS": {
+    "toolkit": "googlesheets",
+    "version": "20261116_00",
+    "required": [],
+    "params": [
+      "query",
+      "order_by",
+      "page_token",
+      "max_results",
+      "search_type",
+      "starred_only",
+      "created_after",
+      "modified_after",
+      "shared_with_me",
+      "include_trashed",
+      "include_shared_drives"
+    ]
+  },
+  "GOOGLESHEETS_GET_SHEET_NAMES": {
+    "toolkit": "googlesheets",
+    "version": "20261116_00",
+    "required": [
+      "spreadsheet_id"
+    ],
+    "params": [
+      "exclude_hidden",
+      "spreadsheet_id"
+    ]
+  },
+  "GOOGLESHEETS_GET_SPREADSHEET_INFO": {
+    "toolkit": "googlesheets",
+    "version": "20261116_00",
+    "required": [],
+    "params": [
+      "fields",
+      "ranges",
+      "spreadsheet_id",
+      "include_grid_data",
+      "exclude_tables_in_banded_ranges"
+    ]
+  },
+  "GOOGLEDOCS_CREATE_DOCUMENT_MARKDOWN": {
+    "toolkit": "googledocs",
+    "version": "20261116_00",
+    "required": [
+      "title"
+    ],
+    "params": [
+      "title",
+      "image_assets",
+      "markdown_text"
+    ]
+  },
+  "GOOGLEDOCS_GET_DOCUMENT_PLAINTEXT": {
+    "toolkit": "googledocs",
+    "version": "20261116_00",
+    "required": [
+      "document_id"
+    ],
+    "params": [
+      "tab_ids",
+      "document_id",
+      "include_tables",
+      "include_footers",
+      "include_headers",
+      "include_footnotes",
+      "table_row_delimiter",
+      "include_tabs_content",
+      "table_cell_delimiter"
+    ]
+  },
+  "GOOGLEDOCS_INSERT_TEXT_ACTION": {
+    "toolkit": "googledocs",
+    "version": "20261116_00",
+    "required": [
+      "document_id",
+      "text_to_insert"
+    ],
+    "params": [
+      "tab_id",
+      "segment_id",
+      "document_id",
+      "append_to_end",
+      "text_to_insert",
+      "insertion_index"
+    ]
+  },
+  "GOOGLEDOCS_REPLACE_ALL_TEXT": {
+    "toolkit": "googledocs",
+    "version": "20261116_00",
+    "required": [
+      "document_id",
+      "find_text",
+      "replace_text"
+    ],
+    "params": [
+      "tab_ids",
+      "find_text",
+      "match_case",
+      "document_id",
+      "replace_text",
+      "search_by_regex"
+    ]
+  },
+  "GOOGLEDOCS_UPDATE_DOCUMENT_MARKDOWN": {
+    "toolkit": "googledocs",
+    "version": "20261116_00",
+    "required": [
+      "id",
+      "markdown"
+    ],
+    "params": [
+      "id",
+      "tab_id",
+      "markdown"
+    ]
+  },
+  "GOOGLEDOCS_SEARCH_DOCUMENTS": {
+    "toolkit": "googledocs",
+    "version": "20261116_00",
+    "required": [],
+    "params": [
+      "query",
+      "order_by",
+      "page_token",
+      "max_results",
+      "starred_only",
+      "created_after",
+      "modified_after",
+      "shared_with_me",
+      "include_trashed",
+      "response_detail",
+      "include_shared_drives"
+    ]
+  }
+}

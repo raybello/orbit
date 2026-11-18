@@ -1,0 +1,25 @@
+{
+  "slug": "GMAIL_CREATE_EMAIL_DRAFT",
+  "ok": true,
+  "ms": 992,
+  "request": {
+    "recipient_email": "person_2@example.test",
+    "subject": "Orbit eval draft 2026-11-18T05:32",
+    "body": "First version of the draft."
+  },
+  "response": {
+    "data": {
+      "display_url": "https://example.test/link_14",
+      "id": "id_2",
+      "message": {
+        "display_url": "https://example.test/link_14",
+        "id": "id_3",
+        "labelIds": [
+          "DRAFT"
+        ],
+        "threadId": "id_3"
+      }
+    },
+    "error": null
+  }
+}

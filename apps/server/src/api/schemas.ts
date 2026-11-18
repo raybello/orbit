@@ -82,6 +82,7 @@ export const PatchBotSchema = z
     // GPU voice: one of LFM3-Audio's voices, and whether a call shows the animated portrait.
     audiocppVoice: z.enum(AUDIOCPP_VOICES as [string, ...string[]]).optional(),
     avatarEnabled: z.boolean().optional(),
+    alwaysAllow: z.boolean().optional(),
     // New with F8, so no older client sends anything else: the column only ever holds a real level.
     initiative: z.enum(INITIATIVE_LEVELS).optional(),
   })
@@ -98,7 +99,30 @@ export const SendMessageSchema = z
   .loose();
 
 /** POST /api/approvals/:id — the three decisions the approval UI offers. */
-export const ApprovalDecisionSchema = z.object({ decision: z.enum(['allow', 'always', 'deny']) }).loose();
+const EventFieldsSchema = z.object({
+  summary: z.string().max(1024), description: z.string().max(8000), location: z.string().max(1024),
+  start: z.string().max(32), end: z.string().max(32), allDay: z.boolean(), timezone: z.string().max(64),
+  attendees: z.array(z.string().max(320)).max(200), meet: z.boolean(),
+});
+/** POST /api/calendar/google/events */
+export const GoogleEventCreateSchema = z.object({ calendarKey: z.string().optional(), fields: EventFieldsSchema, notifyGuests: z.boolean().optional() }).loose();
+/** PATCH /api/calendar/google/events/:key — the event review's edits (fields, scope, notifyGuests), checked by it. */
+export const GoogleEventPatchSchema = z.object({ edits: z.record(z.string(), z.unknown()) }).loose();
+
+/** PATCH /api/calendar/google/:key */
+export const CalendarToggleSchema = z.object({ enabled: z.boolean() }).loose();
+
+/** POST /api/bots/:id/cards/:seq/draft — what to do with a Gmail draft card, with the person's edits. */
+export const DraftActionSchema = z.object({
+  action: z.enum(['save', 'send', 'discard']),
+  edits: z.record(z.string(), z.unknown()).optional(),
+}).loose();
+
+export const ApprovalDecisionSchema = z.object({
+  decision: z.enum(['allow', 'always', 'deny']),
+  /** The person's changes to the action (an approval card with a `review`), checked by its review adapter. */
+  edits: z.record(z.string(), z.unknown()).optional(),
+}).loose();
 
 /** POST /api/bots/:id/cards/:seq/answer */
 export const CardAnswerSchema = z.object({ answer: z.string() }).loose();
@@ -155,6 +179,7 @@ export const CreateRoutineSchema = z
     eventDate: z.string().optional(),
     timezone: z.string().optional(),
     description: z.string().optional(),
+    parentEventKey: z.string().optional(),
   })
   .loose();
 export type CreateRoutineBody = z.infer<typeof CreateRoutineSchema>;

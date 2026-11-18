@@ -6,7 +6,8 @@ import { env } from '../env.js';
 import { safetyIdentifier } from '../lib/xai.js';
 import { appendRow, getBotRow, listRoutines, toRoutine, describeCron, type RoutineRow } from '../store.js';
 import type { Trigger } from './loop.js';
-import { executeComposio, innerToolSlugs, isReadOnlySlug, toolkitInfo } from '../composio.js';
+import { connectedToolkits, executeComposio, innerToolCalls, toolkitInfo } from '../composio.js';
+import { classifyGoogleCall, isReadOnlySlug, type ReviewCard } from '../domain/google-actions.js';
 import { scheduleRoutine, unscheduleRoutine } from '../routines.js';
 import { createEventRoutine, deleteEventTrigger, describeEvent, listTriggerTypes } from '../triggers.js';
 import { setCheckins } from '../proactive.js';
@@ -17,6 +18,8 @@ import { COMPUTER_TOOLS } from '../computer-tools.js';
 import { RESEARCH_TOOLS } from '../computer-research.js';
 import { BOT_TOOLS } from './bot-tools.js';
 import { VAULT_TOOLS } from '../vault-tools.js';
+import { listCalendars, listMirror, mirrorState, syncCalendar } from '../calendar/mirror.js';
+import { buildCalendar, type CalendarRoutineRow } from '../routes-calendar.js';
 
 /** Tool arguments as the model sent them: a JSON object, read field by field. */
 type ToolArgs = Record<string, unknown>;
@@ -42,6 +45,8 @@ export interface ToolCtx {
 export interface ToolResult {
   /** Text handed back to the agent. */
   output: string;
+  /** The app's raw answer, for a Composio call (the server reads drafts out of it). */
+  data?: unknown;
   summary?: string;
   /** End the turn after this tool (e.g. a question was asked). */
   endTurn?: boolean;
@@ -217,6 +222,49 @@ export const TOOLS: ToolDef[] = [
       } catch (e) {
         return { output: `Could not create the trigger: ${messageOf(e)}. If the app isn't connected, call request_app_connection first.` };
       }
+    },
+  },
+  {
+    name: 'calendar_list',
+    description: "Read the user's calendar as the app shows it: their Google Calendar events (title, time, location, guests, calendar) and the team's scheduled routines (which Bot runs what, when), merged and in order. Faster than Google Calendar's own tools and covers the next 90 days and the last 30. Dates are YYYY-MM-DD; times come back as ISO with the event's timezone. To change a Google event, use Google Calendar's PATCH_EVENT through Composio (the user approves it).",
+    parameters: obj({
+      from: { type: 'string', description: 'First day, YYYY-MM-DD. Default: today.' },
+      to: { type: 'string', description: 'Last day, YYYY-MM-DD (inclusive). Default: 7 days after `from`.' },
+      include: { type: 'string', enum: ['all', 'google', 'routines'], description: 'Which events. Default all.' },
+    }),
+    activity: 'working',
+    label: 'Checking the calendar',
+    impl: async (a, ctx) => {
+      const day = /^\d{4}-\d{2}-\d{2}$/;
+      const from = day.test(String(a.from ?? '')) ? new Date(`${a.from as string}T00:00:00Z`) : new Date(new Date().toISOString().slice(0, 10) + 'T00:00:00Z');
+      const to = day.test(String(a.to ?? '')) ? new Date(Date.parse(`${a.to as string}T00:00:00Z`) + 86_400_000) : new Date(from.getTime() + 8 * 86_400_000);
+      if (to <= from) return { output: '`to` must be on or after `from`.' };
+      const include = String(a.include ?? 'all');
+      const out: Record<string, unknown> = { from: from.toISOString().slice(0, 10), to: new Date(to.getTime() - 1).toISOString().slice(0, 10) };
+      if (include !== 'routines') {
+        const state = mirrorState();
+        if (!state.available) out.google = { unavailable: state.reason };
+        else {
+          let cals = new Map(listCalendars(ctx.userId).map((c) => [c.key, c]));
+          // Connected but never synced (just connected, or the scheduler is off): sync now rather than
+          // telling the bot Calendar is not connected.
+          if (!cals.size && (await connectedToolkits(ctx.userId).catch(() => new Set<string>())).has('googlecalendar')) {
+            await syncCalendar(ctx.userId).catch(() => null);
+            cals = new Map(listCalendars(ctx.userId).map((c) => [c.key, c]));
+          }
+          if (!cals.size) out.google = { unavailable: 'Google Calendar is not connected. Use request_app_connection with googlecalendar if the user wants it.' };
+          else out.google = listMirror(ctx.userId, from, to).slice(0, 200).map((e) => ({
+            title: e.title, start: e.start, end: e.end, all_day: e.allDay, timezone: e.timezone, ...(e.location ? { location: e.location } : {}),
+            ...(e.attendees.length ? { guests: e.attendees } : {}), calendar: cals.get(e.calendarKey)?.name, event_id: e.eventId, calendar_id: e.calendarId,
+            ...(e.recurringEventId ? { repeating: true } : {}), ...(e.meetLink ? { meet: e.meetLink } : {}),
+          }));
+        }
+      }
+      if (include !== 'google') {
+        const rows = db.prepare('SELECT r.*, b.name AS bot_name FROM routines r JOIN bots b ON b.id=r.bot_id WHERE b.user_id=? ORDER BY r.created_at').all(ctx.userId) as CalendarRoutineRow[];
+        out.routines = buildCalendar(rows, from, to).slice(0, 200).map((e) => ({ title: e.title, bot: e.botName, start: e.start, repeating: e.eventType === 'recurring' }));
+      }
+      return { output: JSON.stringify(out), summary: 'Read the calendar' };
     },
   },
   {
@@ -398,35 +446,104 @@ export const toolMap = new Map(TOOLS.map((t) => [t.name, t]));
 
 export type Decision = 'allow' | 'ask' | 'block';
 
-export function policyFor(userId: string, toolName: string, args: ToolArgs): { decision: Decision; key: string; toolkit?: string; title: string } {
+/** What the approval gate decides for one tool call. */
+export interface PolicyVerdict {
+  decision: Decision;
+  key: string;
+  toolkit?: string;
+  title: string;
+  /** False when the call holds an action that must ask every time (sending email): the card hides "Always allow". */
+  offerAlways?: boolean;
+  /** Set when the calling bot has per-bot "Always allow" turned on: the card offers "Always allow for <Bot>", for any action. */
+  alwaysFor?: { botId: string; botName: string };
+  /** The custom card for the action that asks, when it has one (phase 3 renders these). */
+  card?: ReviewCard;
+}
+
+const storedMode = (userId: string, tool: string) =>
+  (db.prepare('SELECT mode FROM policies WHERE user_id=? AND tool=?').get(userId, tool) as { mode: string } | undefined)?.mode;
+
+/** The bot, when its person turned per-bot "Always allow" on for it. */
+function trustedBot(botId: string | undefined): { botId: string; botName: string } | undefined {
+  if (!botId) return undefined;
+  const b = db.prepare('SELECT id, name, always_allow FROM bots WHERE id=?').get(botId) as { id: string; name: string; always_allow: number | null } | undefined;
+  return b?.always_allow ? { botId: b.id, botName: b.name } : undefined;
+}
+
+/** Whether the person always-allowed this tool or action for this bot. */
+const botAllows = (botId: string, tool: string) => !!db.prepare('SELECT 1 FROM bot_policies WHERE bot_id=? AND tool=? COLLATE NOCASE').get(botId, tool);
+
+/**
+ * The approval gate's verdict for one call. Precedence, strongest first: a "Never" the person stored
+ * blocks; an action always-allowed for this bot (while its per-bot setting is on) runs, sends
+ * included; then the person's own "Always allow" for everyone, which never covers sending email;
+ * then the catalogue (Gmail, Calendar, Sheets, Docs) or, for other apps, the action's name.
+ * The bot's rules are applied on top by the caller and win over all of this.
+ */
+export function policyFor(userId: string, toolName: string, args: ToolArgs, botId?: string): PolicyVerdict {
+  const trusted = trustedBot(botId);
+  const asked = (v: Omit<PolicyVerdict, 'decision'> & { decision: Decision }): PolicyVerdict =>
+    v.decision === 'ask' && trusted ? { ...v, offerAlways: true, alwaysFor: trusted } : v;
+  const simple = (key: string, title: string): PolicyVerdict => {
+    const mode = storedMode(userId, key) ?? 'needs_approval';
+    if (mode === 'blocked') return { decision: 'block', key, title };
+    if (mode === 'always_allow' || (trusted && botAllows(trusted.botId, key))) return { decision: 'allow', key, title };
+    return asked({ decision: 'ask', key, title });
+  };
+
   const ownTool = toolMap.get(toolName);
   if (ownTool) {
     if (ownTool.policy !== 'needs_approval') return { decision: 'allow', key: toolName, title: toolName };
     // Owned tool that requires approval — check the policy table (supports always_allow / blocked overrides).
-    const p = db.prepare('SELECT mode FROM policies WHERE user_id=? AND tool=?').get(userId, toolName) as { mode: string } | undefined;
-    const mode = p?.mode ?? 'needs_approval';
-    return { decision: mode === 'blocked' ? 'block' : mode === 'always_allow' ? 'allow' : 'ask', key: toolName, title: ownTool.label };
+    return simple(toolName, ownTool.label);
   }
-  const slugs = innerToolSlugs(toolName, args);
-  if (!slugs.length) {
+  const calls = innerToolCalls(toolName, args);
+  if (!calls.length) {
     // Composio's sandbox can run app actions from code, which would slip past the per-action
     // approvals below. Code that reaches for them is treated like a write to an app.
     if (/^COMPOSIO_REMOTE_(WORKBENCH|BASH_TOOL)$/.test(toolName) && /run_composio_tool|proxy_execute|execute_tool|composio/i.test(JSON.stringify(args ?? {}))) {
-      const p = db.prepare('SELECT mode FROM policies WHERE user_id=? AND tool=?').get(userId, toolName) as { mode: string } | undefined;
-      const mode = p?.mode ?? 'needs_approval';
-      return { decision: mode === 'blocked' ? 'block' : mode === 'always_allow' ? 'allow' : 'ask', key: toolName, title: 'Run code that uses your connected apps' };
+      return simple(toolName, 'Run code that uses your connected apps');
     }
     return { decision: 'allow', key: toolName, title: toolName };
   }
   let decision: Decision = 'allow';
-  let key = slugs[0];
-  for (const slug of slugs) {
-    const p = db.prepare('SELECT mode FROM policies WHERE user_id=? AND tool=?').get(userId, slug) as { mode: string } | undefined;
-    const mode = p?.mode ?? (isReadOnlySlug(slug) ? 'always_allow' : 'needs_approval');
+  let key = calls[0].slug;
+  let offerAlways = true;
+  let card: ReviewCard | undefined;
+  for (const { slug, args: inner } of calls) {
+    let mode = storedMode(userId, slug);
     if (mode === 'blocked') return { decision: 'block', key: slug, title: humanizeSlug(slug) };
-    if (mode === 'needs_approval') { decision = 'ask'; key = slug; }
+    if (trusted && botAllows(trusted.botId, slug)) continue;
+    // Gmail, Calendar, Sheets and Docs follow the catalogue; every other app is read by name.
+    const action = classifyGoogleCall(slug, inner);
+    mode ??= action ? (action.kind === 'review' ? 'needs_approval' : 'always_allow') : isReadOnlySlug(slug) ? 'always_allow' : 'needs_approval';
+    // The person's own "Always allow" does not cover an action that must ask every time.
+    if (mode === 'always_allow' && action?.kind === 'review' && !action.allowAlways) mode = 'needs_approval';
+    if (mode === 'needs_approval') {
+      decision = 'ask';
+      key = slug;
+      card = action?.card;
+      if (action && !action.allowAlways) offerAlways = false;
+    }
   }
-  return { decision, key, toolkit: key.split('_')[0].toLowerCase(), title: humanizeSlug(key) };
+  return asked({ decision, key, toolkit: key.split('_')[0].toLowerCase(), title: humanizeSlug(key), ...(decision === 'ask' ? { offerAlways, ...(card ? { card } : {}) } : {}) });
+}
+
+/** Whether a person-wide "Always allow" may be stored for this tool or action. */
+export const mayAlwaysAllow = (tool: string): boolean => classifyGoogleCall(tool, {})?.allowAlways ?? true;
+
+/**
+ * Remember "Always allow" from an approval card: for this bot only when its per-bot setting is on,
+ * otherwise for the person (never for sending email). Answers which one was stored, or null.
+ */
+export function rememberAlwaysAllow(userId: string, botId: string, tool: string): 'bot' | 'user' | null {
+  if (trustedBot(botId)) {
+    db.prepare('INSERT OR REPLACE INTO bot_policies(bot_id, tool, created_at) VALUES (?,?,?)').run(botId, tool, Date.now());
+    return 'bot';
+  }
+  if (!mayAlwaysAllow(tool)) return null;
+  db.prepare("INSERT OR REPLACE INTO policies(user_id,tool,mode) VALUES (?,?,'always_allow')").run(userId, tool);
+  return 'user';
 }
 
 export function humanizeSlug(slug: string) {
@@ -435,13 +552,27 @@ export function humanizeSlug(slug: string) {
   return `${app.charAt(0) + app.slice(1).toLowerCase()}: ${parts.join(' ').toLowerCase()}`;
 }
 
+/**
+ * How a batch call went inside: Composio reports the outer call as completed even when actions in it
+ * failed (`data.results[i].response.successful`), so those are counted here.
+ */
+export function innerOutcome(data: unknown): { total: number; failed: number } {
+  const results = (data as { results?: unknown } | null)?.results;
+  if (!Array.isArray(results)) return { total: 0, failed: 0 };
+  const failed = results.filter((x) => (x as { response?: { successful?: unknown } } | null)?.response?.successful === false).length;
+  return { total: results.length, failed };
+}
+
+/** Run a Composio call. `summary` is 'done', 'partial' (some actions in a batch failed) or 'failed'. */
 export async function runComposioTool(ctx: ToolCtx, name: string, args: ToolArgs): Promise<ToolResult> {
   const r = await executeComposio(ctx.userId, name, args);
   const ok = r.resultType ? r.resultType === 'completed' : !r.error;
+  const inner = ok ? innerOutcome(r.data) : { total: 0, failed: 0 };
   const payload = ok ? r.data : { error: r.error, logId: r.logId };
   let out = JSON.stringify(payload ?? null);
   if (out.length > 60000) out = out.slice(0, 60000) + '…(truncated)';
-  return { output: out, summary: ok ? 'done' : 'failed' };
+  const summary = !ok || (inner.total > 0 && inner.failed === inner.total) ? 'failed' : inner.failed > 0 ? 'partial' : 'done';
+  return { output: out, summary, data: ok ? r.data : undefined };
 }
 
 /** A Hermes tool name as the app knows it: tools served by this app's MCP server lose their `mcp_hq_` prefix. */

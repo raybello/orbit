@@ -1,0 +1,1090 @@
+{
+  "slug": "GOOGLEDOCS_SEARCH_DOCUMENTS",
+  "version": "20261116_00",
+  "description": "Search for Google Documents using various filters including name, content, date ranges, and more.",
+  "input_parameters": {
+    "type": "object",
+    "title": "SearchDocumentsRequest",
+    "properties": {
+      "query": {
+        "type": "string",
+        "title": "Query",
+        "examples": [
+          "quarterly report",
+          "name contains 'report'",
+          "fullText contains 'important'",
+          "name contains 'project' and fullText contains 'status'"
+        ],
+        "description": "Search query to filter documents. Provide either: (1) Plain text to search in document content (e.g., 'quarterly report'), which will search fullText, or (2) Drive API query syntax with operators like 'name contains', 'fullText contains', combined with 'and', 'or', 'not'. Leave empty to get all documents.",
+        "human_parameter_name": "Search query",
+        "human_parameter_description": "Provide the search terms to find documents. You can search by document names or content."
+      },
+      "order_by": {
+        "type": "string",
+        "title": "Order By",
+        "default": "modifiedTime desc",
+        "examples": [
+          "modifiedTime desc",
+          "name",
+          "createdTime desc",
+          "viewedByMeTime desc"
+        ],
+        "description": "Order results by field. Common options: 'modifiedTime desc', 'modifiedTime asc', 'name', 'createdTime desc'",
+        "human_parameter_name": "Order by",
+        "human_parameter_description": "Choose how to sort the search results; for instance, by the time they were modified or their names."
+      },
+      "page_token": {
+        "type": "string",
+        "title": "Page Token",
+        "description": "Token for continuing a previous search request on the next page. Use the next_page_token from the previous response to retrieve additional results.",
+        "human_parameter_name": "Page token",
+        "human_parameter_description": "If you received a next_page_token in a previous response, provide it here to get the next page of results."
+      },
+      "max_results": {
+        "type": "integer",
+        "title": "Max Results",
+        "default": 10,
+        "maximum": 100,
+        "minimum": 1,
+        "description": "Maximum number of documents to return per page (1-100). Defaults to 10. Use page_token for pagination when more results are available.",
+        "human_parameter_name": "Maximum results",
+        "human_parameter_description": "Specify how many documents you want returned in the search results. The default is 10. Maximum is 100 per page."
+      },
+      "starred_only": {
+        "type": "boolean",
+        "title": "Starred Only",
+        "default": false,
+        "description": "Whether to return only starred documents. Defaults to False.",
+        "human_parameter_name": "Starred only?",
+        "human_parameter_description": "Select this option if you only want to see documents that you have marked as important."
+      },
+      "created_after": {
+        "type": "string",
+        "title": "Created After",
+        "examples": [
+          "2024-01-01T00:00:00Z",
+          "2024-12-01T12:00:00-08:00"
+        ],
+        "description": "Return documents created after this date. Use RFC 3339 format like '2024-01-01T00:00:00Z'.",
+        "human_parameter_name": "Created after",
+        "human_parameter_description": "Provide a date to see only documents that were created after that time."
+      },
+      "modified_after": {
+        "type": "string",
+        "title": "Modified After",
+        "examples": [
+          "2024-01-01T00:00:00Z",
+          "2024-12-01T12:00:00-08:00"
+        ],
+        "description": "Return documents modified after this date. Use RFC 3339 format like '2024-01-01T00:00:00Z'.",
+        "human_parameter_name": "Modified after",
+        "human_parameter_description": "Input a date to find documents that have been changed since then."
+      },
+      "shared_with_me": {
+        "type": "boolean",
+        "title": "Shared With Me",
+        "default": false,
+        "description": "Whether to return only documents shared with the current user. Defaults to False.",
+        "human_parameter_name": "Shared with me?",
+        "human_parameter_description": "Choose to only display documents that other users have shared with you."
+      },
+      "include_trashed": {
+        "type": "boolean",
+        "title": "Include Trashed",
+        "default": false,
+        "description": "Whether to include documents in trash. Defaults to False.",
+        "human_parameter_name": "Include trashed documents?",
+        "human_parameter_description": "Decide if you want to see documents that have been moved to the trash."
+      },
+      "response_detail": {
+        "enum": [
+          "minimal",
+          "full"
+        ],
+        "type": "string",
+        "title": "Response Detail",
+        "default": "minimal",
+        "description": "Level of detail in the response. 'minimal' returns only essential fields (id, name, modifiedTime, webViewLink) for efficient token usage. 'full' returns comprehensive metadata including permissions, owners, timestamps, and other detailed information.",
+        "human_parameter_name": "Response detail",
+        "human_parameter_description": "Choose the level of detail you want. Use 'minimal' for quick scanning of documents, or 'full' for complete metadata."
+      },
+      "include_shared_drives": {
+        "type": "boolean",
+        "title": "Include Shared Drives",
+        "default": true,
+        "description": "Whether to include documents from shared drives you have access to. Defaults to True.",
+        "human_parameter_name": "Include shared drives",
+        "human_parameter_description": "Include documents from shared drives (team drives) you have access to in the search results."
+      }
+    }
+  },
+  "output_parameters": {
+    "type": "object",
+    "$defs": {
+      "Label": {
+        "type": "object",
+        "title": "Label",
+        "properties": {
+          "id": {
+            "type": "string",
+            "title": "Id",
+            "description": "The ID of the label."
+          },
+          "kind": {
+            "type": "string",
+            "title": "Kind",
+            "description": "Identifies what kind of resource this is. Value: the fixed string 'drive#label'."
+          },
+          "fields": {
+            "type": "object",
+            "title": "Fields",
+            "description": "A map of the fields on the label, keyed by the field's ID.",
+            "additionalProperties": {
+              "$ref": "#/$defs/LabelField"
+            }
+          },
+          "revision_id": {
+            "type": "string",
+            "title": "Revision Id",
+            "description": "The revision ID of the label."
+          }
+        },
+        "description": "A label applied to a file"
+      },
+      "DriveFile": {
+        "type": "object",
+        "title": "DriveFile",
+        "properties": {
+          "id": {
+            "type": "string",
+            "title": "Id",
+            "description": "The ID of the file."
+          },
+          "kind": {
+            "type": "string",
+            "title": "Kind",
+            "description": "Identifies the type of resource. This is always 'drive#file'."
+          },
+          "name": {
+            "type": "string",
+            "title": "Name",
+            "description": "The name of the file. This is not necessarily unique within a folder."
+          },
+          "size": {
+            "type": "string",
+            "title": "Size",
+            "description": "The size of the file's content in bytes. This is applicable to binary files in Google Drive and Google Docs files."
+          },
+          "owners": {
+            "type": "array",
+            "items": {
+              "$ref": "#/$defs/DriveUser"
+            },
+            "title": "Owners",
+            "description": "The owner of this file. Only certain legacy files may have more than one owner."
+          },
+          "shared": {
+            "type": "boolean",
+            "title": "Shared",
+            "description": "Whether the file has been shared."
+          },
+          "spaces": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "title": "Spaces",
+            "description": "The list of spaces which contain the file. Supported values are 'drive', 'appDataFolder' and 'photos'."
+          },
+          "parents": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "title": "Parents",
+            "description": "The IDs of the parent folders which contain the file."
+          },
+          "starred": {
+            "type": "boolean",
+            "title": "Starred",
+            "description": "Whether the user has starred the file."
+          },
+          "trashed": {
+            "type": "boolean",
+            "title": "Trashed",
+            "description": "Whether the file has been trashed, either explicitly or from a trashed parent folder."
+          },
+          "version": {
+            "type": "string",
+            "title": "Version",
+            "description": "A monotonically increasing version number for the file. This reflects every change made to the file on the server, even those not visible to the user."
+          },
+          "drive_id": {
+            "type": "string",
+            "title": "Drive Id",
+            "description": "ID of the shared drive the file resides in. Only populated for items in shared drives."
+          },
+          "icon_link": {
+            "type": "string",
+            "title": "Icon Link",
+            "description": "A static, unauthenticated link to the file's icon."
+          },
+          "mime_type": {
+            "type": "string",
+            "title": "Mime Type",
+            "description": "The MIME type of the file."
+          },
+          "label_info": {
+            "$ref": "#/$defs/LabelInfo",
+            "title": "Label Info",
+            "description": "An overview of the labels on the file."
+          },
+          "properties": {
+            "type": "object",
+            "title": "Properties",
+            "description": "A collection of arbitrary key-value pairs which are visible to all apps.",
+            "additionalProperties": {
+              "type": "string"
+            }
+          },
+          "description": {
+            "type": "string",
+            "title": "Description",
+            "description": "A short description of the file."
+          },
+          "owned_by_me": {
+            "type": "boolean",
+            "title": "Owned By Me",
+            "description": "Whether the user owns the file."
+          },
+          "permissions": {
+            "type": "array",
+            "items": {
+              "$ref": "#/$defs/Permission"
+            },
+            "title": "Permissions",
+            "description": "The full list of permissions for the file."
+          },
+          "capabilities": {
+            "type": "object",
+            "title": "Capabilities",
+            "description": "Capabilities the current user has on this file. Each capability corresponds to a fine-grained action that a user may take.",
+            "additionalProperties": {
+              "type": "boolean"
+            }
+          },
+          "created_time": {
+            "type": "string",
+            "title": "Created Time",
+            "description": "The time at which the file was created (RFC 3339 date-time)."
+          },
+          "export_links": {
+            "type": "object",
+            "title": "Export Links",
+            "description": "Links for exporting Docs Editors files to specific formats.",
+            "additionalProperties": {
+              "type": "string"
+            }
+          },
+          "md5_checksum": {
+            "type": "string",
+            "title": "Md5 Checksum",
+            "description": "The MD5 checksum for the content of the file. This is only applicable to files with binary content in Google Drive."
+          },
+          "resource_key": {
+            "type": "string",
+            "title": "Resource Key",
+            "description": "A key needed to access the item via a shared link."
+          },
+          "sharing_user": {
+            "$ref": "#/$defs/DriveUser",
+            "title": "Sharing User",
+            "description": "The user who shared the file with the requesting user, if applicable."
+          },
+          "trashed_time": {
+            "type": "string",
+            "title": "Trashed Time",
+            "description": "The time that the item was trashed (RFC 3339 date-time)."
+          },
+          "viewed_by_me": {
+            "type": "boolean",
+            "title": "Viewed By Me",
+            "description": "Whether the file has been viewed by this user."
+          },
+          "content_hints": {
+            "$ref": "#/$defs/ContentHints",
+            "title": "Content Hints",
+            "description": "Additional information about the content of the file. These fields are never populated in responses."
+          },
+          "has_thumbnail": {
+            "type": "boolean",
+            "title": "Has Thumbnail",
+            "description": "Whether this file has a thumbnail. This does not indicate whether the requesting app has access to the thumbnail."
+          },
+          "modified_time": {
+            "type": "string",
+            "title": "Modified Time",
+            "description": "The last time the file was modified by anyone (RFC 3339 date-time)."
+          },
+          "sha1_checksum": {
+            "type": "string",
+            "title": "Sha1 Checksum",
+            "description": "The SHA1 checksum associated with this file, if available."
+          },
+          "team_drive_id": {
+            "type": "string",
+            "title": "Team Drive Id",
+            "description": "Deprecated - use driveId instead."
+          },
+          "trashing_user": {
+            "$ref": "#/$defs/DriveUser",
+            "title": "Trashing User",
+            "description": "If the file has been explicitly trashed, the user who trashed it."
+          },
+          "web_view_link": {
+            "type": "string",
+            "title": "Web View Link",
+            "description": "A link for opening the file in a relevant Google editor or viewer in a browser."
+          },
+          "app_properties": {
+            "type": "object",
+            "title": "App Properties",
+            "description": "A collection of arbitrary key-value pairs which are private to the requesting app.",
+            "additionalProperties": {
+              "type": "string"
+            }
+          },
+          "file_extension": {
+            "type": "string",
+            "title": "File Extension",
+            "description": "The final component of fullFileExtension. This is only available for files with binary content in Google Drive."
+          },
+          "modified_by_me": {
+            "type": "boolean",
+            "title": "Modified By Me",
+            "description": "Whether the file has been modified by this user."
+          },
+          "permission_ids": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "title": "Permission Ids",
+            "description": "List of permission IDs for users with access to this file."
+          },
+          "thumbnail_link": {
+            "type": "string",
+            "title": "Thumbnail Link",
+            "description": "A short-lived link to the file's thumbnail, if available. Typically lasts on the order of hours."
+          },
+          "sha256_checksum": {
+            "type": "string",
+            "title": "Sha256 Checksum",
+            "description": "The SHA256 checksum associated with this file, if available."
+          },
+          "folder_color_rgb": {
+            "type": "string",
+            "title": "Folder Color Rgb",
+            "description": "The color for a folder as an RGB hex string."
+          },
+          "head_revision_id": {
+            "type": "string",
+            "title": "Head Revision Id",
+            "description": "The ID of the file's head revision."
+          },
+          "quota_bytes_used": {
+            "type": "string",
+            "title": "Quota Bytes Used",
+            "description": "The number of storage quota bytes used by the file."
+          },
+          "shortcut_details": {
+            "$ref": "#/$defs/ShortcutDetails",
+            "title": "Shortcut Details",
+            "description": "Shortcut file details. Only populated for shortcut files."
+          },
+          "web_content_link": {
+            "type": "string",
+            "title": "Web Content Link",
+            "description": "A link for downloading the content of the file in a browser. This is only available for files with binary content in Google Drive."
+          },
+          "is_app_authorized": {
+            "type": "boolean",
+            "title": "Is App Authorized",
+            "description": "Whether the file was created or opened by the requesting app."
+          },
+          "original_filename": {
+            "type": "string",
+            "title": "Original Filename",
+            "description": "The original filename of the uploaded content if available, or else the original value of the name field."
+          },
+          "thumbnail_version": {
+            "type": "string",
+            "title": "Thumbnail Version",
+            "description": "The thumbnail version for use in thumbnail cache invalidation."
+          },
+          "viewed_by_me_time": {
+            "type": "string",
+            "title": "Viewed By Me Time",
+            "description": "The last time the file was viewed by the user (RFC 3339 date-time)."
+          },
+          "writers_can_share": {
+            "type": "boolean",
+            "title": "Writers Can Share",
+            "description": "Whether users with only writer permission can modify the file's permissions."
+          },
+          "explicitly_trashed": {
+            "type": "boolean",
+            "title": "Explicitly Trashed",
+            "description": "Whether the file has been explicitly trashed, as opposed to recursively trashed from a parent folder."
+          },
+          "full_file_extension": {
+            "type": "string",
+            "title": "Full File Extension",
+            "description": "The full file extension extracted from the name field. May contain multiple concatenated extensions."
+          },
+          "last_modifying_user": {
+            "$ref": "#/$defs/DriveUser",
+            "title": "Last Modifying User",
+            "description": "The last user to modify the file."
+          },
+          "link_share_metadata": {
+            "$ref": "#/$defs/LinkShareMetadata",
+            "title": "Link Share Metadata",
+            "description": "Contains details about the link URLs that clients are using to refer to this item."
+          },
+          "modified_by_me_time": {
+            "type": "string",
+            "title": "Modified By Me Time",
+            "description": "The last time the file was modified by the user (RFC 3339 date-time)."
+          },
+          "shared_with_me_time": {
+            "type": "string",
+            "title": "Shared With Me Time",
+            "description": "The time at which the file was shared with the user, if applicable (RFC 3339 date-time)."
+          },
+          "content_restrictions": {
+            "type": "array",
+            "items": {
+              "$ref": "#/$defs/ContentRestriction"
+            },
+            "title": "Content Restrictions",
+            "description": "Restrictions for accessing the content of the file."
+          },
+          "image_media_metadata": {
+            "$ref": "#/$defs/ImageMediaMetadata",
+            "title": "Image Media Metadata",
+            "description": "Additional metadata about image media, if available."
+          },
+          "video_media_metadata": {
+            "$ref": "#/$defs/VideoMediaMetadata",
+            "title": "Video Media Metadata",
+            "description": "Additional metadata about video media. This may not be available immediately upon upload."
+          },
+          "has_augmented_permissions": {
+            "type": "boolean",
+            "title": "Has Augmented Permissions",
+            "description": "Whether there are permissions directly on this file."
+          },
+          "inherited_permissions_disabled": {
+            "type": "boolean",
+            "title": "Inherited Permissions Disabled",
+            "description": "Whether inherited permissions have been disabled for this file."
+          },
+          "copy_requires_writer_permission": {
+            "type": "boolean",
+            "title": "Copy Requires Writer Permission",
+            "description": "Whether the options to copy, print, or download this file, should be disabled for readers and commenters."
+          }
+        },
+        "description": "File resource containing metadata about a file"
+      },
+      "DriveUser": {
+        "type": "object",
+        "title": "DriveUser",
+        "properties": {
+          "me": {
+            "type": "boolean",
+            "title": "Me",
+            "description": "Whether this user is the requesting user."
+          },
+          "kind": {
+            "type": "string",
+            "title": "Kind",
+            "description": "Identifies what kind of resource this is. Value: the fixed string 'drive#user'."
+          },
+          "photo_link": {
+            "type": "string",
+            "title": "Photo Link",
+            "description": "A link to the user's profile photo, if available."
+          },
+          "display_name": {
+            "type": "string",
+            "title": "Display Name",
+            "description": "A plain text displayable name for this user."
+          },
+          "email_address": {
+            "type": "string",
+            "title": "Email Address",
+            "description": "The email address of the user."
+          },
+          "permission_id": {
+            "type": "string",
+            "title": "Permission Id",
+            "description": "The user's ID as visible in Permission resources."
+          }
+        },
+        "description": "User resource from Google Drive API"
+      },
+      "LabelInfo": {
+        "type": "object",
+        "title": "LabelInfo",
+        "properties": {
+          "labels": {
+            "type": "array",
+            "items": {
+              "$ref": "#/$defs/Label"
+            },
+            "title": "Labels",
+            "description": "The set of labels on the file as requested by the label IDs in the includeLabels parameter. By default, no labels are returned."
+          }
+        },
+        "description": "An overview of the labels on the file"
+      },
+      "LabelField": {
+        "type": "object",
+        "title": "LabelField",
+        "properties": {
+          "id": {
+            "type": "string",
+            "title": "Id",
+            "description": "The identifier of this label field."
+          },
+          "kind": {
+            "type": "string",
+            "title": "Kind",
+            "description": "Identifies what kind of resource this is. Value: the fixed string 'drive#labelField'."
+          },
+          "text": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "title": "Text",
+            "description": "Only present if valueType is text."
+          },
+          "user": {
+            "type": "array",
+            "items": {
+              "$ref": "#/$defs/LabelFieldUser"
+            },
+            "title": "User",
+            "description": "Only present if valueType is user."
+          },
+          "integer": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "title": "Integer",
+            "description": "Only present if valueType is integer."
+          },
+          "selection": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "title": "Selection",
+            "description": "Only present if valueType is selection."
+          },
+          "value_type": {
+            "type": "string",
+            "title": "Value Type",
+            "description": "The field type. Valid values: 'dateString', 'integer', 'selection', 'text', 'user'."
+          },
+          "date_string": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "title": "Date String",
+            "description": "Only present if valueType is dateString. RFC 3339 formatted date: YYYY-MM-DD."
+          }
+        },
+        "description": "A field within a label containing a typed value"
+      },
+      "Permission": {
+        "type": "object",
+        "title": "Permission",
+        "properties": {
+          "id": {
+            "type": "string",
+            "title": "Id",
+            "description": "The ID of this permission."
+          },
+          "kind": {
+            "type": "string",
+            "title": "Kind",
+            "description": "Identifies what kind of resource this is. Value: the fixed string 'drive#permission'."
+          },
+          "role": {
+            "type": "string",
+            "title": "Role",
+            "description": "The role granted by this permission. Valid values: 'owner', 'organizer', 'fileOrganizer', 'writer', 'commenter', 'reader'."
+          },
+          "type": {
+            "type": "string",
+            "title": "Type",
+            "description": "The type of the grantee. Valid values: 'user', 'group', 'domain', 'anyone'."
+          },
+          "view": {
+            "type": "string",
+            "title": "View",
+            "description": "Indicates the view for this permission. Only populated for permissions belonging to a view. Supported values: 'published', 'metadata'."
+          },
+          "domain": {
+            "type": "string",
+            "title": "Domain",
+            "description": "The domain to which this permission refers."
+          },
+          "deleted": {
+            "type": "boolean",
+            "title": "Deleted",
+            "description": "Whether the account associated with this permission has been deleted. Only pertains to user and group permissions."
+          },
+          "photo_link": {
+            "type": "string",
+            "title": "Photo Link",
+            "description": "A link to the user's profile photo, if available."
+          },
+          "display_name": {
+            "type": "string",
+            "title": "Display Name",
+            "description": "The 'pretty' name of the value of the permission."
+          },
+          "email_address": {
+            "type": "string",
+            "title": "Email Address",
+            "description": "The email address of the user or group to which this permission refers."
+          },
+          "pending_owner": {
+            "type": "boolean",
+            "title": "Pending Owner",
+            "description": "Whether the account associated with this permission is a pending owner. Only populated for permissions of type 'user' for files not in a shared drive."
+          },
+          "expiration_time": {
+            "type": "string",
+            "title": "Expiration Time",
+            "description": "The time at which this permission will expire (RFC 3339 date-time). Expiration times can only be set on user and group permissions."
+          },
+          "permission_details": {
+            "type": "array",
+            "items": {
+              "$ref": "#/$defs/PermissionDetail"
+            },
+            "title": "Permission Details",
+            "description": "Details of whether the permissions on this shared drive item are inherited or directly on this item. This is an output-only field present only for shared drive items."
+          },
+          "allow_file_discovery": {
+            "type": "boolean",
+            "title": "Allow File Discovery",
+            "description": "Whether the permission allows the file to be discovered through search. Only applicable for permissions of type 'domain' or 'anyone'."
+          },
+          "team_drive_permission_details": {
+            "type": "array",
+            "items": {
+              "$ref": "#/$defs/TeamDrivePermissionDetail"
+            },
+            "title": "Team Drive Permission Details",
+            "description": "Deprecated: Use permissionDetails instead."
+          },
+          "inherited_permissions_disabled": {
+            "type": "boolean",
+            "title": "Inherited Permissions Disabled",
+            "description": "Whether inherited permissions have been disabled for this permission."
+          }
+        },
+        "description": "Permission resource granting access to a file or folder"
+      },
+      "ContentHints": {
+        "type": "object",
+        "title": "ContentHints",
+        "properties": {
+          "thumbnail": {
+            "$ref": "#/$defs/ContentHintsThumbnail",
+            "title": "Thumbnail",
+            "description": "A thumbnail for the file. This will only be used if Google Drive cannot generate a standard thumbnail."
+          },
+          "indexable_text": {
+            "type": "string",
+            "title": "Indexable Text",
+            "description": "Text to be indexed for the file to improve fullText queries. Limited to 128 KB in length and may contain HTML elements."
+          }
+        },
+        "description": "Additional information about the content of the file"
+      },
+      "LabelFieldUser": {
+        "type": "object",
+        "title": "LabelFieldUser",
+        "properties": {
+          "display_name": {
+            "type": "string",
+            "title": "Display Name",
+            "description": "The display name of the user."
+          },
+          "email_address": {
+            "type": "string",
+            "title": "Email Address",
+            "description": "The email address of the user."
+          }
+        },
+        "description": "User info within a label field"
+      },
+      "ShortcutDetails": {
+        "type": "object",
+        "title": "ShortcutDetails",
+        "properties": {
+          "target_id": {
+            "type": "string",
+            "title": "Target Id",
+            "description": "The ID of the file that this shortcut points to."
+          },
+          "target_mime_type": {
+            "type": "string",
+            "title": "Target Mime Type",
+            "description": "The MIME type of the file that this shortcut points to."
+          },
+          "target_resource_key": {
+            "type": "string",
+            "title": "Target Resource Key",
+            "description": "The ResourceKey for the target file."
+          }
+        },
+        "description": "Shortcut file details. Only populated for shortcut files."
+      },
+      "PermissionDetail": {
+        "type": "object",
+        "title": "PermissionDetail",
+        "properties": {
+          "role": {
+            "type": "string",
+            "title": "Role",
+            "description": "The primary role for this user. Valid values: 'owner', 'organizer', 'fileOrganizer', 'writer', 'commenter', 'reader'."
+          },
+          "inherited": {
+            "type": "boolean",
+            "title": "Inherited",
+            "description": "Whether this permission is inherited."
+          },
+          "inherited_from": {
+            "type": "string",
+            "title": "Inherited From",
+            "description": "The ID of the item from which this permission is inherited. Only populated for items in shared drives."
+          },
+          "permission_type": {
+            "type": "string",
+            "title": "Permission Type",
+            "description": "The permission type for this user. Valid values are 'file' or 'member'."
+          }
+        },
+        "description": "Details about whether a permission is inherited or directly on an item"
+      },
+      "LinkShareMetadata": {
+        "type": "object",
+        "title": "LinkShareMetadata",
+        "properties": {
+          "security_update_enabled": {
+            "type": "boolean",
+            "title": "Security Update Enabled",
+            "description": "Whether the security update is enabled for this file."
+          },
+          "security_update_eligible": {
+            "type": "boolean",
+            "title": "Security Update Eligible",
+            "description": "Whether the file is eligible for security update."
+          }
+        },
+        "description": "Contains details about the link URLs that clients are using to refer to this item"
+      },
+      "ContentRestriction": {
+        "type": "object",
+        "title": "ContentRestriction",
+        "properties": {
+          "type": {
+            "type": "string",
+            "title": "Type",
+            "description": "The type of the content restriction. Currently the only possible value is 'globalContentRestriction'."
+          },
+          "reason": {
+            "type": "string",
+            "title": "Reason",
+            "description": "Reason for why the content of the file is restricted."
+          },
+          "read_only": {
+            "type": "boolean",
+            "title": "Read Only",
+            "description": "Whether the content of the file is read-only."
+          },
+          "owner_restricted": {
+            "type": "boolean",
+            "title": "Owner Restricted",
+            "description": "Whether the content restriction can only be modified or removed by a user who owns the file."
+          },
+          "restricting_user": {
+            "$ref": "#/$defs/DriveUser",
+            "title": "Restricting User",
+            "description": "The user who set the content restriction."
+          },
+          "restriction_time": {
+            "type": "string",
+            "title": "Restriction Time",
+            "description": "The time at which the content restriction was set (RFC 3339 date-time)."
+          },
+          "system_restricted": {
+            "type": "boolean",
+            "title": "System Restricted",
+            "description": "Whether the content restriction was applied by the system."
+          }
+        },
+        "description": "A restriction for accessing the content of the file"
+      },
+      "ImageMediaMetadata": {
+        "type": "object",
+        "title": "ImageMediaMetadata",
+        "properties": {
+          "lens": {
+            "type": "string",
+            "title": "Lens",
+            "description": "The lens used to create the photo."
+          },
+          "time": {
+            "type": "string",
+            "title": "Time",
+            "description": "The date and time the photo was taken (EXIF DateTime)."
+          },
+          "width": {
+            "type": "integer",
+            "title": "Width",
+            "description": "The width of the image in pixels."
+          },
+          "height": {
+            "type": "integer",
+            "title": "Height",
+            "description": "The height of the image in pixels."
+          },
+          "sensor": {
+            "type": "string",
+            "title": "Sensor",
+            "description": "The type of sensor used to create the photo."
+          },
+          "aperture": {
+            "type": "number",
+            "title": "Aperture",
+            "description": "The aperture used to create the photo (f-number)."
+          },
+          "location": {
+            "type": "object",
+            "title": "Location",
+            "description": "Geographic location information stored in the image (latitude, longitude, altitude).",
+            "additionalProperties": {
+              "type": "number"
+            }
+          },
+          "rotation": {
+            "type": "integer",
+            "title": "Rotation",
+            "description": "The rotation in clockwise degrees from the image's original orientation."
+          },
+          "iso_speed": {
+            "type": "integer",
+            "title": "Iso Speed",
+            "description": "The ISO speed used to create the photo."
+          },
+          "flash_used": {
+            "type": "boolean",
+            "title": "Flash Used",
+            "description": "Whether a flash was used to create the photo."
+          },
+          "camera_make": {
+            "type": "string",
+            "title": "Camera Make",
+            "description": "The make of the camera used to create the photo."
+          },
+          "color_space": {
+            "type": "string",
+            "title": "Color Space",
+            "description": "The color space of the photo."
+          },
+          "camera_model": {
+            "type": "string",
+            "title": "Camera Model",
+            "description": "The model of the camera used to create the photo."
+          },
+          "focal_length": {
+            "type": "number",
+            "title": "Focal Length",
+            "description": "The focal length used to create the photo, in millimeters."
+          },
+          "exposure_bias": {
+            "type": "number",
+            "title": "Exposure Bias",
+            "description": "The exposure bias of the photo (APEX value)."
+          },
+          "exposure_mode": {
+            "type": "string",
+            "title": "Exposure Mode",
+            "description": "The exposure mode used to create the photo."
+          },
+          "exposure_time": {
+            "type": "number",
+            "title": "Exposure Time",
+            "description": "The length of the exposure, in seconds."
+          },
+          "metering_mode": {
+            "type": "string",
+            "title": "Metering Mode",
+            "description": "The metering mode used to create the photo."
+          },
+          "white_balance": {
+            "type": "string",
+            "title": "White Balance",
+            "description": "The white balance mode used to create the photo."
+          },
+          "subject_distance": {
+            "type": "integer",
+            "title": "Subject Distance",
+            "description": "The distance to the subject of the photo, in meters."
+          },
+          "max_aperture_value": {
+            "type": "number",
+            "title": "Max Aperture Value",
+            "description": "The smallest f-number of the lens at the focal length used to create the photo (APEX value)."
+          }
+        },
+        "description": "Additional metadata about image media"
+      },
+      "VideoMediaMetadata": {
+        "type": "object",
+        "title": "VideoMediaMetadata",
+        "properties": {
+          "width": {
+            "type": "integer",
+            "title": "Width",
+            "description": "The width of the video in pixels."
+          },
+          "height": {
+            "type": "integer",
+            "title": "Height",
+            "description": "The height of the video in pixels."
+          },
+          "duration_millis": {
+            "type": "string",
+            "title": "Duration Millis",
+            "description": "The duration of the video in milliseconds."
+          }
+        },
+        "description": "Additional metadata about video media"
+      },
+      "ContentHintsThumbnail": {
+        "type": "object",
+        "title": "ContentHintsThumbnail",
+        "properties": {
+          "image": {
+            "type": "string",
+            "title": "Image",
+            "description": "The thumbnail data encoded with URL-safe Base64 (RFC 4648 section 5)."
+          },
+          "mime_type": {
+            "type": "string",
+            "title": "Mime Type",
+            "description": "The MIME type of the thumbnail."
+          }
+        },
+        "description": "Thumbnail data for content hints"
+      },
+      "SearchDocumentsResponse": {
+        "type": "object",
+        "title": "SearchDocumentsResponse",
+        "properties": {
+          "kind": {
+            "type": "string",
+            "title": "Kind",
+            "description": "Identifies the type of resource. This is always 'drive#fileList'."
+          },
+          "files": {
+            "type": "array",
+            "items": {
+              "$ref": "#/$defs/DriveFile"
+            },
+            "title": "Files",
+            "description": "The list of files. If nextPageToken is populated, then this list may be incomplete and an additional page of results should be fetched."
+          },
+          "next_page_token": {
+            "type": "string",
+            "title": "Next Page Token",
+            "description": "The page token for the next page of files. This will be absent if the end of the files list has been reached. If the token is rejected for any reason, it should be discarded, and pagination should be restarted from the first page of results."
+          },
+          "incomplete_search": {
+            "type": "boolean",
+            "title": "Incomplete Search",
+            "description": "Whether the search process was incomplete. If true, then some search results might be missing, since all documents were not searched. This can occur when searching multiple drives with the 'allDrives' corpora, but all corpora couldn't be searched. When this happens, it's suggested that clients narrow their query by choosing a different corpus such as 'user' or 'drive'."
+          },
+          "composio_execution_message": {
+            "type": "string",
+            "title": "Composio Execution Message",
+            "description": "Informational message about the execution result."
+          }
+        },
+        "description": "Response from Google Drive API files.list method for searching documents"
+      },
+      "TeamDrivePermissionDetail": {
+        "type": "object",
+        "title": "TeamDrivePermissionDetail",
+        "properties": {
+          "role": {
+            "type": "string",
+            "title": "Role",
+            "description": "Deprecated: The primary role for this user."
+          },
+          "inherited": {
+            "type": "boolean",
+            "title": "Inherited",
+            "description": "Deprecated: Whether this permission is inherited."
+          },
+          "inherited_from": {
+            "type": "string",
+            "title": "Inherited From",
+            "description": "Deprecated: The ID of the item from which this permission is inherited."
+          },
+          "team_drive_permission_type": {
+            "type": "string",
+            "title": "Team Drive Permission Type",
+            "description": "Deprecated: The Team Drive permission type."
+          }
+        },
+        "description": "Deprecated: Use permissionDetails instead. Details about Team Drive permission"
+      }
+    },
+    "title": "SearchDocumentsResponseWrapper",
+    "required": [
+      "data",
+      "successful"
+    ],
+    "properties": {
+      "data": {
+        "$ref": "#/$defs/SearchDocumentsResponse",
+        "title": "Data",
+        "description": "Data from the action execution"
+      },
+      "error": {
+        "type": "string",
+        "title": "Error",
+        "description": "Error if any occurred during the execution of the action"
+      },
+      "successful": {
+        "type": "boolean",
+        "title": "Successful",
+        "description": "Whether or not the action execution was successful or not"
+      }
+    }
+  }
+}

@@ -1,0 +1,439 @@
+{
+  "slug": "GOOGLECALENDAR_EVENTS_LIST_ALL_CALENDARS",
+  "ok": true,
+  "ms": 1116,
+  "request": {
+    "time_min": "2026-11-17T05:32:34.907Z",
+    "time_max": "2026-12-18T05:32:34.907Z",
+    "single_events": true,
+    "show_deleted": true,
+    "q": "Orbit eval",
+    "response_detail": "full"
+  },
+  "response": {
+    "data": {
+      "calendars_queried": [
+        {
+          "id": "id_12",
+          "summary": "person_2@example.test"
+        },
+        {
+          "id": "id_15",
+          "summary": "Holidays in Canada"
+        }
+      ],
+      "errors_by_calendar": {},
+      "events": [
+        {
+          "all_calendar_ids": null,
+          "event": {
+            "created": "2026-11-18T05:32:34.000Z",
+            "creator": {
+              "email": "person_2@example.test",
+              "self": true
+            },
+            "display_url": "https://example.test/link_10",
+            "end": {
+              "dateTime": "2026-11-19T12:00:00Z",
+              "timeZone": "UTC"
+            },
+            "etag": "id_37",
+            "eventType": "default",
+            "htmlLink": "https://example.test/link_10",
+            "iCalUID": "id_38",
+            "id": "id_39",
+            "kind": "calendar#event",
+            "organizer": {
+              "email": "person_2@example.test",
+              "self": true
+            },
+            "sequence": 0,
+            "start": {
+              "dateTime": "2026-11-19T11:00:00Z",
+              "timeZone": "UTC"
+            },
+            "status": "confirmed",
+            "summary": "Orbit eval quick add T05:32",
+            "updated": "2026-11-18T05:32:34.812Z"
+          },
+          "source_calendar_id": "id_12",
+          "source_calendar_summary": "person_2@example.test"
+        },
+        {
+          "all_calendar_ids": null,
+          "event": {
+            "attendees": [
+              {
+                "email": "person_2@example.test",
+                "organizer": true,
+                "responseStatus": "needsAction",
+                "self": true
+              }
+            ],
+            "conferenceData": {
+              "conferenceId": "id_25",
+              "conferenceSolution": {
+                "iconUri": "https://example.test/link_3",
+                "key": {
+                  "type": "hangoutsMeet"
+                },
+                "name": "Google Meet"
+              },
+              "entryPoints": [
+                {
+                  "entryPointType": "video",
+                  "label": "meet.google.com/hrv-irbt-xgo",
+                  "uri": "https://example.test/link_6"
+                }
+              ]
+            },
+            "created": "2026-11-18T05:32:31.000Z",
+            "creator": {
+              "email": "person_2@example.test",
+              "self": true
+            },
+            "display_url": "https://example.test/link_5",
+            "end": {
+              "dateTime": "2026-11-19T14:15:00Z",
+              "timeZone": "America/Toronto"
+            },
+            "etag": "id_40",
+            "eventType": "default",
+            "hangoutLink": "https://example.test/link_6",
+            "htmlLink": "https://example.test/link_5",
+            "iCalUID": "id_28",
+            "id": "id_31",
+            "kind": "calendar#event",
+            "organizer": {
+              "email": "person_2@example.test",
+              "self": true
+            },
+            "originalStartTime": {
+              "dateTime": "2026-11-19T14:00:00Z",
+              "timeZone": "America/Toronto"
+            },
+            "recurringEventId": "id_29",
+            "sequence": 0,
+            "start": {
+              "dateTime": "2026-11-19T14:00:00Z",
+              "timeZone": "America/Toronto"
+            },
+            "status": "confirmed",
+            "summary": "Orbit eval weekly 2026-11-18T05:32",
+            "updated": "2026-11-18T05:32:35.790Z"
+          },
+          "source_calendar_id": "id_12",
+          "source_calendar_summary": "person_2@example.test"
+        },
+        {
+          "all_calendar_ids": null,
+          "event": {
+            "conferenceData": {
+              "conferenceId": "id_18",
+              "conferenceSolution": {
+                "iconUri": "https://example.test/link_3",
+                "key": {
+                  "type": "hangoutsMeet"
+                },
+                "name": "Google Meet"
+              },
+              "entryPoints": [
+                {
+                  "entryPointType": "video",
+                  "label": "meet.google.com/trd-irip-ufr",
+                  "uri": "https://example.test/link_4"
+                }
+              ]
+            },
+            "created": "2026-11-18T05:32:26.000Z",
+            "creator": {
+              "email": "person_2@example.test",
+              "self": true
+            },
+            "display_url": "https://example.test/link_2",
+            "end": {
+              "dateTime": "2026-11-19T21:45:00Z",
+              "timeZone": "America/Toronto"
+            },
+            "etag": "id_24",
+            "eventType": "default",
+            "hangoutLink": "https://example.test/link_4",
+            "htmlLink": "https://example.test/link_2",
+            "iCalUID": "id_21",
+            "id": "id_22",
+            "kind": "calendar#event",
+            "organizer": {
+              "email": "person_2@example.test",
+              "self": true
+            },
+            "sequence": 1,
+            "start": {
+              "dateTime": "2026-11-19T21:00:00Z",
+              "timeZone": "America/Toronto"
+            },
+            "status": "confirmed",
+            "summary": "Orbit eval event 2026-11-18T05:32 (updated)",
+            "updated": "2026-11-18T05:32:29.991Z"
+          },
+          "source_calendar_id": "id_12",
+          "source_calendar_summary": "person_2@example.test"
+        },
+        {
+          "all_calendar_ids": null,
+          "event": {
+            "attendees": [
+              {
+                "email": "person_2@example.test",
+                "organizer": true,
+                "responseStatus": "needsAction",
+                "self": true
+              }
+            ],
+            "conferenceData": {
+              "conferenceId": "id_25",
+              "conferenceSolution": {
+                "iconUri": "https://example.test/link_3",
+                "key": {
+                  "type": "hangoutsMeet"
+                },
+                "name": "Google Meet"
+              },
+              "entryPoints": [
+                {
+                  "entryPointType": "video",
+                  "label": "meet.google.com/hrv-irbt-xgo",
+                  "uri": "https://example.test/link_6"
+                }
+              ]
+            },
+            "created": "2026-11-18T05:32:31.000Z",
+            "creator": {
+              "email": "person_2@example.test",
+              "self": true
+            },
+            "display_url": "https://example.test/link_7",
+            "end": {
+              "dateTime": "2026-11-26T14:15:00Z",
+              "timeZone": "America/Toronto"
+            },
+            "etag": "id_40",
+            "eventType": "default",
+            "hangoutLink": "https://example.test/link_6",
+            "htmlLink": "https://example.test/link_7",
+            "iCalUID": "id_28",
+            "id": "id_32",
+            "kind": "calendar#event",
+            "organizer": {
+              "email": "person_2@example.test",
+              "self": true
+            },
+            "originalStartTime": {
+              "dateTime": "2026-11-26T14:00:00Z",
+              "timeZone": "America/Toronto"
+            },
+            "recurringEventId": "id_29",
+            "sequence": 0,
+            "start": {
+              "dateTime": "2026-11-26T14:00:00Z",
+              "timeZone": "America/Toronto"
+            },
+            "status": "confirmed",
+            "summary": "Orbit eval weekly 2026-11-18T05:32 (one instance)",
+            "updated": "2026-11-18T05:32:35.790Z"
+          },
+          "source_calendar_id": "id_12",
+          "source_calendar_summary": "person_2@example.test"
+        },
+        {
+          "all_calendar_ids": null,
+          "event": {
+            "attendees": [
+              {
+                "email": "person_2@example.test",
+                "organizer": true,
+                "responseStatus": "needsAction",
+                "self": true
+              }
+            ],
+            "conferenceData": {
+              "conferenceId": "id_25",
+              "conferenceSolution": {
+                "iconUri": "https://example.test/link_3",
+                "key": {
+                  "type": "hangoutsMeet"
+                },
+                "name": "Google Meet"
+              },
+              "entryPoints": [
+                {
+                  "entryPointType": "video",
+                  "label": "meet.google.com/hrv-irbt-xgo",
+                  "uri": "https://example.test/link_6"
+                }
+              ]
+            },
+            "created": "2026-11-18T05:32:31.000Z",
+            "creator": {
+              "email": "person_2@example.test",
+              "self": true
+            },
+            "display_url": "https://example.test/link_8",
+            "end": {
+              "dateTime": "2026-12-03T14:15:00Z",
+              "timeZone": "America/Toronto"
+            },
+            "etag": "id_40",
+            "eventType": "default",
+            "hangoutLink": "https://example.test/link_6",
+            "htmlLink": "https://example.test/link_8",
+            "iCalUID": "id_28",
+            "id": "id_33",
+            "kind": "calendar#event",
+            "organizer": {
+              "email": "person_2@example.test",
+              "self": true
+            },
+            "originalStartTime": {
+              "dateTime": "2026-12-03T14:00:00Z",
+              "timeZone": "America/Toronto"
+            },
+            "recurringEventId": "id_29",
+            "sequence": 0,
+            "start": {
+              "dateTime": "2026-12-03T14:00:00Z",
+              "timeZone": "America/Toronto"
+            },
+            "status": "confirmed",
+            "summary": "Orbit eval weekly 2026-11-18T05:32",
+            "updated": "2026-11-18T05:32:35.790Z"
+          },
+          "source_calendar_id": "id_12",
+          "source_calendar_summary": "person_2@example.test"
+        },
+        {
+          "all_calendar_ids": null,
+          "event": {
+            "attendees": [
+              {
+                "email": "person_2@example.test",
+                "organizer": true,
+                "responseStatus": "needsAction",
+                "self": true
+              }
+            ],
+            "conferenceData": {
+              "conferenceId": "id_25",
+              "conferenceSolution": {
+                "iconUri": "https://example.test/link_3",
+                "key": {
+                  "type": "hangoutsMeet"
+                },
+                "name": "Google Meet"
+              },
+              "entryPoints": [
+                {
+                  "entryPointType": "video",
+                  "label": "meet.google.com/hrv-irbt-xgo",
+                  "uri": "https://example.test/link_6"
+                }
+              ]
+            },
+            "created": "2026-11-18T05:32:31.000Z",
+            "creator": {
+              "email": "person_2@example.test",
+              "self": true
+            },
+            "display_url": "https://example.test/link_9",
+            "end": {
+              "dateTime": "2026-12-10T14:15:00Z",
+              "timeZone": "America/Toronto"
+            },
+            "etag": "id_40",
+            "eventType": "default",
+            "hangoutLink": "https://example.test/link_6",
+            "htmlLink": "https://example.test/link_9",
+            "iCalUID": "id_28",
+            "id": "id_34",
+            "kind": "calendar#event",
+            "organizer": {
+              "email": "person_2@example.test",
+              "self": true
+            },
+            "originalStartTime": {
+              "dateTime": "2026-12-10T14:00:00Z",
+              "timeZone": "America/Toronto"
+            },
+            "recurringEventId": "id_29",
+            "sequence": 0,
+            "start": {
+              "dateTime": "2026-12-10T14:00:00Z",
+              "timeZone": "America/Toronto"
+            },
+            "status": "confirmed",
+            "summary": "Orbit eval weekly 2026-11-18T05:32",
+            "updated": "2026-11-18T05:32:35.790Z"
+          },
+          "source_calendar_id": "id_12",
+          "source_calendar_summary": "person_2@example.test"
+        }
+      ],
+      "summary_view": [
+        {
+          "calendar": "person_2@example.test",
+          "display_url": "https://example.test/link_10",
+          "end": "2026-11-19T12:00:00Z",
+          "event_id": "id_39",
+          "is_all_day": false,
+          "start": "2026-11-19T11:00:00Z",
+          "title": "Orbit eval quick add T05:32"
+        },
+        {
+          "calendar": "person_2@example.test",
+          "display_url": "https://example.test/link_5",
+          "end": "2026-11-19T14:15:00Z",
+          "event_id": "id_31",
+          "is_all_day": false,
+          "start": "2026-11-19T14:00:00Z",
+          "title": "Orbit eval weekly 2026-11-18T05:32"
+        },
+        {
+          "calendar": "person_2@example.test",
+          "display_url": "https://example.test/link_2",
+          "end": "2026-11-19T21:45:00Z",
+          "event_id": "id_22",
+          "is_all_day": false,
+          "start": "2026-11-19T21:00:00Z",
+          "title": "Orbit eval event 2026-11-18T05:32 (updated)"
+        },
+        {
+          "calendar": "person_2@example.test",
+          "display_url": "https://example.test/link_7",
+          "end": "2026-11-26T14:15:00Z",
+          "event_id": "id_32",
+          "is_all_day": false,
+          "start": "2026-11-26T14:00:00Z",
+          "title": "Orbit eval weekly 2026-11-18T05:32 (one instance)"
+        },
+        {
+          "calendar": "person_2@example.test",
+          "display_url": "https://example.test/link_8",
+          "end": "2026-12-03T14:15:00Z",
+          "event_id": "id_33",
+          "is_all_day": false,
+          "start": "2026-12-03T14:00:00Z",
+          "title": "Orbit eval weekly 2026-11-18T05:32"
+        },
+        {
+          "calendar": "person_2@example.test",
+          "display_url": "https://example.test/link_9",
+          "end": "2026-12-10T14:15:00Z",
+          "event_id": "id_34",
+          "is_all_day": false,
+          "start": "2026-12-10T14:00:00Z",
+          "title": "Orbit eval weekly 2026-11-18T05:32"
+        }
+      ]
+    },
+    "error": null
+  }
+}

@@ -11,7 +11,7 @@ import {
   View,
 } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
-import type { Bot, CreateRoutineRequest } from '@orbit/contracts';
+import type { Bot, CreateRoutineRequest, DuplicateDefaults } from '@orbit/contracts';
 import { useMobileTokens, type MobileTokens } from '../lib/native';
 import { useCreateRoutine } from '../lib/queries';
 import { Chip, PrimaryButton, Segmented } from './ui';
@@ -60,9 +60,19 @@ export type CalendarEventModalProps = {
   bots: Bot[];
   onClose: () => void;
   onSaved: () => void;
+  /** Made from a Google event: its key and the server's suggested defaults. */
+  duplicate?: { key: string; defaults: DuplicateDefaults };
 };
 
-export function CalendarEventModal({ initialDate, bots, onClose, onSaved }: CalendarEventModalProps) {
+/** When a duplicated Orbit event runs, relative to its Google event. */
+const TIMINGS = [
+  { value: 'same', label: 'Same time', at: (s: Date) => s },
+  { value: '15m', label: '15 min before', at: (s: Date) => new Date(s.getTime() - 15 * 60_000) },
+  { value: '1h', label: '1 hour before', at: (s: Date) => new Date(s.getTime() - 60 * 60_000) },
+  { value: 'eve', label: '9:00 the day before', at: (s: Date) => new Date(s.getFullYear(), s.getMonth(), s.getDate() - 1, 9, 0) },
+] as const;
+
+export function CalendarEventModal({ initialDate, bots, onClose, onSaved, duplicate }: CalendarEventModalProps) {
   const tokens = useMobileTokens();
   const insets = useSafeAreaInsets();
   const create = useCreateRoutine();
@@ -71,11 +81,14 @@ export function CalendarEventModal({ initialDate, bots, onClose, onSaved }: Cale
   const agents = useMemo(() => bots.filter((b) => b.kind !== 'room'), [bots]);
   const preferredBot = agents.find((b) => b.isPrimary) ?? agents[0];
 
-  const [title, setTitle] = useState('');
+  const parentStart = duplicate ? new Date(duplicate.defaults.start) : null;
+  const [title, setTitle] = useState(duplicate?.defaults.title ?? '');
+  const [timing, setTiming] = useState<string>('same');
   const [botId, setBotId] = useState(preferredBot?.id ?? '');
-  const [prompt, setPrompt] = useState('');
+  const [prompt, setPrompt] = useState(duplicate?.defaults.prompt ?? '');
   const [eventType, setEventType] = useState<EventType>('one_time');
   const [when, setWhen] = useState<Date>(() => {
+    if (parentStart) return parentStart;
     const day = startOfDay(initialDate);
     return new Date(day.getFullYear(), day.getMonth(), day.getDate(), 9, 0, 0, 0);
   });
@@ -122,6 +135,11 @@ export function CalendarEventModal({ initialDate, bots, onClose, onSaved }: Cale
     };
     if (eventType === 'one_time') request.eventDate = when.toISOString();
     else request.schedule = cron.trim();
+    if (duplicate) {
+      request.parentEventKey = duplicate.key;
+      // A repeat taken from Google is at the event's own wall-clock time.
+      if (eventType === 'recurring' && duplicate.defaults.cron && cron.trim() === duplicate.defaults.cron) request.timezone = duplicate.defaults.timezone;
+    }
 
     setBusy(true);
     try {
@@ -159,7 +177,7 @@ export function CalendarEventModal({ initialDate, bots, onClose, onSaved }: Cale
               }}
             >
               <Text style={{ flex: 1, color: tokens.colors.fg, fontSize: tokens.fontSizes.lg, fontWeight: '600' }}>
-                New event
+                {duplicate ? 'Duplicate as Orbit event' : 'New event'}
               </Text>
               <Pressable onPress={onClose} hitSlop={10} accessibilityLabel="Close">
                 <Text style={{ color: tokens.colors.fgTertiary, fontSize: tokens.fontSizes.lg }}>✕</Text>
@@ -170,6 +188,11 @@ export function CalendarEventModal({ initialDate, bots, onClose, onSaved }: Cale
               keyboardShouldPersistTaps="handled"
               contentContainerStyle={{ paddingHorizontal: tokens.space.xl, paddingBottom: tokens.space.lg, gap: tokens.space.lg }}
             >
+              {duplicate ? (
+                <Text style={{ color: tokens.colors.fgSecondary, fontSize: tokens.fontSizes.caption }}>
+                  Made from your Google event “{duplicate.defaults.title}”. A one-time Orbit event moves when it moves, and pauses if it is cancelled.
+                </Text>
+              ) : null}
               <Field label="Title" tokens={tokens}>
                 <TextInput
                   value={title}
@@ -221,19 +244,30 @@ export function CalendarEventModal({ initialDate, bots, onClose, onSaved }: Cale
                 />
               </Field>
 
-              <Field label="Event type" tokens={tokens}>
+              <Field label="Event type" hint={duplicate && !duplicate.defaults.cron && duplicate.defaults.recurring ? duplicate.defaults.cronReason : undefined} tokens={tokens}>
                 <Segmented
                   value={eventType}
-                  options={[
+                  options={duplicate && !duplicate.defaults.cron ? [{ value: 'one_time', label: 'One-time' }] : [
                     { value: 'one_time', label: 'One-time' },
                     { value: 'recurring', label: 'Recurring' },
                   ]}
                   onChange={(value) => {
                     setEventType(value);
                     setError(null);
+                    if (value === 'recurring' && duplicate?.defaults.cron) { setCron(duplicate.defaults.cron); setPreset('custom'); }
                   }}
                 />
               </Field>
+
+              {duplicate && parentStart && eventType === 'one_time' ? (
+                <Field label="Runs" tokens={tokens}>
+                  <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={{ gap: tokens.space.sm }}>
+                    {TIMINGS.map((t) => (
+                      <Chip key={t.value} label={t.label} active={timing === t.value} onPress={() => { setTiming(t.value); setWhen(t.at(parentStart)); }} />
+                    ))}
+                  </ScrollView>
+                </Field>
+              ) : null}
 
               {eventType === 'one_time' ? (
                 <>

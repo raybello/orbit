@@ -4,6 +4,9 @@ import { api, openPopup } from '../../lib/api';
 import { useStore } from '../../store';
 import { Icon } from '../Icon';
 import { ToolkitLogo } from '../ToolkitLogo';
+import { ApprovalEmailCard, DraftEmailCard } from './EmailCard';
+import { ApprovalEventCard } from './EventCard';
+import { DocReviewCard, SheetReviewCard } from './WorkspaceCards';
 
 type Card<K extends CardBody['card']> = Extract<CardBody, { card: K }>;
 
@@ -44,8 +47,13 @@ export function ApprovalCard({ body }: { body: Card<'approval'> }) {
         <>
           <div className="card__actions">
             <button type="button" className="btn btn--secondary" disabled={!!busy} onClick={() => decide('deny')}>Don't allow</button>
-            {/* A rule keeps asking whatever the policy says, so "Always allow" would be a promise the app cannot keep. */}
-            {!body.rule && <button type="button" className="btn btn--secondary" disabled={!!busy} onClick={() => decide('always')}>Always allow</button>}
+            {/* A rule keeps asking whatever the policy says, and some actions (sending email) always ask
+                unless the person trusts this bot, so "Always allow" would be a promise the app cannot keep. */}
+            {!body.rule && (body.alwaysFor || body.offerAlways !== false) && (
+              <button type="button" className="btn btn--secondary" disabled={!!busy} onClick={() => decide('always')}>
+                {body.alwaysFor ? `Always allow for ${body.alwaysFor.botName}` : 'Always allow'}
+              </button>
+            )}
             <button type="button" className="btn btn--primary" disabled={!!busy} onClick={() => decide('allow')}>Allow</button>
           </div>
           {error && <div className="card__error">{error}</div>}
@@ -193,10 +201,15 @@ export function CardRow({ row }: { row: Row }) {
   const b = row.body;
   if (b.type !== 'card') return null;
   switch (b.card) {
-    case 'approval': return <ApprovalCard body={b} />;
+    case 'approval':
+      if (b.review?.kind === 'email') return <ApprovalEmailCard body={b} />;
+      if (b.review?.kind === 'event') return <ApprovalEventCard body={b} />;
+      if (b.review?.kind === 'sheet') return <SheetReviewCard body={b} />;
+      if (b.review?.kind === 'doc') return <DocReviewCard body={b} />;
+      return <ApprovalCard body={b} />;
     case 'question': return <QuestionCard row={row} body={b} />;
     case 'connect': return <ConnectCard row={row} body={b} />;
-    case 'draft': return <DraftCard body={b} />;
+    case 'draft': return b.email ? <DraftEmailCard row={row} body={b} /> : <DraftCard body={b} />;
     default: return null;
   }
 }
