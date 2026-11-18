@@ -3,6 +3,7 @@ import { Hono } from 'hono';
 import { getBotRow } from './store.js';
 import { composioTools, innerToolCalls, innerToolSlugs, runAction } from './composio.js';
 import { applyReviewEdits, buildReview, type PreStep } from './review/index.js';
+import { showDrafts } from './review/drafts.js';
 import { connectionWatch, expiredAppNotice } from './core/connection-watch.js';
 import { mcpToken, primaryBotId } from './engine.js';
 import { addPendingFiles, claimToolRow, enqueue, enqueueBotMessage, markSilent, noteToolOutcome, requestApproval, turnDepth, turnGroupDepth } from './agent/loop.js';
@@ -203,7 +204,10 @@ async function callTool(botId: string | null, rawName: string, args: Record<stri
     const failed = r.summary === 'failed';
     noteToolOutcome(botId, rowSeq, { status: failed ? 'error' : 'done', summary: failed ? 'Failed' : r.summary === 'partial' ? 'Partly failed' : undefined });
     if (failed || r.summary === 'partial') connectionWatch.noteFailure(userId, botId);
-    return text(g.notes.length ? `${g.notes.join('\n')}\n\n${r.output}` : r.output);
+    // A draft the bot wrote goes in front of the person as an email card.
+    const draftNote = failed ? null : await showDrafts(userId, botId, name, g.args, r.data).catch((e) => { console.warn('[drafts] could not show a draft', (e as Error).message); return null; });
+    const notes = draftNote ? [...g.notes, draftNote] : g.notes;
+    return text(notes.length ? `${notes.join('\n')}\n\n${r.output}` : r.output);
   } catch (e) {
     const msg = String((e as { message?: unknown } | null)?.message ?? e);
     noteToolOutcome(botId, rowSeq, { status: 'error', summary: msg.slice(0, 200) });

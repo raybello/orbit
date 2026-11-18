@@ -16,6 +16,7 @@ import { registerPushToken, removePushToken, removePushTokens } from './push.js'
 import { allLive, appendRow, clearConversation, emitBot, getBot, getRow, listBots, listRoutines, listRows, listTasks, toRoutine, updateRow, type RoutineRow, type TaskRow } from './store.js';
 import { enqueue, interrupt, resolveApproval, touchApproval } from './agent/loop.js';
 import { ReviewEditError } from './review/index.js';
+import { actOnDraft, DraftActionError } from './review/drafts.js';
 import { computerState, ensureComputer, refreshComputer, suspendComputer } from './computer.js';
 import { computerKindFor, providerFor } from './computer-provider-registry.js';
 import { deleteMemory, listMemories, memoryBot } from './engine-memory.js';
@@ -38,6 +39,7 @@ import { botRow, botRowsForUser, type BotRow } from './infra/bot-repository.js';
 import {
   AppConnectSchema,
   ApprovalDecisionSchema,
+  DraftActionSchema,
   CardAnswerSchema,
   CardDismissSchema,
   CreateBotSchema,
@@ -457,6 +459,21 @@ api.post('/approvals/:id', async (c) => {
     return c.json({ error: 'not found' }, 404);
   }
   return c.json({ ok: true });
+});
+
+/** Save, send or discard a Gmail draft a bot wrote, from its email card. */
+api.post('/bots/:id/cards/:seq/draft', async (c) => {
+  const b = ownBot(c.get('user').id, c.req.param('id'));
+  if (!b) return c.json({ error: 'not found' }, 404);
+  const { action, edits } = await requireBody(c, DraftActionSchema);
+  try {
+    const { card, tell } = await actOnDraft(c.get('user').id, b.id, Number(c.req.param('seq')), action, edits);
+    if (tell) enqueue(b.id, { type: 'system', text: tell });
+    return c.json({ card });
+  } catch (e) {
+    if (e instanceof DraftActionError) return c.json({ error: e.message }, e.status);
+    throw e;
+  }
 });
 
 /** The person is editing an approval card: keep the bot's call waiting for them (up to two hours in all). */

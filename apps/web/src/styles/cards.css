@@ -52,3 +52,22 @@
 .draft-card__subject { padding-top: 12px; font-size: 14px; font-weight: 600; line-height: 20px; }
 .draft-card__text { padding-top: 12px; font-size: 14px; line-height: 20px; letter-spacing: 0.14px; color: var(--color-ink); white-space: pre-wrap; overflow-wrap: anywhere; }
 .draft-card__actions { display: flex; gap: 8px; padding: 10px 16px 16px; }
+
+/* email card: a Gmail draft, or a send waiting for approval */
+.email-card { width: 480px; }
+.email-card__edit { display: inline-flex; align-items: center; gap: 4px; padding: 4px 8px; border-radius: 6px; font-size: 13px; line-height: 18px; color: var(--color-text-secondary); }
+.email-card__edit:hover { background: var(--color-bg-hover); color: var(--color-ink); }
+.email-card__content { display: flex; flex-direction: column; padding: 10px 16px 0; min-width: 0; }
+.email-card__content.is-editing { gap: 8px; }
+.email-card__row { display: flex; gap: 8px; padding: 6px 0; border-bottom: 1px solid var(--color-border-tertiary); font-size: 14px; line-height: 20px; min-width: 0; }
+.email-card__row:first-child { border-top: 1px solid var(--color-border-tertiary); }
+.email-card__label { flex: 0 0 52px; color: var(--color-text-secondary); font-size: 13px; line-height: 20px; }
+.email-card__value { min-width: 0; overflow-wrap: anywhere; color: var(--color-ink); }
+.email-card__subject { padding-top: 12px; font-size: 14px; font-weight: 600; line-height: 20px; overflow-wrap: anywhere; }
+.email-card__text { padding-top: 8px; font-size: 14px; line-height: 20px; letter-spacing: 0.14px; color: var(--color-ink); white-space: pre-wrap; overflow-wrap: anywhere; max-height: 360px; overflow-y: auto; }
+.email-card__field { display: flex; align-items: center; gap: 8px; min-width: 0; }
+.email-card__input { flex: 1 1 auto; min-width: 0; }
+.email-card__field--body { align-items: stretch; }
+.email-card__textarea { width: 100%; min-height: 160px; resize: vertical; font: inherit; line-height: 20px; }
+.email-card__hint { font-size: 12px; color: var(--color-text-tertiary); }
+.email-card.is-resolved .email-card__text { color: var(--color-text-secondary); }

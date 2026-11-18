@@ -75,7 +75,12 @@ export const api = {
   interrupt: (id: string) => req<{ ok: true }>('POST', `/bots/${id}/interrupt`),
   fresh: (id: string) => req<{ ok: true }>('POST', `/bots/${id}/fresh`),
 
-  approve: (approvalId: string, decision: 'allow' | 'always' | 'deny') => req<{ ok: true }>('POST', `/approvals/${approvalId}`, { decision }),
+  approve: (approvalId: string, decision: 'allow' | 'always' | 'deny', edits?: unknown) => req<{ ok: true }>('POST', `/approvals/${approvalId}`, edits ? { decision, edits } : { decision }),
+  /** Keep an approval card's call waiting while the person edits it. */
+  approvalEditing: (approvalId: string) => req<{ ok: boolean }>('POST', `/approvals/${approvalId}/editing`),
+  /** Save, send or discard a Gmail draft from its email card. */
+  draftAction: (botId: string, seq: number, action: 'save' | 'send' | 'discard', edits?: unknown) =>
+    req<{ card: unknown }>('POST', `/bots/${botId}/cards/${seq}/draft`, edits ? { action, edits } : { action }),
   answer: (id: string, seq: number, answer: string) => req<{ ok: true }>('POST', `/bots/${id}/cards/${seq}/answer`, { answer }),
   dismiss: (id: string, seq: number) => req<{ ok: true }>('POST', `/bots/${id}/cards/${seq}/dismiss`),
 

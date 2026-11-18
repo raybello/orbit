@@ -43,6 +43,8 @@ export interface ToolCtx {
 export interface ToolResult {
   /** Text handed back to the agent. */
   output: string;
+  /** The app's raw answer, for a Composio call (the server reads drafts out of it). */
+  data?: unknown;
   summary?: string;
   /** End the turn after this tool (e.g. a question was asked). */
   endTurn?: boolean;
@@ -525,7 +527,7 @@ export async function runComposioTool(ctx: ToolCtx, name: string, args: ToolArgs
   let out = JSON.stringify(payload ?? null);
   if (out.length > 60000) out = out.slice(0, 60000) + '…(truncated)';
   const summary = !ok || (inner.total > 0 && inner.failed === inner.total) ? 'failed' : inner.failed > 0 ? 'partial' : 'done';
-  return { output: out, summary };
+  return { output: out, summary, data: ok ? r.data : undefined };
 }
 
 /** A Hermes tool name as the app knows it: tools served by this app's MCP server lose their `mcp_hq_` prefix. */

@@ -99,6 +99,12 @@ export const SendMessageSchema = z
   .loose();
 
 /** POST /api/approvals/:id — the three decisions the approval UI offers. */
+/** POST /api/bots/:id/cards/:seq/draft — what to do with a Gmail draft card, with the person's edits. */
+export const DraftActionSchema = z.object({
+  action: z.enum(['save', 'send', 'discard']),
+  edits: z.record(z.string(), z.unknown()).optional(),
+}).loose();
+
 export const ApprovalDecisionSchema = z.object({
   decision: z.enum(['allow', 'always', 'deny']),
   /** The person's changes to the action (an approval card with a `review`), checked by its review adapter. */

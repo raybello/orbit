@@ -4,6 +4,7 @@ import { api, openPopup } from '../../lib/api';
 import { useStore } from '../../store';
 import { Icon } from '../Icon';
 import { ToolkitLogo } from '../ToolkitLogo';
+import { ApprovalEmailCard, DraftEmailCard } from './EmailCard';
 
 type Card<K extends CardBody['card']> = Extract<CardBody, { card: K }>;
 
@@ -198,10 +199,10 @@ export function CardRow({ row }: { row: Row }) {
   const b = row.body;
   if (b.type !== 'card') return null;
   switch (b.card) {
-    case 'approval': return <ApprovalCard body={b} />;
+    case 'approval': return b.review?.kind === 'email' ? <ApprovalEmailCard body={b} /> : <ApprovalCard body={b} />;
     case 'question': return <QuestionCard row={row} body={b} />;
     case 'connect': return <ConnectCard row={row} body={b} />;
-    case 'draft': return <DraftCard body={b} />;
+    case 'draft': return b.email ? <DraftEmailCard row={row} body={b} /> : <DraftCard body={b} />;
     default: return null;
   }
 }

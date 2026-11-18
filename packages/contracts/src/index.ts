@@ -170,6 +170,8 @@ export type CardBody =
       subject?: string;
       text: string;
       approvalId: string;
+      /** A real Gmail draft the bot made: shown in full, editable, and sent or deleted from the card. */
+      email?: import('./review.js').EmailReview;
       status: 'pending' | 'sent' | 'discarded';
     }
   | SecureFormCardBody;
