@@ -436,7 +436,7 @@ The voice screenshot is a real local call: a 16 kHz WAV prompt was fed through t
 
 - Experimental, no security audit. Bots share a Docker host and can reach each other's files through their containers.
 - Approval cards cover Composio write actions. What a bot does through its browser or shell is not gated, and Hermes' own "risky command" prompts are not shown in the app yet.
-- The default ceiling is four bots (`MAX_BOTS=4`) because each Docker desktop takes a screen, a browser and roughly 1 to 2 GB of RAM. Raise it only on a host with the memory to match.
+- The default ceiling is ten bots (`MAX_BOTS=10`), sized for a 16 GB machine giving Docker 10 GB: a working bot's desktop and browser take about 0.3 to 0.75 GB, and idle bots are frozen, then stopped. See [docs/per-bot-computers.md](docs/per-bot-computers.md#sizing-ten-bots-on-a-16-gb-machine). With `COMPUTER_KIND=orgo` the ceiling stays at four (one Orgo computer has four screens).
 - A bot cannot use a Claude or ChatGPT subscription that the primary agent signed in to unless the provider allows token inheritance; Codex subscriptions always need their own sign-in.
 - GPU voice needs an NVIDIA GPU on Windows or Linux. There is no Apple-silicon build of the sidecar yet, so Macs use on-device voice. The sidecar image is amd64 only.
 - The desktop installers are not code-signed or notarized yet.

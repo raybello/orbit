@@ -42,20 +42,37 @@ export function containerNameFor(botId: string): string {
 }
 
 /** Docker-style size ("2g", "1536m", "1073741824") to bytes. */
-export function memoryBytes(raw: string): number {
+export function memoryBytes(raw: string, name = 'COMPUTER_MEMORY_LIMIT'): number {
   const m = /^(\d+(?:\.\d+)?)\s*([bkmg])?b?$/i.exec(raw.trim());
-  if (!m) throw new Error(`COMPUTER_MEMORY_LIMIT must be a size like "2g" or "1536m", got "${raw}"`);
+  if (!m) throw new Error(`${name} must be a size like "2g" or "1536m", got "${raw}"`);
   const scale = { b: 1, k: 1024, m: 1024 ** 2, g: 1024 ** 3 }[(m[2] ?? 'b').toLowerCase() as 'b' | 'k' | 'm' | 'g'];
   const bytes = Math.floor(Number(m[1]) * scale);
   if (!Number.isSafeInteger(bytes) || bytes < 6 * 1024 ** 2) {
-    throw new Error(`COMPUTER_MEMORY_LIMIT must be at least 6m (Docker's minimum), got "${raw}"`);
+    throw new Error(`${name} must be at least 6m (Docker's minimum), got "${raw}"`);
   }
   return bytes;
 }
 
+/**
+ * The soft limit one running bot is counted at, in bytes; 0 when the check is off ("0" or empty).
+ * Never above the hard limit: Docker refuses a reservation larger than the limit.
+ */
+export function reservationBytes(raw = env.computerMemoryReservation, limit = memoryBytes(env.computerMemoryLimit)): number {
+  const v = (raw ?? '').trim();
+  if (!v || v === '0') return 0;
+  return Math.min(memoryBytes(v, 'COMPUTER_MEMORY_RESERVATION'), limit);
+}
+
+/**
+ * Chromium's switches for a bot's browser live in box/hqlib.py; this tells it to use the lean set
+ * (fewer renderer processes, no background services). Containers set it, the shared computer does not.
+ */
+export const LEAN_BROWSER_ENV = 'HQ_LEAN_BROWSER=1';
+
 export function containerCreateOptions(spec: ContainerSpec): Docker.ContainerCreateOptions {
   const ports = screenPorts(spec.displayIndex);
   const memory = memoryBytes(env.computerMemoryLimit);
+  const reservation = reservationBytes(env.computerMemoryReservation, memory);
   // VNC is one host port to the same container port; DevTools goes through the container's socat
   // bridge (see screen.ts), so its container port differs from the host port.
   const exposed: Record<string, object> = {
@@ -96,6 +113,7 @@ export function containerCreateOptions(spec: ContainerSpec): Docker.ContainerCre
       'HQ_PROFILES=/home/bot/.local/share/grokbot/profiles',
       'HQ_LOGS=/home/bot/.local/share/hq/logs',
       'NO_AT_BRIDGE=1',
+      LEAN_BROWSER_ENV,
     ],
     ExposedPorts: exposed,
     // Joining more than one network has to go through EndpointsConfig; NetworkMode alone only
@@ -104,11 +122,14 @@ export function containerCreateOptions(spec: ContainerSpec): Docker.ContainerCre
     HostConfig: {
       Binds: [`${spec.homePath}:/home/bot`],
       ...(bindings ? { PortBindings: bindings } : {}),
-      ShmSize: 512 * 1024 * 1024,
+      // Chrome runs with --disable-dev-shm-usage, so /dev/shm only holds X and font scratch.
+      ShmSize: 256 * 1024 * 1024,
       CapDrop: ['ALL'],
       SecurityOpt: ['no-new-privileges:true'],
       Memory: memory,
       MemorySwap: memory,
+      // The soft limit: under pressure the kernel reclaims a bot down to this before anything else.
+      ...(reservation ? { MemoryReservation: reservation } : {}),
       NanoCpus: Math.floor(env.computerCpuLimit * 1e9),
       PidsLimit: 2048,
       AutoRemove: false,
@@ -141,6 +162,8 @@ export async function startContainer(containerId: string): Promise<void> {
 
 export async function stopContainer(containerId: string): Promise<void> {
   try {
+    // A frozen container cannot run its own shutdown; thaw it first so the stop is a clean one.
+    await unpauseContainer(containerId);
     await docker().getContainer(containerId).stop({ t: 10 });
   } catch (e) {
     if ((e as DockerError)?.statusCode === 404) return; // already gone
@@ -169,14 +192,57 @@ export async function findBotContainer(botId: string): Promise<Docker.Container 
 
 export interface ContainerStatus {
   exists: boolean;
+  /** True for a paused container too: its processes exist, they are only frozen. */
   running: boolean;
+  paused?: boolean;
   status?: string;
+}
+
+/** Freeze every process in the container (cgroup freezer): no CPU, memory kept, instant resume. */
+export async function pauseContainer(containerId: string): Promise<void> {
+  const c = docker().getContainer(containerId);
+  const info = await c.inspect();
+  if (info.State?.Running && !info.State?.Paused) await c.pause();
+}
+
+/** Thaw a paused container; a no-op for one that is not paused or not there. */
+export async function unpauseContainer(containerId: string): Promise<void> {
+  try {
+    const c = docker().getContainer(containerId);
+    const info = await c.inspect();
+    if (info.State?.Paused) await c.unpause();
+  } catch (e) {
+    if ((e as DockerError)?.statusCode === 404) return;
+    throw e;
+  }
+}
+
+/** Memory Docker's Linux host (the colima/Docker Desktop VM on a Mac) has in all, in bytes. */
+export async function dockerHostMemory(): Promise<number> {
+  const info = (await docker().info()) as { MemTotal?: number };
+  return Number(info.MemTotal ?? 0);
+}
+
+/** Bot containers that hold memory right now (running or paused), with their bot ids. */
+export async function liveBotContainers(): Promise<{ id: string; botId: string }[]> {
+  const list = await docker().listContainers({ all: false, filters: { label: ['orbit.managed=true'] } });
+  return list.map((c) => ({ id: c.Id, botId: (c.Labels ?? {})['orbit.botId'] ?? '' })).filter((c) => c.botId);
+}
+
+/**
+ * Whether one more bot fits: every live bot is counted at its reservation, and a share of the
+ * machine is kept for Docker itself and anything else running there.
+ */
+export function fitsAnother(input: { hostMemory: number; liveBots: number; reservation: number; headroom?: number }): boolean {
+  if (!input.reservation || !input.hostMemory) return true;
+  const headroom = input.headroom ?? Math.max(512 * 1024 ** 2, Math.floor(input.hostMemory * 0.1));
+  return (input.liveBots + 1) * input.reservation <= input.hostMemory - headroom;
 }
 
 export async function containerStatus(containerId: string): Promise<ContainerStatus> {
   try {
     const info = await docker().getContainer(containerId).inspect();
-    return { exists: true, running: Boolean(info.State?.Running), status: info.State?.Status };
+    return { exists: true, running: Boolean(info.State?.Running), paused: Boolean(info.State?.Paused), status: info.State?.Status };
   } catch (e) {
     if ((e as DockerError)?.statusCode === 404) return { exists: false, running: false };
     throw e;

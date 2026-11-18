@@ -58,7 +58,7 @@
   <li>Give it a name, pick an avatar shape and colour, and choose <strong>personal</strong> or <strong>teammate</strong> mode.</li>
   <li>Orbit creates a Hermes home and engine for it, registers a computer, and gives it its own memory. The bot is ready once both its engine and its screen are up.</li>
 </ol>
-<p>The default ceiling is four bots (<code>MAX_BOTS=4</code>), because each desktop takes a screen, a browser and roughly 1–2 GB of RAM. A new managed bot inherits the primary agent's provider and API keys.</p>
+<p>The default ceiling is ten bots (<code>MAX_BOTS=10</code>), sized for a 16 GB machine giving Docker 10 GB: a working bot's desktop and browser take about 0.3–0.75 GB, and idle bots are frozen, then stopped. A new managed bot inherits the primary agent's provider and API keys.</p>
 <p>Open a bot's settings to change its name, label, description and instructions, its reasoning effort (<code>low</code> to <code>xhigh</code>), its voice, and to pin it. <strong>Make primary</strong> promotes a bot to team coordinator.</p>
 
 <h2 id="chat">Chatting</h2>

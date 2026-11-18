@@ -45,7 +45,7 @@ mkdir -p ${LOGS} /tmp/.X11-unix /home/bot/.fluxbox /home/bot/.local/share/hq
 log=${LOGS}/screen-${s.displayNumber}
 if ! xdpyinfo -display ${s.display} >/dev/null 2>&1; then
   rm -f /tmp/.X${s.displayNumber}-lock /tmp/.X11-unix/X${s.displayNumber}
-  nohup Xvfb ${s.display} -screen 0 1440x900x24 -ac +extension RANDR +render -noreset -nolisten tcp </dev/null >"$log-xvfb.log" 2>&1 &
+  nohup Xvfb ${s.display} -screen 0 1280x800x24 -ac +extension RANDR +render -noreset -nolisten tcp </dev/null >"$log-xvfb.log" 2>&1 &
   for i in $(seq 1 100); do xdpyinfo -display ${s.display} >/dev/null 2>&1 && break; sleep 0.1; done
 fi
 xdpyinfo -display ${s.display} >/dev/null 2>&1 || { echo 'the display did not start' >&2; tail -c 2000 "$log-xvfb.log" >&2 || true; exit 1; }
