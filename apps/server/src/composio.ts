@@ -183,24 +183,35 @@ export async function executeComposio(userId: string, name: string, args: Record
   return r as { data?: unknown; error?: unknown; resultType?: string; logId?: string };
 }
 
-/** Which inner tool slugs a Composio meta-tool call would run (for approval checks). */
-export function innerToolSlugs(name: string, args: unknown): string[] {
+/** One app action inside a Composio call: its slug and the arguments it will run with. */
+export interface InnerCall { slug: string; args: Record<string, unknown> }
+
+const asObject = (v: unknown): Record<string, unknown> =>
+  v && typeof v === 'object' && !Array.isArray(v) ? (v as Record<string, unknown>) : {};
+
+/**
+ * Which app actions a Composio call would run, with their arguments (for approval checks).
+ * COMPOSIO_MULTI_EXECUTE_TOOL documents `tools: [{ tool_slug, arguments }]`; the router also accepts
+ * `tool_params`, and older callers used `tool_calls` / `actions` / `slug`, so all of them are read.
+ */
+export function innerToolCalls(name: string, args: unknown): InnerCall[] {
   if (name === 'COMPOSIO_MULTI_EXECUTE_TOOL') {
-    const a = (args ?? {}) as { tools?: unknown; tool_calls?: unknown; actions?: unknown };
+    const a = asObject(args);
     const list = a.tools ?? a.tool_calls ?? a.actions ?? [];
-    return (Array.isArray(list) ? list : [])
-      .map((t) => {
-        const o = t as { tool_slug?: unknown; slug?: unknown; name?: unknown; tool?: unknown };
-        return String(o.tool_slug ?? o.slug ?? o.name ?? o.tool ?? '');
-      })
-      .filter(Boolean);
+    return (Array.isArray(list) ? list : []).flatMap((t) => {
+      const o = asObject(t);
+      const slug = String(o.tool_slug ?? o.slug ?? o.name ?? o.tool ?? '');
+      return slug ? [{ slug, args: asObject(o.arguments ?? o.tool_params ?? o.args) }] : [];
+    });
   }
   if (name.startsWith('COMPOSIO_')) return [];
-  return [name];
+  return [{ slug: name, args: asObject(args) }];
 }
 
-const READ_RE = /_(GET|LIST|SEARCH|FETCH|FIND|READ|RETRIEVE|QUERY|LOOKUP|CHECK|DESCRIBE|VIEW|COUNT)(_|$)/;
-export const isReadOnlySlug = (slug: string) => READ_RE.test(slug.toUpperCase());
+/** Which inner tool slugs a Composio meta-tool call would run (for approval checks). */
+export const innerToolSlugs = (name: string, args: unknown): string[] => innerToolCalls(name, args).map((c) => c.slug);
+
+export { isReadOnlySlug } from './domain/google-actions.js';
 
 // ---------- sign-in via Composio-managed Google (Gmail) connection ----------
 

@@ -117,6 +117,10 @@ async function schemas() {
   const meta = await session.tools();
   write('schemas/_meta-tools.json', meta);
   write('schemas/_summary.json', summary);
+  // Every slug each toolkit has, so the app's action catalogue can be checked for typos and removals.
+  const slugs = {};
+  for (const tk of TOOLKITS) slugs[tk] = ((await rest(`/tools?toolkit_slug=${tk}&limit=500`)).items ?? []).map((t) => t.slug).sort();
+  write('schemas/_toolkit-slugs.json', slugs);
   const versions = Object.fromEntries(Object.entries(summary).map(([, s]) => [s.toolkit, s.version]));
   console.log(`Saved ${Object.keys(summary).length} input schemas and ${Array.isArray(meta) ? meta.length : '?'} meta-tool schemas. Toolkit versions:`, versions);
 }

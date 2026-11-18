@@ -282,11 +282,12 @@ test('rules at the gate every tool call passes', async (t) => {
 
   await t.test('"Always allow" does not outrank a rule: ask and block still win', async (t2) => {
     const userId = (db.prepare('SELECT user_id FROM bots WHERE id=?').get(botId) as { user_id: string }).user_id;
-    db.prepare("INSERT OR REPLACE INTO policies(user_id,tool,mode) VALUES (?,?,'always_allow')").run(userId, 'GMAIL_SEND_EMAIL');
-    const sendEmail = () => callTool(botId, 'GMAIL_SEND_EMAIL', { to: 'sam@example.test' });
+    // Slack, not Gmail: sending email may never be always-allowed (domain/google-actions.ts).
+    db.prepare("INSERT OR REPLACE INTO policies(user_id,tool,mode) VALUES (?,?,'always_allow')").run(userId, 'SLACK_SEND_MESSAGE');
+    const sendMessage = () => callTool(botId, 'SLACK_SEND_MESSAGE', { channel: '#general', text: 'hi' });
 
     await t2.test('alone, the always-allowed tool goes straight to the app', async () => {
-      const result = await sendEmail();
+      const result = await sendMessage();
       // No Composio key in this suite: reaching the app at all is what shows nothing held the call.
       assert.equal(result.isError, true);
       assert.match(result.text, /^Tool error/);
@@ -295,20 +296,20 @@ test('rules at the gate every tool call passes', async (t) => {
 
     await t2.test('with an ask rule it waits for the person, and the card does not come from the policy', async () => {
       const rule = await addRule(botId, cookie, { preset: 'ask-before-sending' });
-      const call = sendEmail();
+      const call = sendMessage();
       const card = await waitForApproval(botId);
       assert.equal(card.rule?.id, rule.id);
-      assert.equal(card.tool, 'GMAIL_SEND_EMAIL');
+      assert.equal(card.tool, 'SLACK_SEND_MESSAGE');
       await send('POST', `/api/approvals/${card.approvalId}`, { decision: 'deny' }, cookie);
       assert.match((await call).text, /declined/i);
       await clearRules(botId, cookie);
     });
 
     await t2.test('with a block rule it never runs', async () => {
-      await addRule(botId, cookie, { description: 'No email at all', pattern: { kind: 'composio-tool', tools: ['GMAIL_*'] }, action: 'block' });
-      const result = await sendEmail();
+      await addRule(botId, cookie, { description: 'No Slack at all', pattern: { kind: 'composio-tool', tools: ['SLACK_*'] }, action: 'block' });
+      const result = await sendMessage();
       assert.equal(result.isError, false);
-      assert.match(result.text, /No email at all/);
+      assert.match(result.text, /No Slack at all/);
       await clearRules(botId, cookie);
     });
   });

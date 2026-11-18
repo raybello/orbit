@@ -130,6 +130,8 @@ export type CardBody =
       args: unknown;
       /** The auto-review rule that raised this card. "Always allow" cannot override a rule, so the card does not offer it. */
       rule?: { id: string; description: string };
+      /** False for an action that must ask every time (sending email): the card does not offer "Always allow". */
+      offerAlways?: boolean;
       status: 'pending' | 'allowed' | 'always' | 'denied' | 'expired';
     }
   | {

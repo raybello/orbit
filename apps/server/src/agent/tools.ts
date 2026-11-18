@@ -6,7 +6,8 @@ import { env } from '../env.js';
 import { safetyIdentifier } from '../lib/xai.js';
 import { appendRow, getBotRow, listRoutines, toRoutine, describeCron, type RoutineRow } from '../store.js';
 import type { Trigger } from './loop.js';
-import { executeComposio, innerToolSlugs, isReadOnlySlug, toolkitInfo } from '../composio.js';
+import { executeComposio, innerToolCalls, toolkitInfo } from '../composio.js';
+import { classifyGoogleCall, isReadOnlySlug, type ReviewCard } from '../domain/google-actions.js';
 import { scheduleRoutine, unscheduleRoutine } from '../routines.js';
 import { createEventRoutine, deleteEventTrigger, describeEvent, listTriggerTypes } from '../triggers.js';
 import { setCheckins } from '../proactive.js';
@@ -398,36 +399,63 @@ export const toolMap = new Map(TOOLS.map((t) => [t.name, t]));
 
 export type Decision = 'allow' | 'ask' | 'block';
 
-export function policyFor(userId: string, toolName: string, args: ToolArgs): { decision: Decision; key: string; toolkit?: string; title: string } {
+/** What the approval gate decides for one tool call. */
+export interface PolicyVerdict {
+  decision: Decision;
+  key: string;
+  toolkit?: string;
+  title: string;
+  /** False when the call holds an action that must ask every time (sending email): the card hides "Always allow". */
+  offerAlways?: boolean;
+  /** The custom card for the action that asks, when it has one (phase 3 renders these). */
+  card?: ReviewCard;
+}
+
+const storedMode = (userId: string, tool: string) =>
+  (db.prepare('SELECT mode FROM policies WHERE user_id=? AND tool=?').get(userId, tool) as { mode: string } | undefined)?.mode;
+
+export function policyFor(userId: string, toolName: string, args: ToolArgs): PolicyVerdict {
   const ownTool = toolMap.get(toolName);
   if (ownTool) {
     if (ownTool.policy !== 'needs_approval') return { decision: 'allow', key: toolName, title: toolName };
     // Owned tool that requires approval — check the policy table (supports always_allow / blocked overrides).
-    const p = db.prepare('SELECT mode FROM policies WHERE user_id=? AND tool=?').get(userId, toolName) as { mode: string } | undefined;
-    const mode = p?.mode ?? 'needs_approval';
+    const mode = storedMode(userId, toolName) ?? 'needs_approval';
     return { decision: mode === 'blocked' ? 'block' : mode === 'always_allow' ? 'allow' : 'ask', key: toolName, title: ownTool.label };
   }
-  const slugs = innerToolSlugs(toolName, args);
-  if (!slugs.length) {
+  const calls = innerToolCalls(toolName, args);
+  if (!calls.length) {
     // Composio's sandbox can run app actions from code, which would slip past the per-action
     // approvals below. Code that reaches for them is treated like a write to an app.
     if (/^COMPOSIO_REMOTE_(WORKBENCH|BASH_TOOL)$/.test(toolName) && /run_composio_tool|proxy_execute|execute_tool|composio/i.test(JSON.stringify(args ?? {}))) {
-      const p = db.prepare('SELECT mode FROM policies WHERE user_id=? AND tool=?').get(userId, toolName) as { mode: string } | undefined;
-      const mode = p?.mode ?? 'needs_approval';
+      const mode = storedMode(userId, toolName) ?? 'needs_approval';
       return { decision: mode === 'blocked' ? 'block' : mode === 'always_allow' ? 'allow' : 'ask', key: toolName, title: 'Run code that uses your connected apps' };
     }
     return { decision: 'allow', key: toolName, title: toolName };
   }
   let decision: Decision = 'allow';
-  let key = slugs[0];
-  for (const slug of slugs) {
-    const p = db.prepare('SELECT mode FROM policies WHERE user_id=? AND tool=?').get(userId, slug) as { mode: string } | undefined;
-    const mode = p?.mode ?? (isReadOnlySlug(slug) ? 'always_allow' : 'needs_approval');
+  let key = calls[0].slug;
+  let offerAlways = true;
+  let card: ReviewCard | undefined;
+  for (const { slug, args: inner } of calls) {
+    // Gmail, Calendar, Sheets and Docs follow the catalogue; every other app is read by name.
+    const action = classifyGoogleCall(slug, inner);
+    const fallback = action ? (action.kind === 'review' ? 'needs_approval' : 'always_allow') : isReadOnlySlug(slug) ? 'always_allow' : 'needs_approval';
+    let mode = storedMode(userId, slug) ?? fallback;
     if (mode === 'blocked') return { decision: 'block', key: slug, title: humanizeSlug(slug) };
-    if (mode === 'needs_approval') { decision = 'ask'; key = slug; }
+    // A stored "Always allow" does not cover an action that must ask every time.
+    if (mode === 'always_allow' && action?.kind === 'review' && !action.allowAlways) mode = 'needs_approval';
+    if (mode === 'needs_approval') {
+      decision = 'ask';
+      key = slug;
+      card = action?.card;
+      if (action && !action.allowAlways) offerAlways = false;
+    }
   }
-  return { decision, key, toolkit: key.split('_')[0].toLowerCase(), title: humanizeSlug(key) };
+  return { decision, key, toolkit: key.split('_')[0].toLowerCase(), title: humanizeSlug(key), ...(decision === 'ask' ? { offerAlways, ...(card ? { card } : {}) } : {}) };
 }
+
+/** Whether "Always allow" may be stored for this tool or action. */
+export const mayAlwaysAllow = (tool: string): boolean => classifyGoogleCall(tool, {})?.allowAlways ?? true;
 
 export function humanizeSlug(slug: string) {
   const parts = slug.split('_');
