@@ -385,6 +385,8 @@ export interface CalendarEvent {
   completedAt: string | null;
   /** Made from a Google event: its title, shown as a chip. The Orbit event follows it when it moves. */
   parentTitle?: string;
+  /** Switched off: it will not run. A linked event pauses when its Google event is cancelled. */
+  paused?: boolean;
 }
 
 /** GET /api/calendar/google/events/:key/duplicate → what an Orbit event made from this Google event starts with. */

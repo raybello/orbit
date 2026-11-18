@@ -132,6 +132,8 @@
   opacity: 0.7;
 }
 .cal-pill.is-completed .cal-pill__dot { background: var(--color-fg-muted); }
+.cal-pill.is-paused { opacity: 0.6; }
+.cal-pill__paused { flex: none; font-size: 10px; color: var(--color-fg-muted); text-transform: uppercase; letter-spacing: 0.04em; }
 .cal-pill.is-completed .cal-pill__title { color: var(--color-fg-subtle); text-decoration: line-through; }
 
 /* ---------- week ---------- */

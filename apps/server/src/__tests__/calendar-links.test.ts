@@ -138,4 +138,10 @@ test('duplicating a Google event as an Orbit event', async (t) => {
     assert.equal(routine(rid).enabled, 0);
     assert.ok(botEvents(botId).some((t) => t === 'Paused “Prep: Board meeting”: the Google event “Board meeting” it was made from was cancelled.'));
   });
+
+  await t.test('the calendar marks the paused Orbit event, so the person sees it will not run', async () => {
+    const ev = (await calendar(cookie)).events.find((e) => e.routineId === rid)!;
+    assert.equal(ev.paused, true);
+    assert.equal(ev.parentTitle, 'Board meeting');
+  });
 });

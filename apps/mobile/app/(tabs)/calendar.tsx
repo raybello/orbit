@@ -129,7 +129,16 @@ export default function CalendarScreen() {
   };
 
   const deleteGoogle = (ev: GoogleCalendarEvent) => {
-    const go = (scope?: 'this' | 'following' | 'all') => actions.remove.mutate({ key: ev.key, ...(scope ? { scope } : {}), ...(ev.attendees.length ? { notify: true } : {}) }, { onError: (e) => Alert.alert('Not deleted', (e as Error).message) });
+    const remove = (scope: 'this' | 'following' | 'all' | undefined, notify: boolean) => actions.remove.mutate({ key: ev.key, ...(scope ? { scope } : {}), ...(ev.attendees.length ? { notify } : {}) }, { onError: (e) => Alert.alert('Not deleted', (e as Error).message) });
+    // With guests, ask whether Google emails them the cancellation (the default, as on the web).
+    const go = (scope?: 'this' | 'following' | 'all') => {
+      if (!ev.attendees.length) return remove(scope, false);
+      Alert.alert('Email the guests?', 'Google can tell the guests that it is cancelled.', [
+        { text: 'Delete and email guests', style: 'destructive', onPress: () => remove(scope, true) },
+        { text: 'Delete without emailing', style: 'destructive', onPress: () => remove(scope, false) },
+        { text: 'Cancel', style: 'cancel' },
+      ]);
+    };
     Alert.alert(`Delete “${ev.title || 'Untitled'}”?`, ev.recurring ? 'This event repeats.' : 'It is removed from your Google Calendar.', ev.recurring ? [
       { text: 'This event', style: 'destructive', onPress: () => go('this') },
       { text: 'This and following', style: 'destructive', onPress: () => go('following') },
@@ -352,10 +361,10 @@ export default function CalendarScreen() {
                 {it.ev.title}
               </Text>
               <Text numberOfLines={1} style={{ color: tokens.colors.fgSecondary, fontSize: tokens.fontSizes.caption }}>
-                {it.ev.eventType === 'one_time' ? timeLabel(it.ev.start) : `${timeLabel(it.ev.start)} · repeats`} · {it.ev.botName}
+                {it.ev.eventType === 'one_time' ? timeLabel(it.ev.start) : `${timeLabel(it.ev.start)} · repeats`} · {it.ev.botName}{it.ev.paused ? (it.ev.parentTitle ? ' · paused, its Google event was cancelled' : ' · paused') : ''}
               </Text>
             </View>
-            <Tag label={it.ev.parentTitle ? '↗ Linked' : it.ev.eventType === 'one_time' ? 'Once' : 'Repeats'} tone={it.ev.completedAt ? 'success' : 'muted'} />
+            <Tag label={it.ev.paused ? 'Paused' : it.ev.parentTitle ? '↗ Linked' : it.ev.eventType === 'one_time' ? 'Once' : 'Repeats'} tone={it.ev.paused ? 'warn' : it.ev.completedAt ? 'success' : 'muted'} />
           </Pressable>
         )}
       />

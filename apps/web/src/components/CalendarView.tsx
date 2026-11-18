@@ -181,14 +181,15 @@ export function CalendarView() {
       <button
         key={`${ev.routineId}-${ev.start}`}
         type="button"
-        className={`cal-pill${done ? ' is-completed' : ''}${compact ? ' cal-pill--compact' : ''}`}
+        className={`cal-pill${done ? ' is-completed' : ''}${ev.paused ? ' is-paused' : ''}${compact ? ' cal-pill--compact' : ''}`}
         style={botVars(colorFor(ev.botId))}
         onClick={(e) => { e.stopPropagation(); openEvent(ev, e); }}
-        title={`${ev.title} · ${ev.botName} · ${fmtTime(ev.start)}`}
+        title={`${ev.title} · ${ev.botName} · ${fmtTime(ev.start)}${ev.paused ? ' · paused' : ''}`}
       >
         <span className="cal-pill__dot" aria-hidden />
         {!compact && <span className="cal-pill__time">{fmtTime(ev.start)}</span>}
         <span className="cal-pill__title">{ev.title}</span>
+        {ev.paused && <span className="cal-pill__paused">Paused</span>}
         {ev.parentTitle && <span className="cal-pill__parent" aria-label={`Made from the Google event ${ev.parentTitle}`} title={`Follows “${ev.parentTitle}”`}>↗</span>}
         {ev.eventType === 'one_time'
           ? <span className="cal-pill__badge" aria-label="One-time event"><Icon name="clock" size={10} /></span>

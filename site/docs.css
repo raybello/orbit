@@ -65,3 +65,9 @@
   .docs-nav .toc-block { display: none; }
   .cards-grid { grid-template-columns: 1fr; }
 }
+
+.shots { display: grid; grid-template-columns: repeat(3, 1fr); gap: 16px; margin: 20px 0 28px; }
+.shots figure { margin: 0; }
+.shots img { width: 100%; border-radius: 18px; box-shadow: 0 0 0 1px var(--line, #8883); }
+.shots figcaption { font-size: 13px; opacity: .7; margin-top: 8px; }
+@media (max-width: 600px) { .shots { grid-template-columns: repeat(2, 1fr); } }

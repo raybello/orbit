@@ -35,6 +35,7 @@ export interface CalendarRoutineRow {
   event_type: string | null;
   event_date: string | null;
   completed_at: string | null;
+  enabled?: number;
 }
 
 /**
@@ -148,8 +149,13 @@ calendarApi.get('/calendar', (c) => {
   const sync = syncStatus(user.id);
   const orbit = buildCalendar(rows, from, to);
   const parents = parentTitles([...new Set(orbit.map((e) => e.routineId))]);
+  const paused = new Set(rows.filter((r) => r.enabled === 0).map((r) => r.id));
   return c.json({
-    events: orbit.map((e) => (parents.has(e.routineId) ? { ...e, parentTitle: parents.get(e.routineId) } : e)),
+    events: orbit.map((e) => ({
+      ...e,
+      ...(parents.has(e.routineId) ? { parentTitle: parents.get(e.routineId) } : {}),
+      ...(paused.has(e.routineId) ? { paused: true } : {}),
+    })),
     google,
     googleState: { available: state.available, ...(state.available ? {} : { reason: state.reason }), connected: cals.size > 0, lastSyncAt: sync.lastSyncAt, lastError: sync.lastError },
   });
