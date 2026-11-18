@@ -39,10 +39,17 @@ const reached: { kind: 'meta' | 'action'; name: string; args: Record<string, unk
 let actionAnswer: (slug: string) => { successful: boolean; data: unknown; error: unknown } = () => ({ successful: true, data: {}, error: null });
 composioIO.executeMeta = async (_u, name, args) => {
   reached.push({ kind: 'meta', name, args });
-  return { resultType: 'completed', data: { results: [{ response: { successful: true, data: { ok: true } } }] } };
+  return { resultType: 'completed', data: { results: [{ response: { successful: !metaFails, data: { ok: !metaFails } } }] } };
 };
+const calendar: Record<string, Json> = {
+  ser1: { id: 'ser1', summary: 'Standup', start: { dateTime: '2026-11-19T14:00:00Z', timeZone: 'America/Toronto' }, end: { dateTime: '2026-11-19T14:15:00Z', timeZone: 'America/Toronto' }, recurrence: ['RRULE:FREQ=WEEKLY;COUNT=10'] },
+  inst1: { id: 'inst1', recurringEventId: 'ser1', summary: 'Standup', start: { dateTime: '2026-11-26T14:00:00Z', timeZone: 'America/Toronto' }, end: { dateTime: '2026-11-26T14:15:00Z', timeZone: 'America/Toronto' } },
+};
+let metaFails = false;
 composioIO.runAction = async (_u, slug, args) => {
   reached.push({ kind: 'action', name: slug, args });
+  if (slug === 'GOOGLECALENDAR_EVENTS_INSTANCES') return { successful: true, data: { items: Array.from({ length: Number(args.maxResults) }, (_, i) => ({ start: { dateTime: new Date(Date.UTC(2026, 10, 19 + 7 * i, 14)).toISOString() } })) }, error: null };
+  if (slug === 'GOOGLECALENDAR_EVENTS_GET') return calendar[String(args.event_id)] ? { successful: true, data: calendar[String(args.event_id)], error: null } : { successful: false, data: null, error: 'nf' };
   return slug === 'GMAIL_GET_DRAFT' ? { successful: true, data: draftFixture, error: null } : actionAnswer(slug);
 };
 
@@ -188,5 +195,38 @@ test('review cards over MCP and the approvals API', async (t) => {
     await answer(cookie, card.approvalId, { decision: 'allow', edits: { body: 'B2' } });
     await call;
     assert.deepEqual(metaCalls()[0], { kind: 'meta', name: 'GMAIL_SEND_EMAIL', args: { recipient_email: 'a@x.test', extra_recipients: [], cc: [], bcc: [], subject: 'S', body: 'B2' } });
+  });
+
+  await t.test('a bot\'s UPDATE_EVENT runs as a patch that keeps what it did not name', async () => {
+    reached.length = 0;
+    calendar.ev1 = { id: 'ev1', summary: 'Sync', location: 'Room 1', description: 'Agenda', attendees: [{ email: 'a@x.test' }], start: { dateTime: '2026-11-19T20:00:00Z', timeZone: 'UTC' }, end: { dateTime: '2026-11-19T20:30:00Z', timeZone: 'UTC' } };
+    const call = callTool(botId, 'COMPOSIO_MULTI_EXECUTE_TOOL', { tools: [{ tool_slug: 'GOOGLECALENDAR_UPDATE_EVENT', arguments: { calendar_id: 'primary', event_id: 'ev1', summary: 'Sync (moved)', start_datetime: '2026-11-19T21:00:00', timezone: 'UTC' } }] });
+    const [card] = await waitForPending(botId);
+    assert.equal(card.review?.kind, 'event');
+    await answer(cookie, card.approvalId, { decision: 'allow' });
+    const out = await call;
+    const item = (metaCalls()[0].args.tools as Json[])[0];
+    assert.equal(item.tool_slug, 'GOOGLECALENDAR_PATCH_EVENT');
+    assert.deepEqual(Object.keys(item.arguments).sort(), ['calendar_id', 'end_time', 'event_id', 'start_time', 'summary', 'timezone']);
+    assert.match(out, /ran as a patch/);
+  });
+
+  await t.test('a "this and following" change that fails half-way is undone', async () => {
+    reached.length = 0;
+    metaFails = true;
+    try {
+      const call = callTool(botId, 'COMPOSIO_MULTI_EXECUTE_TOOL', { tools: [{ tool_slug: 'GOOGLECALENDAR_PATCH_EVENT', arguments: { calendar_id: 'primary', event_id: 'inst1', summary: 'Standup v2' } }] });
+      const [card] = await waitForPending(botId);
+      await answer(cookie, card.approvalId, { decision: 'allow', edits: { scope: 'following' } });
+      const out = await call;
+      const patches = reached.filter((r) => r.name === 'GOOGLECALENDAR_PATCH_EVENT');
+      assert.equal(patches.length, 2, 'the series was ended, then restored');
+      assert.deepEqual(patches[0].args.recurrence, ['RRULE:FREQ=WEEKLY;UNTIL=20261126T135959Z']);
+      assert.deepEqual(patches[1].args.recurrence, ['RRULE:FREQ=WEEKLY;COUNT=10']);
+      assert.equal((metaCalls()[0].args.tools as Json[])[0].tool_slug, 'GOOGLECALENDAR_CREATE_EVENT');
+      assert.match(out, /first step was undone/);
+    } finally {
+      metaFails = false;
+    }
   });
 });

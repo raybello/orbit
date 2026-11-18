@@ -2,7 +2,7 @@ import type { CardBody, EmailReview } from '@orbit/contracts';
 import { db } from '../db.js';
 import { innerToolCalls, runAction } from '../composio.js';
 import { appendRow, getRow, updateRow } from '../store.js';
-import { emailReview, readDraft } from './email.js';
+import { applyEmail, readDraft } from './email.js';
 import { ReviewEditError } from './types.js';
 
 /**
@@ -136,7 +136,7 @@ export async function actOnDraft(userId: string, botId: string, seq: number, act
   if (edits !== undefined && edits !== null) {
     let applied;
     try {
-      applied = emailReview.apply('GMAIL_SEND_DRAFT', { draft_id: draftId }, email, edits);
+      applied = applyEmail('GMAIL_SEND_DRAFT', { draft_id: draftId }, email, edits);
     } catch (e) {
       if (e instanceof ReviewEditError) throw new DraftActionError(400, e.message);
       throw e;

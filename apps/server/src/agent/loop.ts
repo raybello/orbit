@@ -12,7 +12,7 @@ import { dockerProvider } from '../docker-provider.js';
 import { engineFor } from '../engine.js';
 import { instructionsFor } from './prompt.js';
 import { activityFor, appToolName, humanizeSlug, LIBRARY_ROOT, policyFor, rememberAlwaysAllow } from './tools.js';
-import { applyReviewEdits } from '../review/index.js';
+import { checkReviewEdits } from '../review/index.js';
 import { MIME_BY_EXTENSION } from '../lib/mime.js';
 import { sendPushNotification } from '../push.js';
 import { recordRoutineOutcome } from '../initiative-store.js';
@@ -300,13 +300,13 @@ export function resolveApproval(userId: string, approvalId: string, decision: 'a
   // Edits are checked before anything is decided: a change that cannot run leaves the card open.
   const body = approvalCard(ap.bot_id, ap.row_seq, approvalId);
   const editing = decision !== 'deny' && edits !== undefined && edits !== null;
-  const applied = editing ? applyReviewEdits(ap.tool, {}, body?.review, edits) : null;
+  if (editing) checkReviewEdits(ap.tool, body?.review, edits);
   // "Always allow" is kept for this bot when its per-bot setting is on, otherwise for the person;
   // on an action that must ask every time (sending email) without the per-bot setting, it allows once.
   const always = decision === 'always' && rememberAlwaysAllow(userId, ap.bot_id, ap.tool) !== null;
   const status = decision === 'deny' ? 'denied' : always ? 'always' : 'allowed';
   db.prepare('UPDATE approvals SET status=?, resolved_at=? WHERE id=?').run(status, now(), approvalId);
-  const shown = editing && body?.review && applied?.changes.length ? { review: { ...body.review, ...(edits as object) } as ReviewPayload, edited: true } : {};
+  const shown = editing && body?.review && Object.keys(edits as object).length ? { review: { ...body.review, ...(edits as object) } as ReviewPayload, edited: true } : {};
   setApprovalCard(ap.bot_id, ap.row_seq, approvalId, status, shown);
   waiter.resolve(decision === 'deny' ? { decision: 'deny' } : { decision: 'allow', ...(editing ? { edits } : {}) });
 }

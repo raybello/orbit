@@ -64,7 +64,7 @@ async function listTools(botId: string | null) {
 
 type Who = { userId: string; botId: string };
 /** What the gate decided: why the call must not run, or the arguments it runs with and what to tell the bot about them. */
-type Gate = { refused: string } | { args: Record<string, unknown>; notes: string[]; before: PreStep[] };
+type Gate = { refused: string } | { name?: string; args: Record<string, unknown>; notes: string[]; before: PreStep[]; rollback: PreStep[] };
 
 /**
  * The gate every call passes before it runs: the user's approval policy ("Always allow" and its
@@ -75,7 +75,7 @@ type Gate = { refused: string } | { args: Record<string, unknown>; notes: string
  * edits the person made. A call that a rule asks about keeps the single card naming that rule.
  */
 async function gate(who: Who, name: string, args: Record<string, unknown>, ownTool: boolean, rowSeq: number | null): Promise<Gate> {
-  const pass: Gate = { args, notes: [], before: [] };
+  const pass: Gate = { args, notes: [], before: [], rollback: [] };
   const pol = policyFor(who.userId, name, args, who.botId);
   const review = await reviewToolCall(who.botId, name, args, ownTool);
   const rule = review.verdict.decidedBy?.rule;
@@ -112,7 +112,7 @@ async function gate(who: Who, name: string, args: Record<string, unknown>, ownTo
     const answer = await requestApproval(who, v, call.args, rowSeq, payload);
     if (answer.decision !== 'allow') return { call, asked: true, decision: answer.decision, applied: null };
     try {
-      return { call, asked: true, decision: 'allow' as const, applied: applyReviewEdits(call.slug, call.args, payload, answer.edits) };
+      return { call, asked: true, decision: 'allow' as const, applied: await applyReviewEdits(who.userId, call.slug, call.args, payload, answer.edits) };
     } catch (e) {
       // The edits were checked when the person answered; this only happens if the card changed under them.
       return { call, asked: true, decision: 'deny' as const, applied: null, error: (e as Error).message };
@@ -122,7 +122,12 @@ async function gate(who: Who, name: string, args: Record<string, unknown>, ownTo
   const ran = outcomes.filter((o) => o.decision === 'allow');
   // Nothing the person was asked about was allowed: the call does not run at all, as it did before
   // batches were split, so the bot is not handed the leftovers as if its request had gone through.
+  const failedEdit = outcomes.find((o) => 'error' in o && o.error);
   if (!outcomes.some((o) => o.asked && o.decision === 'allow')) {
+    if (failedEdit) {
+      recordReview(who.botId, review, 'denied');
+      return { refused: `Not run: the user allowed ${failedEdit.call.slug}, but their changes could not be applied (${(failedEdit as { error: string }).error}). Tell the user.` };
+    }
     const anyDenied = outcomes.some((o) => o.decision === 'deny');
     recordReview(who.botId, review, anyDenied ? 'denied' : 'expired');
     return { refused: anyDenied ? DECLINED : SKIPPED };
@@ -131,28 +136,34 @@ async function gate(who: Who, name: string, args: Record<string, unknown>, ownTo
 
   const notes: string[] = [];
   for (const o of outcomes) {
-    if (o.decision !== 'allow') notes.push(`Not run: ${o.call.slug}, because the user ${o.decision === 'deny' ? 'declined it' : 'did not answer'}. Do not retry it unless they ask.`);
+    if ('error' in o && o.error) notes.push(`Not run: ${o.call.slug}, because the user's changes to it could not be applied (${o.error}).`);
+    else if (o.decision !== 'allow') notes.push(`Not run: ${o.call.slug}, because the user ${o.decision === 'deny' ? 'declined it' : 'did not answer'}. Do not retry it unless they ask.`);
     else if (o.applied?.changes.length) notes.push(`The user edited ${o.call.slug} before it ran: ${o.applied.changes.join('; ')}.`);
   }
   const before = ran.flatMap((o) => o.applied?.before ?? []);
-  if (name !== 'COMPOSIO_MULTI_EXECUTE_TOOL') return { args: ran[0].applied!.args, notes, before };
-  return { args: withCalls(args, ran.map((o) => ({ index: calls.indexOf(o.call), args: o.applied!.args }))), notes, before };
+  const rollback = ran.flatMap((o) => o.applied?.rollback ?? []);
+  if (name !== 'COMPOSIO_MULTI_EXECUTE_TOOL') {
+    const only = ran[0].applied!;
+    return { name: only.slug ?? name, args: only.args, notes, before, rollback };
+  }
+  return { args: withCalls(args, ran.map((o) => ({ index: calls.indexOf(o.call), args: o.applied!.args, slug: o.applied!.slug }))), notes, before, rollback };
 }
 
 /**
  * The batch call again, with only the listed actions, each with its (possibly edited) arguments.
  * Every other field of each item, and the key it used for arguments, is kept as the bot sent it.
  */
-function withCalls(args: Record<string, unknown>, keep: { index: number; args: Record<string, unknown> }[]): Record<string, unknown> {
+function withCalls(args: Record<string, unknown>, keep: { index: number; args: Record<string, unknown>; slug?: string }[]): Record<string, unknown> {
   const key = Array.isArray(args.tools) ? 'tools' : Array.isArray(args.tool_calls) ? 'tool_calls' : 'actions';
   const items = (args[key] as Record<string, unknown>[]).filter((t) => {
     const slug = String(t?.tool_slug ?? t?.slug ?? t?.name ?? t?.tool ?? '');
     return Boolean(slug);
   });
-  const next = keep.map(({ index, args: a }) => {
+  const next = keep.map(({ index, args: a, slug }) => {
     const item = items[index] ?? {};
     const argKey = 'arguments' in item ? 'arguments' : 'tool_params' in item ? 'tool_params' : 'args' in item ? 'args' : 'arguments';
-    return { ...item, [argKey]: a };
+    const slugKey = 'tool_slug' in item ? 'tool_slug' : 'slug' in item ? 'slug' : 'name' in item ? 'name' : 'tool' in item ? 'tool' : 'tool_slug';
+    return { ...item, ...(slug ? { [slugKey]: slug } : {}), [argKey]: a };
   });
   return { ...args, [key]: next };
 }
@@ -200,12 +211,18 @@ async function callTool(botId: string | null, rawName: string, args: Record<stri
       noteToolOutcome(botId, rowSeq, { status: 'error', summary: 'Could not apply your edits' });
       return text(prep);
     }
-    const r = await runComposioTool(ctx, name, g.args);
+    const runName = g.name ?? name;
+    const r = await runComposioTool(ctx, runName, g.args);
     const failed = r.summary === 'failed';
+    // A change made in two steps is undone when its second step did not go through.
+    if ((failed || r.summary === 'partial') && g.rollback.length) {
+      const undo = await runBefore(userId, g.rollback);
+      g.notes.push(undo ? `The change failed part-way and could not be fully undone: ${undo}` : 'The change failed part-way, so its first step was undone; the calendar is as it was.');
+    }
     noteToolOutcome(botId, rowSeq, { status: failed ? 'error' : 'done', summary: failed ? 'Failed' : r.summary === 'partial' ? 'Partly failed' : undefined });
     if (failed || r.summary === 'partial') connectionWatch.noteFailure(userId, botId);
     // A draft the bot wrote goes in front of the person as an email card.
-    const draftNote = failed ? null : await showDrafts(userId, botId, name, g.args, r.data).catch((e) => { console.warn('[drafts] could not show a draft', (e as Error).message); return null; });
+    const draftNote = failed ? null : await showDrafts(userId, botId, runName, g.args, r.data).catch((e) => { console.warn('[drafts] could not show a draft', (e as Error).message); return null; });
     const notes = draftNote ? [...g.notes, draftNote] : g.notes;
     return text(notes.length ? `${notes.join('\n')}\n\n${r.output}` : r.output);
   } catch (e) {

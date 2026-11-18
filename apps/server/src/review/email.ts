@@ -95,25 +95,39 @@ export const emailReview: ReviewAdapter = {
     return { ...review, ...readDraft(r.data), draftId: str(args.draft_id), editable: true };
   },
 
-  apply(slug, args, review: ReviewPayload, edits): Applied {
-    if (review.kind !== 'email') throw new ReviewEditError('This card is not an email.');
-    const parsed = EmailEditsSchema.safeParse(edits);
-    if (!parsed.success) throw new ReviewEditError(parsed.error.issues[0]?.message ?? 'Those changes could not be read.');
-    const e = parsed.data;
-    // A reply keeps its thread's subject: Composio's reply action has no subject to set.
-    const subject = review.action === 'reply' ? review.subject : e.subject ?? review.subject;
-    const after: EmailReview = { ...review, to: e.to ?? review.to, cc: e.cc ?? review.cc, bcc: e.bcc ?? review.bcc, subject, body: e.body ?? review.body };
-    const changes = describeChanges(review, after);
-    if (!changes.length) return { args, before: [], changes };
+  validate(review, edits) {
+    parseEdits(review, edits);
+  },
 
-    if (review.action === 'send_draft') {
-      // A draft is sent exactly as stored, so the edits are written into it first.
-      const update = { draft_id: review.draftId, ...recipientArgs(after.to), cc: after.cc, bcc: after.bcc, subject: after.subject, body: after.body, is_html: after.isHtml };
-      return { args, before: [{ slug: 'GMAIL_UPDATE_DRAFT', args: update }], changes };
-    }
-    const text = review.action === 'reply' ? { message_body: after.body } : { body: after.body };
-    const next: Record<string, unknown> = { ...args, ...recipientArgs(after.to), cc: after.cc, bcc: after.bcc, ...text };
-    if (review.action === 'send') next.subject = after.subject;
-    return { args: next, before: [], changes };
+  async apply(_userId, slug, args, review, edits) {
+    return applyEmail(slug, args, review, edits);
   },
 };
+
+function parseEdits(review: ReviewPayload, edits: unknown) {
+  if (review.kind !== 'email') throw new ReviewEditError('This card is not an email.');
+  const parsed = EmailEditsSchema.safeParse(edits ?? {});
+  if (!parsed.success) throw new ReviewEditError(parsed.error.issues[0]?.message ?? 'Those changes could not be read.');
+  return parsed.data;
+}
+
+/** The person's edits to an email, as the arguments that run (sync: an email needs no reads to apply). */
+export function applyEmail(slug: string, args: Record<string, unknown>, review: ReviewPayload, edits: unknown): Applied {
+  if (review.kind !== 'email') throw new ReviewEditError('This card is not an email.');
+  const e = parseEdits(review, edits);
+  // A reply keeps its thread's subject: Composio's reply action has no subject to set.
+  const subject = review.action === 'reply' ? review.subject : e.subject ?? review.subject;
+  const after: EmailReview = { ...review, to: e.to ?? review.to, cc: e.cc ?? review.cc, bcc: e.bcc ?? review.bcc, subject, body: e.body ?? review.body };
+  const changes = describeChanges(review, after);
+  if (!changes.length) return { args, before: [], changes };
+
+  if (review.action === 'send_draft') {
+    // A draft is sent exactly as stored, so the edits are written into it first.
+    const update = { draft_id: review.draftId, ...recipientArgs(after.to), cc: after.cc, bcc: after.bcc, subject: after.subject, body: after.body, is_html: after.isHtml };
+    return { args, before: [{ slug: 'GMAIL_UPDATE_DRAFT', args: update }], changes };
+  }
+  const text = review.action === 'reply' ? { message_body: after.body } : { body: after.body };
+  const next: Record<string, unknown> = { ...args, ...recipientArgs(after.to), cc: after.cc, bcc: after.bcc, ...text };
+  if (review.action === 'send') next.subject = after.subject;
+  return { args: next, before: [], changes };
+}

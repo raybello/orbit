@@ -78,7 +78,7 @@ test('readDraft takes Cc and Bcc from the headers, keeping quoted names whole', 
 test('edits to a send become the arguments that run, all of them real GMAIL_SEND_EMAIL arguments', async () => {
   const args = { recipient_email: 'ada@x.test', subject: 'Hi', body: 'Hello', is_html: false };
   const review = await buildReview('u', 'GMAIL_SEND_EMAIL', args);
-  const a = applyReviewEdits('GMAIL_SEND_EMAIL', args, review, { to: ['sam@x.test', 'kim@x.test'], subject: 'Hi Sam', body: 'Hello Sam' });
+  const a = await applyReviewEdits('u', 'GMAIL_SEND_EMAIL', args, review, { to: ['sam@x.test', 'kim@x.test'], subject: 'Hi Sam', body: 'Hello Sam' });
   assert.deepEqual(a.before, []);
   assert.equal(a.args.recipient_email, 'sam@x.test');
   assert.deepEqual(a.args.extra_recipients, ['kim@x.test']);
@@ -91,16 +91,16 @@ test('edits to a send become the arguments that run, all of them real GMAIL_SEND
 test('a reply keeps its subject and edits message_body', async () => {
   const args = { thread_id: 't', recipient_email: 'ada@x.test', message_body: 'Thanks' };
   const review = await buildReview('u', 'GMAIL_REPLY_TO_THREAD', args);
-  const a = applyReviewEdits('GMAIL_REPLY_TO_THREAD', args, review, { subject: 'ignored', body: 'Thanks a lot' });
+  const a = await applyReviewEdits('u', 'GMAIL_REPLY_TO_THREAD', args, review, { subject: 'ignored', body: 'Thanks a lot' });
   assert.equal(a.args.message_body, 'Thanks a lot');
   assert.equal('subject' in a.args, false);
   assertArgsFit('GMAIL_REPLY_TO_THREAD', a.args);
   assert.deepEqual(a.changes, ['body edited (sent as the user wrote it)']);
 });
 
-test('edits to a draft are written into it first with GMAIL_UPDATE_DRAFT, then the draft is sent as is', () => {
+test('edits to a draft are written into it first with GMAIL_UPDATE_DRAFT, then the draft is sent as is', async () => {
   const review: EmailReview = { kind: 'email', action: 'send_draft', to: ['ada@x.test'], cc: [], bcc: [], subject: 'S', body: 'B', isHtml: false, draftId: 'd1', editable: true };
-  const a = applyReviewEdits('GMAIL_SEND_DRAFT', { draft_id: 'd1' }, review, { subject: 'S2' });
+  const a = await applyReviewEdits('u', 'GMAIL_SEND_DRAFT', { draft_id: 'd1' }, review, { subject: 'S2' });
   assert.deepEqual(a.args, { draft_id: 'd1' });
   assert.equal(a.before.length, 1);
   assert.equal(a.before[0].slug, 'GMAIL_UPDATE_DRAFT');
@@ -113,21 +113,21 @@ test('edits to a draft are written into it first with GMAIL_UPDATE_DRAFT, then t
 test('no real change runs exactly what the bot sent', async () => {
   const args = { recipient_email: 'ada@x.test', subject: 'Hi', body: 'Hello' };
   const review = await buildReview('u', 'GMAIL_SEND_EMAIL', args);
-  assert.deepEqual(applyReviewEdits('GMAIL_SEND_EMAIL', args, review, { subject: 'Hi' }), { args, before: [], changes: [] });
-  assert.deepEqual(applyReviewEdits('GMAIL_SEND_EMAIL', args, review, undefined), { args, before: [], changes: [] });
+  assert.deepEqual(await applyReviewEdits('u', 'GMAIL_SEND_EMAIL', args, review, { subject: 'Hi' }), { args, before: [], changes: [] });
+  assert.deepEqual(await applyReviewEdits('u', 'GMAIL_SEND_EMAIL', args, review, undefined), { args, before: [], changes: [] });
 });
 
 test('edits that cannot run are refused with a reason the person can read', async () => {
   const args = { recipient_email: 'ada@x.test', subject: 'Hi', body: 'Hello' };
   const review = await buildReview('u', 'GMAIL_SEND_EMAIL', args);
-  const refused = (edits: unknown) => assert.throws(() => applyReviewEdits('GMAIL_SEND_EMAIL', args, review, edits), ReviewEditError);
-  refused({ to: [] });
-  refused({ to: ['not an address'] });
-  refused({ from: 'me@x.test' });
-  refused({ subject: 'x'.repeat(999) });
+  const refused = (edits: unknown) => assert.rejects(() => applyReviewEdits('u', 'GMAIL_SEND_EMAIL', args, review, edits), ReviewEditError);
+  await refused({ to: [] });
+  await refused({ to: ['not an address'] });
+  await refused({ from: 'me@x.test' });
+  await refused({ subject: 'x'.repeat(999) });
   const fwd = await buildReview('u', 'GMAIL_FORWARD_MESSAGE', {});
-  assert.throws(() => applyReviewEdits('GMAIL_FORWARD_MESSAGE', {}, fwd, { subject: 'x' }), /read-only/);
-  assert.throws(() => applyReviewEdits('SLACK_SEND_MESSAGE', {}, undefined, { text: 'x' }), /cannot be edited/);
+  await assert.rejects(() => applyReviewEdits('u', 'GMAIL_FORWARD_MESSAGE', {}, fwd, { subject: 'x' }), /read-only/);
+  await assert.rejects(() => applyReviewEdits('u', 'SLACK_SEND_MESSAGE', {}, undefined, { text: 'x' }), /cannot be edited/);
 });
 
 test('a batch whose actions all worked is done; one failure is partial; all failing is failed', () => {

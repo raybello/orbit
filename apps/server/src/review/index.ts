@@ -1,5 +1,6 @@
 import type { ReviewPayload } from '@orbit/contracts';
 import { emailReview } from './email.js';
+import { eventReview } from './event.js';
 import { ReviewEditError, type Applied, type ReviewAdapter } from './types.js';
 
 export { ReviewEditError, type Applied, type PreStep, type ReviewAdapter } from './types.js';
@@ -16,7 +17,7 @@ export { ReviewEditError, type Applied, type PreStep, type ReviewAdapter } from 
  *          plain sentences that tell the bot what changed.
  */
 
-const ADAPTERS: ReviewAdapter[] = [emailReview];
+const ADAPTERS: ReviewAdapter[] = [emailReview, eventReview];
 
 export const adapterFor = (slug: string): ReviewAdapter | undefined => {
   const s = slug.toUpperCase();
@@ -35,12 +36,21 @@ export async function buildReview(userId: string, slug: string, args: Record<str
   }
 }
 
-/** What runs once the person allowed this call with these edits. Throws ReviewEditError when they cannot be applied. */
-export function applyReviewEdits(slug: string, args: Record<string, unknown>, review: ReviewPayload | undefined, edits: unknown): Applied {
-  const unchanged: Applied = { args, before: [], changes: [] };
-  if (edits === undefined || edits === null) return unchanged;
+/** Check edits when the person answers, before anything is decided. Throws ReviewEditError. */
+export function checkReviewEdits(slug: string, review: ReviewPayload | undefined, edits: unknown): void {
+  if (edits === undefined || edits === null) return;
   const adapter = adapterFor(slug);
   if (!adapter || !review) throw new ReviewEditError('This action cannot be edited here.');
   if (!review.editable) throw new ReviewEditError('This card is read-only.');
-  return adapter.apply(slug.toUpperCase(), args, review, edits);
+  adapter.validate(review, edits);
+}
+
+/** What runs once the person allowed this call with these edits. Throws ReviewEditError when they cannot be applied. */
+export async function applyReviewEdits(userId: string, slug: string, args: Record<string, unknown>, review: ReviewPayload | undefined, edits: unknown): Promise<Applied> {
+  const unchanged: Applied = { args, before: [], changes: [] };
+  const adapter = adapterFor(slug);
+  const none = edits === undefined || edits === null;
+  if (none && !(adapter?.alwaysApply && review)) return unchanged;
+  checkReviewEdits(slug, review, edits);
+  return adapter!.apply(userId, slug.toUpperCase(), args, review!, none ? undefined : edits);
 }
