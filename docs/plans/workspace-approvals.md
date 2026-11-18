@@ -70,6 +70,7 @@ Replace the name regex with an explicit table for the four Google toolkits.
 
 The core mechanism every custom card uses.
 
+- *(Done differently in phase 3: the approval card gained an optional `review` payload (`packages/contracts/src/review.ts`: `email`, `event`, `sheet`, `doc`) and an `edited` flag, instead of four new card kinds. The approval table, card machine, push and mobile handling stay as they are; a card without `review` is the generic one.)*
 - Contracts (`packages/contracts`): new card bodies `email`, `event`, `sheet`, `doc`. Each carries `approvalId`, the editable fields, read-only context (for example the current event before a change), and status `pending | approved | declined | expired | failed`. The unused `draft` card is replaced by `email`; the dev fixtures move with it.
 - `requestApproval` grows a review path: for a `review` slug it builds the card from the args (plus a read of current state where the card shows "before": `EVENTS_GET`, `GET_DRAFT`, `VALUES_GET`, `GET_DOCUMENT_PLAINTEXT`).
 - `POST /api/approvals/:id` accepts `{ decision, edits? }`. Edits are validated against a zod schema per card kind and merged into the inner `tool_params` of that one call in the `MULTI_EXECUTE` args. The result the bot gets says what changed ("Sent with your edits: subject changed to …").
@@ -80,7 +81,7 @@ The core mechanism every custom card uses.
 - Editing extends the wait: the card reports "editing" and the 25-minute timer restarts on each save, capped at 2 hours.
 - `card-workflow.ts` gains the new kinds and transitions; `card-service.ts` maps them.
 
-**Gate:** card-workflow tests for every legal and illegal move of the four kinds; an API test that approves with edits and asserts the exact args handed to a mocked `executeComposio`; a test that a malformed edit is a 400 and nothing runs.
+**Gate:** *(phase 3 as built: `review-email.test.ts` and `review-api.test.ts`)* card-workflow tests for every legal and illegal move of the four kinds; an API test that approves with edits and asserts the exact args handed to a mocked `executeComposio`; a test that a malformed edit is a 400 and nothing runs.
 
 ## Phase 4: Email, draft first
 

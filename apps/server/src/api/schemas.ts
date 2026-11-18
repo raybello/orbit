@@ -99,7 +99,11 @@ export const SendMessageSchema = z
   .loose();
 
 /** POST /api/approvals/:id — the three decisions the approval UI offers. */
-export const ApprovalDecisionSchema = z.object({ decision: z.enum(['allow', 'always', 'deny']) }).loose();
+export const ApprovalDecisionSchema = z.object({
+  decision: z.enum(['allow', 'always', 'deny']),
+  /** The person's changes to the action (an approval card with a `review`), checked by its review adapter. */
+  edits: z.record(z.string(), z.unknown()).optional(),
+}).loose();
 
 /** POST /api/bots/:id/cards/:seq/answer */
 export const CardAnswerSchema = z.object({ answer: z.string() }).loose();

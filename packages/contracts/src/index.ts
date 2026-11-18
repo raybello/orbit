@@ -6,6 +6,7 @@ export * from './branded-types.js';
 export * from './templates.js';
 // Auto-review rules (F9).
 export * from './rules.js';
+export * from './review.js';
 // Voice model management (F, on-device default).
 export * from './voice.js';
 import type { VoiceModelItem } from './voice.js';
@@ -136,6 +137,10 @@ export type CardBody =
       offerAlways?: boolean;
       /** Set when the person turned on per-bot "Always allow" for this Bot: the button reads "Always allow for <Bot>" and is kept for this Bot only. */
       alwaysFor?: { botId: string; botName: string };
+      /** What the action will do, for Gmail, Calendar, Sheets and Docs: shown in full, and editable before approving. */
+      review?: import('./review.js').ReviewPayload;
+      /** The person changed the action before allowing it; `review` shows their version. */
+      edited?: boolean;
       status: 'pending' | 'allowed' | 'always' | 'denied' | 'expired';
     }
   | {

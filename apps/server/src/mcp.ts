@@ -1,7 +1,8 @@
 import crypto from 'node:crypto';
 import { Hono } from 'hono';
 import { getBotRow } from './store.js';
-import { composioTools, innerToolSlugs } from './composio.js';
+import { composioTools, innerToolCalls, innerToolSlugs, runAction } from './composio.js';
+import { applyReviewEdits, buildReview, type PreStep } from './review/index.js';
 import { connectionWatch, expiredAppNotice } from './core/connection-watch.js';
 import { mcpToken, primaryBotId } from './engine.js';
 import { addPendingFiles, claimToolRow, enqueue, enqueueBotMessage, markSilent, noteToolOutcome, requestApproval, turnDepth, turnGroupDepth } from './agent/loop.js';
@@ -60,12 +61,20 @@ async function listTools(botId: string | null) {
   return [...own, ...apps];
 }
 
+type Who = { userId: string; botId: string };
+/** What the gate decided: why the call must not run, or the arguments it runs with and what to tell the bot about them. */
+type Gate = { refused: string } | { args: Record<string, unknown>; notes: string[]; before: PreStep[] };
+
 /**
  * The gate every call passes before it runs: the user's approval policy ("Always allow" and its
- * defaults) and the bot's own rules, whichever is stricter. Answers with what to tell the engine
- * when the call must not run, or null when it may.
+ * defaults) and the bot's own rules, whichever is stricter.
+ *
+ * A Composio call can hold several app actions. Each action that needs the person gets its own
+ * card, all shown at once; each is decided on its own, and only what was allowed runs, with any
+ * edits the person made. A call that a rule asks about keeps the single card naming that rule.
  */
-async function refusal(who: { userId: string; botId: string }, name: string, args: Record<string, unknown>, ownTool: boolean, rowSeq: number | null): Promise<string | null> {
+async function gate(who: Who, name: string, args: Record<string, unknown>, ownTool: boolean, rowSeq: number | null): Promise<Gate> {
+  const pass: Gate = { args, notes: [], before: [] };
   const pol = policyFor(who.userId, name, args, who.botId);
   const review = await reviewToolCall(who.botId, name, args, ownTool);
   const rule = review.verdict.decidedBy?.rule;
@@ -74,18 +83,85 @@ async function refusal(who: { userId: string; botId: string }, name: string, arg
     const byRule = review.verdict.decision === 'block' ? rule : undefined;
     noteToolOutcome(who.botId, rowSeq, { status: 'denied', summary: byRule ? `Blocked by your rule: ${byRule.description}`.slice(0, 200) : 'Not allowed' });
     recordReview(who.botId, review, 'blocked');
-    return byRule ? blockedByRule(byRule) : DECLINED;
+    return { refused: byRule ? blockedByRule(byRule) : DECLINED };
   }
-  if (decision === 'ask') {
+  if (decision === 'allow') {
+    recordReview(who.botId, review, 'ran');
+    return pass;
+  }
+
+  const calls = ownTool ? [] : innerToolCalls(name, args);
+  if (review.verdict.decision === 'ask' || calls.length === 0) {
     // A rule that asks is named on the card, so the person sees why and is not offered "Always allow".
     const subject = rule ? { ...review.subject, rule: { id: rule.id, description: rule.description } } : pol;
     const answer = await requestApproval(who, subject, args, rowSeq);
-    if (answer !== 'allow') {
-      recordReview(who.botId, review, answer === 'deny' ? 'denied' : 'expired');
-      return answer === 'deny' ? DECLINED : SKIPPED;
+    if (answer.decision !== 'allow') {
+      recordReview(who.botId, review, answer.decision === 'deny' ? 'denied' : 'expired');
+      return { refused: answer.decision === 'deny' ? DECLINED : SKIPPED };
     }
+    recordReview(who.botId, review, 'ran');
+    return pass;
+  }
+
+  // One card per action that asks; the rest run as they are.
+  const outcomes = await Promise.all(calls.map(async (call) => {
+    const v = policyFor(who.userId, call.slug, call.args, who.botId);
+    if (v.decision !== 'ask') return { call, asked: false, decision: 'allow' as const, applied: { args: call.args, before: [] as PreStep[], changes: [] as string[] } };
+    const payload = await buildReview(who.userId, call.slug, call.args);
+    const answer = await requestApproval(who, v, call.args, rowSeq, payload);
+    if (answer.decision !== 'allow') return { call, asked: true, decision: answer.decision, applied: null };
+    try {
+      return { call, asked: true, decision: 'allow' as const, applied: applyReviewEdits(call.slug, call.args, payload, answer.edits) };
+    } catch (e) {
+      // The edits were checked when the person answered; this only happens if the card changed under them.
+      return { call, asked: true, decision: 'deny' as const, applied: null, error: (e as Error).message };
+    }
+  }));
+
+  const ran = outcomes.filter((o) => o.decision === 'allow');
+  // Nothing the person was asked about was allowed: the call does not run at all, as it did before
+  // batches were split, so the bot is not handed the leftovers as if its request had gone through.
+  if (!outcomes.some((o) => o.asked && o.decision === 'allow')) {
+    const anyDenied = outcomes.some((o) => o.decision === 'deny');
+    recordReview(who.botId, review, anyDenied ? 'denied' : 'expired');
+    return { refused: anyDenied ? DECLINED : SKIPPED };
   }
   recordReview(who.botId, review, 'ran');
+
+  const notes: string[] = [];
+  for (const o of outcomes) {
+    if (o.decision !== 'allow') notes.push(`Not run: ${o.call.slug}, because the user ${o.decision === 'deny' ? 'declined it' : 'did not answer'}. Do not retry it unless they ask.`);
+    else if (o.applied?.changes.length) notes.push(`The user edited ${o.call.slug} before it ran: ${o.applied.changes.join('; ')}.`);
+  }
+  const before = ran.flatMap((o) => o.applied?.before ?? []);
+  if (name !== 'COMPOSIO_MULTI_EXECUTE_TOOL') return { args: ran[0].applied!.args, notes, before };
+  return { args: withCalls(args, ran.map((o) => ({ index: calls.indexOf(o.call), args: o.applied!.args }))), notes, before };
+}
+
+/**
+ * The batch call again, with only the listed actions, each with its (possibly edited) arguments.
+ * Every other field of each item, and the key it used for arguments, is kept as the bot sent it.
+ */
+function withCalls(args: Record<string, unknown>, keep: { index: number; args: Record<string, unknown> }[]): Record<string, unknown> {
+  const key = Array.isArray(args.tools) ? 'tools' : Array.isArray(args.tool_calls) ? 'tool_calls' : 'actions';
+  const items = (args[key] as Record<string, unknown>[]).filter((t) => {
+    const slug = String(t?.tool_slug ?? t?.slug ?? t?.name ?? t?.tool ?? '');
+    return Boolean(slug);
+  });
+  const next = keep.map(({ index, args: a }) => {
+    const item = items[index] ?? {};
+    const argKey = 'arguments' in item ? 'arguments' : 'tool_params' in item ? 'tool_params' : 'args' in item ? 'args' : 'arguments';
+    return { ...item, [argKey]: a };
+  });
+  return { ...args, [key]: next };
+}
+
+/** Actions the gate says must run before the call (writing the person's edits into a draft before it is sent). */
+async function runBefore(userId: string, steps: PreStep[]): Promise<string | null> {
+  for (const step of steps) {
+    const r = await runAction(userId, step.slug, step.args);
+    if (!r.successful) return `Could not apply the user's edits (${step.slug} failed: ${JSON.stringify(r.error).slice(0, 300)}). Nothing was sent. Tell the user.`;
+  }
   return null;
 }
 
@@ -104,8 +180,8 @@ async function callTool(botId: string | null, rawName: string, args: Record<stri
       noteToolOutcome(botId, rowSeq, { status: 'error', summary: `${expiredApp} needs reconnecting` });
       return text(expiredAppNotice(expiredApp));
     }
-    const refused = await refusal({ userId, botId }, name, args, own !== undefined, rowSeq);
-    if (refused) return text(refused);
+    const g = await gate({ userId, botId }, name, args, own !== undefined, rowSeq);
+    if ('refused' in g) return text(g.refused);
     if (own) {
       const r = await own.impl(args, ctx);
       if (r.endTurn) markSilent(botId);
@@ -118,10 +194,16 @@ async function callTool(botId: string | null, rawName: string, args: Record<stri
       return text(r.output);
     }
 
-    const r = await runComposioTool(ctx, name, args);
-    noteToolOutcome(botId, rowSeq, { status: r.summary === 'failed' ? 'error' : 'done', summary: r.summary === 'failed' ? 'Failed' : undefined });
-    if (r.summary === 'failed') connectionWatch.noteFailure(userId, botId);
-    return text(r.output);
+    const prep = await runBefore(userId, g.before);
+    if (prep) {
+      noteToolOutcome(botId, rowSeq, { status: 'error', summary: 'Could not apply your edits' });
+      return text(prep);
+    }
+    const r = await runComposioTool(ctx, name, g.args);
+    const failed = r.summary === 'failed';
+    noteToolOutcome(botId, rowSeq, { status: failed ? 'error' : 'done', summary: failed ? 'Failed' : r.summary === 'partial' ? 'Partly failed' : undefined });
+    if (failed || r.summary === 'partial') connectionWatch.noteFailure(userId, botId);
+    return text(g.notes.length ? `${g.notes.join('\n')}\n\n${r.output}` : r.output);
   } catch (e) {
     const msg = String((e as { message?: unknown } | null)?.message ?? e);
     noteToolOutcome(botId, rowSeq, { status: 'error', summary: msg.slice(0, 200) });

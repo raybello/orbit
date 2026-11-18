@@ -4,6 +4,7 @@ import { db } from './db.js';
 import { env } from './env.js';
 import type { Toolkit } from './types.js';
 import { connectionHealth, type ConnectionAccount, type ConnectionHealth } from './domain/connections.js';
+import { GOOGLE_TOOLKIT_VERSION } from './domain/google-actions.js';
 
 /**
  * Constructed on first use: an empty COMPOSIO_API_KEY must not stop the server booting —
@@ -177,11 +178,39 @@ export async function composioTools(userId: string): Promise<unknown[]> {
   }
 }
 
-export async function executeComposio(userId: string, name: string, args: Record<string, unknown>) {
-  const session = await sessionFor(userId);
-  const r = await session.execute(name, args);
-  return r as { data?: unknown; error?: unknown; resultType?: string; logId?: string };
-}
+/** What a Composio meta-tool call answers. */
+export interface MetaResult { data?: unknown; error?: unknown; resultType?: string; logId?: string }
+/** What one directly run action answers. */
+export interface ActionResult { successful: boolean; data: unknown; error: unknown }
+
+/**
+ * Toolkit versions for the actions the server runs itself (approval cards reading what a change
+ * replaces, sending a reviewed draft). Pinned to the version the app's catalogue and fixtures were
+ * captured from (domain/google-actions.ts); Composio refuses an unpinned direct call.
+ */
+const PINNED_TOOLKITS = { gmail: GOOGLE_TOOLKIT_VERSION, googlecalendar: GOOGLE_TOOLKIT_VERSION, googlesheets: GOOGLE_TOOLKIT_VERSION, googledocs: GOOGLE_TOOLKIT_VERSION };
+let pinnedClient: Composio<OpenAIResponsesProvider> | null = null;
+
+/**
+ * The two ways the server reaches Composio for a user. Tests replace these functions; nothing else
+ * should call the SDK for tool execution.
+ */
+export const composioIO = {
+  async executeMeta(userId: string, name: string, args: Record<string, unknown>): Promise<MetaResult> {
+    const session = await sessionFor(userId);
+    return (await session.execute(name, args)) as MetaResult;
+  },
+  async runAction(userId: string, slug: string, args: Record<string, unknown>): Promise<ActionResult> {
+    pinnedClient ??= new Composio({ apiKey: env.composioKey, provider: new OpenAIResponsesProvider(), toolkitVersions: PINNED_TOOLKITS });
+    const r = (await pinnedClient.tools.execute(slug, { userId, arguments: args })) as { successful?: boolean; data?: unknown; error?: unknown };
+    return { successful: r.successful !== false && !r.error, data: r.data ?? null, error: r.error ?? null };
+  },
+};
+
+export const executeComposio = (userId: string, name: string, args: Record<string, unknown>) => composioIO.executeMeta(userId, name, args);
+
+/** Run one Gmail, Calendar, Sheets or Docs action for this user, outside any bot's session. */
+export const runAction = (userId: string, slug: string, args: Record<string, unknown>) => composioIO.runAction(userId, slug, args);
 
 /** One app action inside a Composio call: its slug and the arguments it will run with. */
 export interface InnerCall { slug: string; args: Record<string, unknown> }

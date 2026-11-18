@@ -14,7 +14,8 @@ import { stackTokenMatches } from './lib/stack.js';
 import { hermesConnected } from './lib/hermes-probe.js';
 import { registerPushToken, removePushToken, removePushTokens } from './push.js';
 import { allLive, appendRow, clearConversation, emitBot, getBot, getRow, listBots, listRoutines, listRows, listTasks, toRoutine, updateRow, type RoutineRow, type TaskRow } from './store.js';
-import { enqueue, interrupt, resolveApproval } from './agent/loop.js';
+import { enqueue, interrupt, resolveApproval, touchApproval } from './agent/loop.js';
+import { ReviewEditError } from './review/index.js';
 import { computerState, ensureComputer, refreshComputer, suspendComputer } from './computer.js';
 import { computerKindFor, providerFor } from './computer-provider-registry.js';
 import { deleteMemory, listMemories, memoryBot } from './engine-memory.js';
@@ -448,9 +449,23 @@ api.post('/bots/:id/fresh', (c) => {
 });
 
 api.post('/approvals/:id', async (c) => {
-  const { decision } = await requireBody(c, ApprovalDecisionSchema);
-  try { resolveApproval(c.get('user').id, c.req.param('id'), decision); } catch { return c.json({ error: 'not found' }, 404); }
+  const { decision, edits } = await requireBody(c, ApprovalDecisionSchema);
+  try {
+    resolveApproval(c.get('user').id, c.req.param('id'), decision, edits);
+  } catch (e) {
+    if (e instanceof ReviewEditError) return c.json({ error: e.message }, 400);
+    return c.json({ error: 'not found' }, 404);
+  }
   return c.json({ ok: true });
+});
+
+/** The person is editing an approval card: keep the bot's call waiting for them (up to two hours in all). */
+api.post('/approvals/:id/editing', (c) => {
+  try {
+    return c.json({ ok: touchApproval(c.get('user').id, c.req.param('id')) });
+  } catch {
+    return c.json({ error: 'not found' }, 404);
+  }
 });
 
 /**
