@@ -129,6 +129,19 @@ export function orbitPut<T>(
   );
 }
 
+export function orbitPatch<T>(
+  apiBase: string,
+  path: string,
+  body?: unknown,
+  opts?: OrbitFetchOptions,
+): Promise<T> {
+  return fetchOrbitJson<T>(
+    `${apiBase}${path}`,
+    { method: 'PATCH', ...(body === undefined ? {} : { body: JSON.stringify(body) }) },
+    opts,
+  );
+}
+
 export function orbitDelete<T>(apiBase: string, path: string, opts?: OrbitFetchOptions): Promise<T> {
   return fetchOrbitJson<T>(`${apiBase}${path}`, { method: 'DELETE' }, opts);
 }
