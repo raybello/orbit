@@ -9,6 +9,7 @@ import { warmVoiceIfReady } from './voice-local.js';
 import { initRoutines } from './routines.js';
 import { initTriggers } from './triggers.js';
 import { retireGoogleOAuth } from './retire-google-oauth.js';
+import { startCalendarSync } from './calendar/mirror.js';
 import { initProactive } from './proactive.js';
 import { composioEnabled } from './composio.js';
 import { connectionWatch } from './core/connection-watch.js';
@@ -53,6 +54,8 @@ if (process.env.GROKBOT_NO_SCHEDULER !== '1') {
   void initTriggers(enqueue);
 initProactive(enqueue);
   if (composioEnabled()) connectionWatch.start();
+  // The Google Calendar mirror, every five minutes (only with DB_ENCRYPTION_KEY set).
+  if (composioEnabled()) startCalendarSync();
 } else console.log('[grokbot] scheduler disabled (GROKBOT_NO_SCHEDULER=1)');
 startIdleWatcher();
 // The direct Google OAuth integration is gone; revoke and drop anything an older version stored.

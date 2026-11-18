@@ -99,6 +99,9 @@ export const SendMessageSchema = z
   .loose();
 
 /** POST /api/approvals/:id — the three decisions the approval UI offers. */
+/** PATCH /api/calendar/google/:key */
+export const CalendarToggleSchema = z.object({ enabled: z.boolean() }).loose();
+
 /** POST /api/bots/:id/cards/:seq/draft — what to do with a Gmail draft card, with the person's edits. */
 export const DraftActionSchema = z.object({
   action: z.enum(['save', 'send', 'discard']),

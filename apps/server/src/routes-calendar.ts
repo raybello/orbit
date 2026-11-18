@@ -5,7 +5,8 @@ import { hub } from './lib/hub.js';
 import { requireUser, type AuthVars } from './lib/auth.js';
 import { createRoutine } from './routines.js';
 import { isEventSchedule } from './triggers.js';
-import { requireBody, CreateRoutineSchema, type CreateRoutineBody } from './api/schemas.js';
+import { requireBody, CalendarToggleSchema, CreateRoutineSchema, type CreateRoutineBody } from './api/schemas.js';
+import { listCalendars, mirrorState, setCalendarEnabled, syncCalendar, syncStatus } from './calendar/mirror.js';
 import type { CalendarEvent } from './types.js';
 
 /** /api/calendar and the calendar's POST /api/routines. */
@@ -137,6 +138,27 @@ calendarApi.get('/calendar', (c) => {
     .all(user.id) as CalendarRoutineRow[];
 
   return c.json({ events: buildCalendar(rows, from, to) });
+});
+
+/** GET /api/calendar/google → the Google calendars, which are shown, and how the mirror is doing. */
+calendarApi.get('/calendar/google', (c) => {
+  const user = c.get('user');
+  return c.json({ state: mirrorState(), calendars: listCalendars(user.id).map(({ id: _id, ...cal }) => cal), sync: syncStatus(user.id) });
+});
+
+/** PATCH /api/calendar/google/:key → show or hide one Google calendar. */
+calendarApi.patch('/calendar/google/:key', async (c) => {
+  const user = c.get('user');
+  const { enabled } = await requireBody(c, CalendarToggleSchema);
+  if (!setCalendarEnabled(user.id, c.req.param('key'), enabled)) return c.json({ error: 'No such calendar.' }, 404);
+  void syncCalendar(user.id).catch(() => {});
+  return c.json({ ok: true });
+});
+
+/** POST /api/calendar/google/sync → sync now. */
+calendarApi.post('/calendar/google/sync', async (c) => {
+  const r = await syncCalendar(c.get('user').id);
+  return r.ok ? c.json({ ok: true, changes: r.changes }) : c.json({ error: r.reason }, 503);
 });
 
 /** POST /api/routines → create a calendar event (a routine with calendar metadata). */

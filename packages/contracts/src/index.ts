@@ -349,6 +349,8 @@ export type ServerEvent =
   | { type: 'activity'; item: ActivityItem }
   | { type: 'computer-status'; status: BotComputerStatus }
   | { type: 'files-updated'; botId: string }
+  /** The Google Calendar mirror changed: reload the calendar view. */
+  | { type: 'calendar' }
   | { type: 'ping' };
 
 // ------------------------------------------------------------------ nav

@@ -170,6 +170,38 @@ addColumn('bots', 'avatar_enabled', 'INTEGER NOT NULL DEFAULT 0');
 // approval cards offer "Always allow for <Bot>" and what the person allows is kept in bot_policies,
 // for that bot only. Turning it off keeps the list but stops using it.
 addColumn('bots', 'always_allow', 'INTEGER NOT NULL DEFAULT 0');
+// The Google Calendar mirror (calendar/mirror.ts). Everything that names or describes a calendar or an
+// event is sealed with DB_ENCRYPTION_KEY; only opaque keys, times and status are stored in the clear.
+db.exec(`CREATE TABLE IF NOT EXISTS gcal_calendars (
+  user_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  cal_key TEXT NOT NULL,
+  sealed TEXT NOT NULL,
+  color TEXT,
+  is_primary INTEGER NOT NULL DEFAULT 0,
+  enabled INTEGER NOT NULL DEFAULT 0,
+  PRIMARY KEY (user_id, cal_key)
+)`);
+db.exec(`CREATE TABLE IF NOT EXISTS gcal_events (
+  user_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  event_key TEXT NOT NULL,
+  cal_key TEXT NOT NULL,
+  start_ms INTEGER NOT NULL,
+  end_ms INTEGER NOT NULL,
+  all_day INTEGER NOT NULL DEFAULT 0,
+  recurring INTEGER NOT NULL DEFAULT 0,
+  sealed TEXT NOT NULL,
+  payload_hash TEXT NOT NULL,
+  updated_at INTEGER NOT NULL,
+  PRIMARY KEY (user_id, event_key)
+)`);
+db.exec('CREATE INDEX IF NOT EXISTS gcal_events_window ON gcal_events(user_id, start_ms)');
+db.exec(`CREATE TABLE IF NOT EXISTS gcal_sync (
+  user_id TEXT PRIMARY KEY REFERENCES users(id) ON DELETE CASCADE,
+  last_sync_at INTEGER,
+  last_error TEXT,
+  failures INTEGER NOT NULL DEFAULT 0,
+  next_attempt_at INTEGER NOT NULL DEFAULT 0
+)`);
 db.exec(`CREATE TABLE IF NOT EXISTS bot_policies (
   bot_id TEXT NOT NULL REFERENCES bots(id) ON DELETE CASCADE,
   tool TEXT NOT NULL,

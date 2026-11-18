@@ -17,6 +17,7 @@ import { allLive, appendRow, clearConversation, emitBot, getBot, getRow, listBot
 import { enqueue, interrupt, resolveApproval, touchApproval } from './agent/loop.js';
 import { ReviewEditError } from './review/index.js';
 import { actOnDraft, DraftActionError } from './review/drafts.js';
+import { clearMirror } from './calendar/mirror.js';
 import { computerState, ensureComputer, refreshComputer, suspendComputer } from './computer.js';
 import { computerKindFor, providerFor } from './computer-provider-registry.js';
 import { deleteMemory, listMemories, memoryBot } from './engine-memory.js';
@@ -723,6 +724,8 @@ api.get('/apps/callback', async (c) => {
 
 api.delete('/apps/:slug', async (c) => {
   await disconnect(c.get('user').id, c.req.param('slug'));
+  // Disconnecting Google Calendar forgets its mirrored events.
+  if (c.req.param('slug') === 'googlecalendar') clearMirror(c.get('user').id);
   hub.emit(c.get('user').id, { type: 'connections' });
   return c.json({ ok: true });
 });
