@@ -16,6 +16,9 @@ APP_IMAGE="ghcr.io/raybello/orbit/app:edge"
 # launched app wrote there, and an installed release (same "Orbit" profile) writes its own version,
 # e.g. v0.1.2. Compose and the desktop app both prefer this variable over the .env value.
 export ORBIT_IMAGE_TAG=edge
+# ...and must run the :edge it just built: without this, the window's own start-up pulls the
+# published :edge over it and recreates the stack on the registry's code.
+export ORBIT_SKIP_PULL=1
 
 echo "▸ 1/3 building $APP_IMAGE from this tree"
 # CACHE_BUST busts the source-copy + build layers on every run so the web and
