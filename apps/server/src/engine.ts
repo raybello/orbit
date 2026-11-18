@@ -913,6 +913,56 @@ export async function removeEngine(botId: string): Promise<void> {
   if (path.resolve(home).startsWith(path.resolve(env.enginesDir) + path.sep)) fs.rmSync(home, { recursive: true, force: true });
 }
 
+/** How long (ms) a primary-hq lease stays valid without a heartbeat before another server may take it. */
+export const HQ_LEASE_EXPIRY_MS = 5 * 60_000;
+
+export interface HqLease { pid: number; port: number; ts: number }
+
+function hqLeaseFile(): string {
+  return path.join(env.hermesHome, 'orbit-hq.lease');
+}
+
+export function readHqLease(): HqLease | null {
+  try {
+    const j = JSON.parse(fs.readFileSync(hqLeaseFile(), 'utf8')) as unknown;
+    if (!j || typeof j !== 'object' || Array.isArray(j)) return null;
+    const { pid, port, ts } = j as Record<string, unknown>;
+    if (typeof pid !== 'number' || typeof port !== 'number' || typeof ts !== 'number') return null;
+    return { pid, port, ts };
+  } catch { return null; }
+}
+
+function writeHqLease() {
+  try { fs.writeFileSync(hqLeaseFile(), JSON.stringify({ pid: process.pid, port: env.port, ts: Date.now() })); }
+  catch { /* best-effort: a read-only home is unusual but not fatal */ }
+}
+
+function processAlive(pid: number): boolean {
+  try { process.kill(pid, 0); return true; }
+  catch (e) { return (e as NodeJS.ErrnoException).code === 'EPERM'; }
+}
+
+/**
+ * Acquire or renew the primary-hq write lease. Returns true when this process is the owner.
+ *
+ * A lease file next to the Hermes config tracks which Orbit server instance is allowed to write
+ * mcp_servers.hq and send SIGHUP. When two servers run on one machine (the desktop app plus a dev
+ * server, say), the second sees a live lease and skips both steps — preventing the gateway
+ * restart loop that happened when each rewrite sent SIGHUP and the gateway bounced 162 times in
+ * five hours. The owner refreshes the timestamp on every interval; if it dies the lease expires
+ * after HQ_LEASE_EXPIRY_MS and the next server takes over.
+ */
+export function acquireHqLease(): boolean {
+  const lease = readHqLease();
+  const ours =
+    !lease
+    || (lease.pid === process.pid && lease.port === env.port)
+    || Date.now() - lease.ts >= HQ_LEASE_EXPIRY_MS
+    || !processAlive(lease.pid);
+  if (ours) writeHqLease();
+  return ours;
+}
+
 /**
  * Inject the hq MCP server entry into the primary Hermes config so it can reach the app's tools.
  *
@@ -982,9 +1032,20 @@ function signalPrimaryGateway(): boolean {
  * the gateway needlessly.
  */
 export function startPrimaryHqSync(intervalMs = 2 * 60_000): NodeJS.Timeout {
+  let loggedConflict = false;
+
   const run = () => {
     const primaryBot = db.prepare("SELECT id FROM bots WHERE engine='primary' LIMIT 1").get() as { id: string } | undefined;
     if (!primaryBot) return;
+    if (!acquireHqLease()) {
+      if (!loggedConflict) {
+        const other = readHqLease();
+        console.log(`[engine] primary hq sync: another Orbit server (pid ${other?.pid}, port ${other?.port}) owns the config; will retry after lease expires`);
+        loggedConflict = true;
+      }
+      return;
+    }
+    loggedConflict = false;
     try {
       const changed = syncPrimaryHqConfig(primaryBot.id);
       if (!changed) return;
@@ -1012,10 +1073,15 @@ export function initEngines() {
   for (const b of bots) assignEngine(b.id);
   const primaryBot = db.prepare("SELECT id FROM bots WHERE engine='primary' LIMIT 1").get() as { id: string } | undefined;
   if (primaryBot) {
-    const changed = syncPrimaryHqConfig(primaryBot.id);
-    if (changed) {
-      const signaled = signalPrimaryGateway();
-      console.log(`[engine] primary hq config written${signaled ? '; gateway signaled to reload' : '; gateway not running yet'}`);
+    if (acquireHqLease()) {
+      const changed = syncPrimaryHqConfig(primaryBot.id);
+      if (changed) {
+        const signaled = signalPrimaryGateway();
+        console.log(`[engine] primary hq config written${signaled ? '; gateway signaled to reload' : '; gateway not running yet'}`);
+      }
+    } else {
+      const other = readHqLease();
+      console.log(`[engine] primary hq config: another Orbit server (pid ${other?.pid}, port ${other?.port}) holds the lease`);
     }
   }
   for (const b of db.prepare("SELECT id FROM bots WHERE engine='managed'").all() as { id: string }[]) provisionEngine(b.id);
