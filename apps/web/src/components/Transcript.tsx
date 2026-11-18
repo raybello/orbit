@@ -10,6 +10,7 @@ import { CardRow } from './cards/Cards';
 import { FileParts } from './FilePart';
 import { Icon } from './Icon';
 import { Markdown } from './Markdown';
+import { FileNotice } from './cards/WorkspaceCards';
 
 type Item =
   | { kind: 'divider'; key: string; ts: number }
@@ -204,7 +205,7 @@ function Steps({ item, active, open: unfinished, extra }: {
 function SystemRow({ row }: { row: Row }) {
   const b = row.body;
   if (b.type === 'event') return <div className="system-event">{b.text}</div>;
-  if (b.type === 'notice') return <div className={`notice is-${b.tone ?? 'info'}`}>{b.text}</div>;
+  if (b.type === 'notice') return b.kind === 'workspace-file' && b.file ? <FileNotice file={b.file} /> : <div className={`notice is-${b.tone ?? 'info'}`}>{b.text}</div>;
   if (b.type === 'card') return <CardRow row={row} />;
   return null;
 }

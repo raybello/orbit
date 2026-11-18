@@ -96,3 +96,31 @@
 .event-card__notify { padding: 10px 16px 0; }
 .btn--danger { background: var(--color-danger); color: #FFFFFF; }
 .btn--danger:hover:not(:disabled) { background: var(--color-danger-hover); }
+
+/* Google Sheets and Docs cards */
+.ws-card { width: 520px; }
+.ws-card__steps { margin: 8px 16px 0; padding-left: 18px; font-size: 14px; line-height: 20px; color: var(--color-ink); }
+.ws-card__grid-wrap { margin: 10px 16px 0; overflow-x: auto; max-height: 320px; overflow-y: auto; border: 1px solid var(--color-border-tertiary); border-radius: 8px; }
+.ws-card__grid { width: 100%; border-collapse: collapse; font-size: 13px; line-height: 18px; font-variant-numeric: tabular-nums; }
+.ws-card__grid th, .ws-card__grid td { padding: 5px 8px; border-bottom: 1px solid var(--color-border-tertiary); text-align: left; vertical-align: top; overflow-wrap: anywhere; }
+.ws-card__grid thead th { position: sticky; top: 0; background: var(--color-bg-pane); font-weight: 500; color: var(--color-text-secondary); }
+.ws-card__grid tbody th { font-weight: 500; color: var(--color-text-secondary); white-space: nowrap; }
+.ws-card__grid tr.is-same td { color: var(--color-text-tertiary); }
+.ws-card__before { color: var(--color-text-secondary); }
+.ws-card__cell { width: 100%; min-width: 80px; padding: 2px 6px; border-radius: 4px; border: 1px solid var(--color-border-tertiary); background: transparent; color: var(--color-ink); font: inherit; }
+.ws-card__cell:focus { outline: 2px solid var(--accent-500); outline-offset: -1px; }
+.ws-card__empty { color: var(--color-text-quaternary); font-style: italic; }
+.ws-card__more { padding: 6px 8px; font-size: 12px; color: var(--color-text-tertiary); }
+.ws-card__insert, .ws-card__diff { margin: 10px 16px 0; padding: 8px 10px; max-height: 260px; overflow: auto; border-radius: 8px; background: var(--color-bg-tertiary); font-size: 13px; line-height: 18px; white-space: pre-wrap; overflow-wrap: anywhere; }
+.ws-card__diff .is-add { color: var(--color-success-text, #2e7d32); }
+.ws-card__diff .is-del { color: var(--color-danger-text); text-decoration: line-through; }
+.ws-card__text { margin: 10px 16px 0; width: calc(100% - 32px); resize: vertical; font: inherit; }
+.ws-card__replace { display: flex; flex-direction: column; gap: 6px; padding: 10px 16px 0; font-size: 14px; line-height: 20px; }
+.ws-card__label { display: inline-block; width: 40px; color: var(--color-text-secondary); font-size: 13px; }
+.ws-card__del { background: color-mix(in srgb, var(--color-danger-text) 18%, transparent); color: inherit; border-radius: 3px; padding: 0 2px; }
+.ws-card__add { background: color-mix(in srgb, #2e7d32 20%, transparent); color: inherit; border-radius: 3px; padding: 0 2px; }
+.ws-file { width: 480px; }
+.ws-file__open { flex: 0 0 auto; padding: 6px 12px; text-decoration: none; }
+.ws-file__grid td { color: var(--color-ink); }
+.ws-file__lines { padding: 8px 16px 0; font-size: 13px; line-height: 18px; color: var(--color-text-secondary); }
+.ws-file__pad { height: 14px; }

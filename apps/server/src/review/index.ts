@@ -1,6 +1,8 @@
 import type { ReviewPayload } from '@orbit/contracts';
 import { emailReview } from './email.js';
 import { eventReview } from './event.js';
+import { sheetReview } from './sheet.js';
+import { docReview } from './doc.js';
 import { ReviewEditError, type Applied, type ReviewAdapter } from './types.js';
 
 export { ReviewEditError, type Applied, type PreStep, type ReviewAdapter } from './types.js';
@@ -17,7 +19,7 @@ export { ReviewEditError, type Applied, type PreStep, type ReviewAdapter } from 
  *          plain sentences that tell the bot what changed.
  */
 
-const ADAPTERS: ReviewAdapter[] = [emailReview, eventReview];
+const ADAPTERS: ReviewAdapter[] = [emailReview, eventReview, sheetReview, docReview];
 
 export const adapterFor = (slug: string): ReviewAdapter | undefined => {
   const s = slug.toUpperCase();

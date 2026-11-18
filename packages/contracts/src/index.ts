@@ -222,9 +222,19 @@ export interface VoiceLocalStatus {
 }
 
 /** What a notice reports, so a client can style or filter it. A plain notice has none. */
-export type NoticeKind = 'context-compacted';
+export type NoticeKind = 'context-compacted' | 'workspace-file';
 
-export interface NoticeBody { type: 'notice'; text: string; tone?: 'info' | 'warn' | 'error'; kind?: NoticeKind }
+/** A Google Sheet or Doc a bot created or changed: shown in the chat with a link and a short preview. */
+export interface WorkspaceFile {
+  app: 'googlesheets' | 'googledocs';
+  action: 'created' | 'updated';
+  title: string;
+  url: string;
+  /** For a sheet, rows of cells; for a doc, lines of text. A few at most. */
+  preview: string[][];
+}
+
+export interface NoticeBody { type: 'notice'; text: string; tone?: 'info' | 'warn' | 'error'; kind?: NoticeKind; file?: WorkspaceFile }
 
 export type ActivityKind =
   | 'thinking' | 'working' | 'searching_web' | 'reading_web' | 'browsing_web' | 'on_its_computer'

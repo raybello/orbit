@@ -82,12 +82,14 @@ export interface DocReview {
   /** Text added or replacing something, and what it replaces. */
   insert?: string;
   replace?: { find: string; with: string; matchCase: boolean };
-  /** For whole-document rewrites: the line diff, prefixed "+ ", "- " or "  ". */
+  /** For whole-document rewrites: the new markdown, and the line diff against the text now ("+ ", "- " or "  " prefixed). */
+  markdown?: string;
   diff?: string[];
   steps: string[];
   editable: boolean;
 }
-export interface DocEdits { insert?: string; replaceWith?: string }
+/** `markdown` is the new text of a whole-document rewrite. */
+export interface DocEdits { insert?: string; replaceWith?: string; markdown?: string }
 
 export type ReviewPayload = EmailReview | EventReview | SheetReview | DocReview;
 export type ReviewEdits = EmailEdits | EventEdits | SheetEdits | DocEdits;

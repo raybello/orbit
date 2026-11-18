@@ -4,6 +4,7 @@ import { getBotRow } from './store.js';
 import { composioTools, innerToolCalls, innerToolSlugs, runAction } from './composio.js';
 import { applyReviewEdits, buildReview, type PreStep } from './review/index.js';
 import { showDrafts } from './review/drafts.js';
+import { showFiles } from './review/files.js';
 import { connectionWatch, expiredAppNotice } from './core/connection-watch.js';
 import { mcpToken, primaryBotId } from './engine.js';
 import { addPendingFiles, claimToolRow, enqueue, enqueueBotMessage, markSilent, noteToolOutcome, requestApproval, turnDepth, turnGroupDepth } from './agent/loop.js';
@@ -223,6 +224,8 @@ async function callTool(botId: string | null, rawName: string, args: Record<stri
     if (failed || r.summary === 'partial') connectionWatch.noteFailure(userId, botId);
     // A draft the bot wrote goes in front of the person as an email card.
     const draftNote = failed ? null : await showDrafts(userId, botId, runName, g.args, r.data).catch((e) => { console.warn('[drafts] could not show a draft', (e as Error).message); return null; });
+    // A sheet or doc it created or changed is shown in the chat with a link and a preview.
+    if (!failed) await showFiles(userId, botId, runName, g.args, r.data).catch((e) => console.warn('[files] could not show a file', (e as Error).message));
     const notes = draftNote ? [...g.notes, draftNote] : g.notes;
     return text(notes.length ? `${notes.join('\n')}\n\n${r.output}` : r.output);
   } catch (e) {
