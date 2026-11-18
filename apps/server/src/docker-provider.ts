@@ -3,11 +3,11 @@ import { db } from './db.js';
 import { env } from './env.js';
 import { tcpVncStream } from './lib/vnc-stream.js';
 import { dockerBox } from './docker/docker-box.js';
-import { containerStatus, createBotContainer, removeContainer, startContainer, stopContainer } from './docker/container.js';
+import { containerStatus, createBotContainer, dockerHostMemory, fitsAnother, liveBotContainers, pauseContainer, removeContainer, reservationBytes, startContainer, stopContainer, unpauseContainer } from './docker/container.js';
 import { ensureScreen, screenPorts, teardownScreen } from './docker/screen.js';
 import { describeEndpoint, ensureBotOnNetwork, screenEndpointFor, serverPlacement } from './docker/reach.js';
 import { checkpointWorkspace, ensureHomeDir, homeDirFor, restoreWorkspace, wipeWorkspace } from './docker/workspace.js';
-import { claimScreen, dockerComputers, ensureComputerRow, getComputer, getScreen, saveScreen, setComputerState, setControlToken, touchScreen, deleteComputerRow, deleteScreen, type ScreenRow } from './computer-store.js';
+import { claimScreen, dockerComputers, type BotComputerRow, ensureComputerRow, getComputer, getScreen, saveScreen, setComputerState, setControlToken, touchScreen, deleteComputerRow, deleteScreen, type ScreenRow } from './computer-store.js';
 import { dressScreen, resetScreen as resetDesk, type DeskBot } from './desk.js';
 import type { BashResult, ComputerProvider, ComputerRef, ScreenShot, VncStream } from './computer-provider.js';
 import type { Secret } from './lib/secret-box.js';
@@ -83,6 +83,16 @@ export class DockerComputerProvider implements ComputerProvider {
   private booting = new Map<string, Promise<ComputerRef>>();
   /** Dressing happens once per server run per bot until something asks for a redress. */
   private dressing = new Map<string, Promise<void>>();
+  /**
+   * Bots whose container this server froze (docker pause). Kept in memory only: on a restart every
+   * container left running is stopped anyway (recoverComputers), and stopping thaws it first.
+   */
+  private paused = new Set<string>();
+
+  /** Whether this server froze the bot's container and has not woken it since. */
+  isPaused(botId: string): boolean {
+    return this.paused.has(botId);
+  }
 
   // ------------------------------------------------------------ lifecycle
 
@@ -103,7 +113,14 @@ export class DockerComputerProvider implements ComputerProvider {
       const status = await containerStatus(row.container_id);
       if (status.exists) {
         this.assertPortsMatch(screen, row.container_id);
+        if (status.paused) {
+          // Frozen while idle: everything is still in memory, so thawing is the whole wake-up.
+          await unpauseContainer(row.container_id);
+          console.log(`[docker] ${botId} woke from pause`);
+        }
+        this.paused.delete(botId);
         if (!status.running) {
+          await this.makeRoom(botId);
           setComputerState(botId, 'booting', { containerId: row.container_id });
           await startContainer(row.container_id);
           await this.afterStart(botId, row.container_id);
@@ -119,6 +136,7 @@ export class DockerComputerProvider implements ComputerProvider {
       setComputerState(botId, 'stopped', { containerId: null, error: null });
     }
 
+    await this.makeRoom(botId);
     await ensureHomeDir(botId);
     await restoreWorkspace(botId);
     const fresh = claimScreen(botId, env.computerMaxDisplays, randomUUID);
@@ -134,6 +152,57 @@ export class DockerComputerProvider implements ComputerProvider {
       setComputerState(botId, 'error', { error: message });
       throw new Error(message);
     }
+  }
+
+  /**
+   * Before a bot's container starts: make sure Docker's machine has room for one more at
+   * COMPUTER_MEMORY_RESERVATION. When it does not, the bot idle the longest (frozen ones first) is
+   * suspended to make room; a bot someone is watching or that is working is never chosen. With no
+   * bot to give way, starting fails with a message that says why, instead of the kernel later
+   * killing some bot's browser at random.
+   */
+  private async makeRoom(botId: string): Promise<void> {
+    const reservation = reservationBytes();
+    if (!reservation) return;
+    const hostMemory = await dockerHostMemory().catch(() => 0);
+    if (!hostMemory) return;
+    for (let round = 0; round < 50; round++) {
+      const live = (await liveBotContainers()).filter((c) => c.botId !== botId);
+      if (fitsAnother({ hostMemory, liveBots: live.length, reservation })) return;
+      const victim = await this.idlest(live.map((c) => c.botId));
+      if (!victim) {
+        const gb = (n: number) => (n / 1024 ** 3).toFixed(1);
+        throw new Error(
+          `No room for another bot computer: ${live.length} are running and Docker has ${gb(hostMemory)} GB ` +
+            `(each bot is counted at ${gb(reservation)} GB). Give Docker more memory, or close a bot that is working.`,
+        );
+      }
+      console.log(`[docker] suspending ${victim} to make room for ${botId}`);
+      await this.suspend(victim);
+    }
+  }
+
+  /** Of these bots, the one to give way: nobody watching, not working, frozen first, then least recently used. */
+  private async idlest(botIds: string[]): Promise<string | null> {
+    const { botViewerCount } = await import('./idle.js');
+    const { isBotBusy } = await import('./agent/loop.js');
+    const rows = dockerComputers().filter((r) => botIds.includes(r.bot_id));
+    const candidates = rows.filter((r) => botViewerCount(r.bot_id) === 0 && !isBotBusy(r.bot_id));
+    if (!candidates.length) return null;
+    const lastUse = await Promise.all(candidates.map((r) => lastActivity(r)));
+    const ranked = candidates
+      .map((r, i) => ({ id: r.bot_id, paused: this.paused.has(r.bot_id), last: lastUse[i] }))
+      .sort((a, b) => Number(b.paused) - Number(a.paused) || a.last - b.last);
+    return ranked[0]?.id ?? null;
+  }
+
+  /** Freeze an idle bot's container: no CPU until something needs it, which wakes it in boot(). */
+  async pause(botId: string): Promise<void> {
+    const row = getComputer(botId);
+    if (!row?.container_id || row.state !== 'running' || this.paused.has(botId)) return;
+    if (this.booting.has(botId)) return;
+    await pauseContainer(row.container_id);
+    this.paused.add(botId);
   }
 
   /** A fresh container has no desktops: clear stale processes and set the screen up again. */
@@ -300,6 +369,8 @@ export class DockerComputerProvider implements ComputerProvider {
   async screenshot(botId: string, screenId: string): Promise<ScreenShot | null> {
     const row = getComputer(botId);
     if (!row?.container_id || row.state !== 'running') return null;
+    // A frozen computer cannot draw; a picture must not be what wakes it.
+    if (this.paused.has(botId)) return null;
     const screen = getScreen(botId, screenId) ?? getScreen(botId);
     if (!screen) return null;
     try {
@@ -382,6 +453,7 @@ export class DockerComputerProvider implements ComputerProvider {
       if (screen) saveScreen({ ...screen, ensured_at: null });
       setComputerState(botId, 'suspended', { containerId: row.container_id, error: null });
       this.dressing.delete(botId);
+      this.paused.delete(botId);
     } catch (e) {
       setComputerState(botId, 'error', { error: String((e as Error)?.message ?? e) });
       throw e;
@@ -397,6 +469,7 @@ export class DockerComputerProvider implements ComputerProvider {
     if (row?.container_id) await removeContainer(row.container_id).catch((e) => console.warn(`[docker] could not remove ${botId}'s container: ${e?.message ?? e}`));
     deleteComputerRow(botId);
     this.dressing.delete(botId);
+    this.paused.delete(botId);
     if (opts.wipeWorkspace) await wipeWorkspace(botId);
     else await checkpointWorkspace(botId).catch(() => undefined);
   }
@@ -412,34 +485,46 @@ function userIdFor(botId: string): string {
   return (db.prepare('SELECT user_id FROM bots WHERE id=?').get(botId) as { user_id?: string } | undefined)?.user_id ?? '';
 }
 
+/** When the bot was last used: a viewer, its screen, or its computer changing state. */
+async function lastActivity(row: BotComputerRow): Promise<number> {
+  const { botLastSeen } = await import('./idle.js');
+  return Math.max(botLastSeen(row.bot_id), getScreen(row.bot_id)?.idle_at ?? 0, row.updated_at);
+}
+
 /**
- * Suspend containers nobody is looking at or working in. The shared computer is never paused, but a
- * bot's own container costs memory for as long as it runs, so it goes to sleep after
- * COMPUTER_IDLE_TIMEOUT_MIN minutes and comes back by itself on the next screen or task.
+ * Put containers nobody is looking at or working in to sleep, in two steps. After
+ * COMPUTER_PAUSE_AFTER_MIN minutes the container is frozen (no CPU, wakes instantly on the next
+ * screen or task); after COMPUTER_IDLE_TIMEOUT_MIN minutes its home is checkpointed and it is
+ * stopped, which is what gives its memory back. The shared computer is never paused.
  */
 export function startDockerIdleSuspender(): () => void {
-  if (!(env.computerIdleTimeoutMin > 0)) return () => {};
-  const idleMs = env.computerIdleTimeoutMin * 60_000;
+  const idleMs = env.computerIdleTimeoutMin > 0 ? env.computerIdleTimeoutMin * 60_000 : 0;
+  const pauseMs = env.computerPauseAfterMin > 0 ? env.computerPauseAfterMin * 60_000 : 0;
+  if (!idleMs && !pauseMs) return () => {};
   let sweeping = false;
   const sweep = async () => {
     if (sweeping) return;
     sweeping = true;
     try {
-      const { botViewerCount, botLastSeen } = await import('./idle.js');
+      const { botViewerCount } = await import('./idle.js');
       const { isBotBusy } = await import('./agent/loop.js');
       for (const row of dockerComputers()) {
         if (row.state !== 'running') continue;
         if (botViewerCount(row.bot_id) > 0 || isBotBusy(row.bot_id)) continue;
-        const last = Math.max(botLastSeen(row.bot_id), getScreen(row.bot_id)?.idle_at ?? 0, row.updated_at);
-        if (Date.now() - last < idleMs) continue;
-        console.log(`[docker] suspending ${row.bot_id}: idle for ${Math.round((Date.now() - last) / 60_000)} min`);
-        await dockerProvider.suspend(row.bot_id).catch((e) => console.warn(`[docker] idle suspend failed for ${row.bot_id}: ${e?.message ?? e}`));
+        const idleFor = Date.now() - (await lastActivity(row));
+        if (idleMs && idleFor >= idleMs) {
+          console.log(`[docker] suspending ${row.bot_id}: idle for ${Math.round(idleFor / 60_000)} min`);
+          await dockerProvider.suspend(row.bot_id).catch((e) => console.warn(`[docker] idle suspend failed for ${row.bot_id}: ${e?.message ?? e}`));
+        } else if (pauseMs && idleFor >= pauseMs && !dockerProvider.isPaused(row.bot_id)) {
+          console.log(`[docker] pausing ${row.bot_id}: idle for ${Math.round(idleFor / 60_000)} min`);
+          await dockerProvider.pause(row.bot_id).catch((e) => console.warn(`[docker] idle pause failed for ${row.bot_id}: ${e?.message ?? e}`));
+        }
       }
     } finally {
       sweeping = false;
     }
   };
-  const timer = setInterval(() => void sweep(), Math.min(60_000, idleMs));
+  const timer = setInterval(() => void sweep(), Math.min(60_000, ...[idleMs, pauseMs].filter(Boolean)));
   timer.unref?.();
   return () => clearInterval(timer);
 }

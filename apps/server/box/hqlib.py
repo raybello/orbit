@@ -21,6 +21,33 @@ EXT = ROOT + '/ext'
 # Where Chrome profiles and logs live. A per-bot container keeps both inside its home folder so they
 # travel with it; the shared computer keeps the old root-owned paths.
 LOGS = os.environ.get('HQ_LOGS') or '/var/log/hq'
+
+# Chromium is nearly all of a bot computer's memory, so a bot's own container runs it lean: at most
+# two renderer processes (tabs of one site share one), no GPU process, fewer background services,
+# and a cap on each page's JavaScript heap. Background tabs are discarded under memory pressure.
+# Ten bots with two or four real pages each average about 0.6 GB a bot this way, against about 1 GB
+# with Chrome's defaults. Background networking stays on: it is what fetches the force-installed
+# home screen extension (see hq-screen.py), and without it every first boot waits 30 s for nothing.
+# The shared computer (somebody's live desktop) keeps Chrome's defaults.
+LEAN_BROWSER_FLAGS = [
+    '--renderer-process-limit=2',
+    '--process-per-site',
+    '--disable-gpu',
+    '--disable-software-rasterizer',
+    '--disable-component-update',
+    '--disable-features=Translate,OptimizationHints,MediaRouter,BackForwardCache,'
+    'InterestFeedContentSuggestions,AutofillServerCommunication',
+    '--enable-features=AutomaticTabDiscarding',
+    '--js-flags=--max-old-space-size=256',
+]
+
+
+def lean_browser():
+    """HQ_LEAN_BROWSER=1/0 decides; without it, a Docker container (a bot's own computer) is lean."""
+    v = os.environ.get('HQ_LEAN_BROWSER')
+    if v is not None and v.strip() != '':
+        return v.strip() not in ('0', 'false', 'no')
+    return os.path.exists('/.dockerenv')
 PROFILES = os.environ.get('HQ_PROFILES') or '/root/grokbot/profiles'
 HOME_PORT = 7391
 HOME_URL = 'http://127.0.0.1:%d' % HOME_PORT
@@ -892,6 +919,8 @@ def start_browser(n, bot_id, accent=None, restart=False, log=None):
             '--start-maximized',
             '%s=%d' % (SCREEN_FLAG, n),     # ours: lets us tell later which screen this Chrome is on
         ]
+        if lean_browser():
+            argv[1:1] = LEAN_BROWSER_FLAGS
         spawn(argv, env, 'chrome-%d' % n)
         started = True
     # Wait until DevTools answers; that is when the browser is really up.

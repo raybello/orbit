@@ -35,8 +35,15 @@ this machine with `HQ_LOCAL=1`), because that is somebody's live desktop.
 ## Lifecycle
 
 - Created on the first screen open or turn; `bot_computers.state` goes `stopped → booting → running`.
+- Frozen (`docker pause`) after `COMPUTER_PAUSE_AFTER_MIN` minutes with no viewer and no turn: no
+  CPU, memory kept, and the next screen open or turn thaws it in a fraction of a second. Screenshots
+  of a frozen bot are skipped rather than waking it.
 - Suspended after `COMPUTER_IDLE_TIMEOUT_MIN` minutes with no viewer and no turn: checkpoint the home
   folder, stop the container. The next open starts it again and re-dresses the screen.
+- Before a container starts, the provider checks that Docker's machine has room for one more bot at
+  `COMPUTER_MEMORY_RESERVATION`. If not, the bot idle the longest (frozen ones first, never one being
+  watched or working) is suspended to make room. With nothing to give way, the start fails with a
+  message saying so, rather than the kernel killing some bot's browser later.
 - On server shutdown (SIGTERM/SIGINT) every running container is checkpointed and stopped; on startup
   anything left `running` is stopped before it is trusted.
 - Deleting a Bot removes its container and wipes its home folder.
@@ -47,15 +54,42 @@ this machine with `HQ_LOCAL=1`), because that is somebody's live desktop.
 COMPUTER_KIND=docker              # 'orgo' | 'docker' | 'auto' (primary Bot always stays on Orgo)
 COMPUTER_IMAGE=orbit/computer:local
 COMPUTER_HOME_DIR=./data/computers
-COMPUTER_IDLE_TIMEOUT_MIN=30
-COMPUTER_CPU_LIMIT=2
-COMPUTER_MEMORY_LIMIT=2g
+COMPUTER_PAUSE_AFTER_MIN=5        # freeze an idle bot; 0 = never
+COMPUTER_IDLE_TIMEOUT_MIN=30      # checkpoint and stop it
+COMPUTER_CPU_LIMIT=1
+COMPUTER_MEMORY_LIMIT=900m        # hard cap per bot
+COMPUTER_MEMORY_RESERVATION=600m  # soft limit, and what a bot counts for in the room check; 0 = off
+MAX_BOTS=10                       # 4 by default with COMPUTER_KIND=orgo
 COMPUTER_NETWORK=bridge
 COMPUTER_MAX_DISPLAYS=50
 DOCKER_SOCKET=/var/run/docker.sock   # empty = DOCKER_HOST, else Docker's default
 ```
 
 On Docker Desktop or colima, `COMPUTER_HOME_DIR` must be under a shared path (your home directory).
+
+## Sizing: ten bots on a 16 GB machine
+
+Chromium is nearly all of a bot computer's cost: the desktop itself (Xvfb, fluxbox, VNC) is about
+40 MB. Inside a container, `box/hqlib.py` starts Chrome lean (`HQ_LEAN_BROWSER`, on by default in a
+container): two renderer processes at most, no GPU process, fewer background services, a capped JS
+heap, tab discarding. The screen is 1280×800.
+
+Measured on an M1 Pro (16 GB) with colima at 10 GB / 6 CPUs, ten bots booted through the real
+provider (`scripts/density-test.ts`), each with two real pages open and three with four:
+
+| | per bot | ten bots |
+|---|---|---|
+| Desk up, home page only | ~290 MB | 2.9 GB |
+| Working (2–4 pages) | ~540 MB, max ~750 MB | 5.4 GB, 4.0 GB of the VM still free |
+
+The two bots that had YouTube and three other heavy pages open hit their 900 MB cap once each. Chrome
+killed one of their tabs and kept running. Idle pages still use CPU (one to three of the six cores
+across all ten), which is what the idle pause removes.
+
+For a Mac with 16 GB, give the Docker VM 10 GB and 6 CPUs (`colima start --memory 10 --cpu 6`, or
+Docker Desktop's resources page) and leave the rest for macOS. On a 16 GB Linux host there is no VM,
+and the same limits leave more headroom. With 8 GB for Docker, the room check fits twelve bots at
+600 MB, but working bots will feel tight. Keep `MAX_BOTS` lower there.
 
 ## Controlling a screen
 

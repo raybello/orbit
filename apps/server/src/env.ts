@@ -162,7 +162,12 @@ export const env = {
    */
   primaryCdpUrl: process.env.PRIMARY_CDP_URL ?? '',
   /** Bots that can each have a screen (Orgo allows four screens on one Linux computer). */
-  maxBots: Number(process.env.MAX_BOTS ?? 4),
+  /**
+   * Bot ceiling. Ten fits a 16 GB machine when every bot has its own container with the default
+   * limits below (see docs/per-bot-computers.md, "Sizing"). Bots placed on the shared Orgo computer
+   * only get its four screens, so that setup keeps four.
+   */
+  maxBots: Number(process.env.MAX_BOTS?.trim() || ((process.env.COMPUTER_KIND ?? '').trim().toLowerCase() === 'orgo' ? 4 : 10)),
 
   // ---- desktop app / local stack ----
   /**
@@ -190,9 +195,17 @@ export const env = {
   computerImage: (process.env.COMPUTER_IMAGE ?? '').trim() || 'orbit/computer:local',
   /** Minutes without a viewer (or bot work) before a bot's container is suspended. */
   computerIdleTimeoutMin: Number(process.env.COMPUTER_IDLE_TIMEOUT_MIN ?? 30),
-  computerCpuLimit: Number(process.env.COMPUTER_CPU_LIMIT ?? 2),
-  /** Docker memory limit per container ("2g", "1536m"). */
-  computerMemoryLimit: process.env.COMPUTER_MEMORY_LIMIT ?? '2g',
+  /** Minutes without a viewer (or bot work) before a bot's container is frozen (docker pause): no
+   *  CPU, instant wake. Memory is only given back by the full suspend above. 0 turns it off. */
+  computerPauseAfterMin: Number(process.env.COMPUTER_PAUSE_AFTER_MIN ?? 5),
+  computerCpuLimit: Number(process.env.COMPUTER_CPU_LIMIT ?? 1),
+  /** Docker memory limit per container ("900m", "2g"): the most one bot may ever use. */
+  computerMemoryLimit: process.env.COMPUTER_MEMORY_LIMIT ?? '900m',
+  /**
+   * What one running bot is counted at when deciding whether another fits ("600m"; "0" turns the
+   * check off). Also given to Docker as the soft limit it reclaims down to under memory pressure.
+   */
+  computerMemoryReservation: process.env.COMPUTER_MEMORY_RESERVATION ?? '600m',
   /** Docker network for bot containers. Ports are published on 127.0.0.1 only. */
   computerNetwork: process.env.COMPUTER_NETWORK ?? 'bridge',
   dockerSocket: process.env.DOCKER_SOCKET ?? '',

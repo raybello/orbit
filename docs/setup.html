@@ -249,11 +249,11 @@ KEYS_FILE=/root/keys.txt PRIMARY_CDP_URL=http://127.0.0.1:9333 \
 <tr><td><code>ENGINES_DIR</code>, <code>ENGINE_PORT_BASE</code></td><td>data/engines, 8650</td><td>Managed engine homes and ports.</td></tr>
 <tr><td><code>MCP_BASE_URL</code>, <code>PRIMARY_MCP_BASE_URL</code>, <code>EXTRA_MCP_SERVERS</code></td><td></td><td>How engines reach <code>/mcp</code>; extra MCP servers every bot gets (JSON).</td></tr>
 <tr><td><code>PRIMARY_BOT_NAME</code>, <code>PRIMARY_BOT_LABEL</code></td><td>Atlas, Chief of Staff</td><td>The first bot's name and label.</td></tr>
-<tr><td><code>MAX_BOTS</code></td><td>4</td><td>Bot ceiling.</td></tr>
+<tr><td><code>MAX_BOTS</code></td><td>10</td><td>Bot ceiling (4 with <code>COMPUTER_KIND=orgo</code>).</td></tr>
 <tr><td><code>COMPUTER_KIND</code></td><td>auto</td><td><code>docker</code>, <code>orgo</code>, or <code>auto</code> (Docker for every bot but the primary).</td></tr>
 <tr><td><code>COMPUTER_IMAGE</code></td><td>orbit/computer:local</td><td>Bot desktop image, built from <code>apps/server/docker/computer</code> when unqualified.</td></tr>
 <tr><td><code>COMPUTER_HOME_DIR</code></td><td>data/computers</td><td>Each bot's home folder and workspace checkpoints.</td></tr>
-<tr><td><code>COMPUTER_IDLE_TIMEOUT_MIN</code>, <code>COMPUTER_CPU_LIMIT</code>, <code>COMPUTER_MEMORY_LIMIT</code>, <code>COMPUTER_NETWORK</code></td><td>30, 2, 2g, bridge</td><td>Container limits and suspension.</td></tr>
+<tr><td><code>COMPUTER_PAUSE_AFTER_MIN</code>, <code>COMPUTER_IDLE_TIMEOUT_MIN</code>, <code>COMPUTER_CPU_LIMIT</code>, <code>COMPUTER_MEMORY_LIMIT</code>, <code>COMPUTER_MEMORY_RESERVATION</code>, <code>COMPUTER_NETWORK</code></td><td>5, 30, 1, 900m, 600m, bridge</td><td>Container limits, idle pause and suspension.</td></tr>
 <tr><td><code>DOCKER_SOCKET</code></td><td>Docker default</td><td>Docker API socket.</td></tr>
 <tr><td><code>ORGO_API_KEY</code>, <code>ORGO_COMPUTER_ID</code>, <code>HQ_LOCAL</code>, <code>PRIMARY_CDP_URL</code></td><td></td><td>Orgo screens and the remote install.</td></tr>
 <tr><td><code>DEFAULT_BOT_MODEL</code>, <code>DEFAULT_BOT_PROVIDER</code></td><td>deepseek-flash, deepseek</td><td>Fallback model when the primary agent has none.</td></tr>
