@@ -137,21 +137,6 @@ CREATE TABLE IF NOT EXISTS composio_sessions (
   user_id TEXT PRIMARY KEY REFERENCES users(id) ON DELETE CASCADE,
   session_id TEXT NOT NULL
 );
-CREATE TABLE IF NOT EXISTS google_tokens (
-  user_id TEXT PRIMARY KEY REFERENCES users(id) ON DELETE CASCADE,
-  access_token_enc TEXT NOT NULL,
-  refresh_token_enc TEXT NOT NULL,
-  expires_at INTEGER NOT NULL,
-  email TEXT,
-  scopes TEXT,
-  updated_at INTEGER NOT NULL
-);
-CREATE TABLE IF NOT EXISTS google_oauth_states (
-  state TEXT PRIMARY KEY,
-  user_id TEXT NOT NULL,
-  code_verifier TEXT NOT NULL,
-  created_at INTEGER NOT NULL
-);
 -- Expo push tokens for the mobile client. A token is unique: re-registering it moves it to the
 -- user who holds the phone now.
 CREATE TABLE IF NOT EXISTS push_tokens (

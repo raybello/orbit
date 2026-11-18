@@ -46,7 +46,7 @@
 <p class="lede">Give a bot a job, connect the apps it needs, and follow its work in chat. This page walks through each part of the app in the order you will meet it.</p>
 
 <h2 id="sign-in">Signing in</h2>
-<p>Orbit signs you in with Google when <code>GOOGLE_CLIENT_ID</code> and <code>GOOGLE_CLIENT_SECRET</code> are set. For local work, <code>DEV_LOGIN=1</code> turns on an email-only form; never set it on a public address. <code>ALLOWED_EMAILS</code> limits who may sign in. On a remote install without Google configured, <code>scripts/sign-in-link.sh you@example.com</code> prints a one-time sign-in link.</p>
+<p>Orbit signs you in with Google through Composio when <code>COMPOSIO_API_KEY</code> is set. For local work, <code>DEV_LOGIN=1</code> turns on an email-only form; never set it on a public address. <code>ALLOWED_EMAILS</code> limits who may sign in. On a remote install without Google configured, <code>scripts/sign-in-link.sh you@example.com</code> prints a one-time sign-in link.</p>
 <p>The mobile app and other native clients sign in with <code>POST /api/auth/sign-in</code> and keep a bearer token; the browser and desktop app use a session cookie. Sessions last 30 days.</p>
 
 <h2 id="layout">Finding your way around</h2>

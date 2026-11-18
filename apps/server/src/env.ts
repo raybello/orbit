@@ -220,12 +220,6 @@ export const env = {
   /** Host directory holding each bot's home folder and workspace checkpoints. */
   computerHomeDir: process.env.COMPUTER_HOME_DIR ?? fileURLToPath(new URL('../../../data/computers', import.meta.url)),
 
-  // ---- Google OAuth2 (direct, no third-party service required) ----
-  /** OAuth2 client ID from your Google Cloud Console project. */
-  googleClientId: process.env.GOOGLE_CLIENT_ID ?? '',
-  /** OAuth2 client secret from your Google Cloud Console project. */
-  googleClientSecret: process.env.GOOGLE_CLIENT_SECRET ?? '',
-
   // ---- Bot Vault and audit log ----
   /**
    * Seals Vault secrets at rest: 32 random bytes as 64 hex characters. Empty turns the Vault off;

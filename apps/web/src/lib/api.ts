@@ -89,8 +89,6 @@ export const api = {
   connect: (slug: string, botId?: string, seq?: number) => req<{ redirectUrl: string }>('POST', `/apps/${slug}/connect`, { botId, seq }),
   disconnect: (slug: string) => req<{ ok: true }>('DELETE', `/apps/${slug}`),
 
-  googleStatus: () => req<{ configured: boolean; connected: boolean; email: string | null }>('GET', '/google/status'),
-  googleConnect: () => req<{ redirectUrl: string }>('GET', '/google/connect'),
   googleDisconnect: () => req<{ ok: true }>('DELETE', '/google'),
 
   roomMembers: (id: string) => req<{ members: RoomMember[] }>('GET', `/rooms/${id}/members`),

@@ -71,7 +71,7 @@
 <thead><tr><th>Domain</th><th>Files</th><th>Responsibility</th></tr></thead>
 <tbody>
 <tr><td>HTTP surface</td><td><code>api/app.ts</code>, <code>api/schemas.ts</code>, <code>routes.ts</code>, <code>routes-*.ts</code></td><td>Routers per area (config, calendar, computers, files, rooms, skills, check-ins) and the zod body schemas.</td></tr>
-<tr><td>Auth</td><td><code>lib/auth.ts</code>, <code>google-oauth.ts</code></td><td>Sessions (cookie or bearer), Google sign-in, one-time links, owner key.</td></tr>
+<tr><td>Auth</td><td><code>lib/auth.ts</code></td><td>Sessions (cookie or bearer), Google sign-in through Composio, one-time links, owner key.</td></tr>
 <tr><td>Agents</td><td><code>engine.ts</code>, <code>hermes-bin.ts</code>, <code>engine-memory.ts</code>, <code>bot-admin.ts</code></td><td>Primary and managed Hermes engines: homes, gateways, ports, config sync, inherited credentials, memory files.</td></tr>
 <tr><td>Turns</td><td><code>agent/loop.ts</code>, <code>agent/prompt.ts</code>, <code>agent/subagents.ts</code></td><td>Queues one turn per bot, posts to the engine's <code>/v1/responses</code>, and turns the event stream into rows and live state; tracks approvals mid-turn.</td></tr>
 <tr><td>Groups</td><td><code>agent/rooms.ts</code></td><td>Dispatches a room message to @mentioned members (or all, capped at three) and follows mention hops.</td></tr>
@@ -140,7 +140,7 @@
 <tr><td><code>approvals</code>, <code>policies</code></td><td>Pending approvals and saved "always" decisions.</td></tr>
 <tr><td><code>routines</code>, <code>tasks</code>, <code>memories</code>, <code>skills</code></td><td>Per-bot schedules, task list, remembered facts, custom skills.</td></tr>
 <tr><td><code>computers</code>, <code>screens</code></td><td>Computers and the screen allocation.</td></tr>
-<tr><td><code>composio_sessions</code>, <code>google_tokens</code>, <code>google_oauth_states</code></td><td>App connections and Google OAuth.</td></tr>
+<tr><td><code>composio_sessions</code></td><td>App connections.</td></tr>
 <tr><td><code>push_tokens</code></td><td>Mobile devices for push.</td></tr>
 </tbody></table></div>
 
