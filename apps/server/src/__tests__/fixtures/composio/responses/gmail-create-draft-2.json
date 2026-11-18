@@ -1,0 +1,25 @@
+{
+  "slug": "GMAIL_CREATE_EMAIL_DRAFT",
+  "ok": true,
+  "ms": 1003,
+  "request": {
+    "recipient_email": "person_2@example.test",
+    "subject": "Orbit eval discard 2026-11-18T05:32",
+    "body": "To be deleted."
+  },
+  "response": {
+    "data": {
+      "display_url": "https://example.test/link_13",
+      "id": "id_6",
+      "message": {
+        "display_url": "https://example.test/link_13",
+        "id": "id_7",
+        "labelIds": [
+          "DRAFT"
+        ],
+        "threadId": "id_7"
+      }
+    },
+    "error": null
+  }
+}

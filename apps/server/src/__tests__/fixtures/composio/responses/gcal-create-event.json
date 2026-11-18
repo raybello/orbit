@@ -1,0 +1,99 @@
+{
+  "slug": "GOOGLECALENDAR_CREATE_EVENT",
+  "ok": true,
+  "ms": 1387,
+  "request": {
+    "calendar_id": "id_17",
+    "summary": "Orbit eval event 2026-11-18T05:32",
+    "start_datetime": "2026-11-19T15:00:00",
+    "event_duration_minutes": 30,
+    "timezone": "America/Toronto",
+    "description": "Created by the shapes script.",
+    "location": "Room 1",
+    "attendees": [
+      "person_1@example.test"
+    ],
+    "send_updates": "none",
+    "create_meeting_room": true
+  },
+  "response": {
+    "data": {
+      "composio_execution_message": null,
+      "display_url": "https://example.test/link_2",
+      "response_data": {
+        "attendees": [
+          {
+            "email": "person_1@example.test",
+            "responseStatus": "needsAction"
+          },
+          {
+            "email": "person_2@example.test",
+            "organizer": true,
+            "responseStatus": "needsAction",
+            "self": true
+          }
+        ],
+        "conferenceData": {
+          "conferenceId": "id_18",
+          "conferenceSolution": {
+            "iconUri": "https://example.test/link_3",
+            "key": {
+              "type": "hangoutsMeet"
+            },
+            "name": "Google Meet"
+          },
+          "createRequest": {
+            "conferenceSolutionKey": {
+              "type": "hangoutsMeet"
+            },
+            "requestId": "id_19",
+            "status": {
+              "statusCode": "success"
+            }
+          },
+          "entryPoints": [
+            {
+              "entryPointType": "video",
+              "label": "meet.google.com/trd-irip-ufr",
+              "uri": "https://example.test/link_4"
+            }
+          ]
+        },
+        "created": "2026-11-18T05:32:26.000Z",
+        "creator": {
+          "email": "person_2@example.test",
+          "self": true
+        },
+        "description": "Created by the shapes script.",
+        "end": {
+          "dateTime": "2026-11-19T20:30:00Z",
+          "timeZone": "America/Toronto"
+        },
+        "etag": "id_20",
+        "eventType": "default",
+        "hangoutLink": "https://example.test/link_4",
+        "htmlLink": "https://example.test/link_2",
+        "iCalUID": "id_21",
+        "id": "id_22",
+        "kind": "calendar#event",
+        "location": "Room 1",
+        "organizer": {
+          "email": "person_2@example.test",
+          "self": true
+        },
+        "reminders": {
+          "useDefault": true
+        },
+        "sequence": 0,
+        "start": {
+          "dateTime": "2026-11-19T20:00:00Z",
+          "timeZone": "America/Toronto"
+        },
+        "status": "confirmed",
+        "summary": "Orbit eval event 2026-11-18T05:32",
+        "updated": "2026-11-18T05:32:26.558Z"
+      }
+    },
+    "error": null
+  }
+}

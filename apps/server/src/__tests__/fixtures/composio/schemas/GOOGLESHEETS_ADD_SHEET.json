@@ -1,0 +1,595 @@
+{
+  "slug": "GOOGLESHEETS_ADD_SHEET",
+  "version": "20261116_00",
+  "description": "Add a GRID sheet with rows and columns to an existing spreadsheet. This action does not create chart-only or DATA_SOURCE sheets. Use properties to configure the GRID sheet's dimensions, tab color, position, visibility, and text direction. Notes: - Sheet names must be unique; use forceUnique=true to auto-append suffix (_2, _3) if name exists - For tab colors, use EITHER rgbColor OR themeColor, not both - Avoid 'index' when creating sheets in parallel (causes errors)",
+  "input_parameters": {
+    "type": "object",
+    "title": "AddSheetRequest",
+    "required": [
+      "spreadsheet_id"
+    ],
+    "properties": {
+      "title": {
+        "type": "string",
+        "title": "Title",
+        "description": "The name for the new sheet tab. Must be unique within the spreadsheet. Example: \"Q3 Report\", \"Sales Data 2025\". This is a convenience parameter - alternatively, you can set this via properties.title. Note: sheet_name is also accepted as an alias for title.",
+        "human_parameter_name": "Sheet Name",
+        "human_parameter_description": "The name for the new sheet tab. Must be unique within the spreadsheet."
+      },
+      "properties": {
+        "type": "object",
+        "title": "SheetProperties",
+        "properties": {
+          "index": {
+            "type": "integer",
+            "title": "Index",
+            "minimum": 0,
+            "description": "The zero-based index where the sheet should be inserted. Must be less than or equal to the current number of sheets. If not set, the sheet will be added at the end. Example: 0 for the first position. CONCURRENCY WARNING: Do not use 'index' when creating multiple sheets in parallel - this causes 'index is too high' errors. For parallel creation, omit this field and let sheets be added at the end.",
+            "human_parameter_name": "Position Index",
+            "human_parameter_description": "The position where the new sheet should appear (0 = first). Leave empty to add at the end."
+          },
+          "title": {
+            "type": "string",
+            "title": "Title",
+            "description": "The name of the sheet. Must be unique within the spreadsheet. Example: \"Q3 Report\", \"Sales Data 2025\"",
+            "human_parameter_name": "Sheet Name",
+            "human_parameter_description": "The name for the new sheet tab. Must be unique within the spreadsheet."
+          },
+          "hidden": {
+            "type": "boolean",
+            "title": "Hidden",
+            "description": "True if the sheet is hidden in the UI, false if it's visible.",
+            "human_parameter_name": "Hidden",
+            "human_parameter_description": "Set to true to create a hidden sheet, or false/empty for a visible sheet."
+          },
+          "sheetId": {
+            "type": "integer",
+            "title": "Sheet Id",
+            "minimum": 0,
+            "description": "The ID of the sheet. If not set, an ID will be randomly generated. Must be non-negative and unique within the spreadsheet. WARNING: Avoid setting this unless you need a specific ID.",
+            "human_parameter_name": "Sheet ID",
+            "human_parameter_description": "A specific numeric ID for the new sheet. Usually left empty to let Google auto-generate one."
+          },
+          "sheetType": {
+            "enum": [
+              "GRID"
+            ],
+            "type": "string",
+            "title": "RequestSheetType",
+            "default": "GRID",
+            "description": "The only sheet type accepted by GOOGLESHEETS_ADD_SHEET.",
+            "human_parameter_name": "Sheet Type",
+            "human_parameter_description": "Only GRID sheets with rows and columns are supported."
+          },
+          "rightToLeft": {
+            "type": "boolean",
+            "title": "Right To Left",
+            "description": "True if the sheet is an RTL sheet, false if it's LTR.",
+            "human_parameter_name": "Right to Left",
+            "human_parameter_description": "Set to true for right-to-left language sheets (e.g., Arabic, Hebrew)."
+          },
+          "tabColorStyle": {
+            "anyOf": [
+              {
+                "type": "object",
+                "title": "_RgbColorVariant",
+                "required": [
+                  "rgbColor"
+                ],
+                "properties": {
+                  "rgbColor": {
+                    "type": "object",
+                    "title": "Color",
+                    "properties": {
+                      "red": {
+                        "anyOf": [
+                          {
+                            "type": "number",
+                            "maximum": 1,
+                            "minimum": 0
+                          },
+                          {
+                            "type": "null"
+                          }
+                        ],
+                        "title": "Red",
+                        "default": null,
+                        "description": "The amount of red in the color as a value in the interval [0, 1].",
+                        "human_parameter_name": "Red",
+                        "human_parameter_description": "The amount of red in the color as a value in the interval [0, 1]."
+                      },
+                      "blue": {
+                        "anyOf": [
+                          {
+                            "type": "number",
+                            "maximum": 1,
+                            "minimum": 0
+                          },
+                          {
+                            "type": "null"
+                          }
+                        ],
+                        "title": "Blue",
+                        "default": null,
+                        "description": "The amount of blue in the color as a value in the interval [0, 1].",
+                        "human_parameter_name": "Blue",
+                        "human_parameter_description": "The amount of blue in the color (0.0-1.0)."
+                      },
+                      "alpha": {
+                        "anyOf": [
+                          {
+                            "type": "number",
+                            "maximum": 1,
+                            "minimum": 0
+                          },
+                          {
+                            "type": "null"
+                          }
+                        ],
+                        "title": "Alpha",
+                        "default": null,
+                        "description": "The fraction of this color that should be applied to the pixel. E.g. 0.5 for 50% transparent.",
+                        "human_parameter_name": "Alpha",
+                        "human_parameter_description": "The transparency of the color (0.0-1.0)."
+                      },
+                      "green": {
+                        "anyOf": [
+                          {
+                            "type": "number",
+                            "maximum": 1,
+                            "minimum": 0
+                          },
+                          {
+                            "type": "null"
+                          }
+                        ],
+                        "title": "Green",
+                        "default": null,
+                        "description": "The amount of green in the color as a value in the interval [0, 1].",
+                        "human_parameter_name": "Green",
+                        "human_parameter_description": "The amount of green in the color (0.0-1.0)."
+                      }
+                    },
+                    "description": "RGB color. Provide values for red, green, blue (0.0-1.0).",
+                    "human_parameter_name": "Rgb Color",
+                    "human_parameter_description": "RGB color. Provide values for red, green, blue (0.0-1.0)."
+                  }
+                },
+                "additionalProperties": false
+              },
+              {
+                "type": "object",
+                "title": "_ThemeColorVariant",
+                "required": [
+                  "themeColor"
+                ],
+                "properties": {
+                  "themeColor": {
+                    "enum": [
+                      "THEME_COLOR_TYPE_UNSPECIFIED",
+                      "TEXT",
+                      "BACKGROUND",
+                      "ACCENT1",
+                      "ACCENT2",
+                      "ACCENT3",
+                      "ACCENT4",
+                      "ACCENT5",
+                      "ACCENT6",
+                      "LINK"
+                    ],
+                    "type": "string",
+                    "title": "ThemeColorType",
+                    "description": "Theme color. Use predefined theme colors like ACCENT1, TEXT, BACKGROUND, etc.",
+                    "human_parameter_name": "Theme Color",
+                    "human_parameter_description": "A predefined theme color like ACCENT1, TEXT, or BACKGROUND."
+                  }
+                },
+                "additionalProperties": false
+              }
+            ],
+            "title": "ColorStyle",
+            "description": "Either {rgbColor: {...}} or {themeColor: \"...\"}, never both.",
+            "human_parameter_name": "Tab Color",
+            "human_parameter_description": "The color to apply to the sheet tab. Use EITHER rgbColor OR themeColor, never both."
+          },
+          "gridProperties": {
+            "type": "object",
+            "title": "GridProperties",
+            "properties": {
+              "rowCount": {
+                "type": "integer",
+                "title": "Row Count",
+                "minimum": 0,
+                "description": "The number of rows in the sheet. Defaults to 100 rows if not specified (to conserve cell quota). Google Sheets has a 10M cell workbook limit.",
+                "human_parameter_name": "Row Count",
+                "human_parameter_description": "The number of rows in the sheet. Defaults to 100 if not specified."
+              },
+              "columnCount": {
+                "type": "integer",
+                "title": "Column Count",
+                "minimum": 0,
+                "description": "The number of columns in the sheet. Defaults to 26 columns if not specified. Google Sheets has a 10M cell workbook limit.",
+                "human_parameter_name": "Column Count",
+                "human_parameter_description": "The number of columns in the sheet. Defaults to 26 if not specified."
+              },
+              "hideGridlines": {
+                "type": "boolean",
+                "title": "Hide Gridlines",
+                "description": "True if the gridlines are hidden, false if they are shown.",
+                "human_parameter_name": "Hide Gridlines",
+                "human_parameter_description": "Set to true to hide gridlines in the sheet."
+              },
+              "frozenRowCount": {
+                "type": "integer",
+                "title": "Frozen Row Count",
+                "minimum": 0,
+                "description": "The number of rows that are frozen in the sheet.",
+                "human_parameter_name": "Frozen Row Count",
+                "human_parameter_description": "The number of rows to freeze at the top."
+              },
+              "frozenColumnCount": {
+                "type": "integer",
+                "title": "Frozen Column Count",
+                "minimum": 0,
+                "description": "The number of columns that are frozen in the sheet.",
+                "human_parameter_name": "Frozen Column Count",
+                "human_parameter_description": "The number of columns to freeze on the left."
+              },
+              "rowGroupControlAfter": {
+                "type": "boolean",
+                "title": "Row Group Control After",
+                "description": "True if the row group control toggle is shown after the group, false if before.",
+                "human_parameter_name": "Row Group Control After",
+                "human_parameter_description": "Position of row group control toggle."
+              },
+              "columnGroupControlAfter": {
+                "type": "boolean",
+                "title": "Column Group Control After",
+                "description": "True if the column group control toggle is shown after the group, false if before.",
+                "human_parameter_name": "Column Group Control After",
+                "human_parameter_description": "Position of column group control toggle."
+              }
+            },
+            "description": "Grid dimensions and display settings for the new GRID sheet.",
+            "additionalProperties": false,
+            "human_parameter_name": "Grid Properties",
+            "human_parameter_description": "Settings for the sheet's grid, including row/column counts and frozen rows/columns."
+          }
+        },
+        "description": "Advanced GRID sheet properties such as dimensions, tab color, position, visibility, and text direction. For simple cases, use the title parameter directly.",
+        "additionalProperties": false,
+        "human_parameter_name": "Sheet Properties",
+        "human_parameter_description": "Optional settings for the new GRID sheet, including tab color and grid dimensions."
+      },
+      "force_unique": {
+        "type": "boolean",
+        "title": "Force Unique",
+        "default": true,
+        "description": "When True (default), automatically ensures the sheet name is unique by appending a numeric suffix (e.g., '_2', '_3') if the requested name already exists. This makes the action resilient to retries and parallel workflows. When False, the action fails with an error if a sheet with the same name already exists.",
+        "human_parameter_name": "Force Unique Name",
+        "human_parameter_description": "Defaults to True. Automatically appends a suffix (like '_2', '_3') if the sheet name already exists, ensuring the sheet is always created successfully. Set to False to fail if the name already exists."
+      },
+      "spreadsheet_id": {
+        "type": "string",
+        "title": "Spreadsheet Id",
+        "examples": [
+          "1BxiMVs0XRA5nFMdKvBdBZjgmUUqptlbs74OgvE2upms"
+        ],
+        "minLength": 1,
+        "description": "REQUIRED. Cannot be empty. The ID of the target spreadsheet where the new sheet will be added. This is the long alphanumeric string in the Google Sheet URL (e.g., '1BxiMVs0XRA5nFMdKvBdBZjgmUUqptlbs74OgvE2upms'). Use 'Search Spreadsheets' action to find the spreadsheet ID by name if you don't have it.",
+        "human_parameter_name": "Spreadsheet ID",
+        "human_parameter_description": "The unique identifier of the Google Spreadsheet where you want to add a new sheet. Find this in the spreadsheet URL. Cannot be empty."
+      }
+    }
+  },
+  "output_parameters": {
+    "type": "object",
+    "$defs": {
+      "Color": {
+        "type": "object",
+        "title": "Color",
+        "properties": {
+          "red": {
+            "type": "number",
+            "title": "Red",
+            "maximum": 1,
+            "minimum": 0,
+            "description": "The amount of red in the color as a value in the interval [0, 1].",
+            "human_parameter_name": "Red",
+            "human_parameter_description": "The amount of red in the color as a value in the interval [0, 1]."
+          },
+          "blue": {
+            "type": "number",
+            "title": "Blue",
+            "maximum": 1,
+            "minimum": 0,
+            "description": "The amount of blue in the color as a value in the interval [0, 1].",
+            "human_parameter_name": "Blue",
+            "human_parameter_description": "The amount of blue in the color (0.0-1.0)."
+          },
+          "alpha": {
+            "type": "number",
+            "title": "Alpha",
+            "maximum": 1,
+            "minimum": 0,
+            "description": "The fraction of this color that should be applied to the pixel. E.g. 0.5 for 50% transparent.",
+            "human_parameter_name": "Alpha",
+            "human_parameter_description": "The transparency of the color (0.0-1.0)."
+          },
+          "green": {
+            "type": "number",
+            "title": "Green",
+            "maximum": 1,
+            "minimum": 0,
+            "description": "The amount of green in the color as a value in the interval [0, 1].",
+            "human_parameter_name": "Green",
+            "human_parameter_description": "The amount of green in the color (0.0-1.0)."
+          }
+        }
+      },
+      "SheetType": {
+        "enum": [
+          "GRID",
+          "OBJECT",
+          "DATA_SOURCE"
+        ],
+        "type": "string",
+        "title": "SheetType",
+        "description": "Sheet type enum for response objects. All three types may appear in responses when reading existing sheets."
+      },
+      "ColorStyle": {
+        "anyOf": [
+          {
+            "$ref": "#/$defs/_RgbColorVariant"
+          },
+          {
+            "$ref": "#/$defs/_ThemeColorVariant"
+          }
+        ],
+        "title": "ColorStyle",
+        "description": "Either {rgbColor: {...}} or {themeColor: \"...\"}, never both."
+      },
+      "AddSheetReply": {
+        "type": "object",
+        "title": "AddSheetReply",
+        "properties": {
+          "addChart": {
+            "type": "object",
+            "title": "Add Chart",
+            "description": "Response for OBJECT sheets created via addChart with newSheet=true.",
+            "additionalProperties": true
+          },
+          "addSheet": {
+            "$ref": "#/$defs/AddSheetResponseProperties",
+            "title": "Add Sheet"
+          },
+          "addDataSource": {
+            "type": "object",
+            "title": "Add Data Source",
+            "description": "Response for DATA_SOURCE sheets created via addDataSource.",
+            "additionalProperties": true
+          }
+        },
+        "description": "Reply for batch update requests. Contains one of addSheet, addChart, or addDataSource."
+      },
+      "GridProperties": {
+        "type": "object",
+        "title": "GridProperties",
+        "properties": {
+          "rowCount": {
+            "type": "integer",
+            "title": "Row Count",
+            "minimum": 0,
+            "description": "The number of rows in the sheet. Defaults to 100 rows if not specified (to conserve cell quota). Google Sheets has a 10M cell workbook limit.",
+            "human_parameter_name": "Row Count",
+            "human_parameter_description": "The number of rows in the sheet. Defaults to 100 if not specified."
+          },
+          "columnCount": {
+            "type": "integer",
+            "title": "Column Count",
+            "minimum": 0,
+            "description": "The number of columns in the sheet. Defaults to 26 columns if not specified. Google Sheets has a 10M cell workbook limit.",
+            "human_parameter_name": "Column Count",
+            "human_parameter_description": "The number of columns in the sheet. Defaults to 26 if not specified."
+          },
+          "hideGridlines": {
+            "type": "boolean",
+            "title": "Hide Gridlines",
+            "description": "True if the gridlines are hidden, false if they are shown.",
+            "human_parameter_name": "Hide Gridlines",
+            "human_parameter_description": "Set to true to hide gridlines in the sheet."
+          },
+          "frozenRowCount": {
+            "type": "integer",
+            "title": "Frozen Row Count",
+            "minimum": 0,
+            "description": "The number of rows that are frozen in the sheet.",
+            "human_parameter_name": "Frozen Row Count",
+            "human_parameter_description": "The number of rows to freeze at the top."
+          },
+          "frozenColumnCount": {
+            "type": "integer",
+            "title": "Frozen Column Count",
+            "minimum": 0,
+            "description": "The number of columns that are frozen in the sheet.",
+            "human_parameter_name": "Frozen Column Count",
+            "human_parameter_description": "The number of columns to freeze on the left."
+          },
+          "rowGroupControlAfter": {
+            "type": "boolean",
+            "title": "Row Group Control After",
+            "description": "True if the row group control toggle is shown after the group, false if before.",
+            "human_parameter_name": "Row Group Control After",
+            "human_parameter_description": "Position of row group control toggle."
+          },
+          "columnGroupControlAfter": {
+            "type": "boolean",
+            "title": "Column Group Control After",
+            "description": "True if the column group control toggle is shown after the group, false if before.",
+            "human_parameter_name": "Column Group Control After",
+            "human_parameter_description": "Position of column group control toggle."
+          }
+        }
+      },
+      "ThemeColorType": {
+        "enum": [
+          "THEME_COLOR_TYPE_UNSPECIFIED",
+          "TEXT",
+          "BACKGROUND",
+          "ACCENT1",
+          "ACCENT2",
+          "ACCENT3",
+          "ACCENT4",
+          "ACCENT5",
+          "ACCENT6",
+          "LINK"
+        ],
+        "type": "string",
+        "title": "ThemeColorType"
+      },
+      "AddSheetResponse": {
+        "type": "object",
+        "title": "AddSheetResponse",
+        "required": [
+          "spreadsheetId",
+          "replies"
+        ],
+        "properties": {
+          "replies": {
+            "type": "array",
+            "items": {
+              "$ref": "#/$defs/AddSheetReply"
+            },
+            "title": "Replies",
+            "description": "A list of replies to the batch update. For AddSheet, it contains the properties of the new sheet."
+          },
+          "display_url": {
+            "type": "string",
+            "title": "Display Url",
+            "description": "The direct URL to view the newly created sheet in Google Sheets web interface."
+          },
+          "spreadsheetId": {
+            "type": "string",
+            "title": "Spreadsheet Id",
+            "description": "The ID of the spreadsheet the sheet was added to."
+          },
+          "composio_execution_message": {
+            "type": "string",
+            "title": "Composio Execution Message",
+            "description": "Message about execution details, such as when the sheet name was modified to ensure uniqueness."
+          }
+        }
+      },
+      "_RgbColorVariant": {
+        "type": "object",
+        "title": "_RgbColorVariant",
+        "required": [
+          "rgbColor"
+        ],
+        "properties": {
+          "rgbColor": {
+            "$ref": "#/$defs/Color",
+            "title": "Rgb Color",
+            "description": "RGB color. Provide values for red, green, blue (0.0-1.0).",
+            "human_parameter_name": "Rgb Color",
+            "human_parameter_description": "RGB color. Provide values for red, green, blue (0.0-1.0)."
+          }
+        },
+        "additionalProperties": false
+      },
+      "_ThemeColorVariant": {
+        "type": "object",
+        "title": "_ThemeColorVariant",
+        "required": [
+          "themeColor"
+        ],
+        "properties": {
+          "themeColor": {
+            "$ref": "#/$defs/ThemeColorType",
+            "title": "Theme Color",
+            "description": "Theme color. Use predefined theme colors like ACCENT1, TEXT, BACKGROUND, etc.",
+            "human_parameter_name": "Theme Color",
+            "human_parameter_description": "A predefined theme color like ACCENT1, TEXT, or BACKGROUND."
+          }
+        },
+        "additionalProperties": false
+      },
+      "AddSheetResponseProperties": {
+        "type": "object",
+        "title": "AddSheetResponseProperties",
+        "required": [
+          "sheetId",
+          "title",
+          "index",
+          "sheetType"
+        ],
+        "properties": {
+          "index": {
+            "type": "integer",
+            "title": "Index"
+          },
+          "title": {
+            "type": "string",
+            "title": "Title"
+          },
+          "hidden": {
+            "type": "boolean",
+            "title": "Hidden"
+          },
+          "sheetId": {
+            "type": "integer",
+            "title": "Sheet Id"
+          },
+          "tabColor": {
+            "$ref": "#/$defs/Color",
+            "title": "Tab Color"
+          },
+          "sheetType": {
+            "$ref": "#/$defs/SheetType",
+            "title": "Sheet Type"
+          },
+          "rightToLeft": {
+            "type": "boolean",
+            "title": "Right To Left"
+          },
+          "tabColorStyle": {
+            "$ref": "#/$defs/ColorStyle",
+            "title": "Tab Color Style"
+          },
+          "gridProperties": {
+            "$ref": "#/$defs/GridProperties",
+            "title": "Grid Properties"
+          },
+          "dataSourceSheetProperties": {
+            "type": "object",
+            "title": "Data Source Sheet Properties",
+            "description": "Additional properties for a DATA_SOURCE sheet. Output-only; present only when sheetType is DATA_SOURCE.",
+            "additionalProperties": true
+          }
+        }
+      }
+    },
+    "title": "AddSheetResponseWrapper",
+    "required": [
+      "data",
+      "successful"
+    ],
+    "properties": {
+      "data": {
+        "$ref": "#/$defs/AddSheetResponse",
+        "title": "Data",
+        "description": "Data from the action execution"
+      },
+      "error": {
+        "type": "string",
+        "title": "Error",
+        "description": "Error if any occurred during the execution of the action"
+      },
+      "successful": {
+        "type": "boolean",
+        "title": "Successful",
+        "description": "Whether or not the action execution was successful or not"
+      }
+    }
+  }
+}

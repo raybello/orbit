@@ -1,0 +1,14 @@
+{
+  "slug": "GMAIL_DELETE_DRAFT",
+  "ok": true,
+  "ms": 1161,
+  "request": {
+    "draft_id": "id_6"
+  },
+  "response": {
+    "data": {
+      "success": true
+    },
+    "error": null
+  }
+}

@@ -1,0 +1,88 @@
+{
+  "slug": "GMAIL_GET_PROFILE",
+  "version": "20261116_00",
+  "description": "Retrieves Gmail profile information (email address, aggregate messagesTotal/threadsTotal, historyId) for a user. messagesTotal counts individual emails; threadsTotal counts conversations; neither is per-label — use GMAIL_FETCH_EMAILS with label filters for label-specific counts. The returned historyId seeds incremental sync via GMAIL_LIST_HISTORY; if historyIdTooOld is returned, rescan with GMAIL_FETCH_EMAILS before resuming. Response may be wrapped under a top-level data field; unwrap before reading fields. A successful call confirms mailbox connectivity but not full mailbox access if granted scopes are narrow. Use the returned email address to dynamically identify the authenticated account rather than hard-coding it.",
+  "input_parameters": {
+    "type": "object",
+    "title": "GetProfileRequest",
+    "properties": {
+      "user_id": {
+        "type": "string",
+        "title": "User Id",
+        "default": "me",
+        "examples": [
+          "user@example.com",
+          "me"
+        ],
+        "description": "The email address of the Gmail user whose profile is to be retrieved, or the special value 'me' to indicate the currently authenticated user. Prefer 'me' unless explicitly targeting another account; passing a raw email address that does not match the connected account may fail or access the wrong mailbox.",
+        "human_parameter_name": "User ID",
+        "human_parameter_description": "Provide the email address of the user whose profile you want to see. Use 'me' to view your own profile."
+      }
+    }
+  },
+  "output_parameters": {
+    "type": "object",
+    "$defs": {
+      "GetProfileResponse": {
+        "type": "object",
+        "title": "GetProfileResponse",
+        "required": [
+          "emailAddress",
+          "messagesTotal",
+          "threadsTotal",
+          "historyId"
+        ],
+        "properties": {
+          "historyId": {
+            "type": "string",
+            "title": "History Id",
+            "description": "The ID of the mailbox's current history record."
+          },
+          "display_url": {
+            "type": "string",
+            "title": "Display Url",
+            "description": "Web UI link for this resource - set by each action's execute()."
+          },
+          "emailAddress": {
+            "type": "string",
+            "title": "Email Address",
+            "description": "The user's primary email address."
+          },
+          "threadsTotal": {
+            "type": "integer",
+            "title": "Threads Total",
+            "description": "The total number of threads in the mailbox."
+          },
+          "messagesTotal": {
+            "type": "integer",
+            "title": "Messages Total",
+            "description": "The total number of messages in the mailbox."
+          }
+        },
+        "description": "The user's Gmail profile information, including primary email address, total messages, total threads, and history ID."
+      }
+    },
+    "title": "GetProfileResponseWrapper",
+    "required": [
+      "data",
+      "successful"
+    ],
+    "properties": {
+      "data": {
+        "$ref": "#/$defs/GetProfileResponse",
+        "title": "Data",
+        "description": "Data from the action execution"
+      },
+      "error": {
+        "type": "string",
+        "title": "Error",
+        "description": "Error if any occurred during the execution of the action"
+      },
+      "successful": {
+        "type": "boolean",
+        "title": "Successful",
+        "description": "Whether or not the action execution was successful or not"
+      }
+    }
+  }
+}

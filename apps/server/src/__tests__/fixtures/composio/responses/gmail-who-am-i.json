@@ -1,0 +1,18 @@
+{
+  "slug": "GMAIL_WHO_AM_I",
+  "ok": true,
+  "ms": 485,
+  "request": {},
+  "response": {
+    "data": {
+      "data": {
+        "email": "person_2@example.test",
+        "hosted_domain": null,
+        "name": "name_1",
+        "sub": "id_1"
+      },
+      "display_name": "person_2@example.test"
+    },
+    "error": null
+  }
+}

@@ -1,0 +1,81 @@
+{
+  "slug": "GOOGLECALENDAR_LIST_CALENDARS",
+  "ok": true,
+  "ms": 528,
+  "request": {},
+  "response": {
+    "data": {
+      "calendars": [
+        {
+          "accessRole": "owner",
+          "backgroundColor": "#9fe1e7",
+          "colorId": "id_10",
+          "conferenceProperties": {
+            "allowedConferenceSolutionTypes": [
+              "hangoutsMeet"
+            ]
+          },
+          "defaultReminders": [
+            {
+              "method": "popup",
+              "minutes": 30
+            }
+          ],
+          "display_url": "https://example.test/link_11",
+          "etag": "id_11",
+          "foregroundColor": "#000000",
+          "id": "id_12",
+          "kind": "calendar#calendarListEntry",
+          "notificationSettings": {
+            "notifications": [
+              {
+                "method": "email",
+                "type": "eventCreation"
+              },
+              {
+                "method": "email",
+                "type": "eventChange"
+              },
+              {
+                "method": "email",
+                "type": "eventCancellation"
+              },
+              {
+                "method": "email",
+                "type": "eventResponse"
+              }
+            ]
+          },
+          "primary": true,
+          "selected": true,
+          "summary": "person_2@example.test",
+          "timeZone": "UTC"
+        },
+        {
+          "accessRole": "reader",
+          "backgroundColor": "#16a765",
+          "colorId": "id_13",
+          "conferenceProperties": {
+            "allowedConferenceSolutionTypes": [
+              "hangoutsMeet"
+            ]
+          },
+          "defaultReminders": [],
+          "description": "Holidays and Observances in Canada",
+          "display_url": "https://example.test/link_12",
+          "etag": "id_14",
+          "foregroundColor": "#000000",
+          "id": "id_15",
+          "kind": "calendar#calendarListEntry",
+          "selected": true,
+          "summary": "Holidays in Canada",
+          "timeZone": "UTC"
+        }
+      ],
+      "display_url": null,
+      "next_page_token": null,
+      "next_sync_token": "id_16"
+    },
+    "error": null
+  }
+}

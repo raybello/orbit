@@ -1,0 +1,80 @@
+{
+  "slug": "GMAIL_GET_DRAFT",
+  "ok": true,
+  "ms": 460,
+  "request": {
+    "draft_id": "id_2"
+  },
+  "response": {
+    "data": {
+      "display_url": "https://example.test/link_15",
+      "id": "id_2",
+      "message": {
+        "attachmentList": [],
+        "display_url": "https://example.test/link_16",
+        "labelIds": [
+          "DRAFT"
+        ],
+        "messageId": "id_3",
+        "messageText": "First version of the draft.\n",
+        "messageTimestamp": "2026-11-18T05:32:17Z",
+        "payload": {
+          "body": {
+            "data": "Rmlyc3QgdmVyc2lvbiBvZiB0aGUgZHJhZnQuCg==",
+            "size": 28
+          },
+          "filename": "",
+          "headers": [
+            {
+              "name": "Received",
+              "value": "from 511566560828 named unknown by gmailapi.google.com with HTTPREST; Tue, 17 Nov 2026 23:32:17 -0600"
+            },
+            {
+              "name": "To",
+              "value": "person_2@example.test"
+            },
+            {
+              "name": "Subject",
+              "value": "Orbit eval draft 2026-11-18T05:32"
+            },
+            {
+              "name": "From",
+              "value": "name_1 <person_2@example.test>"
+            },
+            {
+              "name": "Content-Type",
+              "value": "text/plain; charset=\"utf-8\""
+            },
+            {
+              "name": "Content-Transfer-Encoding",
+              "value": "7bit"
+            },
+            {
+              "name": "MIME-Version",
+              "value": "1.0"
+            },
+            {
+              "name": "Date",
+              "value": "Tue, 17 Nov 2026 23:32:17 -0600"
+            },
+            {
+              "name": "Message-Id",
+              "value": "<person_3@example.test>"
+            }
+          ],
+          "mimeType": "text/plain",
+          "partId": ""
+        },
+        "preview": {
+          "body": "First version of the draft.",
+          "subject": "Orbit eval draft 2026-11-18T05:32"
+        },
+        "sender": "name_1 <person_2@example.test>",
+        "subject": "Orbit eval draft 2026-11-18T05:32",
+        "threadId": "id_3",
+        "to": "person_2@example.test"
+      }
+    },
+    "error": null
+  }
+}

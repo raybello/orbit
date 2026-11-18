@@ -1,0 +1,29 @@
+{
+  "slug": "GOOGLESHEETS_VALUES_GET",
+  "ok": true,
+  "ms": 934,
+  "request": {
+    "spreadsheet_id": "id_41",
+    "range": "Sheet1!A1:C10"
+  },
+  "response": {
+    "data": {
+      "display_url": "https://example.test/link_22",
+      "majorDimension": "ROWS",
+      "range": "Sheet1!A1:C10",
+      "values": [
+        [
+          "Name",
+          "Count",
+          "Note"
+        ],
+        [
+          "alpha",
+          "1",
+          "first"
+        ]
+      ]
+    },
+    "error": null
+  }
+}

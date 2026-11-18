@@ -1,0 +1,18 @@
+{
+  "slug": "GOOGLEDOCS_GET_DOCUMENT_PLAINTEXT",
+  "ok": true,
+  "ms": 402,
+  "request": {
+    "document_id": "id_43"
+  },
+  "response": {
+    "data": {
+      "display_url": "https://example.test/link_1",
+      "document_id": "id_43",
+      "plain_text": "Weekly notes\n● First point\n● Second point\nClosing line.",
+      "title": "Orbit eval doc 2026-11-18T05:32",
+      "warnings": []
+    },
+    "error": null
+  }
+}

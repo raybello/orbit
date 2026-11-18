@@ -1,0 +1,21 @@
+{
+  "slug": "GMAIL_SEND_DRAFT",
+  "ok": true,
+  "ms": 725,
+  "request": {
+    "draft_id": "id_2"
+  },
+  "response": {
+    "data": {
+      "display_url": "https://example.test/link_19",
+      "id": "id_5",
+      "labelIds": [
+        "UNREAD",
+        "SENT",
+        "INBOX"
+      ],
+      "threadId": "id_4"
+    },
+    "error": null
+  }
+}

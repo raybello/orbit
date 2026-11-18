@@ -1,0 +1,309 @@
+{
+  "slug": "GOOGLESHEETS_SPREADSHEETS_VALUES_APPEND",
+  "version": "20261116_00",
+  "description": "Tool to append values to a spreadsheet. Use when you need to add new data to the end of an existing table in a Google Sheet.",
+  "input_parameters": {
+    "type": "object",
+    "title": "SpreadsheetsValuesAppendRequest",
+    "required": [
+      "spreadsheetId",
+      "range",
+      "valueInputOption",
+      "values"
+    ],
+    "properties": {
+      "range": {
+        "type": "string",
+        "title": "Range",
+        "examples": [
+          "Sales Data",
+          "Sales Data!A:D",
+          "Sales Data!A1:D100",
+          "'Email Summary'!A:E",
+          "Email Summary!A:E"
+        ],
+        "description": "A1 notation range used to locate a logical table. New rows are appended after the last row of that table within this range. First call GOOGLESHEETS_GET_SHEET_NAMES with this exact spreadsheet_id and use one of the returned sheet names; sheet names are case-sensitive and default names like 'Sheet1' are unsafe guesses. Valid formats: exact sheet name only (e.g., 'Sales Data'), sheet-qualified column range (e.g., 'Sales Data!A:D'), or sheet-qualified cell range (e.g., 'Sales Data!A1:D100'). Do not pass bare ranges like 'A:F' or 'A1:D100' because they omit the sheet name. If the needed sheet is not returned, create it or ask the user instead of inventing a name. Sheet names with spaces need single quotes (auto-added). IMPORTANT: The append may land in different columns than specified due to API table detection. For strict column placement, use GOOGLESHEETS_SPREADSHEETS_VALUES_UPDATE instead. Always check updates.updatedRange in the response to verify where data was actually written.",
+        "human_parameter_name": "Range",
+        "human_parameter_description": "Call GOOGLESHEETS_GET_SHEET_NAMES first, then use an exact returned sheet name in formats like 'Sales Data!A:D' or 'Sales Data!A1:D100'. Do not use bare ranges like 'A:F' or guessed default names like 'Sheet1' unless returned by that action. WARNING: The API may append to different columns than specified due to table detection logic. Always check the response to verify where data was written."
+      },
+      "values": {
+        "type": "array",
+        "items": {
+          "type": "array",
+          "items": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "integer"
+              },
+              {
+                "type": "number"
+              },
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          }
+        },
+        "title": "Values",
+        "examples": [
+          [
+            [
+              "A1_val1",
+              "A1_val2"
+            ],
+            [
+              "A2_val1",
+              "A2_val2"
+            ]
+          ]
+        ],
+        "description": "2D array of values to append. Typically, each inner list is a ROW (majorDimension=ROWS). Use null/None for empty cells.",
+        "human_parameter_name": "Values",
+        "human_parameter_description": "Provide the data you want to append as a list of lists where each inner list represents a row."
+      },
+      "spreadsheetId": {
+        "type": "string",
+        "title": "Spreadsheet Id",
+        "pattern": "^[a-zA-Z0-9_-]+$",
+        "examples": [
+          "1BxiMVs0XRA5nFMdKvBdBZjgmUUqptlbs74OgvE2upms"
+        ],
+        "minLength": 30,
+        "description": "The spreadsheet ID (typically 44 characters containing letters, numbers, hyphens, and underscores). Found in the URL between /d/ and /edit. NOT the sheet name (tab name) - that belongs in the 'range' parameter.",
+        "human_parameter_name": "Spreadsheet ID",
+        "human_parameter_description": "Provide the unique identifier of the spreadsheet from its URL (e.g., '1BxiMVs0XRA5nFMdKvBdBZjgmUUqptlbs74OgvE2upms'). This is NOT the sheet name - use the 'range' parameter for sheet names."
+      },
+      "majorDimension": {
+        "enum": [
+          "ROWS",
+          "COLUMNS"
+        ],
+        "type": "string",
+        "title": "Major Dimension",
+        "examples": [
+          "ROWS"
+        ],
+        "description": "How to interpret the 2D values array. Use ROWS for row-wise data (most common for appends). Use COLUMNS for column-wise data. Example: if A1=1,B1=2,A2=3,B2=4 then majorDimension=ROWS yields [[1,2],[3,4]] and majorDimension=COLUMNS yields [[1,3],[2,4]].",
+        "human_parameter_name": "Major Dimension",
+        "human_parameter_description": "Indicate if your data is organized in rows or columns."
+      },
+      "insertDataOption": {
+        "enum": [
+          "OVERWRITE",
+          "INSERT_ROWS"
+        ],
+        "type": "string",
+        "title": "Insert Data Option",
+        "examples": [
+          "INSERT_ROWS"
+        ],
+        "description": "How the input data should be inserted.",
+        "human_parameter_name": "Insert Data Option",
+        "human_parameter_description": "Select whether to overwrite existing data or insert rows for the new data."
+      },
+      "valueInputOption": {
+        "enum": [
+          "RAW",
+          "USER_ENTERED"
+        ],
+        "type": "string",
+        "title": "Value Input Option",
+        "examples": [
+          "USER_ENTERED"
+        ],
+        "description": "How the input data should be interpreted.",
+        "human_parameter_name": "Value Input Option",
+        "human_parameter_description": "Choose how the data you provide should be interpreted—raw or as user-entered values."
+      },
+      "includeValuesInResponse": {
+        "type": "boolean",
+        "title": "Include Values In Response",
+        "examples": [
+          true
+        ],
+        "description": "Determines if the update response should include the values of the cells that were appended. By default, responses do not include the updated values.",
+        "human_parameter_name": "Include Values in Response?",
+        "human_parameter_description": "Decide if you want the response to include the values that were just added."
+      },
+      "responseValueRenderOption": {
+        "enum": [
+          "FORMATTED_VALUE",
+          "UNFORMATTED_VALUE",
+          "FORMULA"
+        ],
+        "type": "string",
+        "title": "Response Value Render Option",
+        "examples": [
+          "FORMATTED_VALUE"
+        ],
+        "description": "Determines how values in the response should be rendered. The default render option is FORMATTED_VALUE.",
+        "human_parameter_name": "Response Value Render Option",
+        "human_parameter_description": "Choose how you want the values in the response to be displayed."
+      },
+      "responseDateTimeRenderOption": {
+        "enum": [
+          "SERIAL_NUMBER",
+          "FORMATTED_STRING"
+        ],
+        "type": "string",
+        "title": "Response Date Time Render Option",
+        "examples": [
+          "SERIAL_NUMBER"
+        ],
+        "description": "Determines how dates, times, and durations in the response should be rendered. This is ignored if responseValueRenderOption is FORMATTED_VALUE. The default dateTime render option is SERIAL_NUMBER.",
+        "human_parameter_name": "Response DateTime Render Option",
+        "human_parameter_description": "Select how you want dates and times in the response to be formatted."
+      }
+    }
+  },
+  "output_parameters": {
+    "type": "object",
+    "$defs": {
+      "UpdateValuesResponse": {
+        "type": "object",
+        "title": "UpdateValuesResponse",
+        "required": [
+          "spreadsheetId",
+          "updatedRange"
+        ],
+        "properties": {
+          "updatedData": {
+            "$ref": "#/$defs/UpdatedDataValueRange",
+            "title": "Updated Data",
+            "description": "The values after the update. Present only if includeValuesInResponse=true. Values are rendered according to responseValueRenderOption and responseDateTimeRenderOption if provided."
+          },
+          "updatedRows": {
+            "type": "integer",
+            "title": "Updated Rows",
+            "description": "The number of rows in the updated range that changed (rows where at least one cell was updated). May be omitted if not returned by the API."
+          },
+          "updatedCells": {
+            "type": "integer",
+            "title": "Updated Cells",
+            "description": "The total number of cells updated. May be omitted if not returned by the API."
+          },
+          "updatedRange": {
+            "type": "string",
+            "title": "Updated Range",
+            "description": "The A1-notation of the range that was updated (e.g., 'Sheet1!A11:D11')."
+          },
+          "spreadsheetId": {
+            "type": "string",
+            "title": "Spreadsheet Id",
+            "description": "The ID of the spreadsheet where the update occurred (typically the same as the top-level spreadsheetId)."
+          },
+          "updatedColumns": {
+            "type": "integer",
+            "title": "Updated Columns",
+            "description": "The number of columns in the updated range that changed (columns where at least one cell was updated). May be omitted if not returned by the API."
+          }
+        }
+      },
+      "UpdatedDataValueRange": {
+        "type": "object",
+        "title": "UpdatedDataValueRange",
+        "required": [
+          "range",
+          "majorDimension"
+        ],
+        "properties": {
+          "range": {
+            "type": "string",
+            "title": "Range",
+            "description": "The A1-notation range that the returned values cover."
+          },
+          "values": {
+            "type": "array",
+            "items": {
+              "type": "array",
+              "items": {
+                "anyOf": [
+                  {
+                    "type": "string"
+                  },
+                  {
+                    "type": "integer"
+                  },
+                  {
+                    "type": "number"
+                  },
+                  {
+                    "type": "boolean"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              }
+            },
+            "title": "Values",
+            "description": "The values in the range. The outer array corresponds to majorDimension; each inner array contains cell values. In responses, trailing empty rows or columns are omitted. Cell values may be strings, numbers, booleans, or null depending on render options. This field may be omitted when no data is appended (e.g., when appending empty values)."
+          },
+          "majorDimension": {
+            "enum": [
+              "ROWS",
+              "COLUMNS"
+            ],
+            "type": "string",
+            "title": "Major Dimension",
+            "description": "The major dimension of the values. ROWS means each inner array represents a row; COLUMNS means each inner array represents a column."
+          }
+        },
+        "description": "Response ValueRange for updatedData in UpdateValuesResponse.\nSeparate from request ValueRange to enforce required fields per API docs:\nrange and majorDimension are required when returned; values may be omitted when no data is appended."
+      },
+      "SpreadsheetsValuesAppendResponse": {
+        "type": "object",
+        "title": "SpreadsheetsValuesAppendResponse",
+        "required": [
+          "spreadsheetId",
+          "updates"
+        ],
+        "properties": {
+          "updates": {
+            "$ref": "#/$defs/UpdateValuesResponse",
+            "title": "Updates",
+            "description": "Information about the updates that were applied (UpdateValuesResponse)."
+          },
+          "tableRange": {
+            "type": "string",
+            "title": "Table Range",
+            "description": "The A1-notation range of the table that values were appended to (before the append), for example 'Sheet1!A1:D10'. Empty if no table was found. This field may be omitted if no table range is detected."
+          },
+          "spreadsheetId": {
+            "type": "string",
+            "title": "Spreadsheet Id",
+            "description": "The ID of the spreadsheet to which values were appended."
+          }
+        }
+      }
+    },
+    "title": "SpreadsheetsValuesAppendResponseWrapper",
+    "required": [
+      "data",
+      "successful"
+    ],
+    "properties": {
+      "data": {
+        "$ref": "#/$defs/SpreadsheetsValuesAppendResponse",
+        "title": "Data",
+        "description": "Data from the action execution"
+      },
+      "error": {
+        "type": "string",
+        "title": "Error",
+        "description": "Error if any occurred during the execution of the action"
+      },
+      "successful": {
+        "type": "boolean",
+        "title": "Successful",
+        "description": "Whether or not the action execution was successful or not"
+      }
+    }
+  }
+}

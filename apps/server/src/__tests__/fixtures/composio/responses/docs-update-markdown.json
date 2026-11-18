@@ -1,0 +1,39 @@
+{
+  "slug": "GOOGLEDOCS_UPDATE_DOCUMENT_MARKDOWN",
+  "ok": true,
+  "ms": 1043,
+  "request": {
+    "id": "id_43",
+    "markdown": "# Weekly notes\n\nReplaced in full."
+  },
+  "response": {
+    "data": {
+      "commentUpdateState": "NO_UPDATES_REQUESTED",
+      "display_url": "https://example.test/link_1",
+      "documentId": "id_43",
+      "document_url": "https://example.test/link_1",
+      "replies": [
+        {},
+        {},
+        {},
+        {},
+        {},
+        {},
+        {}
+      ],
+      "suggestionResponses": [
+        {},
+        {},
+        {},
+        {},
+        {},
+        {},
+        {}
+      ],
+      "writeControl": {
+        "requiredRevisionId": "id_47"
+      }
+    },
+    "error": null
+  }
+}

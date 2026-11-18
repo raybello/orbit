@@ -1,0 +1,50 @@
+{
+  "slug": "GOOGLESHEETS_BATCH_UPDATE",
+  "ok": true,
+  "ms": 882,
+  "request": {
+    "spreadsheet_id": "id_41",
+    "sheet_name": "Sheet1",
+    "first_cell_location": "E1",
+    "values": [
+      [
+        "batch",
+        "write"
+      ]
+    ],
+    "include_values_in_response": true
+  },
+  "response": {
+    "data": {
+      "composio_execution_message": null,
+      "display_url": "https://example.test/link_22",
+      "spreadsheet": {
+        "responses": [
+          {
+            "spreadsheetId": "id_41",
+            "updatedCells": 2,
+            "updatedColumns": 2,
+            "updatedData": {
+              "majorDimension": "ROWS",
+              "range": "Sheet1!E1:F1",
+              "values": [
+                [
+                  "batch",
+                  "write"
+                ]
+              ]
+            },
+            "updatedRange": "Sheet1!E1:F1",
+            "updatedRows": 1
+          }
+        ],
+        "spreadsheetId": "id_41",
+        "totalUpdatedCells": 2,
+        "totalUpdatedColumns": 2,
+        "totalUpdatedRows": 1,
+        "totalUpdatedSheets": 1
+      }
+    },
+    "error": null
+  }
+}

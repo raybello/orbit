@@ -1,0 +1,786 @@
+{
+  "slug": "GOOGLEDOCS_CREATE_DOCUMENT_MARKDOWN",
+  "version": "20261116_00",
+  "description": "Creates a new Google Docs document, optionally initializing it with a title and content provided as Markdown text.",
+  "input_parameters": {
+    "type": "object",
+    "title": "CreateDocumentMarkdownRequest",
+    "required": [
+      "title"
+    ],
+    "properties": {
+      "title": {
+        "type": "string",
+        "title": "Title",
+        "examples": [
+          "Meeting Notes Q3",
+          "Project Alpha Proposal",
+          "My New Story Draft"
+        ],
+        "description": "The title for the new Google Docs document.",
+        "human_parameter_name": "Document Title",
+        "human_parameter_description": "The title of the document you want to create. Please provide a meaningful title to help identify the document later."
+      },
+      "image_assets": {
+        "type": "array",
+        "items": {
+          "type": "object",
+          "title": "MarkdownImageAsset",
+          "required": [
+            "name",
+            "file"
+          ],
+          "properties": {
+            "file": {
+              "type": "object",
+              "title": "FileUploadable",
+              "required": [
+                "name",
+                "mimetype",
+                "s3key"
+              ],
+              "properties": {
+                "name": {
+                  "type": "string",
+                  "title": "Name",
+                  "examples": [
+                    "document.pdf",
+                    "image.jpg",
+                    "report.docx"
+                  ],
+                  "description": "The filename that will be used when uploading the file to the destination service"
+                },
+                "s3key": {
+                  "type": "string",
+                  "title": "S3Key",
+                  "examples": [
+                    "47563/gmail/GET_ATTACHMENT/response/12345"
+                  ],
+                  "description": "The S3 key of a publicly accessible file, typically returned from a previous download action that stored the file in S3. This key references an existing file that can be uploaded to another service."
+                },
+                "mimetype": {
+                  "type": "string",
+                  "title": "Mimetype",
+                  "examples": [
+                    "application/pdf",
+                    "image/jpeg",
+                    "application/vnd.openxmlformats-officedocument.wordprocessingml.document"
+                  ],
+                  "description": "The MIME type of the file"
+                }
+              },
+              "description": "Uploaded image file. The action converts it into a temporary public URL that Google Docs can fetch.",
+              "file_uploadable": true,
+              "additionalProperties": false
+            },
+            "name": {
+              "type": "string",
+              "title": "Name",
+              "examples": [
+                "diagram",
+                "diagram.png"
+              ],
+              "description": "Name used to reference the uploaded image from Markdown, for example attachment://diagram or ./diagram.png."
+            }
+          }
+        },
+        "title": "Image Assets",
+        "description": "Optional uploaded images that Markdown can reference by name. Use Markdown image syntax like ![Alt](attachment://diagram). Public HTTPS image URLs in markdown do not need image_assets."
+      },
+      "markdown_text": {
+        "type": "string",
+        "title": "Markdown Text",
+        "default": "",
+        "description": "The initial content for the document, formatted as Markdown. Also accepts 'content' as an alias. Supports headings, real Google Docs lists including nested lists, multiple Markdown tables, task-list markers, images via publicly accessible URLs or matching image_assets uploads (max 2KB URL length after resolution; formats: JPEG, PNG, GIF; SVG not supported), blockquotes, code blocks, hyperlinks (e.g., [text](url)), and text formatting (bold, italic, etc.). If empty or omitted, creates document with title only.",
+        "human_parameter_name": "Markdown Text",
+        "human_parameter_description": "Enter the content you want in the document, formatted in Markdown. Supports headings, real nested lists, multiple tables, task-list markers, public URL images or matching uploaded image assets, blockquotes, code blocks, hyperlinks [text](url), and text formatting. Optional - leave empty to create a document with just the title."
+      }
+    }
+  },
+  "output_parameters": {
+    "type": "object",
+    "$defs": {
+      "Link": {
+        "type": "object",
+        "title": "Link",
+        "properties": {
+          "url": {
+            "type": "string",
+            "title": "Url",
+            "description": "An external URL."
+          },
+          "headingId": {
+            "type": "string",
+            "title": "Heading Id",
+            "description": "The ID of a heading in this document."
+          },
+          "bookmarkId": {
+            "type": "string",
+            "title": "Bookmark Id",
+            "description": "The ID of a bookmark in this document."
+          }
+        },
+        "description": "A reference to another portion of a document or external URL.",
+        "additionalProperties": true
+      },
+      "Size": {
+        "type": "object",
+        "title": "Size",
+        "properties": {
+          "width": {
+            "$ref": "#/$defs/Dimension",
+            "title": "Width",
+            "description": "The width of the object."
+          },
+          "height": {
+            "$ref": "#/$defs/Dimension",
+            "title": "Height",
+            "description": "The height of the object."
+          }
+        },
+        "description": "A width and height.",
+        "additionalProperties": true
+      },
+      "Color": {
+        "type": "object",
+        "title": "Color",
+        "properties": {
+          "rgbColor": {
+            "$ref": "#/$defs/RgbColor",
+            "title": "Rgb Color",
+            "description": "The RGB color value."
+          }
+        },
+        "description": "A solid color.",
+        "additionalProperties": true
+      },
+      "Request": {
+        "type": "object",
+        "title": "Request",
+        "properties": {
+          "insertText": {
+            "$ref": "#/$defs/InsertTextRequest",
+            "title": "Insert Text",
+            "description": "Insert text request."
+          },
+          "insertTable": {
+            "$ref": "#/$defs/InsertTableRequest",
+            "title": "Insert Table",
+            "description": "Insert table request."
+          },
+          "updateTextStyle": {
+            "$ref": "#/$defs/UpdateTextStyleRequest",
+            "title": "Update Text Style",
+            "description": "Update text style request."
+          },
+          "insertInlineImage": {
+            "$ref": "#/$defs/InsertInlineImageRequest",
+            "title": "Insert Inline Image",
+            "description": "Insert inline image request."
+          },
+          "deleteContentRange": {
+            "$ref": "#/$defs/DeleteContentRangeRequest",
+            "title": "Delete Content Range",
+            "description": "Delete content range request."
+          },
+          "updateParagraphStyle": {
+            "$ref": "#/$defs/UpdateParagraphStyleRequest",
+            "title": "Update Paragraph Style",
+            "description": "Update paragraph style request."
+          },
+          "createParagraphBullets": {
+            "$ref": "#/$defs/CreateParagraphBulletsRequest",
+            "title": "Create Paragraph Bullets",
+            "description": "Create paragraph bullets request."
+          },
+          "deleteParagraphBullets": {
+            "$ref": "#/$defs/DeleteParagraphBulletsRequest",
+            "title": "Delete Paragraph Bullets",
+            "description": "Delete paragraph bullets request."
+          }
+        },
+        "description": "A single update request for batchUpdate.",
+        "additionalProperties": true
+      },
+      "Shading": {
+        "type": "object",
+        "title": "Shading",
+        "properties": {
+          "backgroundColor": {
+            "$ref": "#/$defs/OptionalColor",
+            "title": "Background Color",
+            "description": "The background color of the shading."
+          }
+        },
+        "description": "The shading of a paragraph.",
+        "additionalProperties": true
+      },
+      "Location": {
+        "type": "object",
+        "title": "Location",
+        "properties": {
+          "index": {
+            "type": "integer",
+            "title": "Index",
+            "description": "The index in the document."
+          },
+          "segmentId": {
+            "type": "string",
+            "title": "Segment Id",
+            "description": "The segment ID."
+          }
+        },
+        "description": "A location in the document.",
+        "additionalProperties": true
+      },
+      "RgbColor": {
+        "type": "object",
+        "title": "RgbColor",
+        "properties": {
+          "red": {
+            "type": "number",
+            "title": "Red",
+            "description": "The red component value, 0-1."
+          },
+          "blue": {
+            "type": "number",
+            "title": "Blue",
+            "description": "The blue component value, 0-1."
+          },
+          "green": {
+            "type": "number",
+            "title": "Green",
+            "description": "The green component value, 0-1."
+          }
+        },
+        "description": "Represents an RGB color.",
+        "additionalProperties": true
+      },
+      "Dimension": {
+        "type": "object",
+        "title": "Dimension",
+        "properties": {
+          "unit": {
+            "type": "string",
+            "title": "Unit",
+            "description": "The units for magnitude (e.g., PT)."
+          },
+          "magnitude": {
+            "type": "number",
+            "title": "Magnitude",
+            "description": "The magnitude value."
+          }
+        },
+        "description": "A magnitude in a single direction.",
+        "additionalProperties": true
+      },
+      "TextStyle": {
+        "type": "object",
+        "title": "TextStyle",
+        "properties": {
+          "bold": {
+            "type": "boolean",
+            "title": "Bold",
+            "description": "Whether the text is bold."
+          },
+          "link": {
+            "$ref": "#/$defs/Link",
+            "title": "Link",
+            "description": "The hyperlink destination of the text."
+          },
+          "italic": {
+            "type": "boolean",
+            "title": "Italic",
+            "description": "Whether the text is italic."
+          },
+          "fontSize": {
+            "$ref": "#/$defs/Dimension",
+            "title": "Font Size",
+            "description": "The size of the text's font."
+          },
+          "smallCaps": {
+            "type": "boolean",
+            "title": "Small Caps",
+            "description": "Whether the text is in small caps."
+          },
+          "underline": {
+            "type": "boolean",
+            "title": "Underline",
+            "description": "Whether the text is underlined."
+          },
+          "strikethrough": {
+            "type": "boolean",
+            "title": "Strikethrough",
+            "description": "Whether the text has strikethrough."
+          },
+          "baselineOffset": {
+            "type": "string",
+            "title": "Baseline Offset",
+            "description": "The baseline offset (NONE, SUPERSCRIPT, SUBSCRIPT)."
+          },
+          "backgroundColor": {
+            "$ref": "#/$defs/OptionalColor",
+            "title": "Background Color",
+            "description": "The background color of the text."
+          },
+          "foregroundColor": {
+            "$ref": "#/$defs/OptionalColor",
+            "title": "Foreground Color",
+            "description": "The foreground color of the text."
+          },
+          "weightedFontFamily": {
+            "$ref": "#/$defs/WeightedFontFamily",
+            "title": "Weighted Font Family",
+            "description": "The font family and weight."
+          }
+        },
+        "description": "Represents the styling of text.",
+        "additionalProperties": true
+      },
+      "RangeModel": {
+        "type": "object",
+        "title": "RangeModel",
+        "properties": {
+          "endIndex": {
+            "type": "integer",
+            "title": "End Index",
+            "description": "The end index."
+          },
+          "segmentId": {
+            "type": "string",
+            "title": "Segment Id",
+            "description": "The segment ID."
+          },
+          "startIndex": {
+            "type": "integer",
+            "title": "Start Index",
+            "description": "The start index."
+          }
+        },
+        "description": "A range in the document.",
+        "additionalProperties": true
+      },
+      "OptionalColor": {
+        "type": "object",
+        "title": "OptionalColor",
+        "properties": {
+          "color": {
+            "$ref": "#/$defs/Color",
+            "title": "Color",
+            "description": "The resolved color value."
+          }
+        },
+        "description": "A color that may be unset.",
+        "additionalProperties": true
+      },
+      "ParagraphStyle": {
+        "type": "object",
+        "title": "ParagraphStyle",
+        "properties": {
+          "shading": {
+            "$ref": "#/$defs/Shading",
+            "title": "Shading",
+            "description": "The shading of the paragraph."
+          },
+          "alignment": {
+            "type": "string",
+            "title": "Alignment",
+            "description": "The text alignment (START, CENTER, END, JUSTIFIED)."
+          },
+          "borderTop": {
+            "$ref": "#/$defs/ParagraphBorder",
+            "title": "Border Top",
+            "description": "Top border of the paragraph."
+          },
+          "direction": {
+            "type": "string",
+            "title": "Direction",
+            "description": "Text direction (LEFT_TO_RIGHT or RIGHT_TO_LEFT)."
+          },
+          "indentEnd": {
+            "$ref": "#/$defs/Dimension",
+            "title": "Indent End",
+            "description": "End indentation."
+          },
+          "borderLeft": {
+            "$ref": "#/$defs/ParagraphBorder",
+            "title": "Border Left",
+            "description": "Left border of the paragraph."
+          },
+          "spaceAbove": {
+            "$ref": "#/$defs/Dimension",
+            "title": "Space Above",
+            "description": "Space above the paragraph."
+          },
+          "spaceBelow": {
+            "$ref": "#/$defs/Dimension",
+            "title": "Space Below",
+            "description": "Space below the paragraph."
+          },
+          "borderRight": {
+            "$ref": "#/$defs/ParagraphBorder",
+            "title": "Border Right",
+            "description": "Right border of the paragraph."
+          },
+          "indentStart": {
+            "$ref": "#/$defs/Dimension",
+            "title": "Indent Start",
+            "description": "Start indentation."
+          },
+          "lineSpacing": {
+            "type": "number",
+            "title": "Line Spacing",
+            "description": "Line spacing as a percentage."
+          },
+          "spacingMode": {
+            "type": "string",
+            "title": "Spacing Mode",
+            "description": "Spacing mode (NEVER_COLLAPSE or COLLAPSE_LISTS)."
+          },
+          "borderBottom": {
+            "$ref": "#/$defs/ParagraphBorder",
+            "title": "Border Bottom",
+            "description": "Bottom border of the paragraph."
+          },
+          "keepWithNext": {
+            "type": "boolean",
+            "title": "Keep With Next",
+            "description": "Keep with the next paragraph."
+          },
+          "borderBetween": {
+            "$ref": "#/$defs/ParagraphBorder",
+            "title": "Border Between",
+            "description": "Border between paragraphs."
+          },
+          "namedStyleType": {
+            "type": "string",
+            "title": "Named Style Type",
+            "description": "The named style type (NORMAL_TEXT, HEADING_1, etc.)."
+          },
+          "indentFirstLine": {
+            "$ref": "#/$defs/Dimension",
+            "title": "Indent First Line",
+            "description": "First line indentation."
+          },
+          "pageBreakBefore": {
+            "type": "boolean",
+            "title": "Page Break Before",
+            "description": "Page break before paragraph."
+          },
+          "keepLinesTogether": {
+            "type": "boolean",
+            "title": "Keep Lines Together",
+            "description": "Keep all lines on the same page."
+          },
+          "avoidWidowAndOrphan": {
+            "type": "boolean",
+            "title": "Avoid Widow And Orphan",
+            "description": "Avoid widow and orphan lines."
+          }
+        },
+        "description": "Styles that apply to a paragraph.",
+        "additionalProperties": true
+      },
+      "ParagraphBorder": {
+        "type": "object",
+        "title": "ParagraphBorder",
+        "properties": {
+          "color": {
+            "$ref": "#/$defs/OptionalColor",
+            "title": "Color",
+            "description": "The color of the border."
+          },
+          "width": {
+            "$ref": "#/$defs/Dimension",
+            "title": "Width",
+            "description": "The width of the border."
+          },
+          "padding": {
+            "$ref": "#/$defs/Dimension",
+            "title": "Padding",
+            "description": "The padding between the border and text."
+          },
+          "dashStyle": {
+            "type": "string",
+            "title": "Dash Style",
+            "description": "The dash style of the border."
+          }
+        },
+        "description": "A border around a paragraph.",
+        "additionalProperties": true
+      },
+      "InsertTextRequest": {
+        "type": "object",
+        "title": "InsertTextRequest",
+        "properties": {
+          "text": {
+            "type": "string",
+            "title": "Text",
+            "description": "The text to insert."
+          },
+          "location": {
+            "$ref": "#/$defs/Location",
+            "title": "Location",
+            "description": "The location to insert at."
+          },
+          "endOfSegmentLocation": {
+            "type": "object",
+            "title": "End Of Segment Location",
+            "description": "Insert at the end of a segment.",
+            "additionalProperties": true
+          }
+        },
+        "description": "Request to insert text.",
+        "additionalProperties": true
+      },
+      "InsertTableRequest": {
+        "type": "object",
+        "title": "InsertTableRequest",
+        "properties": {
+          "rows": {
+            "type": "integer",
+            "title": "Rows",
+            "description": "Number of rows."
+          },
+          "columns": {
+            "type": "integer",
+            "title": "Columns",
+            "description": "Number of columns."
+          },
+          "location": {
+            "$ref": "#/$defs/Location",
+            "title": "Location",
+            "description": "The location to insert at."
+          },
+          "endOfSegmentLocation": {
+            "type": "object",
+            "title": "End Of Segment Location",
+            "description": "Insert at the end of a segment.",
+            "additionalProperties": true
+          }
+        },
+        "description": "Request to insert a table.",
+        "additionalProperties": true
+      },
+      "WeightedFontFamily": {
+        "type": "object",
+        "title": "WeightedFontFamily",
+        "properties": {
+          "weight": {
+            "type": "integer",
+            "title": "Weight",
+            "description": "The font weight (100-900)."
+          },
+          "fontFamily": {
+            "type": "string",
+            "title": "Font Family",
+            "description": "The font family name."
+          }
+        },
+        "description": "Represents a font family and weight.",
+        "additionalProperties": true
+      },
+      "UpdateTextStyleRequest": {
+        "type": "object",
+        "title": "UpdateTextStyleRequest",
+        "properties": {
+          "range": {
+            "$ref": "#/$defs/RangeModel",
+            "title": "Range",
+            "description": "The range to update."
+          },
+          "fields": {
+            "type": "string",
+            "title": "Fields",
+            "description": "The fields to update."
+          },
+          "textStyle": {
+            "$ref": "#/$defs/TextStyle",
+            "title": "Text Style",
+            "description": "The text style to apply."
+          }
+        },
+        "description": "Request to update text style.",
+        "additionalProperties": true
+      },
+      "InsertInlineImageRequest": {
+        "type": "object",
+        "title": "InsertInlineImageRequest",
+        "properties": {
+          "uri": {
+            "type": "string",
+            "title": "Uri",
+            "description": "The URI of the image."
+          },
+          "location": {
+            "$ref": "#/$defs/Location",
+            "title": "Location",
+            "description": "The location to insert at."
+          },
+          "objectSize": {
+            "$ref": "#/$defs/Size",
+            "title": "Object Size",
+            "description": "The size of the image."
+          },
+          "endOfSegmentLocation": {
+            "type": "object",
+            "title": "End Of Segment Location",
+            "description": "Insert at the end of a segment.",
+            "additionalProperties": true
+          }
+        },
+        "description": "Request to insert an inline image.",
+        "additionalProperties": true
+      },
+      "DeleteContentRangeRequest": {
+        "type": "object",
+        "title": "DeleteContentRangeRequest",
+        "properties": {
+          "range": {
+            "$ref": "#/$defs/RangeModel",
+            "title": "Range",
+            "description": "The range to delete."
+          }
+        },
+        "description": "Request to delete content in a range.",
+        "additionalProperties": true
+      },
+      "UpdateParagraphStyleRequest": {
+        "type": "object",
+        "title": "UpdateParagraphStyleRequest",
+        "properties": {
+          "range": {
+            "$ref": "#/$defs/RangeModel",
+            "title": "Range",
+            "description": "The range to update."
+          },
+          "fields": {
+            "type": "string",
+            "title": "Fields",
+            "description": "The fields to update."
+          },
+          "paragraphStyle": {
+            "$ref": "#/$defs/ParagraphStyle",
+            "title": "Paragraph Style",
+            "description": "The paragraph style to apply."
+          }
+        },
+        "description": "Request to update paragraph style.",
+        "additionalProperties": true
+      },
+      "CreateParagraphBulletsRequest": {
+        "type": "object",
+        "title": "CreateParagraphBulletsRequest",
+        "properties": {
+          "range": {
+            "$ref": "#/$defs/RangeModel",
+            "title": "Range",
+            "description": "The range to apply to."
+          },
+          "bulletPreset": {
+            "type": "string",
+            "title": "Bullet Preset",
+            "description": "The bullet preset."
+          }
+        },
+        "description": "Request to create paragraph bullets.",
+        "additionalProperties": true
+      },
+      "DeleteParagraphBulletsRequest": {
+        "type": "object",
+        "title": "DeleteParagraphBulletsRequest",
+        "properties": {
+          "range": {
+            "$ref": "#/$defs/RangeModel",
+            "title": "Range",
+            "description": "The range to apply to."
+          }
+        },
+        "description": "Request to delete paragraph bullets.",
+        "additionalProperties": true
+      },
+      "CreateDocumentMarkdownResponse": {
+        "type": "object",
+        "title": "CreateDocumentMarkdownResponse",
+        "properties": {
+          "title": {
+            "type": "string",
+            "title": "Title",
+            "description": "The title of the document."
+          },
+          "tab_ids": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "title": "Tab Ids",
+            "description": "Tab IDs present in the created document at creation time."
+          },
+          "documentId": {
+            "type": "string",
+            "title": "Document Id",
+            "description": "The ID of the created document."
+          },
+          "revisionId": {
+            "type": "string",
+            "title": "Revision Id",
+            "description": "The revision ID of the document. Valid for 24 hours."
+          },
+          "display_url": {
+            "type": "string",
+            "title": "Display Url",
+            "description": "The URL to access and edit the document in Google Docs."
+          },
+          "request_data": {
+            "type": "array",
+            "items": {
+              "$ref": "#/$defs/Request"
+            },
+            "title": "Request Data",
+            "description": "Google Docs API request objects generated from markdown_text for batchUpdate; null or empty if markdown_text was not provided or empty."
+          },
+          "default_tab_id": {
+            "type": "string",
+            "title": "Default Tab Id",
+            "description": "The ID of the default tab created with the document. Use this tab_id with the markdown update actions to target this tab explicitly."
+          },
+          "suggestionsViewMode": {
+            "enum": [
+              "DEFAULT_FOR_CURRENT_ACCESS",
+              "SUGGESTIONS_INLINE",
+              "PREVIEW_SUGGESTIONS_ACCEPTED",
+              "PREVIEW_WITHOUT_SUGGESTIONS"
+            ],
+            "type": "string",
+            "title": "Suggestions View Mode",
+            "description": "The suggestions view mode applied to the document."
+          }
+        },
+        "description": "Response from creating a Google Docs document with markdown content.\n\nThis response contains only essential metadata about the created document.\nTo retrieve the full document content, use the GOOGLEDOCS_GET_DOCUMENT_BY_ID action\nwith the returned document_id.",
+        "additionalProperties": true
+      }
+    },
+    "title": "CreateDocumentMarkdownResponseWrapper",
+    "required": [
+      "data",
+      "successful"
+    ],
+    "properties": {
+      "data": {
+        "$ref": "#/$defs/CreateDocumentMarkdownResponse",
+        "title": "Data",
+        "description": "Data from the action execution"
+      },
+      "error": {
+        "type": "string",
+        "title": "Error",
+        "description": "Error if any occurred during the execution of the action"
+      },
+      "successful": {
+        "type": "boolean",
+        "title": "Successful",
+        "description": "Whether or not the action execution was successful or not"
+      }
+    }
+  }
+}

@@ -1,0 +1,173 @@
+{
+  "slug": "GMAIL_GET_DRAFT",
+  "version": "20261116_00",
+  "description": "Retrieves a single Gmail draft by its ID. Use this to fetch and inspect draft content before sending via GMAIL_SEND_DRAFT. The format parameter controls the level of detail returned.",
+  "input_parameters": {
+    "type": "object",
+    "title": "GetDraftRequest",
+    "required": [
+      "draft_id"
+    ],
+    "properties": {
+      "format": {
+        "type": "string",
+        "title": "Format",
+        "default": "full",
+        "examples": [
+          "full",
+          "metadata",
+          "minimal",
+          "raw"
+        ],
+        "description": "Format for the draft message: 'minimal' (ID/labels only), 'full' (complete data with parsed payload), 'raw' (base64url-encoded RFC 2822 format), 'metadata' (ID/labels/headers only)."
+      },
+      "user_id": {
+        "type": "string",
+        "title": "User Id",
+        "default": "me",
+        "examples": [
+          "me",
+          "user@example.com"
+        ],
+        "description": "The user's email address. The special value `me` can be used to indicate the authenticated user."
+      },
+      "draft_id": {
+        "type": "string",
+        "title": "Draft Id",
+        "examples": [
+          "r99885592323229922",
+          "r-8388446164079304564"
+        ],
+        "description": "The ID of the draft to retrieve. Draft IDs are typically alphanumeric strings (e.g., 'r99885592323229922'). Use GMAIL_LIST_DRAFTS to retrieve valid draft IDs."
+      }
+    }
+  },
+  "output_parameters": {
+    "type": "object",
+    "$defs": {
+      "DraftMessage": {
+        "type": "object",
+        "title": "DraftMessage",
+        "properties": {
+          "to": {
+            "type": "string",
+            "title": "To",
+            "description": "The recipient (To header) of the draft message"
+          },
+          "raw": {
+            "type": "string",
+            "title": "Raw",
+            "description": "The entire email message in RFC 2822 format, base64url-encoded (only present when format=raw)"
+          },
+          "sender": {
+            "type": "string",
+            "title": "Sender",
+            "description": "The sender (From header) of the draft message"
+          },
+          "payload": {
+            "type": "object",
+            "title": "Payload",
+            "description": "The MIME payload structure of the draft message",
+            "additionalProperties": true
+          },
+          "preview": {
+            "type": "object",
+            "title": "Preview",
+            "description": "A preview of the draft message with subject and body snippet",
+            "additionalProperties": true
+          },
+          "subject": {
+            "type": "string",
+            "title": "Subject",
+            "description": "The subject line of the draft message"
+          },
+          "labelIds": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "title": "Label Ids",
+            "description": "The label IDs applied to the draft message"
+          },
+          "threadId": {
+            "type": "string",
+            "title": "Thread Id",
+            "description": "The thread ID of the draft message"
+          },
+          "messageId": {
+            "type": "string",
+            "title": "Message Id",
+            "description": "The message ID of the draft message"
+          },
+          "messageText": {
+            "type": "string",
+            "title": "Message Text",
+            "description": "The full text content of the draft message"
+          },
+          "attachmentList": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "additionalProperties": true
+            },
+            "title": "Attachment List",
+            "description": "The list of attachments in the draft message"
+          },
+          "messageTimestamp": {
+            "type": "string",
+            "title": "Message Timestamp",
+            "description": "The timestamp of the draft message in ISO-8601 format"
+          }
+        },
+        "description": "The message content of the draft"
+      },
+      "GetDraftResponse": {
+        "type": "object",
+        "title": "GetDraftResponse",
+        "required": [
+          "id",
+          "message"
+        ],
+        "properties": {
+          "id": {
+            "type": "string",
+            "title": "Id",
+            "description": "The immutable ID of the draft"
+          },
+          "message": {
+            "$ref": "#/$defs/DraftMessage",
+            "title": "Message"
+          },
+          "display_url": {
+            "type": "string",
+            "title": "Display Url",
+            "description": "Web UI link to view this draft in Gmail"
+          }
+        },
+        "description": "Response containing the draft details"
+      }
+    },
+    "title": "GetDraftResponseWrapper",
+    "required": [
+      "data",
+      "successful"
+    ],
+    "properties": {
+      "data": {
+        "$ref": "#/$defs/GetDraftResponse",
+        "title": "Data",
+        "description": "Data from the action execution"
+      },
+      "error": {
+        "type": "string",
+        "title": "Error",
+        "description": "Error if any occurred during the execution of the action"
+      },
+      "successful": {
+        "type": "boolean",
+        "title": "Successful",
+        "description": "Whether or not the action execution was successful or not"
+      }
+    }
+  }
+}

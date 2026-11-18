@@ -1,0 +1,87 @@
+{
+  "slug": "GMAIL_WHO_AM_I",
+  "version": "20261116_00",
+  "description": "Return the identity (email, name) of the connected Gmail account.",
+  "input_parameters": {
+    "type": "object",
+    "title": "GmailWhoAmIRequest",
+    "properties": {},
+    "description": "Strict request contract for the Gmail identity action."
+  },
+  "output_parameters": {
+    "type": "object",
+    "$defs": {
+      "GmailWhoAmIData": {
+        "type": "object",
+        "title": "GmailWhoAmIData",
+        "required": [
+          "sub"
+        ],
+        "properties": {
+          "sub": {
+            "type": "string",
+            "title": "Sub",
+            "description": "Stable Google account id (subject)."
+          },
+          "name": {
+            "type": "string",
+            "title": "Name",
+            "description": "Full name."
+          },
+          "email": {
+            "type": "string",
+            "title": "Email",
+            "description": "Account email address."
+          },
+          "hosted_domain": {
+            "type": "string",
+            "title": "Hosted Domain",
+            "description": "Google Workspace domain, if any."
+          }
+        },
+        "description": "Typed identity details for the connected account."
+      },
+      "WhoAmIResponse_GmailWhoAmIData_": {
+        "type": "object",
+        "title": "WhoAmIResponse[GmailWhoAmIData]",
+        "required": [
+          "data"
+        ],
+        "properties": {
+          "data": {
+            "$ref": "#/$defs/GmailWhoAmIData",
+            "title": "Data",
+            "description": "Typed, toolkit-specific identity details."
+          },
+          "display_name": {
+            "type": "string",
+            "title": "Display Name",
+            "description": "Human-readable label identifying the connected account (email, handle, name, …). Null when the provider exposes no usable identifier."
+          }
+        }
+      }
+    },
+    "title": "WhoAmIResponse[GmailWhoAmIData]Wrapper",
+    "required": [
+      "data",
+      "successful"
+    ],
+    "properties": {
+      "data": {
+        "$ref": "#/$defs/WhoAmIResponse_GmailWhoAmIData_",
+        "title": "Data",
+        "description": "Data from the action execution"
+      },
+      "error": {
+        "type": "string",
+        "title": "Error",
+        "description": "Error if any occurred during the execution of the action"
+      },
+      "successful": {
+        "type": "boolean",
+        "title": "Successful",
+        "description": "Whether or not the action execution was successful or not"
+      }
+    }
+  }
+}

@@ -1,0 +1,150 @@
+{
+  "slug": "GOOGLEDOCS_GET_DOCUMENT_PLAINTEXT",
+  "version": "20261116_00",
+  "description": "Retrieve a Google Doc by ID and return a best-effort plain-text rendering. Converts document structure into plain text including paragraphs, lists, and tables without requiring clients to traverse complex Docs API JSON.",
+  "input_parameters": {
+    "type": "object",
+    "title": "GetDocumentPlaintextRequest",
+    "required": [
+      "document_id"
+    ],
+    "properties": {
+      "tab_ids": {
+        "type": "array",
+        "items": {
+          "type": "string"
+        },
+        "title": "Tab Ids",
+        "description": "Optional tab IDs to include when include_tabs_content=true. Nested child tabs are searched recursively."
+      },
+      "document_id": {
+        "type": "string",
+        "title": "Document Id",
+        "examples": [
+          "1BxiMVs0XRA5nFMdKvBdBZjgmUUqptlbs74OgvE2upms",
+          "https://docs.google.com/document/d/1BxiMVs0XRA5nFMdKvBdBZjgmUUqptlbs74OgvE2upms/edit"
+        ],
+        "minLength": 1,
+        "description": "The unique identifier for the Google Document. Accepts either a document ID (typically a 44-character alphanumeric string) or a full Google Docs URL. When a URL is provided, the document ID will be automatically extracted. Note: This parameter also accepts 'id' as an alias for consistency with other GOOGLEDOCS tools."
+      },
+      "include_tables": {
+        "type": "boolean",
+        "title": "Include Tables",
+        "default": true,
+        "description": "Whether to include table content in the plain text output. Tables are rendered with configurable cell and row delimiters."
+      },
+      "include_footers": {
+        "type": "boolean",
+        "title": "Include Footers",
+        "default": false,
+        "description": "Whether to include footer text in the plain text output. Footers are appended with a clear section separator."
+      },
+      "include_headers": {
+        "type": "boolean",
+        "title": "Include Headers",
+        "default": false,
+        "description": "Whether to include header text in the plain text output. Headers are appended with a clear section separator."
+      },
+      "include_footnotes": {
+        "type": "boolean",
+        "title": "Include Footnotes",
+        "default": false,
+        "description": "Whether to include footnote text in the plain text output. Footnotes are appended with a clear section separator."
+      },
+      "table_row_delimiter": {
+        "type": "string",
+        "title": "Table Row Delimiter",
+        "default": "\n",
+        "examples": [
+          "\n",
+          "\n\n"
+        ],
+        "description": "The delimiter to use between table rows (default: newline character)."
+      },
+      "include_tabs_content": {
+        "type": "boolean",
+        "title": "Include Tabs Content",
+        "default": false,
+        "description": "When true, fetch the document using includeTabsContent=true query parameter to render all tabs. When false, only the main body content is rendered."
+      },
+      "table_cell_delimiter": {
+        "type": "string",
+        "title": "Table Cell Delimiter",
+        "default": "\t",
+        "examples": [
+          "\t",
+          " | ",
+          ", "
+        ],
+        "description": "The delimiter to use between table cells (default: tab character)."
+      }
+    }
+  },
+  "output_parameters": {
+    "type": "object",
+    "$defs": {
+      "GetDocumentPlaintextResponse": {
+        "type": "object",
+        "title": "GetDocumentPlaintextResponse",
+        "required": [
+          "document_id",
+          "title",
+          "plain_text",
+          "display_url"
+        ],
+        "properties": {
+          "title": {
+            "type": "string",
+            "title": "Title",
+            "description": "The title of the document."
+          },
+          "warnings": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "title": "Warnings",
+            "description": "Warnings about content that was skipped or could not be fully rendered (e.g., positioned objects, unsupported element types)."
+          },
+          "plain_text": {
+            "type": "string",
+            "title": "Plain Text",
+            "description": "Best-effort plain text rendering of the document content. Includes paragraphs, lists, tables, and optionally headers, footers, and footnotes."
+          },
+          "display_url": {
+            "type": "string",
+            "title": "Display Url",
+            "description": "The Google Docs web URL for viewing and editing the document."
+          },
+          "document_id": {
+            "type": "string",
+            "title": "Document Id",
+            "description": "The unique identifier of the document."
+          }
+        }
+      }
+    },
+    "title": "GetDocumentPlaintextResponseWrapper",
+    "required": [
+      "data",
+      "successful"
+    ],
+    "properties": {
+      "data": {
+        "$ref": "#/$defs/GetDocumentPlaintextResponse",
+        "title": "Data",
+        "description": "Data from the action execution"
+      },
+      "error": {
+        "type": "string",
+        "title": "Error",
+        "description": "Error if any occurred during the execution of the action"
+      },
+      "successful": {
+        "type": "boolean",
+        "title": "Successful",
+        "description": "Whether or not the action execution was successful or not"
+      }
+    }
+  }
+}

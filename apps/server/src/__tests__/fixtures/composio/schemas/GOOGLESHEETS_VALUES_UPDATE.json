@@ -1,0 +1,288 @@
+{
+  "slug": "GOOGLESHEETS_VALUES_UPDATE",
+  "version": "20261116_00",
+  "description": "Sets or overwrites values in a Google Spreadsheet range, adjusting the range to fit the supplied values and potentially expanding the sheet by default. Unmatched common default sheet names may resolve to the first sheet.",
+  "input_parameters": {
+    "type": "object",
+    "title": "ValuesUpdateRequest",
+    "required": [
+      "spreadsheet_id",
+      "range",
+      "value_input_option",
+      "values"
+    ],
+    "properties": {
+      "range": {
+        "type": "string",
+        "title": "Range",
+        "examples": [
+          "Sheet1!A1:C2",
+          "'[Draft] Fall''26'!A1:B2",
+          "Sheet2!B3:F10",
+          "A1:Z100"
+        ],
+        "description": "The A1 notation of the range to update values in (e.g., 'Sheet1!A1:C2', 'MySheet!C:C', or 'A1:D5'). Wrap sheet names containing spaces or special characters in single quotes; escape an apostrophe within a quoted sheet name by doubling it (e.g., \"'[Draft] Fall''26'!A1:B2\"). Must be actual cell references, not placeholder values. If the sheet name is omitted (e.g., 'A1:B2'), the operation applies to the first visible sheet. IMPORTANT: The range must not exceed the sheet's grid dimensions. By default, new sheets have 1000 rows and 26 columns (A-Z). If you need to write to columns beyond Z (e.g., AA, AB), first expand the sheet using GOOGLESHEETS_APPEND_DIMENSION or check the current dimensions using GOOGLESHEETS_GET_SPREADSHEET_INFO.",
+        "human_parameter_name": "Range",
+        "human_parameter_description": "Specify the exact range in the spreadsheet where you want the values to be updated. Use A1 notation for accuracy. Ensure the range does not exceed the sheet's current grid dimensions."
+      },
+      "values": {
+        "type": "array",
+        "items": {
+          "type": "array",
+          "items": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "integer"
+              },
+              {
+                "type": "number"
+              },
+              {
+                "type": "boolean"
+              }
+            ]
+          }
+        },
+        "title": "Values",
+        "examples": [
+          [
+            [
+              "Name",
+              "Age",
+              "City"
+            ],
+            [
+              "Test User",
+              "25",
+              "San Francisco"
+            ]
+          ]
+        ],
+        "description": "The data to write. This is an array of arrays, the outer array representing all the data and each inner array representing a major dimension. Each item in the inner array corresponds with one cell.",
+        "human_parameter_name": "Values",
+        "human_parameter_description": "Provide the data you want to write into the specified range. This should be structured in arrays to correspond to the layout of the spreadsheet."
+      },
+      "spreadsheet_id": {
+        "type": "string",
+        "title": "Spreadsheet Id",
+        "examples": [
+          "1BxiMVs0XRA5nFMdKvBdBZjgmUUqptlbs74OgvE2upms"
+        ],
+        "description": "The unique identifier of the Google Spreadsheet to update. This ID can be found in the URL of the spreadsheet (e.g., https://docs.google.com/spreadsheets/d/{spreadsheet_id}/edit). Must be a non-empty string.",
+        "human_parameter_name": "Spreadsheet Id",
+        "human_parameter_description": "Provide the unique ID of the spreadsheet you want to update. You can find this ID in the spreadsheet's URL."
+      },
+      "major_dimension": {
+        "enum": [
+          "ROWS",
+          "COLUMNS"
+        ],
+        "type": "string",
+        "title": "Major Dimension",
+        "examples": [
+          "ROWS"
+        ],
+        "description": "The major dimension of the values. ROWS (default) means each inner array is a row of values. COLUMNS means each inner array is a column of values. Defaults to ROWS if unspecified.",
+        "human_parameter_name": "Major Dimension",
+        "human_parameter_description": "Indicate whether your data is organized by rows or columns. Use ROWS for row-wise data or COLUMNS for column-wise data."
+      },
+      "auto_expand_sheet": {
+        "type": "boolean",
+        "title": "Auto Expand Sheet",
+        "default": true,
+        "examples": [
+          true
+        ],
+        "description": "If True (default), automatically expands the sheet's dimensions (adds columns/rows) when the target range exceeds the current grid limits. If False, the operation will fail with an error if the range exceeds grid limits.",
+        "human_parameter_name": "Auto-expand sheet",
+        "human_parameter_description": "Enable automatic expansion of the sheet when writing beyond current grid limits. Disable to receive an error instead."
+      },
+      "value_input_option": {
+        "enum": [
+          "RAW",
+          "USER_ENTERED"
+        ],
+        "type": "string",
+        "title": "Value Input Option",
+        "examples": [
+          "USER_ENTERED",
+          "RAW"
+        ],
+        "description": "How the input data should be interpreted. RAW: Values are stored exactly as entered, without parsing (dates, formulas, etc. remain as strings). USER_ENTERED: Values are parsed as if typed by a user (numbers stay numbers, strings prefixed with '=' become formulas, etc.).",
+        "human_parameter_name": "Value Input Option",
+        "human_parameter_description": "Choose how the input values should be treated. Select RAW for exact values or USER_ENTERED for automatic parsing like a user would do."
+      },
+      "include_values_in_response": {
+        "type": "boolean",
+        "title": "Include Values In Response",
+        "examples": [
+          false
+        ],
+        "description": "Determines if the update response should include the values of the cells that were updated. By default, responses do not include the updated values.",
+        "human_parameter_name": "Include values in response?",
+        "human_parameter_description": "Decide if you want the updated cell values included in the response after the operation."
+      },
+      "response_value_render_option": {
+        "enum": [
+          "FORMATTED_VALUE",
+          "UNFORMATTED_VALUE",
+          "FORMULA"
+        ],
+        "type": "string",
+        "title": "Response Value Render Option",
+        "examples": [
+          "FORMATTED_VALUE"
+        ],
+        "description": "Determines how values in the response should be rendered. Only used if includeValuesInResponse is true. FORMATTED_VALUE (default): Values are formatted as displayed in the UI. UNFORMATTED_VALUE: Values are unformatted (numbers, booleans, formulas). FORMULA: Formulas are not evaluated and remain as text.",
+        "human_parameter_name": "Response value render option",
+        "human_parameter_description": "Specify how you would like the values in the response to be displayed. Choose formatted for a user-friendly view or unformatted for raw values."
+      },
+      "response_datetime_render_option": {
+        "enum": [
+          "SERIAL_NUMBER",
+          "FORMATTED_STRING"
+        ],
+        "type": "string",
+        "title": "Response Datetime Render Option",
+        "examples": [
+          "SERIAL_NUMBER"
+        ],
+        "description": "Determines how dates, times, and durations in the response should be rendered. Only used if includeValuesInResponse is true. SERIAL_NUMBER (default): Dates are returned as numbers. FORMATTED_STRING: Dates are returned as strings formatted per the cell's locale.",
+        "human_parameter_name": "Response datetime render option",
+        "human_parameter_description": "Indicate how you want dates and times to appear in the response. Choose serial number for numeric representation or formatted string for a more readable format."
+      }
+    }
+  },
+  "output_parameters": {
+    "type": "object",
+    "$defs": {
+      "ValuesUpdateResponse": {
+        "type": "object",
+        "title": "ValuesUpdateResponse",
+        "required": [
+          "spreadsheetId",
+          "updatedRange"
+        ],
+        "properties": {
+          "display_url": {
+            "type": "string",
+            "title": "Display Url",
+            "description": "The URL to view the spreadsheet in Google Sheets."
+          },
+          "updatedData": {
+            "$ref": "#/$defs/UpdatedDataValueRange",
+            "title": "Updated Data",
+            "description": "The values of the cells after updates were applied. Only included if includeValuesInResponse is true."
+          },
+          "updatedRows": {
+            "type": "integer",
+            "title": "Updated Rows",
+            "description": "The number of rows where at least one cell in the row was updated."
+          },
+          "updatedCells": {
+            "type": "integer",
+            "title": "Updated Cells",
+            "description": "The total number of cells updated."
+          },
+          "updatedRange": {
+            "type": "string",
+            "title": "Updated Range",
+            "description": "The A1-notation of the range that was updated (e.g., 'Sheet1!A1:C2')."
+          },
+          "spreadsheetId": {
+            "type": "string",
+            "title": "Spreadsheet Id",
+            "description": "The ID of the spreadsheet where the update occurred."
+          },
+          "updatedColumns": {
+            "type": "integer",
+            "title": "Updated Columns",
+            "description": "The number of columns where at least one cell in the column was updated."
+          },
+          "composio_execution_message": {
+            "type": "string",
+            "title": "Composio Execution Message",
+            "description": "Message from the execution indicating any adjustments made (e.g., range auto-adjusted to fit data, sheet auto-expanded)."
+          }
+        }
+      },
+      "UpdatedDataValueRange": {
+        "type": "object",
+        "title": "UpdatedDataValueRange",
+        "required": [
+          "range",
+          "majorDimension"
+        ],
+        "properties": {
+          "range": {
+            "type": "string",
+            "title": "Range",
+            "description": "The A1-notation range that the returned values cover."
+          },
+          "values": {
+            "type": "array",
+            "items": {
+              "type": "array",
+              "items": {
+                "anyOf": [
+                  {
+                    "type": "string"
+                  },
+                  {
+                    "type": "integer"
+                  },
+                  {
+                    "type": "number"
+                  },
+                  {
+                    "type": "boolean"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              }
+            },
+            "title": "Values",
+            "description": "The values in the range. The outer array corresponds to majorDimension; each inner array contains cell values. Cell values may be strings, numbers, booleans, or null depending on render options."
+          },
+          "majorDimension": {
+            "enum": [
+              "ROWS",
+              "COLUMNS"
+            ],
+            "type": "string",
+            "title": "Major Dimension",
+            "description": "The major dimension of the values. ROWS means each inner array represents a row; COLUMNS means each inner array represents a column."
+          }
+        },
+        "description": "Response ValueRange for updatedData in ValuesUpdateResponse."
+      }
+    },
+    "title": "ValuesUpdateResponseWrapper",
+    "required": [
+      "data",
+      "successful"
+    ],
+    "properties": {
+      "data": {
+        "$ref": "#/$defs/ValuesUpdateResponse",
+        "title": "Data",
+        "description": "Data from the action execution"
+      },
+      "error": {
+        "type": "string",
+        "title": "Error",
+        "description": "Error if any occurred during the execution of the action"
+      },
+      "successful": {
+        "type": "boolean",
+        "title": "Successful",
+        "description": "Whether or not the action execution was successful or not"
+      }
+    }
+  }
+}

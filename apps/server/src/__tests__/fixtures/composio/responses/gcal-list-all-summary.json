@@ -1,0 +1,86 @@
+{
+  "slug": "GOOGLECALENDAR_EVENTS_LIST_ALL_CALENDARS",
+  "ok": true,
+  "ms": 962,
+  "request": {
+    "time_min": "2026-11-17T05:32:34.907Z",
+    "time_max": "2026-12-18T05:32:34.907Z",
+    "single_events": true,
+    "show_deleted": true,
+    "q": "Orbit eval"
+  },
+  "response": {
+    "data": {
+      "calendars_queried": [
+        {
+          "id": "id_12",
+          "summary": "person_2@example.test"
+        },
+        {
+          "id": "id_15",
+          "summary": "Holidays in Canada"
+        }
+      ],
+      "composio_execution_message": "Minimal response: returning only summary_view (event titles, times, calendars). Full events array omitted. Use response_detail='full' to include complete event details with attendees, descriptions, and conference data.",
+      "errors_by_calendar": {},
+      "events": [],
+      "summary_view": [
+        {
+          "calendar": "person_2@example.test",
+          "display_url": "https://example.test/link_10",
+          "end": "2026-11-19T12:00:00Z",
+          "event_id": "id_39",
+          "is_all_day": false,
+          "start": "2026-11-19T11:00:00Z",
+          "title": "Orbit eval quick add T05:32"
+        },
+        {
+          "calendar": "person_2@example.test",
+          "display_url": "https://example.test/link_5",
+          "end": "2026-11-19T14:15:00Z",
+          "event_id": "id_31",
+          "is_all_day": false,
+          "start": "2026-11-19T14:00:00Z",
+          "title": "Orbit eval weekly 2026-11-18T05:32"
+        },
+        {
+          "calendar": "person_2@example.test",
+          "display_url": "https://example.test/link_2",
+          "end": "2026-11-19T21:45:00Z",
+          "event_id": "id_22",
+          "is_all_day": false,
+          "start": "2026-11-19T21:00:00Z",
+          "title": "Orbit eval event 2026-11-18T05:32 (updated)"
+        },
+        {
+          "calendar": "person_2@example.test",
+          "display_url": "https://example.test/link_7",
+          "end": "2026-11-26T14:15:00Z",
+          "event_id": "id_32",
+          "is_all_day": false,
+          "start": "2026-11-26T14:00:00Z",
+          "title": "Orbit eval weekly 2026-11-18T05:32 (one instance)"
+        },
+        {
+          "calendar": "person_2@example.test",
+          "display_url": "https://example.test/link_8",
+          "end": "2026-12-03T14:15:00Z",
+          "event_id": "id_33",
+          "is_all_day": false,
+          "start": "2026-12-03T14:00:00Z",
+          "title": "Orbit eval weekly 2026-11-18T05:32"
+        },
+        {
+          "calendar": "person_2@example.test",
+          "display_url": "https://example.test/link_9",
+          "end": "2026-12-10T14:15:00Z",
+          "event_id": "id_34",
+          "is_all_day": false,
+          "start": "2026-12-10T14:00:00Z",
+          "title": "Orbit eval weekly 2026-11-18T05:32"
+        }
+      ]
+    },
+    "error": null
+  }
+}

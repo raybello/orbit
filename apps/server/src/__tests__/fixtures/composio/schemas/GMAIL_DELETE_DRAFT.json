@@ -1,0 +1,78 @@
+{
+  "slug": "GMAIL_DELETE_DRAFT",
+  "version": "20261116_00",
+  "description": "Permanently deletes a specific Gmail draft using its ID with no recovery possible; verify the correct `draft_id` and obtain explicit user confirmation before calling. Ensure the draft exists and the user has necessary permissions for the given `user_id`.",
+  "input_parameters": {
+    "type": "object",
+    "title": "DeleteDraftRequest",
+    "required": [
+      "draft_id"
+    ],
+    "properties": {
+      "user_id": {
+        "type": "string",
+        "title": "User Id",
+        "default": "me",
+        "examples": [
+          "me",
+          "user@example.com"
+        ],
+        "description": "User's email address or 'me' for the authenticated user; 'me' is recommended.",
+        "human_parameter_name": "User ID",
+        "human_parameter_description": "The email address of the user whose drafts you want to manage. Use 'me' to refer to the authenticated user."
+      },
+      "draft_id": {
+        "type": "string",
+        "title": "Draft Id",
+        "examples": [
+          "r-8388446164079304564",
+          "r1234567890123456789"
+        ],
+        "description": "Immutable ID of the draft to delete. Must be obtained from GMAIL_LIST_DRAFTS or GMAIL_CREATE_EMAIL_DRAFT actions. Draft IDs typically have an 'r' prefix (e.g., 'r-1234567890' or 'r1234567890'). Draft IDs differ from message IDs used in GMAIL_BATCH_DELETE_MESSAGES — do not interchange. When multiple similar drafts exist, confirm the exact ID via GMAIL_LIST_DRAFTS before deleting.",
+        "human_parameter_name": "Draft ID",
+        "human_parameter_description": "The unique identifier for the draft you wish to delete. Obtain this ID from listing drafts (GMAIL_LIST_DRAFTS) or when creating a draft (GMAIL_CREATE_EMAIL_DRAFT)."
+      }
+    }
+  },
+  "output_parameters": {
+    "type": "object",
+    "$defs": {
+      "DeleteDraftResponse": {
+        "type": "object",
+        "title": "DeleteDraftResponse",
+        "required": [
+          "success"
+        ],
+        "properties": {
+          "success": {
+            "type": "boolean",
+            "title": "Success",
+            "description": "Indicates whether the draft was successfully deleted."
+          }
+        }
+      }
+    },
+    "title": "DeleteDraftResponseWrapper",
+    "required": [
+      "data",
+      "successful"
+    ],
+    "properties": {
+      "data": {
+        "$ref": "#/$defs/DeleteDraftResponse",
+        "title": "Data",
+        "description": "Data from the action execution"
+      },
+      "error": {
+        "type": "string",
+        "title": "Error",
+        "description": "Error if any occurred during the execution of the action"
+      },
+      "successful": {
+        "type": "boolean",
+        "title": "Successful",
+        "description": "Whether or not the action execution was successful or not"
+      }
+    }
+  }
+}

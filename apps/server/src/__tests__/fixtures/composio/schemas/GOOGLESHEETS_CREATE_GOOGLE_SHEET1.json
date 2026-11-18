@@ -1,0 +1,282 @@
+{
+  "slug": "GOOGLESHEETS_CREATE_GOOGLE_SHEET1",
+  "version": "20261116_00",
+  "description": "Creates a new Google Spreadsheet in Drive with an optional title and folder ID or exact folder name. Multiple matching folders return choices before creation; if moving a created spreadsheet to the requested folder fails, the response reports partial success.",
+  "input_parameters": {
+    "type": "object",
+    "title": "CreateGoogleSheetRequest",
+    "properties": {
+      "title": {
+        "type": "string",
+        "title": "Title",
+        "examples": [
+          "Q4 Financial Report",
+          "Project Plan Ideas",
+          "Meeting Notes"
+        ],
+        "description": "The title for the new Google Sheet. If omitted, Google will create a spreadsheet with a default name like 'Untitled spreadsheet'.",
+        "human_parameter_name": "Title",
+        "human_parameter_description": "The title for the new Google Sheet. If omitted, Google will create a spreadsheet with a default name like 'Untitled spreadsheet'."
+      },
+      "folder_id": {
+        "type": "string",
+        "title": "Folder Id",
+        "examples": [
+          "1a2b3c4d5e6f7g8h9i0j"
+        ],
+        "description": "Google Drive folder ID where the spreadsheet should be created. If provided, the spreadsheet will be moved to this folder after creation. Takes precedence over folder_name.",
+        "human_parameter_name": "Folder ID",
+        "human_parameter_description": "Google Drive folder ID where the spreadsheet should be created"
+      },
+      "folder_name": {
+        "type": "string",
+        "title": "Folder Name",
+        "examples": [
+          "Marketing Materials",
+          "Q4 Reports",
+          "Project Documents"
+        ],
+        "description": "Google Drive folder name where the spreadsheet should be created. If provided and folder_id is not provided, the action will search for a folder with this exact name. If multiple folders match, you'll receive a list to choose from. If no folder matches, an error is returned.",
+        "human_parameter_name": "Folder Name",
+        "human_parameter_description": "Google Drive folder name where the spreadsheet should be created"
+      }
+    }
+  },
+  "output_parameters": {
+    "type": "object",
+    "$defs": {
+      "Sheet": {
+        "type": "object",
+        "title": "Sheet",
+        "properties": {
+          "properties": {
+            "$ref": "#/$defs/SheetProperties",
+            "title": "Properties"
+          }
+        },
+        "description": "A sheet (tab) in a spreadsheet.",
+        "additionalProperties": true
+      },
+      "FolderChoice": {
+        "type": "object",
+        "title": "FolderChoice",
+        "required": [
+          "id",
+          "name"
+        ],
+        "properties": {
+          "id": {
+            "type": "string",
+            "title": "Id",
+            "description": "The Google Drive folder ID"
+          },
+          "name": {
+            "type": "string",
+            "title": "Name",
+            "description": "The folder name"
+          },
+          "path": {
+            "type": "string",
+            "title": "Path",
+            "description": "Full path of the folder if available"
+          }
+        },
+        "description": "A folder choice when multiple folders with the same name are found."
+      },
+      "GridProperties": {
+        "type": "object",
+        "title": "GridProperties",
+        "properties": {
+          "rowCount": {
+            "type": "integer",
+            "title": "Row Count"
+          },
+          "columnCount": {
+            "type": "integer",
+            "title": "Column Count"
+          },
+          "hideGridlines": {
+            "type": "boolean",
+            "title": "Hide Gridlines"
+          },
+          "frozenRowCount": {
+            "type": "integer",
+            "title": "Frozen Row Count"
+          },
+          "frozenColumnCount": {
+            "type": "integer",
+            "title": "Frozen Column Count"
+          },
+          "rowGroupControlAfter": {
+            "type": "boolean",
+            "title": "Row Group Control After"
+          },
+          "columnGroupControlAfter": {
+            "type": "boolean",
+            "title": "Column Group Control After"
+          }
+        },
+        "description": "Properties of a grid (sheet dimensions and display settings).",
+        "additionalProperties": true
+      },
+      "SheetProperties": {
+        "type": "object",
+        "title": "SheetProperties",
+        "properties": {
+          "index": {
+            "type": "integer",
+            "title": "Index"
+          },
+          "title": {
+            "type": "string",
+            "title": "Title"
+          },
+          "hidden": {
+            "type": "boolean",
+            "title": "Hidden"
+          },
+          "sheetId": {
+            "type": "integer",
+            "title": "Sheet Id"
+          },
+          "sheetType": {
+            "type": "string",
+            "title": "Sheet Type"
+          },
+          "rightToLeft": {
+            "type": "boolean",
+            "title": "Right To Left"
+          },
+          "gridProperties": {
+            "$ref": "#/$defs/GridProperties",
+            "title": "Grid Properties"
+          }
+        },
+        "description": "Properties of a sheet (tab) within a spreadsheet.",
+        "additionalProperties": true
+      },
+      "CreateGoogleSheetResponse": {
+        "type": "object",
+        "title": "CreateGoogleSheetResponse",
+        "properties": {
+          "sheets": {
+            "type": "array",
+            "items": {
+              "$ref": "#/$defs/Sheet"
+            },
+            "title": "Sheets",
+            "description": "All sheets in the spreadsheet."
+          },
+          "folder_id": {
+            "type": "string",
+            "title": "Folder Id",
+            "description": "The ID of the folder where the spreadsheet was created"
+          },
+          "properties": {
+            "type": "object",
+            "title": "Properties",
+            "description": "Overall spreadsheet properties (SpreadsheetProperties object)",
+            "additionalProperties": true
+          },
+          "dataSources": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "additionalProperties": true
+            },
+            "title": "Data Sources",
+            "description": "External data sources connected to the spreadsheet."
+          },
+          "display_url": {
+            "type": "string",
+            "title": "Display Url",
+            "description": "The URL to display/open the spreadsheet in the Google Sheets UI."
+          },
+          "folder_name": {
+            "type": "string",
+            "title": "Folder Name",
+            "description": "The name of the folder where the spreadsheet was created"
+          },
+          "namedRanges": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "additionalProperties": true
+            },
+            "title": "Named Ranges",
+            "description": "Named ranges defined in the spreadsheet."
+          },
+          "spreadsheetId": {
+            "type": "string",
+            "title": "Spreadsheet Id",
+            "description": "The ID of the spreadsheet; read-only. Only absent when requires_user_selection is true."
+          },
+          "spreadsheetUrl": {
+            "type": "string",
+            "title": "Spreadsheet Url",
+            "description": "The URL of the spreadsheet; read-only."
+          },
+          "matching_folders": {
+            "type": "array",
+            "items": {
+              "$ref": "#/$defs/FolderChoice"
+            },
+            "title": "Matching Folders",
+            "description": "List of matching folders when multiple folders with the same name are found"
+          },
+          "developerMetadata": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "additionalProperties": true
+            },
+            "title": "Developer Metadata",
+            "description": "Developer metadata attached to the spreadsheet."
+          },
+          "dataSourceSchedules": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "additionalProperties": true
+            },
+            "title": "Data Source Schedules",
+            "description": "Data source refresh schedules in the spreadsheet."
+          },
+          "requires_user_selection": {
+            "type": "boolean",
+            "title": "Requires User Selection",
+            "default": false,
+            "description": "True if multiple folders with the same name were found and user selection is required"
+          },
+          "composio_execution_message": {
+            "type": "string",
+            "title": "Composio Execution Message",
+            "description": "Additional information about the execution (e.g., partial success warnings)"
+          }
+        }
+      }
+    },
+    "title": "CreateGoogleSheetResponseWrapper",
+    "required": [
+      "data",
+      "successful"
+    ],
+    "properties": {
+      "data": {
+        "$ref": "#/$defs/CreateGoogleSheetResponse",
+        "title": "Data",
+        "description": "Data from the action execution"
+      },
+      "error": {
+        "type": "string",
+        "title": "Error",
+        "description": "Error if any occurred during the execution of the action"
+      },
+      "successful": {
+        "type": "boolean",
+        "title": "Successful",
+        "description": "Whether or not the action execution was successful or not"
+      }
+    }
+  }
+}

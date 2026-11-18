@@ -1,0 +1,121 @@
+{
+  "request": {
+    "tools": [
+      {
+        "tool_slug": "GMAIL_GET_PROFILE",
+        "arguments": {}
+      },
+      {
+        "tool_slug": "GOOGLECALENDAR_LIST_CALENDARS",
+        "arguments": {
+          "max_results": 2
+        }
+      }
+    ]
+  },
+  "response": {
+    "data": {
+      "results": [
+        {
+          "response": {
+            "successful": true,
+            "data": {
+              "display_url": "https://example.test/link_17",
+              "emailAddress": "person_2@example.test",
+              "historyId": "id_48",
+              "messagesTotal": 8518,
+              "threadsTotal": 8229
+            }
+          },
+          "tool_slug": "GMAIL_GET_PROFILE",
+          "index": 0
+        },
+        {
+          "response": {
+            "successful": true,
+            "data": {
+              "calendars": [
+                {
+                  "accessRole": "owner",
+                  "backgroundColor": "#9fe1e7",
+                  "colorId": "id_10",
+                  "conferenceProperties": {
+                    "allowedConferenceSolutionTypes": [
+                      "hangoutsMeet"
+                    ]
+                  },
+                  "defaultReminders": [
+                    {
+                      "method": "popup",
+                      "minutes": 30
+                    }
+                  ],
+                  "display_url": "https://example.test/link_11",
+                  "etag": "id_11",
+                  "foregroundColor": "#000000",
+                  "id": "id_12",
+                  "kind": "calendar#calendarListEntry",
+                  "notificationSettings": {
+                    "notifications": [
+                      {
+                        "method": "email",
+                        "type": "eventCreation"
+                      },
+                      {
+                        "method": "email",
+                        "type": "eventChange"
+                      },
+                      {
+                        "method": "email",
+                        "type": "eventCancellation"
+                      },
+                      {
+                        "method": "email",
+                        "type": "eventResponse"
+                      }
+                    ]
+                  },
+                  "primary": true,
+                  "selected": true,
+                  "summary": "person_2@example.test",
+                  "timeZone": "UTC"
+                },
+                {
+                  "accessRole": "reader",
+                  "backgroundColor": "#16a765",
+                  "colorId": "id_13",
+                  "conferenceProperties": {
+                    "allowedConferenceSolutionTypes": [
+                      "hangoutsMeet"
+                    ]
+                  },
+                  "defaultReminders": [],
+                  "description": "Holidays and Observances in Canada",
+                  "display_url": "https://example.test/link_12",
+                  "etag": "id_14",
+                  "foregroundColor": "#000000",
+                  "id": "id_15",
+                  "kind": "calendar#calendarListEntry",
+                  "selected": true,
+                  "summary": "Holidays in Canada",
+                  "timeZone": "UTC"
+                }
+              ],
+              "display_url": null,
+              "next_page_token": null,
+              "next_sync_token": "id_49"
+            }
+          },
+          "tool_slug": "GOOGLECALENDAR_LIST_CALENDARS",
+          "index": 1
+        }
+      ],
+      "total_count": 2,
+      "success_count": 2,
+      "error_count": 0
+    },
+    "error": null,
+    "logId": "id_50",
+    "resultType": "completed"
+  }
+}

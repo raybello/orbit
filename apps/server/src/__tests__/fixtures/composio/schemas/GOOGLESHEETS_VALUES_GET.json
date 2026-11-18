@@ -1,0 +1,168 @@
+{
+  "slug": "GOOGLESHEETS_VALUES_GET",
+  "version": "20261116_00",
+  "description": "Returns a range of values from a spreadsheet. Use when you need to read data from specific cells or ranges in a Google Sheet.",
+  "input_parameters": {
+    "type": "object",
+    "title": "ValuesGetRequest",
+    "required": [
+      "spreadsheet_id",
+      "range"
+    ],
+    "properties": {
+      "range": {
+        "type": "string",
+        "title": "Range",
+        "examples": [
+          "Sheet1!A1:B3",
+          "'My Sheet'!A1:D5",
+          "'Feuille 1'!A1:C10",
+          "A1:D5",
+          "Sheet1!A:A"
+        ],
+        "description": "The A1 notation or R1C1 notation of the range to retrieve values from. If the sheet name contains spaces or special characters, wrap the sheet name in single quotes (e.g., \"'My Sheet'!A1:B2\"). Without single quotes, the API will return a 400 error for sheet names with spaces. Examples: 'Sheet1!A1:B3', \"'Sheet With Spaces'!A1:D5\", 'A1:D5' (no sheet name uses first visible sheet), 'Sheet1!A:A' (entire column), 'SheetName' (entire sheet).",
+        "human_parameter_name": "Range",
+        "human_parameter_description": "Specify the range of cells you want to retrieve using A1 notation (e.g., 'A1:B10', 'Sheet1!A1:C5'). If the sheet name contains spaces or special characters, enclose the sheet name in single quotes (e.g., \"'My Sheet'!A1:B2\")."
+      },
+      "end_row": {
+        "type": "integer",
+        "title": "End Row",
+        "description": "1-based row number to stop reading at (inclusive). Use with start_row for pagination to avoid large response errors. Example: start_row=501, end_row=1000 fetches rows 501-1000.",
+        "human_parameter_name": "End Row",
+        "human_parameter_description": "Last row to read (1-based). Leave empty to read to the end of the range."
+      },
+      "start_row": {
+        "type": "integer",
+        "title": "Start Row",
+        "description": "1-based row number to start reading from (inclusive). Use with end_row for pagination to avoid large response errors. Example: start_row=1, end_row=500 fetches the first 500 rows.",
+        "human_parameter_name": "Start Row",
+        "human_parameter_description": "First row to read (1-based). Leave empty to start from the beginning of the range."
+      },
+      "spreadsheet_id": {
+        "type": "string",
+        "title": "Spreadsheet Id",
+        "examples": [
+          "1BxiMVs0XRA5nFMdKvBdBZjgmUUqptlbs74OgvE2upms"
+        ],
+        "description": "The unique identifier of the Google Spreadsheet from which to retrieve values. This is the long alphanumeric string found in the spreadsheet URL between '/d/' and '/edit' (e.g., '1BxiMVs0XRA5nFMdKvBdBZjgmUUqptlbs74OgvE2upms'). WARNING: Do NOT use the spreadsheet name or title (e.g., 'My Sales Report'); you must use the actual ID from the URL.",
+        "human_parameter_name": "Spreadsheet Id",
+        "human_parameter_description": "Provide the unique ID of the spreadsheet you want to extract values from. The ID is the long alphanumeric string in the URL between '/d/' and '/edit'. Do NOT use the spreadsheet name."
+      },
+      "major_dimension": {
+        "enum": [
+          "DIMENSION_UNSPECIFIED",
+          "ROWS",
+          "COLUMNS"
+        ],
+        "type": "string",
+        "title": "MajorDimension",
+        "description": "The major dimension for results.",
+        "human_parameter_name": "Major Dimension",
+        "human_parameter_description": "Indicate whether you want your data organized by rows or columns. If you're not sure, it defaults to rows."
+      },
+      "value_render_option": {
+        "enum": [
+          "FORMATTED_VALUE",
+          "UNFORMATTED_VALUE",
+          "FORMULA"
+        ],
+        "type": "string",
+        "title": "Value Render Option",
+        "default": "FORMATTED_VALUE",
+        "description": "How values should be rendered in the output. FORMATTED_VALUE: Values are calculated and formatted (default). UNFORMATTED_VALUE: Values are calculated but not formatted. FORMULA: Values are not calculated; the formula is returned instead.",
+        "human_parameter_name": "Value Render Option",
+        "human_parameter_description": "Choose how you want the values to be displayed. You can get the formatted version, an unformatted version, or just the underlying formula."
+      },
+      "date_time_render_option": {
+        "enum": [
+          "SERIAL_NUMBER",
+          "FORMATTED_STRING"
+        ],
+        "type": "string",
+        "title": "Date Time Render Option",
+        "default": "SERIAL_NUMBER",
+        "description": "How dates, times, and durations should be represented in the output. SERIAL_NUMBER: Dates are returned as serial numbers (default). FORMATTED_STRING: Dates returned as formatted strings.",
+        "human_parameter_name": "Date Time Render Option",
+        "human_parameter_description": "Select how you want dates and times to be shown. You can use serial numbers or get formatted strings."
+      }
+    }
+  },
+  "output_parameters": {
+    "type": "object",
+    "$defs": {
+      "ValuesGetResponse": {
+        "type": "object",
+        "title": "ValuesGetResponse",
+        "required": [
+          "range"
+        ],
+        "properties": {
+          "range": {
+            "type": "string",
+            "title": "Range",
+            "description": "The A1-notation of the range that the values cover, including the sheet name (e.g., 'Sheet1!A1:B3'). This reflects the full requested range; trailing empty rows and columns in the values array are omitted."
+          },
+          "values": {
+            "type": "array",
+            "items": {
+              "type": "array",
+              "items": {
+                "anyOf": [
+                  {
+                    "type": "string"
+                  },
+                  {
+                    "type": "integer"
+                  },
+                  {
+                    "type": "number"
+                  },
+                  {
+                    "type": "boolean"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              }
+            },
+            "title": "Values",
+            "description": "The data in the range. The outer array corresponds to the major dimension (rows if majorDimension=ROWS, columns if majorDimension=COLUMNS). Each inner array contains the cell values for that row or column. Trailing empty rows/columns are omitted. Returned value types depend on the valueRenderOption used in the request: formatted strings by default, or unformatted numbers/booleans if UNFORMATTED_VALUE is used. Empty cells may be omitted at the end, represented as empty strings, or as null. When the requested range is empty or contains no data, this field will be an empty list []."
+          },
+          "display_url": {
+            "type": "string",
+            "title": "Display Url",
+            "description": "The URL to view the spreadsheet in Google Sheets web interface."
+          },
+          "majorDimension": {
+            "type": "string",
+            "title": "Major Dimension",
+            "description": "Indicates whether the values are grouped by rows or by columns. The outer array of 'values' corresponds to this dimension ('ROWS' means each inner array is a row; 'COLUMNS' means each inner array is a column)."
+          }
+        }
+      }
+    },
+    "title": "ValuesGetResponseWrapper",
+    "required": [
+      "data",
+      "successful"
+    ],
+    "properties": {
+      "data": {
+        "$ref": "#/$defs/ValuesGetResponse",
+        "title": "Data",
+        "description": "Data from the action execution"
+      },
+      "error": {
+        "type": "string",
+        "title": "Error",
+        "description": "Error if any occurred during the execution of the action"
+      },
+      "successful": {
+        "type": "boolean",
+        "title": "Successful",
+        "description": "Whether or not the action execution was successful or not"
+      }
+    }
+  }
+}

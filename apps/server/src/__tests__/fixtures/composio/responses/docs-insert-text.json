@@ -1,0 +1,24 @@
+{
+  "slug": "GOOGLEDOCS_INSERT_TEXT_ACTION",
+  "ok": true,
+  "ms": 748,
+  "request": {
+    "document_id": "id_43",
+    "text_to_insert": "\nAppended by the shapes script.",
+    "append_to_end": true
+  },
+  "response": {
+    "data": {
+      "display_url": "https://example.test/link_1",
+      "document_id": "id_43",
+      "replies": [
+        {}
+      ],
+      "write_control": {
+        "required_revision_id": "id_45",
+        "target_revision_id": null
+      }
+    },
+    "error": null
+  }
+}

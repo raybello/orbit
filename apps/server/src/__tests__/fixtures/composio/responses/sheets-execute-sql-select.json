@@ -1,0 +1,71 @@
+{
+  "slug": "GOOGLESHEETS_EXECUTE_SQL",
+  "ok": true,
+  "ms": 2500,
+  "request": {
+    "spreadsheet_id": "id_41",
+    "sql": "SELECT * FROM \"Sheet1\" LIMIT 5",
+    "dry_run": true
+  },
+  "response": {
+    "data": {
+      "affected_rows": 2,
+      "data": [
+        {
+          "_row": 2,
+          "batch": null,
+          "column_4": null,
+          "count": 2,
+          "name": "beta",
+          "note": "changed",
+          "write": null
+        },
+        {
+          "_row": 3,
+          "batch": null,
+          "column_4": null,
+          "count": 3,
+          "name": "gamma",
+          "note": "third",
+          "write": null
+        }
+      ],
+      "display_url": "https://example.test/link_22",
+      "error": null,
+      "message": "Retrieved 2 rows",
+      "operation": "SELECT",
+      "successful": true,
+      "table_schema": [
+        {
+          "name": "_row",
+          "type": "INTEGER"
+        },
+        {
+          "name": "name",
+          "type": "TEXT"
+        },
+        {
+          "name": "count",
+          "type": "INTEGER"
+        },
+        {
+          "name": "note",
+          "type": "TEXT"
+        },
+        {
+          "name": "column_4",
+          "type": "UNKNOWN"
+        },
+        {
+          "name": "batch",
+          "type": "UNKNOWN"
+        },
+        {
+          "name": "write",
+          "type": "UNKNOWN"
+        }
+      ]
+    },
+    "error": null
+  }
+}

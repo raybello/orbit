@@ -1,0 +1,124 @@
+{
+  "slug": "GMAIL_SEND_DRAFT",
+  "version": "20261116_00",
+  "description": "Sends an existing Gmail draft immediately to the recipients already in its To, Cc, and Bcc headers. The draft's recipients and content cannot be changed by this action; confirm them before sending.",
+  "input_parameters": {
+    "type": "object",
+    "title": "SendDraftRequest",
+    "required": [
+      "draft_id"
+    ],
+    "properties": {
+      "user_id": {
+        "type": "string",
+        "title": "User Id",
+        "default": "me",
+        "examples": [
+          "me",
+          "user@example.com"
+        ],
+        "description": "The user's email address. The special value `me` can be used to indicate the authenticated user.",
+        "human_parameter_name": "User email address",
+        "human_parameter_description": "The email address of the user sending the draft. Use 'me' to send from your own account."
+      },
+      "draft_id": {
+        "type": "string",
+        "title": "Draft Id",
+        "examples": [
+          "r99885592323229922"
+        ],
+        "description": "The ID of the draft to send. Draft IDs are typically alphanumeric strings (e.g., 'r99885592323229922'). Important: Do not confuse draft_id with message_id - they are different identifiers. Use GMAIL_LIST_DRAFTS to retrieve valid draft IDs, or GMAIL_CREATE_EMAIL_DRAFT to create a new draft and get its ID. IMPORTANT: The draft MUST already have recipients (To, Cc, or Bcc) set - this action cannot add or override recipients. If the draft has no recipients, first create a new draft with recipients using GMAIL_CREATE_EMAIL_DRAFT, or use GMAIL_SEND_EMAIL to send a new email directly.",
+        "human_parameter_name": "Draft ID",
+        "human_parameter_description": "The unique identifier of the draft you want to send. Must be a valid draft ID from an existing draft in the user's account."
+      }
+    }
+  },
+  "output_parameters": {
+    "type": "object",
+    "$defs": {
+      "GmailMessageResponse": {
+        "type": "object",
+        "title": "GmailMessageResponse",
+        "properties": {
+          "id": {
+            "type": "string",
+            "title": "Id",
+            "description": "The immutable ID of the sent message."
+          },
+          "raw": {
+            "type": "string",
+            "title": "Raw",
+            "description": "The entire email message in RFC 2822 format, base64url-encoded."
+          },
+          "payload": {
+            "type": "object",
+            "title": "Payload",
+            "description": "The parsed email structure, including headers and body parts.",
+            "additionalProperties": true
+          },
+          "snippet": {
+            "type": "string",
+            "title": "Snippet",
+            "description": "A short extract of the message text."
+          },
+          "labelIds": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "title": "Label Ids",
+            "description": "List of IDs of labels applied to this message."
+          },
+          "threadId": {
+            "type": "string",
+            "title": "Thread Id",
+            "description": "The ID of the thread the message belongs to."
+          },
+          "historyId": {
+            "type": "string",
+            "title": "History Id",
+            "description": "The ID of the last history record that modified this message."
+          },
+          "display_url": {
+            "type": "string",
+            "title": "Display Url",
+            "description": "Web UI link for this resource - set by each action's execute()."
+          },
+          "internalDate": {
+            "type": "string",
+            "title": "Internal Date",
+            "description": "The internal timestamp of the message in milliseconds since epoch."
+          },
+          "sizeEstimate": {
+            "type": "integer",
+            "title": "Size Estimate",
+            "description": "Estimated size of the message in bytes."
+          }
+        },
+        "description": "Standard Gmail message response returned by Gmail API for sent messages.\nUsed by actions like send_email and send_draft."
+      }
+    },
+    "title": "GmailMessageResponseWrapper",
+    "required": [
+      "data",
+      "successful"
+    ],
+    "properties": {
+      "data": {
+        "$ref": "#/$defs/GmailMessageResponse",
+        "title": "Data",
+        "description": "Data from the action execution"
+      },
+      "error": {
+        "type": "string",
+        "title": "Error",
+        "description": "Error if any occurred during the execution of the action"
+      },
+      "successful": {
+        "type": "boolean",
+        "title": "Successful",
+        "description": "Whether or not the action execution was successful or not"
+      }
+    }
+  }
+}

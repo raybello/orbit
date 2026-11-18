@@ -1,0 +1,109 @@
+{
+  "slug": "GOOGLECALENDAR_DELETE_EVENT",
+  "version": "20261116_00",
+  "description": "Deletes an event from the specified calendar. Only Google's HTTP 204 confirms deletion; 404 or 410 can also mean the event belongs to a different calendar. Bulk deletions may trigger `rateLimitExceeded` or `userRateLimitExceeded`; cap concurrency to 5–10 requests and apply exponential backoff.",
+  "input_parameters": {
+    "type": "object",
+    "title": "DeleteEventRequest",
+    "required": [
+      "event_id"
+    ],
+    "properties": {
+      "event_id": {
+        "type": "string",
+        "title": "Event Id",
+        "description": "Unique identifier of the event to delete. For standalone events, use the base event ID (e.g., 'abc123def456'). For recurring event instances, use the instance ID format 'baseEventId_YYYYMMDDTHHMMSSZ' (e.g., 'abc123def456_20260522T093000Z') where the timestamp suffix represents the instance's original start time in UTC. Instance IDs can be obtained from the EVENTS_INSTANCES action. To delete ALL occurrences of a recurring event, use the base event ID without the timestamp suffix. Must be the internal API identifier from a prior API response — UI-visible identifiers, URL-encoded variants, or shortened IDs are invalid and cause 404/validation errors.",
+        "human_parameter_name": "Event ID",
+        "human_parameter_description": "The ID of the event you want to delete. For a single event, use its ID. For a recurring event instance, use the instance ID (format: baseEventId_YYYYMMDDTHHMMSSZ). To delete the entire recurring series, use the base event ID."
+      },
+      "calendar_id": {
+        "type": "string",
+        "title": "Calendar Id",
+        "default": "primary",
+        "examples": [
+          "primary",
+          "user@example.com",
+          "abcsomecalendarid@group.calendar.google.com"
+        ],
+        "description": "Identifier of the Google Calendar (e.g., email address, specific ID, or 'primary' for the authenticated user's main calendar) from which the event will be deleted. Calendars without event-deletion permission, including subscribed calendars not owned by the authenticated user, return 403 on deletion attempts.",
+        "human_parameter_name": "Calendar ID",
+        "human_parameter_description": "Tell us which calendar the event belongs to. Use the email address or calendar ID, or enter 'primary' to target your main calendar."
+      },
+      "send_updates": {
+        "enum": [
+          "all",
+          "externalOnly",
+          "none"
+        ],
+        "type": "string",
+        "title": "SendUpdates",
+        "description": "Options for who should receive notifications about event changes."
+      },
+      "send_notifications": {
+        "type": "boolean",
+        "title": "Send Notifications",
+        "description": "Deprecated. Whether to send notifications about the deletion of the event. Note that some emails might still be sent."
+      }
+    }
+  },
+  "output_parameters": {
+    "type": "object",
+    "$defs": {
+      "ResponseData": {
+        "type": "object",
+        "title": "ResponseData",
+        "required": [
+          "status"
+        ],
+        "properties": {
+          "status": {
+            "type": "string",
+            "const": "success",
+            "title": "Status",
+            "description": "Outcome of the delete operation. 'success' indicates the event was deleted successfully."
+          }
+        },
+        "additionalProperties": false
+      },
+      "DeleteEventResponse": {
+        "type": "object",
+        "title": "DeleteEventResponse",
+        "properties": {
+          "display_url": {
+            "type": "string",
+            "title": "Display Url",
+            "description": "URL to view the resource in Google Calendar web UI. None for delete operations as the event no longer exists."
+          },
+          "response_data": {
+            "$ref": "#/$defs/ResponseData",
+            "title": "Response Data",
+            "description": "Optional convenience wrapper returned by some integrations to indicate the outcome of the delete operation. Not part of the official Google Calendar HTTP response."
+          }
+        },
+        "additionalProperties": false
+      }
+    },
+    "title": "DeleteEventResponseWrapper",
+    "required": [
+      "data",
+      "successful"
+    ],
+    "properties": {
+      "data": {
+        "$ref": "#/$defs/DeleteEventResponse",
+        "title": "Data",
+        "description": "Data from the action execution"
+      },
+      "error": {
+        "type": "string",
+        "title": "Error",
+        "description": "Error if any occurred during the execution of the action"
+      },
+      "successful": {
+        "type": "boolean",
+        "title": "Successful",
+        "description": "Whether or not the action execution was successful or not"
+      }
+    }
+  }
+}

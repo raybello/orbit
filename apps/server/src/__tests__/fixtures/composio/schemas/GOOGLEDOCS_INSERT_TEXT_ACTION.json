@@ -1,0 +1,280 @@
+{
+  "slug": "GOOGLEDOCS_INSERT_TEXT_ACTION",
+  "version": "20261116_00",
+  "description": "Tool to insert a string of text at a specified location within a Google Document. Use when you need to add new text content to an existing document. IMPORTANT: Two ways to specify insertion location: 1. Use 'insertion_index' to insert at a specific position (index 1 is safe for document start) 2. Use 'append_to_end=true' to append text to the end of the document (recommended for appending) CRITICAL CONSTRAINT: When using insertion_index, the index MUST fall within the bounds of an EXISTING paragraph. You cannot insert text at arbitrary indices or at structural boundaries (e.g., table starts). The index must also be strictly less than the document's end index. To safely append text without index concerns, use append_to_end=true.",
+  "input_parameters": {
+    "type": "object",
+    "title": "InsertTextActionRequest",
+    "required": [
+      "document_id",
+      "text_to_insert"
+    ],
+    "properties": {
+      "tab_id": {
+        "type": "string",
+        "title": "Tab Id",
+        "examples": [
+          "t.abc123"
+        ],
+        "description": "The ID of the document tab to insert text into. When omitted, Google Docs applies the request to the first tab."
+      },
+      "segment_id": {
+        "type": "string",
+        "title": "Segment Id",
+        "examples": [
+          "",
+          "kix.abc123"
+        ],
+        "description": "The ID of the header, footer or footnote to insert text into. Leave empty or omit to insert into the document body. Works with both append_to_end and insertion_index modes.",
+        "human_parameter_name": "Segment ID",
+        "human_parameter_description": "Optionally specify a header, footer, or footnote ID. Leave empty for document body."
+      },
+      "document_id": {
+        "type": "string",
+        "title": "Document Id",
+        "examples": [
+          "195j9e2fm7q-gL2mmx61gh-oXMUrV2Vl45678ZA"
+        ],
+        "description": "The ID of the document to insert text into.",
+        "human_parameter_name": "Document ID",
+        "human_parameter_description": "Provide the unique identifier of the document where you want to insert the text."
+      },
+      "append_to_end": {
+        "type": "boolean",
+        "title": "Append To End",
+        "examples": [
+          true,
+          false
+        ],
+        "description": "Set to true to append text to the end of the document body. When true, the 'insertion_index' parameter is ignored. This is the recommended way to add text at the end of a document as it avoids index boundary issues.",
+        "human_parameter_name": "Append to end",
+        "human_parameter_description": "Set to true to add text at the end of the document. This is the safest way to append content."
+      },
+      "text_to_insert": {
+        "type": "string",
+        "title": "Text To Insert",
+        "examples": [
+          "This is a new paragraph."
+        ],
+        "minLength": 1,
+        "description": "The string of text to insert. Alternatively, you can provide this as 'text'.",
+        "human_parameter_name": "Text to insert",
+        "human_parameter_description": "Enter the text you wish to add to the document."
+      },
+      "insertion_index": {
+        "type": "integer",
+        "title": "Insertion Index",
+        "examples": [
+          1
+        ],
+        "description": "The zero-based UTF-16 code unit index where text will be inserted. Alternatively, you can provide this as 'index'. CRITICAL CONSTRAINTS: (1) The index MUST fall within the bounds of an EXISTING paragraph - you cannot insert at arbitrary indices or at structural boundaries like table starts. (2) The index MUST be strictly less than the document's end index. Index 1 is the minimum valid index and is safe for inserting at the document start. To determine valid indices, first retrieve the document structure using GOOGLEDOCS_GET_DOCUMENT_BY_ID to identify paragraph boundaries. For safely adding text without index concerns, set 'append_to_end' to true instead. Either 'insertion_index' or 'append_to_end' must be provided.",
+        "human_parameter_name": "Insertion index",
+        "human_parameter_description": "Provide the position in the document where you want your text to be inserted. The index MUST be within an existing paragraph's boundaries. Use index 1 to safely insert at the document start. Leave empty and set append_to_end=true to append to the end."
+      }
+    }
+  },
+  "output_parameters": {
+    "type": "object",
+    "$defs": {
+      "WriteControl": {
+        "type": "object",
+        "title": "WriteControl",
+        "properties": {
+          "targetRevisionId": {
+            "type": "string",
+            "title": "Target Revision Id",
+            "description": "The target revision ID for the write request to be applied to. This is an optional advanced feature that supports collaborative editing. Allows writing against an older revision while merging changes with collaborator modifications. The server resolves conflicting changes, creating a new revision."
+          },
+          "requiredRevisionId": {
+            "type": "string",
+            "title": "Required Revision Id",
+            "description": "The revision ID of the document that the write request will be applied to. If this is not the latest revision of the document, the request will not be processed and will return a 400 bad request error. When a document is opened and the latest version is retrieved, the revision ID can be used to target a specific version. Processing requires this to match the current document revision."
+          }
+        },
+        "description": "Provides control over how write requests are executed."
+      },
+      "BatchUpdateReply": {
+        "type": "object",
+        "title": "BatchUpdateReply",
+        "properties": {
+          "createFooter": {
+            "$ref": "#/$defs/CreateFooterResponse",
+            "title": "Create Footer",
+            "description": "The result of creating a footer."
+          },
+          "createHeader": {
+            "$ref": "#/$defs/CreateHeaderResponse",
+            "title": "Create Header",
+            "description": "The result of creating a header."
+          },
+          "createFootnote": {
+            "$ref": "#/$defs/CreateFootnoteResponse",
+            "title": "Create Footnote",
+            "description": "The result of creating a footnote."
+          },
+          "replaceAllText": {
+            "$ref": "#/$defs/ReplaceAllTextResponse",
+            "title": "Replace All Text",
+            "description": "The result of replacing text."
+          },
+          "createNamedRange": {
+            "$ref": "#/$defs/CreateNamedRangeResponse",
+            "title": "Create Named Range",
+            "description": "The result of creating a named range."
+          },
+          "insertInlineImage": {
+            "$ref": "#/$defs/InsertInlineImageResponse",
+            "title": "Insert Inline Image",
+            "description": "The result of inserting an inline image."
+          },
+          "insertInlineSheetsChart": {
+            "$ref": "#/$defs/InsertInlineSheetsChartResponse",
+            "title": "Insert Inline Sheets Chart",
+            "description": "The result of inserting an inline Google Sheets chart."
+          }
+        },
+        "description": "A single reply from a batch update request.\nMay contain exactly one response type, or be empty for operations like insertText."
+      },
+      "CreateFooterResponse": {
+        "type": "object",
+        "title": "CreateFooterResponse",
+        "properties": {
+          "footerId": {
+            "type": "string",
+            "title": "Footer Id",
+            "description": "The ID of the created footer."
+          }
+        },
+        "description": "Response from createFooter request."
+      },
+      "CreateHeaderResponse": {
+        "type": "object",
+        "title": "CreateHeaderResponse",
+        "properties": {
+          "headerId": {
+            "type": "string",
+            "title": "Header Id",
+            "description": "The ID of the created header."
+          }
+        },
+        "description": "Response from createHeader request."
+      },
+      "CreateFootnoteResponse": {
+        "type": "object",
+        "title": "CreateFootnoteResponse",
+        "properties": {
+          "footnoteId": {
+            "type": "string",
+            "title": "Footnote Id",
+            "description": "The ID of the created footnote."
+          }
+        },
+        "description": "Response from createFootnote request."
+      },
+      "ReplaceAllTextResponse": {
+        "type": "object",
+        "title": "ReplaceAllTextResponse",
+        "properties": {
+          "occurrencesChanged": {
+            "type": "integer",
+            "title": "Occurrences Changed",
+            "description": "The number of occurrences changed by replacing all text."
+          }
+        },
+        "description": "Response from replaceAllText request."
+      },
+      "CreateNamedRangeResponse": {
+        "type": "object",
+        "title": "CreateNamedRangeResponse",
+        "properties": {
+          "namedRangeId": {
+            "type": "string",
+            "title": "Named Range Id",
+            "description": "The ID of the created named range."
+          }
+        },
+        "description": "Response from createNamedRange request."
+      },
+      "InsertTextActionResponse": {
+        "type": "object",
+        "title": "InsertTextActionResponse",
+        "required": [
+          "document_id",
+          "display_url"
+        ],
+        "properties": {
+          "replies": {
+            "type": "array",
+            "items": {
+              "$ref": "#/$defs/BatchUpdateReply"
+            },
+            "title": "Replies",
+            "description": "The reply of the updates. This maps 1:1 with the updates, although replies to some requests may be empty. For InsertTextRequest, the corresponding index contains an empty object {}."
+          },
+          "display_url": {
+            "type": "string",
+            "title": "Display Url",
+            "description": "The URL of the Google Document where text was inserted. Users can open this URL to view the document."
+          },
+          "document_id": {
+            "type": "string",
+            "title": "Document Id",
+            "description": "The ID of the document to which the updates were applied."
+          },
+          "write_control": {
+            "$ref": "#/$defs/WriteControl",
+            "title": "Write Control",
+            "description": "The updated write control after applying the request."
+          }
+        },
+        "description": "Response from documents.batchUpdate when using InsertTextRequest."
+      },
+      "InsertInlineImageResponse": {
+        "type": "object",
+        "title": "InsertInlineImageResponse",
+        "properties": {
+          "objectId": {
+            "type": "string",
+            "title": "Object Id",
+            "description": "The ID of the created InlineObject."
+          }
+        },
+        "description": "Response from insertInlineImage request."
+      },
+      "InsertInlineSheetsChartResponse": {
+        "type": "object",
+        "title": "InsertInlineSheetsChartResponse",
+        "properties": {
+          "objectId": {
+            "type": "string",
+            "title": "Object Id",
+            "description": "The ID of the created chart object."
+          }
+        },
+        "description": "Response from insertInlineSheetsChart request."
+      }
+    },
+    "title": "InsertTextActionResponseWrapper",
+    "required": [
+      "data",
+      "successful"
+    ],
+    "properties": {
+      "data": {
+        "$ref": "#/$defs/InsertTextActionResponse",
+        "title": "Data",
+        "description": "Data from the action execution"
+      },
+      "error": {
+        "type": "string",
+        "title": "Error",
+        "description": "Error if any occurred during the execution of the action"
+      },
+      "successful": {
+        "type": "boolean",
+        "title": "Successful",
+        "description": "Whether or not the action execution was successful or not"
+      }
+    }
+  }
+}

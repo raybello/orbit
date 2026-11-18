@@ -1,0 +1,23 @@
+{
+  "slug": "GMAIL_REPLY_TO_THREAD",
+  "ok": true,
+  "ms": 1187,
+  "request": {
+    "thread_id": "id_8",
+    "recipient_email": "person_2@example.test",
+    "message_body": "A reply in the same thread."
+  },
+  "response": {
+    "data": {
+      "display_url": "https://example.test/link_18",
+      "id": "id_9",
+      "labelIds": [
+        "UNREAD",
+        "SENT",
+        "INBOX"
+      ],
+      "threadId": "id_8"
+    },
+    "error": null
+  }
+}
