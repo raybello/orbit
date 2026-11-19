@@ -9,7 +9,8 @@ import { MCP_INSTRUCTIONS } from './agent/app-sheets.js';
 import { connectionWatch, expiredAppNotice } from './core/connection-watch.js';
 import { mcpToken, primaryBotId } from './engine.js';
 import { addPendingFiles, claimToolRow, enqueue, enqueueBotMessage, markSilent, noteToolOutcome, requestApproval, turnDepth, turnGroupDepth } from './agent/loop.js';
-import { policyFor, runComposioTool, toolMap, TOOLS, type ToolCtx } from './agent/tools.js';
+import { runComposioTool, toolMap, TOOLS, type ToolCtx } from './agent/tools.js';
+import { policyFor } from './core/policy-service.js';
 import { strictest } from './domain/rules.js';
 import { blockedByRule, recordReview, reviewToolCall } from './core/rule-service.js';
 
