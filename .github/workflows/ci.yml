@@ -32,6 +32,9 @@ jobs:
       - name: Check generated docs are up to date
         run: python3 scripts/build-docs.py && git diff --exit-code docs/
 
+      - name: No import cycles through the agent loop
+        run: node scripts/check-import-cycles.mjs
+
       - name: Typecheck every package
         run: pnpm run typecheck
 

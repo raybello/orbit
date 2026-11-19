@@ -5,7 +5,7 @@ import { Secret, SecretBoxTamperError } from './lib/secret-box.js';
 import { appendRow } from './store.js';
 import { parseUrlPattern, urlMatches } from './domain/url-pattern.js';
 import { findVaultEntry, openVaultSecret, parseLabel, parseStoredUrlPattern, VaultError, vaultStatus, type VaultEntryRow } from './vault.js';
-import type { ToolCtx, ToolResult } from './agent/tools.js';
+import type { ToolCtx, ToolResult } from './agent/tools/index.js';
 import type { ActivityKind } from '@orbit/contracts';
 
 /**

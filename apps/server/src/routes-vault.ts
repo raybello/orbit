@@ -2,7 +2,7 @@ import { Hono, type Context } from 'hono';
 import { z } from 'zod';
 import type { VaultResponse } from '@orbit/contracts';
 import { requireBody } from './api/schemas.js';
-import { enqueue } from './agent/loop.js';
+import { enqueue } from './core/turn-queue.js';
 import { decideCard } from './core/card-service.js';
 import { now } from './db.js';
 import { botRow } from './infra/bot-repository.js';

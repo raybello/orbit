@@ -11,34 +11,24 @@ import { computerKindFor } from '../computer-provider-registry.js';
 import { dockerProvider } from '../docker-provider.js';
 import { engineFor } from '../engine.js';
 import { instructionsFor } from './prompt.js';
-import { activityFor, appToolName, humanizeSlug, LIBRARY_ROOT } from './tools.js';
+import { activityFor, appToolName, humanizeSlug, LIBRARY_ROOT } from './tools/index.js';
 import { policyFor, rememberAlwaysAllow } from '../core/policy-service.js';
 import { checkReviewEdits } from '../review/index.js';
 import { MIME_BY_EXTENSION } from '../lib/mime.js';
 import { sendPushNotification } from '../push.js';
 import { recordRoutineOutcome } from '../initiative-store.js';
+import { enqueue, registerTurnRunner, type Trigger } from '../core/turn-queue.js';
 
 /**
  * A turn: one message handed to the bot's Hermes engine and streamed back into the conversation.
  *
  * Hermes owns the agent loop, the history and the tools. This file only
- *  - queues turns so a bot handles one at a time,
+ *  - runs the turns core/turn-queue.ts schedules, one at a time per bot,
  *  - posts the trigger to the engine's /v1/responses endpoint and turns the event stream into
  *    rows (assistant messages, tool calls) and live state (what the bot is doing right now),
  *  - keeps the bookkeeping the app's own tools need while a turn runs (see mcp.ts): which tool-call
  *    row a call belongs to, and approvals the user has to answer before a call goes ahead.
  */
-
-export type Trigger =
-  /**
-   * `voice`: asked on a live call. The caller is listening for the first word, so the turn runs at
-   * low reasoning effort whatever the bot's own setting is: thinking tokens are seconds of silence.
-   */
-  | { type: 'user'; text: string; voice?: boolean }
-  | { type: 'routine'; routineId: string; name: string; prompt: string }
-  | { type: 'bot'; fromBotId: string; fromName: string; text: string; depth: number }
-  /** `_groupDepth` is set by the group-chat dispatcher (agent/rooms.ts): how many bot-to-bot hops into one group conversation this turn is. */
-  | { type: 'system'; text: string; _groupDepth?: number };
 
 /** A JSON object from a third party, or null for anything else. */
 const asRecord = (v: unknown): Record<string, unknown> | null =>
@@ -66,35 +56,6 @@ export function addPendingFiles(botId: string, files: MessageFile[]) {
   const existing = pendingFilesByBot.get(botId) ?? [];
   pendingFilesByBot.set(botId, uniqueFiles([...existing, ...files]));
 }
-
-const queues = new Map<string, Promise<void>>();
-const aborts = new Map<string, AbortController>();
-
-export function enqueue(botId: string, trigger: Trigger) {
-  // A new message from the user supersedes whatever is waiting for their approval.
-  if (trigger.type === 'user') expireApprovals(botId);
-  const prev = queues.get(botId) ?? Promise.resolve();
-  const next = prev.then(() => runTurn(botId, trigger)).catch((e) => console.error('[agent] turn failed', botId, e));
-  queues.set(botId, next);
-  next.finally(() => { if (queues.get(botId) === next) queues.delete(botId); });
-}
-
-export function interrupt(botId: string) {
-  expireApprovals(botId);
-  aborts.get(botId)?.abort();
-}
-
-/** Run a job in the bot's serial queue, after any running turn. */
-export function runInBotQueue<T>(botId: string, job: () => Promise<T>): Promise<T> {
-  const prev = queues.get(botId) ?? Promise.resolve();
-  const result = prev.then(job);
-  const next = result.then(() => {}, () => {});
-  queues.set(botId, next);
-  next.finally(() => { if (queues.get(botId) === next) queues.delete(botId); });
-  return result;
-}
-
-export const isBotBusy = (botId: string) => queues.has(botId);
 
 export function enqueueBotMessage(fromBotId: string, toBotId: string, text: string, depth: number) {
   const from = getBotRow(fromBotId);
@@ -399,12 +360,10 @@ function realModel(value: string | null | undefined): string | null {
   return !text || text.toLowerCase() === 'default' ? null : text;
 }
 
-async function runTurn(botId: string, trigger: Trigger) {
+async function runTurn(botId: string, trigger: Trigger, signal: AbortSignal) {
   const bot = getBotRow(botId);
   if (!bot || bot.kind === 'room') return;
   const userId: string = bot.user_id;
-  const ctrl = new AbortController();
-  aborts.set(botId, ctrl);
   const turn: Turn = {
     botId,
     userId,
@@ -530,7 +489,7 @@ async function runTurn(botId: string, trigger: Trigger) {
       void pending.finally(() => { if (screensComingUp.get(botId) === pending) screensComingUp.delete(botId); });
     }
     const engine = await engineFor(botId);
-    if (ctrl.signal.aborted) throw new Error('interrupted');
+    if (signal.aborted) throw new Error('interrupted');
 
     let input = triggerText(trigger);
     if (bot.handback_at) {
@@ -540,7 +499,7 @@ async function runTurn(botId: string, trigger: Trigger) {
 
     const res = await fetch(`${engine.url}/v1/responses`, {
       method: 'POST',
-      signal: ctrl.signal,
+      signal,
       headers: { 'content-type': 'application/json', accept: 'text/event-stream', ...(engine.key ? { authorization: `Bearer ${engine.key}` } : {}) },
       body: JSON.stringify({
         // A stored `Default` is the settings panel's placeholder, not a model id. A managed Bot with no
@@ -697,7 +656,7 @@ async function runTurn(botId: string, trigger: Trigger) {
     }
   } catch (e) {
     failed = true;
-    const stopped = ctrl.signal.aborted;
+    const stopped = signal.aborted;
     closeMessage(true);
     appendRow(botId, 'notice', { type: 'notice', text: stopped ? 'Stopped.' : `Something went wrong: ${messageOf(e)}`, tone: stopped ? 'info' : 'error' });
     if (!stopped) console.error('[agent]', botId, e);
@@ -707,10 +666,9 @@ async function runTurn(botId: string, trigger: Trigger) {
       if (ref.done) continue;
       const row = getRow(botId, ref.seq);
       if (row?.body.type !== 'tool-call' || (row.body.status !== 'running' && row.body.status !== 'awaiting-approval')) continue;
-      patchToolRow(botId, ref.seq, failed ? { status: 'error', summary: ctrl.signal.aborted ? 'Stopped' : 'Did not finish' } : { status: 'done' });
+      patchToolRow(botId, ref.seq, failed ? { status: 'error', summary: signal.aborted ? 'Stopped' : 'Did not finish' } : { status: 'done' });
     }
-    if (trigger.type === 'routine') recordRoutineOutcome(trigger.routineId, !failed ? 'ok' : ctrl.signal.aborted ? 'stopped' : 'failed');
-    if (aborts.get(botId) === ctrl) aborts.delete(botId);
+    if (trigger.type === 'routine') recordRoutineOutcome(trigger.routineId, !failed ? 'ok' : signal.aborted ? 'stopped' : 'failed');
     if (turns.get(botId) === turn) turns.delete(botId);
     // An approval asked for outside this turn may still be waiting; leave its state alone.
     if (!pendingApprovals(botId).length) setLive(botId, { isRunning: false, activity: null, awaiting: null, startedAt: null, caption: null });
@@ -724,3 +682,5 @@ async function runTurn(botId: string, trigger: Trigger) {
     }
   }
 }
+
+registerTurnRunner({ runTurn, expireApprovals });

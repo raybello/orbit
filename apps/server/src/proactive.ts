@@ -16,7 +16,7 @@ import {
   type InitiativeSignal,
 } from './domain/initiative.js';
 import { pendingSignals, primaryBotOf, pruneSignals, queueSignal, settleSignals, waitingCards } from './initiative-store.js';
-import type { Trigger } from './agent/loop.js';
+import type { Trigger } from './core/turn-queue.js';
 
 /**
  * Everything the primary Bot does unasked (Grok Bot: "checks in proactively"), gated by its

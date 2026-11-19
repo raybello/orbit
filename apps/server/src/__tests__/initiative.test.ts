@@ -16,7 +16,7 @@ const { createRoutine, runRoutine, setRoutineEnqueue, unscheduleRoutine } = awai
 const { recordRoutineOutcome, scheduledRunAllowed } = await import('../initiative-store.js');
 const { allows, briefingCron, briefingSchedule } = await import('../domain/initiative.js');
 const proactive = await import('../proactive.js');
-type Trigger = import('../agent/loop.js').Trigger;
+type Trigger = import('../core/turn-queue.js').Trigger;
 
 const app = createApp();
 const HOUR = 3_600_000;
