@@ -12,6 +12,7 @@
  */
 import { execFile } from 'node:child_process';
 import type { DesktopGpuVoice } from '@orbit/contracts';
+import { classifyDockerFailure } from './docker-cli';
 import { envValue, setEnvValue } from './env-file';
 
 /** The `.env` key holding the person's choice. */
@@ -78,4 +79,14 @@ export function gpuVoiceSupport(platform: NodeJS.Platform, gpu: string | null, s
   if (stackKind !== 'docker') return { supported: false, reason: 'not-docker-stack' };
   if (!gpu) return { supported: false, reason: 'no-nvidia' };
   return { supported: true, gpu };
+}
+
+/**
+ * What to tell the person when the GPU voice image could not be pulled. Each release publishes
+ * its own audiocpp image (publish-images.yml), and compiling it takes hours after the installers
+ * are out, so "not found" right after a release means "not yet", not "broken".
+ */
+export function gpuPullError(output: string, imageTag: string, fallback: string): string {
+  if (classifyDockerFailure(output) !== 'image-not-found') return fallback;
+  return `GPU voice for Orbit ${imageTag} is not published yet. It is built with each release and takes a few hours after the installers appear; try again later.`;
 }

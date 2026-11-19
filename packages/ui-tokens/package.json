@@ -1,6 +1,6 @@
 {
   "name": "@orbit/ui-tokens",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "private": true,
   "type": "module",
   "main": "./dist/index.js",
@@ -13,7 +13,11 @@
     "./tokens.css": "./tokens.css",
     "./themes/*": "./themes/*"
   },
-  "files": ["dist", "tokens.css", "themes"],
+  "files": [
+    "dist",
+    "tokens.css",
+    "themes"
+  ],
   "scripts": {
     "build": "tsc -p tsconfig.json",
     "typecheck": "tsc -p tsconfig.json --noEmit"
