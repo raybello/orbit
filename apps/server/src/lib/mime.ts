@@ -10,3 +10,20 @@ export function mediaTypeFor(name: string): string {
   const ext = name.split('.').pop()?.toLowerCase() ?? '';
   return MIME_BY_EXTENSION[ext] ?? 'application/octet-stream';
 }
+
+/**
+ * How a file is served: images, audio, video and PDFs open in the browser, the rest download.
+ * A file a bot wrote is never trusted as a page of this app: the sandbox policy stops an SVG or
+ * HTML opened directly from running script with the person's session.
+ */
+export function fileHeaders(name: string, size: number): Record<string, string> {
+  const mediaType = mediaTypeFor(name);
+  const inline = mediaType.startsWith('image/') || mediaType.startsWith('audio/') || mediaType.startsWith('video/') || mediaType === 'application/pdf';
+  return {
+    'content-type': mediaType,
+    'content-length': String(size),
+    'content-disposition': `${inline ? 'inline' : 'attachment'}; filename*=UTF-8''${encodeURIComponent(name)}`,
+    'x-content-type-options': 'nosniff',
+    'content-security-policy': "default-src 'none'; img-src 'self' data:; media-src 'self'; style-src 'unsafe-inline'; sandbox",
+  };
+}

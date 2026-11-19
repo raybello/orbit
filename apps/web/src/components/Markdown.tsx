@@ -1,5 +1,5 @@
 import { memo } from 'react';
-import ReactMarkdown, { type Components } from 'react-markdown';
+import ReactMarkdown, { defaultUrlTransform, type Components } from 'react-markdown';
 import remarkGfm from 'remark-gfm';
 
 const components: Components = {
@@ -9,11 +9,15 @@ const components: Components = {
   ),
 };
 
-/** Assistant markdown. No `rehype-raw`: HTML a bot writes stays text, never DOM. */
-export const Markdown = memo(function Markdown({ text }: { text: string }) {
+/**
+ * Assistant markdown. No `rehype-raw`: HTML a bot writes stays text, never DOM. `urlTransform`
+ * points a link or image somewhere first (a file's relative image); react-markdown's own check
+ * still runs on the result, so a `javascript:` link stays blocked.
+ */
+export const Markdown = memo(function Markdown({ text, urlTransform }: { text: string; urlTransform?: (href: string) => string }) {
   return (
     <div className="md">
-      <ReactMarkdown remarkPlugins={[remarkGfm]} components={components}>{text}</ReactMarkdown>
+      <ReactMarkdown remarkPlugins={[remarkGfm]} components={components} urlTransform={(url) => defaultUrlTransform(urlTransform ? urlTransform(url) : url)}>{text}</ReactMarkdown>
     </div>
   );
 });

@@ -184,9 +184,10 @@ describe('FilesView', () => {
     expect(await screen.findByRole('dialog', { name: 'shot.png' })).toBeTruthy();
   });
 
-  it('previews text files in a modal instead of downloading them', async () => {
+  it('opens text files in the code view instead of downloading them', async () => {
     filesMock.mockResolvedValue(page([file({ id: 't1', filename: 'notes.txt', path: 'notes.txt', mediaType: 'text/plain', size: 64 })]));
-    const fetchMock = vi.fn().mockResolvedValue({ ok: true, status: 200, statusText: 'OK', text: async () => '# Standup notes\nAll good.' });
+    const body = new TextEncoder().encode('# Standup notes\nAll good.');
+    const fetchMock = vi.fn().mockResolvedValue({ ok: true, status: 200, statusText: 'OK', arrayBuffer: async () => body.buffer });
     vi.stubGlobal('fetch', fetchMock);
 
     render(<FilesView />);
@@ -194,7 +195,20 @@ describe('FilesView', () => {
     fireEvent.click(await screen.findByText('notes.txt'));
 
     expect(await screen.findByRole('dialog', { name: 'Preview of notes.txt' })).toBeTruthy();
-    expect(await screen.findByText(/Standup notes/)).toBeTruthy();
+    await waitFor(() => expect(document.querySelector('.cm-content')?.textContent).toContain('Standup notes'));
     expect(fetchMock).toHaveBeenCalledWith('/api/files/t1/download', { credentials: 'include' });
+  });
+
+  it('renders Markdown files, with their source a click away', async () => {
+    filesMock.mockResolvedValue(page([file({ id: 'm1', filename: 'report.md', path: 'report.md', mediaType: 'text/markdown', size: 64 })]));
+    const body = new TextEncoder().encode('# Weekly report\n\n- Revenue up');
+    vi.stubGlobal('fetch', vi.fn().mockResolvedValue({ ok: true, status: 200, statusText: 'OK', arrayBuffer: async () => body.buffer }));
+
+    render(<FilesView />);
+    fireEvent.click(await screen.findByText('report.md'));
+
+    expect(await screen.findByRole('heading', { name: 'Weekly report' })).toBeTruthy();
+    fireEvent.click(screen.getByRole('tab', { name: 'Source' }));
+    await waitFor(() => expect(document.querySelector('.cm-content')?.textContent).toContain('# Weekly report'));
   });
 });

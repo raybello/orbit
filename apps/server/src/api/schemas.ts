@@ -243,8 +243,6 @@ export const EngineChoiceSchema = z
 /** POST /api/bots/:id/engine/login — the route checks the provider slug against its own pattern. */
 export const EngineLoginSchema = z.object({ provider: z.string().optional() }).loose();
 
-/** POST /api/bots/:id/files/download — safeRel() answers "bad path" for anything it cannot use. */
-export const FileDownloadSchema = z.object({ path: z.string().optional() }).loose();
 
 /** PUT /api/checkins — setCheckins() validates the times and the zone and throws with its message. */
 export const CheckinSettingsSchema = z

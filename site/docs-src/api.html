@@ -144,9 +144,9 @@ WS|/api/bots/:id/screen|VNC relay. <code>?mode=watch|control</code>; auth by coo
 <!--endpoints
 GET|/api/files|<code>?botId=&amp;type=library|attachment|workspace&amp;page=&amp;pageSize=</code> → <code>{ files, total, page, pageSize }</code>.
 GET|/api/files/:fileId/download|Downloads a file from the unified list.
-GET|/api/bots/:id/files|<code>?path=&amp;wake=</code>. Lists a folder on the bot's computer.
-POST|/api/bots/:id/files/download|<code>{ path }</code>. Copies a file from the computer into the Library.
-GET|/api/bots/:id/files/raw|<code>?path=</code>. Streams a file.
+GET|/api/bots/:id/files/raw|<code>?path=</code>. Streams a file from the bot's Library (what chat attachments use).
+GET|/api/data/files|<code>?path=&amp;bot=</code> → <code>DataListing</code>: one folder of the server's data folder, folders first. With <code>bot</code> and no <code>path</code>, it opens at that bot's workspace. Owner of the computer only.
+GET|/api/data/raw|<code>?path=</code>. Streams a file from the data folder, with a sandboxing Content-Security-Policy. Credentials (<code>.env</code>, <code>auth.json</code>, keys) and live database files answer 403; nothing outside the folder is reachable, by path or by link.
 -->
 
 <h2 id="apps">Connected apps and Google</h2>

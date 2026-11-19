@@ -16,7 +16,6 @@ initRooms();
 
 const { createApp } = await import('../api/app.js');
 const { db } = await import('../db.js');
-const { ensureComputerRow } = await import('../computer-store.js');
 const { env } = await import('../env.js');
 
 const app = createApp();
@@ -48,42 +47,16 @@ addBot(other.userId, 'bot_other', 'Bob');
 // The Library folder of Ada's bot, where a local server reads it.
 const root = path.join(env.botDataDir, 'files', 'bot_files');
 fs.mkdirSync(path.join(root, 'notes'), { recursive: true });
-fs.mkdirSync(path.join(root, '.config'));
 fs.writeFileSync(path.join(root, 'report.md'), 'hello');
 fs.writeFileSync(path.join(root, 'notes', 'todo.txt'), 'buy milk');
 
 const get = (p: string, cookie = owner.cookie) => app.request(p, { headers: { cookie } });
 
 /**
- * The Library tab is a directory explorer of the bot computer's filesystem. It used to point every
- * bot at the shared Orgo computer and answered "ORGO_COMPUTER_ID is not set" for a Docker install,
- * so these cases pin the walk, the traversal guard and the ownership to the bot that owns them.
+ * A bot's Library files as chat attachments read them (/api/bots/:id/files/raw): served from the
+ * bot's own folder, never outside it, and only to the bot's owner. The file browser over the whole
+ * data folder is /api/data (data-files.test.ts).
  */
-test('the Library listing walks the bot’s folder, folders first', async () => {
-  const r = await get('/api/bots/bot_files/files');
-  assert.equal(r.status, 200);
-  const body = (await r.json()) as { status: string; root?: string; files: { name: string; isDir: boolean }[] };
-  assert.equal(body.status, 'ok');
-  assert.equal(body.root, root);
-  assert.deepEqual(body.files.map((f) => [f.name, f.isDir]), [
-    ['.config', true],
-    ['notes', true],
-    ['report.md', false],
-  ]);
-});
-
-test('walking into a folder lists that folder only', async () => {
-  const r = await get('/api/bots/bot_files/files?path=notes');
-  assert.equal(r.status, 200);
-  const body = (await r.json()) as { path: string; files: { name: string }[] };
-  assert.equal(body.path, 'notes');
-  assert.deepEqual(body.files.map((f) => f.name), ['todo.txt']);
-});
-
-test('a path that climbs out of the folder is refused', async () => {
-  const r = await get('/api/bots/bot_files/files?path=../secrets');
-  assert.equal(r.status, 400);
-});
 
 test('a file inside the folder is served raw, and one outside is not', async () => {
   const ok = await get('/api/bots/bot_files/files/raw?path=notes%2Ftodo.txt');
@@ -94,29 +67,7 @@ test('a file inside the folder is served raw, and one outside is not', async () 
   assert.equal(escape.status, 400);
 });
 
-test('the download route hands back a URL this server serves', async () => {
-  const r = await app.request('/api/bots/bot_files/files/download', {
-    method: 'POST',
-    headers: { cookie: owner.cookie, 'content-type': 'application/json' },
-    body: JSON.stringify({ path: 'report.md' }),
-  });
-  assert.equal(r.status, 200);
-  const body = (await r.json()) as { url: string };
-  assert.match(body.url, /^\/api\/bots\/bot_files\/files\/raw\?path=/);
-});
-
-test('another account cannot list or read it', async () => {
-  assert.equal((await get('/api/bots/bot_files/files', other.cookie)).status, 404);
+test('another account cannot read it', async () => {
   assert.equal((await get('/api/bots/bot_files/files/raw?path=report.md', other.cookie)).status, 404);
 });
 
-test('a Docker bot with no container yet answers asleep, not an error', async () => {
-  addBot(owner.userId, 'bot_docker', 'Ship');
-  ensureComputerRow('bot_docker', 'docker');
-  const r = await get('/api/bots/bot_docker/files');
-  assert.equal(r.status, 200);
-  const body = (await r.json()) as { status: string; root?: string; files: unknown[] };
-  assert.equal(body.status, 'asleep');
-  assert.equal(body.root, '/home/bot');
-  assert.deepEqual(body.files, []);
-});

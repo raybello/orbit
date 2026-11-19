@@ -1,66 +1,80 @@
 import { useCallback, useEffect, useState } from 'react';
-import type { Bot, LibraryFile } from '@orbit/contracts';
-import { configApi, type LibraryListing } from '../../lib/configApi';
+import type { Bot, DataListing, LibraryFile } from '@orbit/contracts';
+import { viewerFor } from '@orbit/domain';
+import { configApi, dataFileUrl } from '../../lib/configApi';
 import { relativeShort } from '../../lib/time';
 import { Icon } from '../Icon';
-import { ImageViewer } from '../ImageViewer';
+import { FileViewer, type ViewedFile } from '../files/FileViewer';
 import { Glyph } from './glyphs';
 import { formatBytes } from './ui';
 
-const IMAGE = /\.(png|jpe?g|gif|webp|avif|bmp|svg)$/i;
+/**
+ * Where a link or image in a Markdown file points, as a data-folder URL: relative to the file's own
+ * folder, or an absolute path inside the data folder (the `/data/...` paths bots write). Anything
+ * else (a web address, an anchor, a path outside the folder) is left as written.
+ */
+export function resolveDataHref(href: string, fileDir: string, root: string): string {
+  if (!href || /^[a-z][a-z0-9+.-]*:/i.test(href) || href.startsWith('#') || href.startsWith('//')) return href;
+  const [target] = href.split(/[?#]/);
+  let rel: string;
+  if (target.startsWith('/')) {
+    const base = root.replace(/\/+$/, '');
+    if (target !== base && !target.startsWith(`${base}/`)) return href;
+    rel = target.slice(base.length + 1);
+  } else {
+    rel = fileDir ? `${fileDir}/${target}` : target;
+  }
+  const parts: string[] = [];
+  for (const seg of rel.split('/')) {
+    if (!seg || seg === '.') continue;
+    if (seg === '..') { if (!parts.length) return href; parts.pop(); } else parts.push(decodeURIComponent(seg));
+  }
+  return dataFileUrl(parts.join('/'));
+}
 
 /**
- * A directory explorer over the bot computer's own filesystem.
- *
- * The listing is the folder the computer keeps its work in (a Docker bot's /home/bot, the shared
- * computer's Library), one directory at a time, with folders to walk into. It reads the disk even
- * while the computer sleeps, so a stopped container still shows what the bot saved.
+ * The Bot's files, as a browser over the server's data folder (`/data` in the Docker stack):
+ * every Bot's agent home, the screens' home folders and the Library live under it. It opens at
+ * this Bot's workspace, where its agent saves what it makes, and walks anywhere in the folder.
+ * Files open in the shared viewer: Markdown rendered, images in the image viewer, text as code.
  */
 export function LibraryTab({ bot }: { bot: Bot }) {
-  const [path, setPath] = useState('');
-  const [list, setList] = useState<LibraryListing | null>(null);
+  /** null until the first listing says where this Bot's workspace is. */
+  const [path, setPath] = useState<string | null>(null);
+  const [list, setList] = useState<DataListing | null>(null);
   const [loading, setLoading] = useState(false);
-  const [busyFile, setBusyFile] = useState<string | null>(null);
-  const [opening, setOpening] = useState<string | null>(null);
-  const [preview, setPreview] = useState<{ url: string; name: string } | null>(null);
+  const [viewed, setViewed] = useState<ViewedFile | null>(null);
   const [broken, setBroken] = useState<Record<string, true>>({});
   const [error, setError] = useState<string | null>(null);
 
-  const load = useCallback(async (wake = false) => {
+  const load = useCallback(async () => {
     setLoading(true); setError(null);
-    try { setList(await configApi.files(bot.id, path, wake)); }
-    catch (e) { setError((e as Error).message); }
+    try {
+      const r = await configApi.dataFiles(path === null ? { botId: bot.id } : { path, botId: bot.id });
+      setList(r);
+      if (path === null) setPath(r.path);
+    } catch (e) { setError((e as Error).message); }
     finally { setLoading(false); }
   }, [bot.id, path]);
 
-  useEffect(() => { setPath(''); setList(null); setBroken({}); }, [bot.id]);
-  useEffect(() => { load(); }, [load]);
+  useEffect(() => { setPath(null); setList(null); setBroken({}); }, [bot.id]);
+  useEffect(() => { void load(); }, [load]);
 
-  const relFor = (f: LibraryFile) => (path ? `${path}/${f.name}` : f.name);
-  const rawUrl = (rel: string) => `/api/bots/${bot.id}/files/raw?path=${encodeURIComponent(rel)}`;
-  const isImage = (f: LibraryFile) => !f.isDir && IMAGE.test(f.name);
-  const crumbs = path ? path.split('/') : [];
-  const up = () => setPath(crumbs.slice(0, -1).join('/'));
+  const here = list?.path ?? '';
+  const relFor = (f: LibraryFile) => (here ? `${here}/${f.name}` : f.name);
+  const crumbs = here ? here.split('/') : [];
+  const rootName = (list?.root ?? '/data').split('/').filter(Boolean).pop() ?? 'data';
+  const kindOf = (f: LibraryFile) => (f.isDir ? null : viewerFor(f.name));
 
-  const download = async (f: LibraryFile) => {
-    setBusyFile(f.name); setError(null);
-    try {
-      const { url } = await configApi.downloadFile(bot.id, relFor(f));
+  const open = (f: LibraryFile) => {
+    const rel = relFor(f);
+    if (kindOf(f) === 'other') {
       const a = document.createElement('a');
-      a.href = url; a.download = f.name; a.rel = 'noopener';
+      a.href = dataFileUrl(rel); a.download = f.name; a.rel = 'noopener';
       document.body.appendChild(a); a.click(); a.remove();
-    } catch (e) { setError(`Couldn’t download ${f.name}: ${(e as Error).message}`); }
-    finally { setBusyFile(null); }
-  };
-
-  const open = async (f: LibraryFile) => {
-    if (!isImage(f)) return download(f);
-    setOpening(f.name); setError(null);
-    try {
-      const { url } = await configApi.downloadFile(bot.id, relFor(f));
-      setPreview({ url, name: f.name });
-    } catch (e) { setError(`Couldn’t open ${f.name}: ${(e as Error).message}`); }
-    finally { setOpening(null); }
+      return;
+    }
+    setViewed({ name: f.name, url: dataFileUrl(rel), path: rel, size: f.size, resolve: (href) => resolveDataHref(href, here, list?.root ?? '/data') });
   };
 
   return (
@@ -68,17 +82,10 @@ export function LibraryTab({ bot }: { bot: Bot }) {
       <section>
         <div className="section-label section-label--row">
           <span className="lib-crumbs">
-            <button
-              type="button"
-              className="lib-crumbs__up"
-              onClick={up}
-              disabled={!path}
-              aria-label="Up one folder"
-              title="Up one folder"
-            >
-              <Icon name="chev_right" size={12} opacity={path ? 0.7 : 0.3} style={{ transform: 'rotate(180deg)' }} />
+            <button type="button" className="lib-crumbs__up" onClick={() => setPath(crumbs.slice(0, -1).join('/'))} disabled={!here} aria-label="Up one folder" title="Up one folder">
+              <Icon name="chev_right" size={12} opacity={here ? 0.7 : 0.3} style={{ transform: 'rotate(180deg)' }} />
             </button>
-            <button type="button" className="link-btn link-btn--small" onClick={() => setPath('')}>Home</button>
+            <button type="button" className="link-btn link-btn--small" onClick={() => setPath('')}>{rootName}</button>
             {crumbs.map((c, i) => (
               <span key={i} className="lib-crumbs__part">
                 <Icon name="chev_right" size={8} opacity={0.5} />
@@ -86,50 +93,49 @@ export function LibraryTab({ bot }: { bot: Bot }) {
               </span>
             ))}
           </span>
-          <button type="button" className="link-btn link-btn--small" onClick={() => load()} disabled={loading} aria-label="Refresh files" title="Refresh">
-            <Icon name="refresh" size={12} opacity={0.7} style={loading ? { animation: 'cfg-spin 0.8s linear infinite' } : undefined} />
-          </button>
+          <span className="lib-actions">
+            {list?.workspace && here !== list.workspace && (
+              <button type="button" className="link-btn link-btn--small" onClick={() => setPath(list.workspace!)} title={`${bot.name}’s workspace`}>Workspace</button>
+            )}
+            <button type="button" className="link-btn link-btn--small" onClick={() => void load()} disabled={loading} aria-label="Refresh files" title="Refresh">
+              <Icon name="refresh" size={12} opacity={0.7} style={loading ? { animation: 'cfg-spin 0.8s linear infinite' } : undefined} />
+            </button>
+          </span>
         </div>
-        {list?.root && <div className="lib-root" title={`The bot computer’s filesystem, ${list.root}`}>{list.root}</div>}
+        {list && <div className="lib-root" title={`${list.root}${here ? `/${here}` : ''}`}>{list.root}{here ? `/${here}` : ''}</div>}
         <div className="panel-card">
-          {list?.status === 'asleep' ? (
-            <div className="lib-empty">
-              <div>{bot.name}’s computer is asleep, so its files can’t be read. Start it to browse them.</div>
-              <button type="button" className="cfg-btn cfg-btn--secondary" onClick={() => load(true)} disabled={loading}>{loading ? 'Starting…' : 'Start its computer'}</button>
-            </div>
-          ) : !list && loading ? (
-            <div className="panel-empty">Reading the computer’s files…</div>
-          ) : list?.status === 'error' ? (
-            <div className="panel-empty">Couldn’t read this folder. {list.error ? <span className="lib-err">{list.error}</span> : null}</div>
-          ) : !list?.files.length ? (
-            <div className="panel-empty panel-empty--center">{path ? 'This folder is empty.' : `Files ${bot.name} saves on its computer show up here.`}</div>
+          {!list && loading ? (
+            <div className="panel-empty">Reading files…</div>
+          ) : !list ? null : !list.files.length ? (
+            <div className="panel-empty panel-empty--center">{here === list.workspace ? `Files ${bot.name} saves show up here.` : 'This folder is empty.'}</div>
           ) : (
             list.files.map((f) => {
               const rel = relFor(f);
-              const image = isImage(f);
+              const kind = kindOf(f);
+              const image = kind === 'image';
               return (
                 <div key={f.name} className={`lib-row${f.isDir ? ' is-dir' : ''}`}>
                   <button
                     type="button"
                     className="lib-row__main"
-                    onClick={() => (f.isDir ? setPath(rel) : void open(f))}
-                    title={f.isDir ? `Open ${f.name}` : image ? `Preview ${f.name}` : `Download ${f.name}`}
+                    onClick={() => (f.isDir ? setPath(rel) : open(f))}
+                    title={f.isDir ? `Open ${f.name}` : kind === 'other' ? `Download ${f.name}` : `Open ${f.name}`}
                   >
                     <span className={`lib-row__icon${image ? ' lib-row__icon--image' : ''}`}>
                       {image && !broken[rel]
-                        ? <img className="lib-row__thumb" src={rawUrl(rel)} alt="" loading="lazy" onError={() => setBroken((b) => ({ ...b, [rel]: true }))} />
+                        ? <img className="lib-row__thumb" src={dataFileUrl(rel)} alt="" loading="lazy" onError={() => setBroken((b) => ({ ...b, [rel]: true }))} />
                         : <Glyph name={f.isDir ? 'folder' : 'doc'} size={16} opacity={0.6} />}
                     </span>
                     <span className="panel-row__text">
                       <span className="panel-row__title">{f.name}</span>
                       <span className="panel-row__meta">{f.isDir ? 'Folder' : formatBytes(f.size)} · {relativeShort(f.modifiedAt) === 'now' ? 'just now' : relativeShort(f.modifiedAt)}</span>
                     </span>
-                    {opening === f.name ? <span className="cfg-spinner" /> : f.isDir ? <Icon name="chev_right" size={11} opacity={0.4} /> : image ? <Icon name="expand" size={11} opacity={0.4} /> : null}
+                    {f.isDir ? <Icon name="chev_right" size={11} opacity={0.4} /> : <Icon name="expand" size={11} opacity={0.4} />}
                   </button>
-                  {f.isDir ? null : (
-                    <button type="button" className="cfg-icon-btn" onClick={() => download(f)} disabled={busyFile === f.name} aria-label={`Download ${f.name}`} title="Download">
-                      {busyFile === f.name ? <span className="cfg-spinner" /> : <Glyph name="download" size={14} />}
-                    </button>
+                  {!f.isDir && (
+                    <a className="cfg-icon-btn" href={dataFileUrl(rel)} download={f.name} aria-label={`Download ${f.name}`} title="Download">
+                      <Glyph name="download" size={14} />
+                    </a>
                   )}
                 </div>
               );
@@ -138,7 +144,7 @@ export function LibraryTab({ bot }: { bot: Bot }) {
         </div>
         {error && <div className="cfg-error cfg-error--small">{error}</div>}
       </section>
-      {preview && <ImageViewer url={preview.url} name={preview.name} onClose={() => setPreview(null)} />}
+      {viewed && <FileViewer file={viewed} onClose={() => setViewed(null)} />}
     </div>
   );
 }
