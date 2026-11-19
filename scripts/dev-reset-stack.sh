@@ -159,6 +159,20 @@ if [ -n "$orphans" ]; then
   # shellcheck disable=SC2086
   docker rm -f $orphans >/dev/null && echo "  removed $(printf '%s\n' "$orphans" | wc -l | tr -d ' ') bot container(s)"
 fi
+# Remove orbit images: the tagged app and bot images, any untagged variants of those repos,
+# and fully dangling (<none>:<none>) layers left behind by builds or pulls.
+APP_REPO="${APP_IMAGE%%:*}"   # ghcr.io/raybello/orbit/app
+BOT_REPO="${BOT_IMAGE%%:*}"   # orbit/computer
+orbit_images=$(docker images -q "$APP_REPO" 2>/dev/null; docker images -q "$BOT_REPO" 2>/dev/null)
+dangling=$(docker images -qf dangling=true 2>/dev/null)
+all_images=$(printf '%s\n%s\n' "$orbit_images" "$dangling" | sort -u | grep -v '^$')
+if [ -n "$all_images" ]; then
+  # shellcheck disable=SC2086
+  docker rmi -f $all_images >/dev/null 2>&1 \
+    && echo "  removed orbit images (app, bot, untagged variants, dangling layers)"
+else
+  echo "  no orbit images to remove"
+fi
 
 # 4 ---------------------------------------------------------------- workspace
 echo "▸ 4/7 workspace: dependencies, shared packages, Hermes"

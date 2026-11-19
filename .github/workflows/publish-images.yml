@@ -131,6 +131,9 @@ jobs:
   audiocpp:
     name: audiocpp (GPU voice) image
     runs-on: ubuntu-latest
+    # Only build on releases: CUDA kernel compilation takes ~300 min on a hosted runner and there
+    # is no value in an :edge tag for a GPU sidecar that ships as an optional user install.
+    if: startsWith(github.ref, 'refs/tags/v') || github.event_name == 'workflow_dispatch'
     # Compiling audio.cpp's CUDA kernels for six GPU generations takes a while on a hosted runner.
     timeout-minutes: 300
     steps:
