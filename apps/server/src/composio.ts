@@ -4,7 +4,7 @@ import { db } from './db.js';
 import { env } from './env.js';
 import type { Toolkit } from '@orbit/contracts';
 import { connectionHealth, type ConnectionAccount, type ConnectionHealth } from './domain/connections.js';
-import { GOOGLE_TOOLKIT_VERSION } from './domain/google-actions.js';
+import { GOOGLE_TOOLKIT_VERSION, canonicalArgs } from './domain/google-actions.js';
 import { rec, str } from './lib/coerce.js';
 
 /**
@@ -239,6 +239,20 @@ export function innerToolCalls(name: string, args: unknown): InnerCall[] {
   }
   if (name.startsWith('COMPOSIO_')) return [];
   return [{ slug: name, args: rec(args) }];
+}
+
+/** A Composio call with every app action's arguments under the names that action takes (see canonicalArgs). */
+export function canonicalComposioArgs(name: string, args: Record<string, unknown>): Record<string, unknown> {
+  if (name !== 'COMPOSIO_MULTI_EXECUTE_TOOL') return name.startsWith('COMPOSIO_') ? args : canonicalArgs(name, args);
+  const listKey = ['tools', 'tool_calls', 'actions'].find((k) => Array.isArray(args[k]));
+  if (!listKey) return args;
+  const tools = (args[listKey] as unknown[]).map((t) => {
+    const o = rec(t);
+    const slug = String(o.tool_slug ?? o.slug ?? o.name ?? o.tool ?? '');
+    const argsKey = ['arguments', 'tool_params', 'args'].find((k) => o[k] && typeof o[k] === 'object');
+    return slug && argsKey ? { ...o, [argsKey]: canonicalArgs(slug, rec(o[argsKey])) } : t;
+  });
+  return { ...args, [listKey]: tools };
 }
 
 /** One action's answer inside a Composio call's result. `index` is its position in the call's `tools`. */

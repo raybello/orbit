@@ -63,8 +63,19 @@
 }
 
 /* ── Flat message group ── */
-.msg-group { display: flex; flex-direction: column; padding: 0 16px; width: 100%; }
+/* The text column: group padding + avatar + gap. Lanes (steps, cards, notices) start where text does. */
+.transcript__col { --msg-pad: 16px; --lane-inset: calc(var(--msg-pad) + 32px + 12px); }
+.msg-group { display: flex; flex-direction: column; padding: 0 var(--msg-pad); width: 100%; }
 .msg-group + .msg-group { margin-top: 16px; }
+
+/* ── Lane: anything a bot produces that is not a message ── */
+.lane { display: flex; flex-direction: column; align-items: flex-start; min-width: 0; padding: 0 var(--msg-pad) 0 var(--lane-inset); }
+.lane > * { max-width: 100%; }
+/* One card width in the timeline, whatever the card: a column of mixed cards reads as one edge. */
+.lane > .card { width: 480px; }
+.msg-group + .lane, .lane + .lane { margin-top: 8px; }
+.lane + .msg-group { margin-top: 12px; }
+.lane + .system-event, .system-event + .lane, .msg-group + .system-event, .system-event + .msg-group { margin-top: 8px; }
 .msg-group__origin {
   display: flex; align-items: center; gap: 6px; padding: 0 0 2px 44px;
   font-size: 12px; line-height: 16px; color: var(--color-fg-muted);
@@ -232,7 +243,7 @@
 .divider { align-self: stretch; padding: 16px 16px 6px; text-align: center; font-size: 12px; line-height: 16px; color: var(--color-fg-muted); }
 .system-event { align-self: center; max-width: 560px; text-align: center; font-size: 12px; line-height: 16px; color: var(--color-fg-muted); padding: 0 12px; }
 .notice {
-  align-self: center; max-width: 560px; padding: 8px 12px; border-radius: var(--radius-md);
+  max-width: 560px; padding: 8px 12px; border-radius: var(--radius-md);
   font-size: 13px; line-height: 20px; text-align: center;
   background: var(--color-info-bg); color: var(--color-fg-default);
 }
@@ -240,7 +251,7 @@
 .notice.is-error { background: var(--color-danger-bg); color: var(--color-danger); }
 
 /* ---------- tool-call steps: one chip per run, expands to the list ---------- */
-.steps { display: flex; flex-direction: column; align-items: flex-start; max-width: 100%; padding-left: 60px; }
+.steps { display: flex; flex-direction: column; align-items: flex-start; max-width: 100%; }
 .steps__toggle {
   display: inline-flex; align-items: center; gap: 6px; max-width: 100%; height: 26px; padding: 0 8px 0 10px; border-radius: var(--radius-sm);
   background: var(--color-bg-canvas); box-shadow: 0 0 0 1px var(--color-border-subtle) inset;

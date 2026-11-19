@@ -1,7 +1,7 @@
 import crypto from 'node:crypto';
 import { Hono } from 'hono';
 import { getBotRow } from './store.js';
-import { composioTools, innerToolCalls, innerToolSlugs, runAction } from './composio.js';
+import { canonicalComposioArgs, composioTools, innerToolCalls, innerToolSlugs, runAction } from './composio.js';
 import { applyReviewEdits, buildReview, type PreStep } from './review/index.js';
 import { showDrafts } from './review/drafts.js';
 import { showFiles } from './review/files.js';
@@ -181,7 +181,7 @@ async function runBefore(userId: string, steps: PreStep[]): Promise<string | nul
   return null;
 }
 
-async function callTool(botId: string | null, rawName: string, args: Record<string, unknown>): Promise<CallResult> {
+async function callTool(botId: string | null, rawName: string, rawArgs: Record<string, unknown>): Promise<CallResult> {
   const bot = botId ? getBotRow(botId) : null;
   if (!botId || !bot) return text('The team app has no bot for this agent yet. Ask the user to open the app once, then try again.', true);
   const userId: string = bot.user_id;
@@ -189,6 +189,7 @@ async function callTool(botId: string | null, rawName: string, args: Record<stri
   const rowSeq = await claimToolRow(botId, name);
   const ctx: ToolCtx = { userId, botId, enqueueBotMessage, enqueue, depth: turnDepth(botId), groupDepth: turnGroupDepth(botId) };
   const own = toolMap.get(name);
+  const args = own ? rawArgs : canonicalComposioArgs(name, rawArgs);
   try {
     // An app whose sign-in expired cannot run this, so say so before asking anyone to approve it.
     const expiredApp = own ? null : await connectionWatch.expiredAppFor(userId, botId, innerToolSlugs(name, args));
