@@ -10,7 +10,7 @@ process.env.COMPOSIO_API_KEY = '';
 
 const { db, now } = await import('../db.js');
 const { GOOGLE_ACTIONS, GOOGLE_TOOLKIT_VERSION, classifyGoogleCall, isSelectOnly } = await import('../domain/google-actions.js');
-const { innerToolCalls } = await import('../composio.js');
+const { canonicalComposioArgs, innerToolCalls } = await import('../composio.js');
 const { policyFor, mayAlwaysAllow } = await import('../core/policy-service.js');
 
 after(() => cleanupTmpEnv());
@@ -146,4 +146,33 @@ test('apps outside the catalogue keep the name-based reading', () => {
   const v = policyFor(USER, 'COMPOSIO_MULTI_EXECUTE_TOOL', multi(['SLACK_SEND_MESSAGE', {}]));
   assert.equal(v.decision, 'ask');
   assert.equal(v.offerAlways, true);
+});
+
+test('an email body under the wrong name is moved to the name the action takes', () => {
+  assert.deepEqual(
+    canonicalComposioArgs('GMAIL_SEND_EMAIL', { recipient_email: 's@x.test', subject: 'Hi', message_body: 'Hello Stacy' }),
+    { recipient_email: 's@x.test', subject: 'Hi', body: 'Hello Stacy' },
+  );
+  assert.deepEqual(canonicalComposioArgs('GMAIL_CREATE_EMAIL_DRAFT', { message_body: 'Draft text' }), { body: 'Draft text' });
+  assert.deepEqual(canonicalComposioArgs('GMAIL_REPLY_TO_THREAD', { thread_id: 't1', body: 'Thanks' }), { thread_id: 't1', message_body: 'Thanks' });
+});
+
+test('a body already under the right name, or an action outside the catalogue, is left alone', () => {
+  const both = { body: 'kept', message_body: 'ignored' };
+  assert.deepEqual(canonicalComposioArgs('GMAIL_SEND_EMAIL', both), both);
+  const slack = { channel: 'c', message_body: 'hi' };
+  assert.equal(canonicalComposioArgs('SLACK_SEND_MESSAGE', slack), slack);
+});
+
+test('every action inside a batch call gets its own names', () => {
+  const out = canonicalComposioArgs('COMPOSIO_MULTI_EXECUTE_TOOL', {
+    tools: [
+      { tool_slug: 'GMAIL_SEND_EMAIL', arguments: { recipient_email: 'a@x.test', message_body: 'one' } },
+      { tool_slug: 'GMAIL_REPLY_TO_THREAD', arguments: { thread_id: 't', body: 'two' } },
+    ],
+  });
+  assert.deepEqual(innerToolCalls('COMPOSIO_MULTI_EXECUTE_TOOL', out).map((c) => c.args), [
+    { recipient_email: 'a@x.test', body: 'one' },
+    { thread_id: 't', message_body: 'two' },
+  ]);
 });

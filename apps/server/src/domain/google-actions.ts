@@ -124,6 +124,27 @@ export const GOOGLE_ACTIONS: ReadonlyMap<string, GoogleAction> = new Map(
   }),
 );
 
+/**
+ * Argument names agents mix up between sibling actions. Gmail's send and draft actions take `body`
+ * and its reply takes `message_body`; Composio drops a name the action does not know, so a send
+ * named `message_body` goes out with an empty body.
+ */
+const ALIASES: readonly (readonly [string, string])[] = [['body', 'message_body']];
+
+/** The arguments under the names this action takes. Unknown actions and unambiguous calls are left as they are. */
+export function canonicalArgs(slug: string, args: Record<string, unknown>): Record<string, unknown> {
+  const params = GOOGLE_ACTIONS.get(slug.toUpperCase())?.params;
+  if (!params) return args;
+  let out = args;
+  for (const [a, b] of ALIASES) {
+    const [want, other] = params.includes(a) && !params.includes(b) ? [a, b] : params.includes(b) && !params.includes(a) ? [b, a] : [null, null];
+    if (!want || !other || !(other in out) || out[want] !== undefined) continue;
+    const { [other]: value, ...rest } = out;
+    out = { ...rest, [want]: value };
+  }
+  return out;
+}
+
 /** The name-based reading every other app gets: reads run, everything else asks. */
 const READ_RE = /_(GET|LIST|SEARCH|FETCH|FIND|READ|RETRIEVE|QUERY|LOOKUP|CHECK|DESCRIBE|VIEW|COUNT)(_|$)/;
 export const isReadOnlySlug = (slug: string) => READ_RE.test(slug.toUpperCase());
