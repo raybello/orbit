@@ -1,5 +1,5 @@
-import { useCallback, useState } from 'react';
-import type { AvatarColor, AvatarShape, Bot } from '@orbit/contracts';
+import { useCallback, useEffect, useState } from 'react';
+import type { AvatarColor, AvatarShape, Bot, ModelChoice, ModelsResponse } from '@orbit/contracts';
 import { BotAvatar, PICKER_SHAPES } from '../../avatar/BotAvatar';
 import { api } from '../../lib/api';
 import { COLOR_ORDER, palette } from '../../lib/colors';
@@ -12,22 +12,48 @@ import { Modal } from './Modal';
 const ROWS = [PICKER_SHAPES.slice(0, 5), PICKER_SHAPES.slice(5, 10), PICKER_SHAPES.slice(10)];
 const COLOR_ROWS = [COLOR_ORDER.slice(0, 6), COLOR_ORDER.slice(6)];
 
+/** "claude-sonnet-4-6" reads as "Claude Sonnet 4.6"; any other id is shown as it is. */
+function modelLabel(id: string): string {
+  const m = /^claude-([a-z]+)-(\d+)-(\d+)$/.exec(id);
+  return m ? `Claude ${m[1][0].toUpperCase()}${m[1].slice(1)} ${m[2]}.${m[3]}` : id;
+}
+
+/** One <select> value per provider and model; the empty string is the stack default. */
+const pickValue = (c: ModelChoice) => JSON.stringify([c.provider, c.model]);
+const parsePick = (v: string): ModelChoice | null => {
+  if (!v) return null;
+  const [provider, model] = JSON.parse(v) as [string, string];
+  return { provider, model };
+};
+
 export function CreateBotModal() {
   const setModal = useStore((s) => s.setModal);
   const [name, setName] = useState('');
   const [shape, setShape] = useState<AvatarShape>('heart');
   const [color, setColor] = useState<AvatarColor>('orange');
   const [mode, setMode] = useState<Bot['mode']>('personal');
+  const [models, setModels] = useState<ModelsResponse | null>(null);
+  const [pick, setPick] = useState('');
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const close = useCallback(() => setModal(null), [setModal]);
   const canCreate = name.trim().length > 0 && !busy;
 
+  // The list comes from the primary agent and may be slow or unavailable; the default is always there.
+  useEffect(() => {
+    let live = true;
+    api.models().then((r) => { if (live) setModels(r); }).catch(() => {});
+    return () => { live = false; };
+  }, []);
+  const providers = (models?.providers ?? []).filter((p) => p.models.length);
+  const defaultLabel = `Default (${modelLabel(models?.default.model ?? 'claude-sonnet-4-6')})`;
+  const picked = parsePick(pick);
+
   const create = async () => {
     if (!canCreate) return;
     setBusy(true); setError(null);
     try {
-      const { bot } = await api.createBot({ name: name.trim(), avatarShape: shape, avatarColor: color, mode });
+      const { bot } = await api.createBot({ name: name.trim(), avatarShape: shape, avatarColor: color, mode, ...picked });
       const st = useStore.getState();
       st.set({ bots: st.bots.some((b) => b.id === bot.id) ? st.bots : [...st.bots, bot] });
       st.selectBot(bot.id);
@@ -90,6 +116,21 @@ export function CreateBotModal() {
               <span className="mode-pick__sub">Works with your whole team</span>
             </button>
           </div>
+          <label className="create-modal__model">
+            <span className="create-modal__model-label">Model</span>
+            <span className="mini-select mini-select--native">
+              <span>{picked ? modelLabel(picked.model) : defaultLabel}</span>
+              <Icon name="chev_down" size={10} opacity={0.66} />
+              <select aria-label="Model" value={pick} onChange={(e) => setPick(e.target.value)}>
+                <option value="">{defaultLabel}</option>
+                {providers.map((p) => (
+                  <optgroup key={p.id} label={p.name}>
+                    {p.models.map((m) => <option key={m} value={pickValue({ provider: p.id, model: m })}>{modelLabel(m)}</option>)}
+                  </optgroup>
+                ))}
+              </select>
+            </span>
+          </label>
           {error && <div className="card__error">{error}</div>}
           <button type="button" className="link-btn link-btn--small" onClick={() => { close(); useTemplatesUI.getState().open({ kind: 'gallery' }); }}>
             Or start from a template

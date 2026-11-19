@@ -1,11 +1,10 @@
 /**
  * Who is allowed to call the main process's mutating IPC handlers.
  *
- * The app window carries the full preload bridge — `installHermes`, `wireHermesMcp`,
- * `startStack`, `saveSetup` — and that window can be showing any server the user pointed
- * Orbit at ("existing instance"). An untrusted page must not be able to rewrite
- * `~/.hermes/config.yaml` or drive Docker just by being loaded in that window, so every
- * handler with a side effect checks its sender frame first.
+ * The app window carries the full preload bridge — `startStack`, `stopStack`, `saveSetup` —
+ * and that window can be showing any server the user pointed Orbit at ("existing instance").
+ * An untrusted page must not be able to rewrite the setup or drive Docker just by being loaded
+ * in that window, so every handler with a side effect checks its sender frame first.
  *
  * The rule is the frame's own URL, not the window: two windows in different partitions can
  * both have the preload attached, and only the setup window (a `file://` document we ship)

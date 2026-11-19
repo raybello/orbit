@@ -295,6 +295,18 @@ export interface EngineProvider {
   models: string[];
 }
 
+/** The provider and model a Bot runs. Always a pair: a model id means nothing without its provider. */
+export interface ModelChoice {
+  provider: string;
+  model: string;
+}
+
+/** GET /api/models: the providers the primary agent is signed in to, and the model a new Bot gets. */
+export interface ModelsResponse {
+  providers: Pick<EngineProvider, 'id' | 'name' | 'models'>[];
+  default: ModelChoice;
+}
+
 /** The Hermes agent that runs one bot. */
 export interface EngineInfo {
   botId: string;

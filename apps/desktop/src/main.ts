@@ -31,8 +31,7 @@ import { createAppWindow, openExternalSafely, sessionForServerUrl, type AppWindo
 import { buildAppMenu } from './app-menu';
 import { dismissUpdateBar, initAutoUpdate, checkForUpdates, restartAndInstall } from './auto-update';
 import { startBadge, type BadgeController } from './badge';
-import { detectHermes, ensureHermesApiKey, installHermes } from './hermes-setup';
-import { runHermesSetup, wireMcpForServer } from './hermes-setup-window';
+import { detectHermes, installHermes } from './hermes-setup';
 import { DEFAULT_OWNER_EMAIL, ensureDesktopSession } from './desktop-session';
 import { describeSender, isTrustedPage } from './ipc-guard';
 import { createDeepLinkInbox, deepLinkFromArgv } from './deep-links';
@@ -552,11 +551,6 @@ async function startLocalStackOrExplain(): Promise<string | null> {
 }
 
 /**
- * When the local stack comes up, point `mcp_servers.orbit` at this server. The key itself is
- * mirrored into the stack `.env` *before* `compose up` (see `mirrorHermesKey`): a container
- * reads its environment once, at start, so writing it here would be a restart too late.
- */
-/**
  * Download and install Docker Desktop with a progress window, then wait for the person to
  * finish Docker's own first-run prompts. Resolves true when the install step succeeded.
  */
@@ -623,9 +617,14 @@ async function ensureAppleContainerRuntime(): Promise<void> {
   }
 }
 
-async function prepareLocalHermes(): Promise<void> {
+/**
+ * The native stack runs every bot's gateway on this machine, so it needs a `hermes` binary here.
+ * The Docker stack ships its own and never asks.
+ */
+async function prepareNativeHermes(): Promise<void> {
+  if (stackKind() !== 'native') return;
   try {
-    let status = await detectHermes(process.env);
+    const status = await detectHermes(process.env);
     if (!status.found) {
       const { response } = await dialog.showMessageBox({
         type: 'question',
@@ -636,41 +635,20 @@ async function prepareLocalHermes(): Promise<void> {
         cancelId: 1,
       });
       if (response !== 0) {
-        log.info('Hermes not installed; skipping MCP wiring');
+        log.info('Hermes not installed; native bots will not start until it is');
         return;
       }
       const progress = openProgressWindow('Installing Hermes', 'The agent harness every Orbit bot runs on.', mainWindow);
       try {
-        status = await installHermes((line) => progress.line(line));
-        ensureHermesApiKey();
+        await installHermes((line) => progress.line(line));
         setTimeout(() => progress.close(), 1500);
       } catch (err) {
         progress.fail(err instanceof Error ? err.message : String(err));
         throw err;
       }
     }
-    const token = stack.token();
-    if (token) wireMcpForServer(token, stack.webUrl());
   } catch (err) {
     log.warn('Hermes preparation failed', err);
-  }
-}
-
-/**
- * Put HERMES_KEY in the stack `.env` before the stack starts.
- *
- * Runs ahead of `stack.start()`: `docker compose up` hands the container its environment at
- * creation time, so the server would never see a key written afterwards.
- */
-function mirrorHermesKey(): void {
-  try {
-    // Both stacks keep the key in the same `stack/.env` (the native one reads it back in
-    // `hermesKey()`); the fallback is the Docker controller's staged file failing to appear,
-    // in which case that path is still where the key belongs.
-    const envPath = stack.prepareEnvFile() ?? path.join(stack.stackDir, '.env');
-    ensureHermesApiKey({}, { stackEnvPath: envPath });
-  } catch (err) {
-    log.warn('could not mirror HERMES_KEY into the stack env before starting', err);
   }
 }
 
@@ -733,13 +711,11 @@ async function boot(): Promise<void> {
       stackSelected = true;
       refreshMenu();
     }
-    // Before `compose up`: the container reads HERMES_KEY from its environment at start.
-    mirrorHermesKey();
     const url = await startLocalStackOrExplain();
     if (!url) return;
     const entryUrl = await localStackEntryUrl(url, saved);
     await openAppWindow(url, entryUrl);
-    void prepareLocalHermes().then(() => ensureAppleContainerRuntime());
+    void prepareNativeHermes().then(() => ensureAppleContainerRuntime());
     return;
   }
 
@@ -766,7 +742,7 @@ function setupFileUrl(): string {
 /**
  * Is this call coming from a page we ship? The app window carries the whole preload bridge
  * wherever it is pointed, so a server the user merely connected to could otherwise drive Docker
- * or rewrite `~/.hermes/config.yaml`. Only the setup document and the local stack's origin pass.
+ * or rewrite the setup. Only the setup document and the local stack's origin pass.
  */
 function senderTrusted(event: IpcMainInvokeEvent | IpcMainEvent): boolean {
   const stackWebUrl = stack.webUrl();
@@ -865,24 +841,6 @@ function registerIpc(): void {
           })
           .then(() => openSetupWindow());
       });
-  });
-
-  ipcMain.handle(IPC.hermesStatus, () => detectHermes(process.env));
-  ipcMain.handle(IPC.hermesInstall, async (event) => {
-    assertSender(event);
-    try {
-      const status = await runHermesSetup(event.sender);
-      return status;
-    } catch (err) {
-      log.error('Hermes install failed', err);
-      throw err;
-    }
-  });
-  ipcMain.handle(IPC.hermesWireMcp, (event, token: string) => {
-    assertSender(event);
-    const url = stack.webUrl();
-    const result = wireMcpForServer(String(token ?? ''), url);
-    if (!result.ok) throw new Error(result.error ?? 'could not wire MCP');
   });
 
   ipcMain.handle(IPC.updateCheck, (event) => {
@@ -1024,23 +982,9 @@ async function runSmokeTest(): Promise<void> {
       fs.writeFileSync(shotPath, image.toPNG());
       console.log(`[orbit-smoke] screenshot ${shotPath} (${image.getSize().width}x${image.getSize().height})`);
 
-      // ...and the Hermes step, which is only reachable after a failed detection.
-      await win.webContents.executeJavaScript(`(() => {
-        document.getElementById('screen-server').hidden = true;
-        document.getElementById('screen-hermes').hidden = false;
-        return true;
-      })()`);
-      await new Promise((r) => setTimeout(r, 250));
-      const second = await win.webContents.capturePage();
-      const hermesPath = shotPath.replace(/\.png$/, '.hermes.png');
-      fs.writeFileSync(hermesPath, second.toPNG());
-      console.log(`[orbit-smoke] screenshot ${hermesPath} (${second.getSize().width}x${second.getSize().height})`);
-
       // The "existing instance" state: URL row revealed, Continue still disabled until a
       // probe passes.
       await win.webContents.executeJavaScript(`(() => {
-        document.getElementById('screen-hermes').hidden = true;
-        document.getElementById('screen-server').hidden = false;
         const radio = document.querySelector('input[value="existing"]');
         radio.checked = true;
         radio.dispatchEvent(new Event('change', { bubbles: true }));
@@ -1050,10 +994,10 @@ async function runSmokeTest(): Promise<void> {
         return document.getElementById('continue').disabled;
       })()`).then((disabled) => console.log(`[orbit-smoke] existing-mode continue disabled: ${disabled}`));
       await new Promise((r) => setTimeout(r, 250));
-      const third = await win.webContents.capturePage();
+      const second = await win.webContents.capturePage();
       const existingPath = shotPath.replace(/\.png$/, '.existing.png');
-      fs.writeFileSync(existingPath, third.toPNG());
-      console.log(`[orbit-smoke] screenshot ${existingPath} (${third.getSize().width}x${third.getSize().height})`);
+      fs.writeFileSync(existingPath, second.toPNG());
+      console.log(`[orbit-smoke] screenshot ${existingPath} (${second.getSize().width}x${second.getSize().height})`);
     }
     if (!report.hasBridge) {
       console.error('[orbit-smoke] FAIL: preload bridge missing');

@@ -1,4 +1,4 @@
-import { resolveVoiceProvider, type AvatarColor, type AvatarShape, type BotId, type UserId, type VoiceProvider } from '@orbit/contracts';
+import { resolveVoiceProvider, type AvatarColor, type AvatarShape, type BotId, type ModelChoice, type UserId, type VoiceProvider } from '@orbit/contracts';
 import { type BotState, type EngineKind, transition } from '../domain/bot-lifecycle.js';
 
 /**
@@ -23,6 +23,8 @@ export interface BotCreationInput {
   isPrimary?: boolean;
   voiceProvider?: string;
   voiceModel?: string;
+  /** The model it runs. Absent means the stack's default (BotCreationDeps.defaultModel). */
+  modelChoice?: ModelChoice;
 }
 
 export interface BotCreationDeps {
@@ -34,6 +36,8 @@ export interface BotCreationDeps {
   newBotId(): string;
   /** The look for a bot id, honouring a requested shape/colour when the palette has them. */
   pickAvatar(id: string, requestedShape?: string, requestedColor?: string): { shape: AvatarShape; color: AvatarColor };
+  /** The model a bot runs when the request picks none (DEFAULT_BOT_PROVIDER / DEFAULT_BOT_MODEL). */
+  defaultModel: ModelChoice;
 }
 
 export interface BotPlan {
@@ -47,6 +51,7 @@ export interface BotPlan {
   isPrimary: boolean;
   voiceProvider: VoiceProvider;
   voiceModel: string;
+  modelChoice: ModelChoice;
   /** A freshly created bot: `created`, which the route hands to beginProvisioning. */
   state: BotState;
 }
@@ -90,6 +95,7 @@ export function planBotCreation(input: BotCreationInput, deps: BotCreationDeps):
     // Voice runs on-device unless the request explicitly asks for the cloud path.
     voiceProvider: resolveVoiceProvider(input.voiceProvider),
     voiceModel: String(input.voiceModel ?? '').slice(0, 80) || DEFAULT_VOICE_MODEL,
+    modelChoice: input.modelChoice ?? deps.defaultModel,
     state: { status: 'created', botId },
   };
 }

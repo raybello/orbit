@@ -60,6 +60,10 @@ describe('findBotEngines', () => {
     );
     assert.deepEqual(findBotEngines(ENGINES, deps), [{ pid: 101, home: path.join(ENGINES, 'bot_a') }]);
   });
+  test("finds the primary's gateway too: the server runs it like every other", () => {
+    const { deps } = fakes({ [pidFile('primary')]: '105' }, { 105: 'hermes gateway run --no-supervise' });
+    assert.deepEqual(findBotEngines(ENGINES, deps), [{ pid: 105, home: path.join(ENGINES, 'primary') }]);
+  });
   test('a missing engines folder is not an error', () => {
     assert.deepEqual(findBotEngines('/nowhere', fakes({}, {}).deps), []);
   });

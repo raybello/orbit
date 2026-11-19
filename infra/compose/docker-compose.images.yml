@@ -28,8 +28,8 @@ services:
     environment:
       PORT: "8787"
       # The bundled gateway refuses to run as root unless this is set. It is set because this
-      # container is root for the Docker socket (see `user:` above) and its only Hermes home is
-      # the root-owned data volume — nothing else ever writes there.
+      # container is root for the Docker socket (see `user:` above) and every Hermes home it runs
+      # is on the root-owned data volume (ENGINES_DIR), which nothing else ever writes.
       HERMES_ALLOW_ROOT_GATEWAY: "1"
       # The container's paths, not the host's: the app must not be able to override these.
       DB_PATH: /data/orbit.db
@@ -46,8 +46,6 @@ services:
       DOCKER_SOCKET: /var/run/docker.sock
       APP_URL: ${APP_URL:-http://127.0.0.1:8787}
       SERVER_URL: ${SERVER_URL:-http://127.0.0.1:8787}
-      MCP_BASE_URL: ${MCP_BASE_URL:-http://host.docker.internal:8787}
-      HERMES_URL: ${HERMES_URL:-http://host.docker.internal:8642}
       # The CLI the image ships, used to start one `hermes gateway run` per managed Bot. A stack .env
       # that still carries a host path (HERMES_BIN=/Users/you/.local/bin/hermes) is harmless: the
       # server falls back to this one, then to the known install locations, before it reports a miss.
@@ -55,12 +53,6 @@ services:
       # An empty COMPUTER_IMAGE from a copied .env used to reach the Docker client as "",
       # which it turned into a request for a host named "images" and crashed the boot path.
       COMPUTER_IMAGE: ${COMPUTER_IMAGE:-orbit/computer:local}
-      # The primary agent inside the container: its config/auth live on the data volume. The real
-      # primary agent runs on the host and is reached over HERMES_URL; this is only the home a
-      # managed bot seeds its own config from.
-      # The primary agent's Hermes home, mounted below. Fixed, not overridable: the app must not be
-      # able to point it at a folder the mount does not cover.
-      HERMES_HOME_PRIMARY: /host-hermes
       LOG_LEVEL: ${LOG_LEVEL:-info}
       # GPU voice (audio.cpp). The desktop app writes this: http://audiocpp:8080 once the person
       # installs the GPU sidecar below (ORBIT_GPU_VOICE=1, compose --profile gpu), `off` on macOS.
@@ -74,13 +66,6 @@ services:
     volumes:
       - orbit-data:/data
       - /var/run/docker.sock:/var/run/docker.sock
-      # The host's Hermes home (the primary agent's .env, config.yaml and auth.json), mounted at this
-      # container's own Hermes root so that everything Hermes resolves from a bot's home — model keys,
-      # model choice, and the single-use OAuth grants of an Anthropic/ChatGPT subscription — is the
-      # primary agent's. Mounting it anywhere else (or not at all) leaves every new bot without
-      # credentials. The desktop app writes the absolute path into the stack .env as HERMES_HOME_HOST;
-      # /tmp is the fallback that always exists, so `up` works and bots are merely keyless.
-      - ${HERMES_HOME_HOST:-/tmp}:/host-hermes
       # Per-bot computers need one host folder mounted at the same path here and on the host:
       # - ${ORBIT_HOST_DATA}:${ORBIT_HOST_DATA}
     extra_hosts:

@@ -37,6 +37,7 @@ const planDeps = {
   maxBots: 4,
   newBotId: () => 'bot_test',
   pickAvatar: (id: string, shape?: string, color?: string) => pickAvatar(id, shape, color),
+  defaultModel: { provider: 'anthropic', model: 'claude-sonnet-4-6' },
 };
 
 function errorApp() {
@@ -158,6 +159,18 @@ describe('schemas', () => {
     assert.equal(CreateBotSchema.safeParse({ isPrimary: 'yes' }).success, false);
     assert.equal(CreateBotSchema.safeParse({ name: null }).success, false);
     assert.equal(CreateBotSchema.safeParse([]).success, false);
+  });
+
+  test('CreateBotSchema takes a model choice only as a provider and model pair', () => {
+    const both = CreateBotSchema.safeParse({ name: 'Ada', provider: ' openai ', model: 'gpt-5' });
+    assert.deepEqual(both.success && both.data.modelChoice, { provider: 'openai', model: 'gpt-5' });
+    const neither = CreateBotSchema.safeParse({ name: 'Ada' });
+    assert.equal(neither.success && 'modelChoice' in neither.data, false);
+    assert.equal(CreateBotSchema.safeParse({ provider: 'openai' }).success, false, 'a provider alone is refused');
+    assert.equal(CreateBotSchema.safeParse({ model: 'gpt-5' }).success, false, 'a model alone is refused');
+    assert.equal(CreateBotSchema.safeParse({ provider: 'openai', model: '' }).success, false);
+    assert.equal(CreateBotSchema.safeParse({ provider: 'openai', model: 'gpt 5' }).success, false);
+    assert.equal(CreateBotSchema.safeParse({ provider: 'openai', model: 'x'.repeat(121) }).success, false);
   });
 
   test('PatchBotSchema types each allow-listed key by its column', () => {

@@ -136,7 +136,7 @@ export async function createAppWindow(options: CreateAppWindowOptions): Promise<
   // bridge is attached to whatever this window loads, so both ways of leaving the origin —
   // a link (`will-navigate`) and a server redirect (`will-redirect`) — are filtered, and
   // `file://` gets no special case: it would put an arbitrary local file in a frame that can
-  // call `installHermes`.
+  // call `startStack`.
   const leaveOrigin = (event: { preventDefault: () => void }, target: string): void => {
     if (sameOrigin(target, origin)) return;
     event.preventDefault();

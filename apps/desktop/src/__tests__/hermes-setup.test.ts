@@ -5,7 +5,6 @@ import os from 'node:os';
 import path from 'node:path';
 import {
   detectHermes,
-  ensureHermesApiKey,
   extractionCommand,
   hermesCandidates,
   hermesHome,
@@ -14,7 +13,6 @@ import {
   pickSha256,
   safeAssetName,
   sha256Hex,
-  wireHermesMcp,
   type HermesDeps,
 } from '../hermes-setup';
 
@@ -109,12 +107,11 @@ describe('hermesCandidates', () => {
 describe('detectHermes', () => {
   test('finds a binary at the default path and reads its version', async () => {
     const binary = path.join(HOME, '.hermes', 'bin', 'hermes');
-    const { deps, files } = fakeFs({ [binary]: '#!/bin/sh\n', [path.join(HOME, '.hermes', '.env')]: 'API_SERVER_KEY=abc\n' }, { [binary]: '0.9.4' });
+    const { deps, files } = fakeFs({ [binary]: '#!/bin/sh\n' }, { [binary]: '0.9.4' });
     const status = await detectHermes({}, deps);
     assert.equal(status.found, true);
     assert.equal(status.version, '0.9.4');
     assert.equal(status.binaryPath, binary);
-    assert.equal(status.hasApiKey, true);
     assert.equal(status.home, path.join(HOME, '.hermes'));
     assert.ok(files[binary]);
   });
@@ -148,98 +145,6 @@ describe('detectHermes', () => {
     assert.equal(status.version, '2.0.0');
   });
 
-  test('hasApiKey is false for an empty API_SERVER_KEY', async () => {
-    const binary = path.join(HOME, '.hermes', 'bin', 'hermes');
-    const { deps } = fakeFs(
-      { [binary]: 'bin', [path.join(HOME, '.hermes', '.env')]: 'API_SERVER_KEY=\n' },
-      { [binary]: '1.0.0' },
-    );
-    const status = await detectHermes({}, deps);
-    assert.equal(status.hasApiKey, false);
-  });
-});
-
-describe('wireHermesMcp', () => {
-  test('removes stale mcp_servers.orbit entry and keeps the rest of the YAML, comments included', () => {
-    const configPath = path.join(HOME, '.hermes', 'config.yaml');
-    const original = [
-      '# my hand-written config',
-      'model: deepseek-flash',
-      'mcp_servers:',
-      '  other:',
-      '    type: stdio',
-      '  orbit:',
-      '    type: http',
-      '    url: http://127.0.0.1:65423/mcp',
-      '    headers:',
-      '      Authorization: Bearer stale_token',
-    ].join('\n');
-    const { deps, written } = fakeFs({ [configPath]: original });
-
-    const result = wireHermesMcp('tok_123', deps, { serverUrl: 'http://127.0.0.1:9123' });
-    assert.equal(result.configPath, configPath);
-
-    const out = written[configPath];
-    assert.match(out, /model: deepseek-flash/);
-    assert.match(out, /# my hand-written config/);
-    assert.match(out, /other:/);
-    // stale orbit entry must be gone
-    assert.doesNotMatch(out, /orbit:/);
-    assert.doesNotMatch(out, /stale_token/);
-  });
-
-  test('does nothing when no orbit entry exists', () => {
-    const configPath = path.join(HOME, '.hermes', 'config.yaml');
-    const original = ['model: deepseek-flash', 'mcp_servers:', '  hq:', '    type: http'].join('\n');
-    const { deps, written } = fakeFs({ [configPath]: original });
-    wireHermesMcp('abc', deps, { configPath });
-    // file must not be rewritten when nothing changed
-    assert.equal(written[configPath], undefined);
-  });
-
-  test('does nothing when file does not exist', () => {
-    const configPath = path.join(HOME, '.hermes', 'config.yaml');
-    const { deps, written } = fakeFs();
-    wireHermesMcp('abc', deps, { configPath });
-    assert.equal(written[configPath], undefined);
-  });
-
-  test('refuses to rewrite a config it cannot parse', () => {
-    const configPath = path.join(HOME, '.hermes', 'config.yaml');
-    const { deps, written } = fakeFs({ [configPath]: 'mcp_servers: [unclosed\n  bad: : :' });
-    assert.throws(() => wireHermesMcp('abc', deps, { configPath }), /not valid YAML/);
-    assert.equal(written[configPath], undefined, 'the original file must be untouched');
-  });
-
-  test('writes the config 0600 when removing orbit', { skip: process.platform === 'win32' }, () => {
-    const configPath = path.join(HOME, '.hermes', 'config.yaml');
-    const original = ['mcp_servers:', '  orbit:', '    type: http'].join('\n');
-    const { deps, modes } = fakeFs({ [configPath]: original });
-    wireHermesMcp('abc', deps, { configPath });
-    assert.equal(modes[configPath], 0o600);
-  });
-});
-
-describe('ensureHermesApiKey', () => {
-  test('generates and stores API_SERVER_KEY when absent', () => {
-    const envPath = path.join(HOME, '.hermes', '.env');
-    const { deps, written, modes } = fakeFs({ [envPath]: 'OTHER=1\n' });
-    const result = ensureHermesApiKey(deps, { generate: () => 'f'.repeat(64) });
-    assert.equal(result.key, 'f'.repeat(64));
-    assert.equal(result.generated, true);
-    assert.match(written[envPath], /^API_SERVER_KEY=f{64}$/m);
-    assert.match(written[envPath], /^OTHER=1$/m);
-    assert.equal(modes[envPath], 0o600);
-  });
-
-  test('reuses an existing key', () => {
-    const envPath = path.join(HOME, '.hermes', '.env');
-    const { deps, written } = fakeFs({ [envPath]: 'API_SERVER_KEY=existing\n' });
-    const result = ensureHermesApiKey(deps);
-    assert.equal(result.key, 'existing');
-    assert.equal(result.generated, false);
-    assert.equal(written[envPath], undefined);
-  });
 });
 
 describe('release helpers', () => {

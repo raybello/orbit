@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 /**
- * Stop the Hermes gateways Orbit started for its extra bots.
+ * Stop the Hermes gateways Orbit started for its bots, the primary included.
  *
  *   node scripts/stop-bot-engines.mjs <enginesDir> [<enginesDir> …]   # only gateways living under these
  *   node scripts/stop-bot-engines.mjs --all                           # every Orbit bot gateway on this machine
@@ -8,11 +8,11 @@
  * Why this exists: the server starts each bot's gateway detached (engine.ts), so a server restart can
  * reuse it instead of waiting for a cold start. The flip side is that nothing stops those gateways
  * when the server goes away for good. They keep running from launchd and keep writing into
- * `<enginesDir>/bot_*` — delete the data folder and it reappears within seconds.
+ * `<enginesDir>/{primary,bot_*}` — delete the data folder and it reappears within seconds.
  *
- * A gateway is ours when its HERMES_HOME is a `bot_*` folder (one of the given dirs, or any
- * `…/engines/bot_*` with --all). The primary agent (`hermes --profile default gateway run`, home
- * ~/.hermes) never matches, so it is left alone.
+ * A gateway is ours when its HERMES_HOME is a `primary` or `bot_*` folder (one of the given dirs, or
+ * any `…/engines/{primary,bot_*}` with --all). The person's own Hermes (home ~/.hermes) never
+ * matches, so it is left alone.
  *
  * Also importable: `import { stopBotEngines } from './stop-bot-engines.mjs'`.
  */
@@ -21,7 +21,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 
-const BOT_HOME = /[/\\]engines[/\\]bot_[^/\\]+[/\\]?$/;
+const BOT_HOME = /[/\\]engines[/\\](?:primary|bot_[^/\\]+)[/\\]?$/;
 
 function hermesHomeOf(pid) {
   try {

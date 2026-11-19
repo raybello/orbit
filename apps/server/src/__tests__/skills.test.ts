@@ -5,7 +5,7 @@ import test from 'node:test';
 import YAML from 'yaml';
 import { cleanupTmpEnv, enginesDir, primaryHome, tmpRoot } from './helpers/tmp-env.js';
 
-// tmp-env.js has already redirected DB_PATH / ENGINES_DIR / HERMES_HOME_PRIMARY at a temp dir, so
+// tmp-env.js has already redirected DB_PATH / ENGINES_DIR (the primary home included) at a temp dir, so
 // these modules see a private database and home. Loaded dynamically so nothing reads env too early.
 const { env } = await import('../env.js');
 const { db } = await import('../db.js');
@@ -67,7 +67,7 @@ seed();
 test.after(() => cleanupTmpEnv());
 
 test('the temp home is the one env.ts sees', () => {
-  assert.equal(env.hermesHome, primaryHome);
+  assert.equal(env.primaryHome, primaryHome);
   assert.equal(env.enginesDir, enginesDir);
   assert.ok(env.dbPath.startsWith(tmpRoot), 'the database must live in the temp dir');
 });

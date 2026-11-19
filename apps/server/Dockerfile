@@ -142,7 +142,7 @@ RUN rm -rf /opt/hermes/.git /opt/hermes/tests /opt/hermes/tests-js /opt/hermes/w
  && printf 'docker\n' > /opt/hermes/.install_method
 
 # The CLI must work for the non-root runtime user, and the install tree is immutable for it: state
-# belongs in HERMES_HOME (/data/hermes, on the volume), never here. This has to cover .python too --
+# belongs in each agent's HERMES_HOME (under /data/engines, on the volume), never here. This has to cover .python too --
 # that is the interpreter every hermes process execs.
 RUN chmod -R a+rX,go-w /opt/hermes \
  && /opt/hermes/.venv/bin/hermes --version
@@ -169,8 +169,8 @@ RUN apt-get update \
  && rm -rf /var/lib/apt/lists/* \
  && groupadd --system orbit \
  && useradd --system --gid orbit --home-dir /app --no-create-home --shell /bin/bash orbit \
- && mkdir -p /data/hermes /app/apps/web/src/avatar \
- && chown orbit:orbit /data /data/hermes /app
+ && mkdir -p /data /app/apps/web/src/avatar \
+ && chown orbit:orbit /data /app
 
 WORKDIR /app
 
@@ -183,9 +183,7 @@ COPY --from=builder --chown=orbit:orbit /app/apps/web/dist /app/apps/web/dist
 COPY --from=builder --chown=orbit:orbit /app/apps/web/src/avatar/shapes.gen.ts /app/apps/web/src/avatar/shapes.gen.ts
 
 # The engine. Owned by root and read-only for orbit: nothing at runtime should rewrite the code that
-# runs the agents. HERMES_HOME_PRIMARY is the primary agent's home *inside this container* -- the
-# real one runs on the host and is reached over HERMES_URL -- so it only needs to be writable for
-# the config a managed bot seeds from.
+# runs the agents. Every agent, the primary included, keeps its state under ENGINES_DIR.
 COPY --from=hermes /opt/hermes /opt/hermes
 
 ENV NODE_ENV=production \
@@ -193,7 +191,6 @@ ENV NODE_ENV=production \
     DB_PATH=/data/orbit.db \
     ENGINES_DIR=/data/engines \
     COMPUTER_HOME_DIR=/data/computers \
-    HERMES_HOME_PRIMARY=/data/hermes \
     HERMES_BIN=/opt/hermes/.venv/bin/hermes \
     PATH=/opt/hermes/.venv/bin:$PATH \
     LOG_LEVEL=info

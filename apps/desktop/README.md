@@ -1,7 +1,7 @@
 # @orbit/desktop
 
 The Orbit desktop app: an Electron shell around the Orbit web client, with a first-run
-setup window, a local Docker stack controller, and Hermes wiring.
+setup window, a local Docker stack controller, and the native stack's Hermes install.
 
 The renderer is **the server's own web build**. There is no desktop-only UI beyond
 `setup.html`.
@@ -36,14 +36,13 @@ src/app-menu.ts             application menu
 src/auto-update.ts          electron-updater + the update bar
 src/badge.ts                unread badge from /api/bots + /api/events
 src/session-permissions.ts  microphone only
-src/setup.html/.css/.ts     the first-run window (540x420, two screens)
+src/setup.html/.css/.ts     the first-run window (540x420, one screen)
 src/docker-cli.ts           docker binary lookup, failure classification, runDocker
 src/local-stack.ts          idle -> … -> ready state machine
 src/local-stack-networking.ts  .orbit-web-url / .orbit-stack-token
 src/env-file.ts             .env read/patch + secret generation
 src/loopback-port.ts        free loopback port allocation
-src/hermes-setup.ts         detect / install / wire Hermes (all I/O injected)
-src/hermes-setup-window.ts  install ordering + progress streaming
+src/hermes-setup.ts         detect / install Hermes for the native stack (all I/O injected)
 src/preload.cjs             contextBridge: window.orbitDesktop
 src/shared/api.ts           desktop types + IPC channel names
 ```
@@ -76,8 +75,8 @@ ORBIT_SMOKE=1 pnpm --filter @orbit/desktop exec electron .
 
 Loads `dist/setup.html` in a hidden window, prints `typeof window.orbitDesktop`, the
 bridge's keys, the resolved stack resource dir, and exits 0/1. Add
-`ORBIT_SMOKE_SCREENSHOT=/tmp/shot.png` to also write the three setup-window states
-(server choice, Hermes step, existing instance) as PNGs.
+`ORBIT_SMOKE_SCREENSHOT=/tmp/shot.png` to also write the two setup-window states
+(server choice, existing instance) as PNGs.
 
 ## Updates
 

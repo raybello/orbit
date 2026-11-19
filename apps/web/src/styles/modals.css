@@ -36,6 +36,8 @@
 .mode-pick__opt.is-active { box-shadow: var(--color-primary) 0 0 0 1px inset; border-color: transparent; }
 .mode-pick__title { font-size: 13px; font-weight: 500; line-height: 18px; letter-spacing: 0.195px; color: var(--color-ink); }
 .mode-pick__sub { font-size: 12px; line-height: 16px; letter-spacing: 0.12px; color: var(--color-text-tertiary); }
+.create-modal__model { display: flex; align-items: center; justify-content: space-between; gap: 12px; width: 407px; max-width: 100%; }
+.create-modal__model-label { font-size: 13px; font-weight: 500; line-height: 18px; color: var(--color-ink); }
 
 /* Search palette: 641x561 */
 .modal-root:has(.search-modal) { align-items: flex-start; padding-top: max(24px, calc(50vh - 280px)); }

@@ -17,7 +17,8 @@ import { dockerBox } from './docker/docker-box.js';
 import { getComputer } from './computer-store.js';
 import { orgo } from './orgo.js';
 import { openTerminal } from './desk.js';
-import { asBlock, engineHome, engineInfo, engineKind, forgetEngineOptions, managedHome, readDotenv, readYaml, restartEngine, stopOwnScreen, syncAllManagedAuth, writePrivate, SHARED_ENV } from './engine.js';
+import { engineHome, engineInfo, engineKind, forgetEngineOptions, restartEngine, stopOwnScreen, syncAllManagedAuth } from './engine.js';
+import { applyModelChoice, asBlock, readDotenv, readYaml, writePrivate, SHARED_ENV } from './hermes-files.js';
 import { listMemories } from './engine-memory.js';
 import { idleConfig, viewerCount } from './idle.js';
 import { optionalBody, SkillBodySchema, EngineChoiceSchema, EngineLoginSchema, FileDownloadSchema } from './api/schemas.js';
@@ -186,8 +187,7 @@ configApi.post('/bots/:id/engine/login', async (c) => {
 configApi.post('/bots/:id/engine/restart', async (c) => {
   const b = ownBot(c.get('user').id, c.req.param('id'));
   if (!b) return c.json({ error: 'not found' }, 404);
-  // The primary agent serves more than this app (its messaging runs through the same process), so it is never restarted from here.
-  if (engineKind(b.id) !== 'managed') return c.json({ error: `${b.name} runs on the computer's own agent, which this app does not restart.` }, 409);
+  if (!engineKind(b.id)) return c.json({ error: 'This bot has no agent.' }, 409);
   try {
     await restartEngine(b.id);
     forgetEngineOptions(b.id);
@@ -218,25 +218,25 @@ configApi.post('/bots/:id/handback', (c) => {
 });
 
 /** Which SHARED_ENV keys a bot's .env has non-empty. Never the values themselves. */
-function keysPresentFor(botId: string, engine: 'primary' | 'managed'): string[] {
-  const file = engine === 'primary' ? path.join(env.hermesHome, '.env') : path.join(managedHome(botId), '.env');
-  const vars = readDotenv(file);
+function keysPresentFor(home: string): string[] {
+  const vars = readDotenv(path.join(home, '.env'));
   return SHARED_ENV.filter((k) => (vars[k] ?? '').trim() !== '');
 }
 
 /** One row of the table. A bot whose agent does not answer still gets a row, with status 'unknown'. */
 async function engineAuthRow(b: BotRow): Promise<BotEngineAuthRow | null> {
   const engine = engineKind(b.id);
-  if (!engine) return null;
+  const home = engineHome(b.id);
+  if (!engine || !home) return null;
   let status: BotEngineAuthRow['status'] = 'unknown';
   try { status = (await engineInfo(b.id)).status; } catch { status = 'unknown'; }
   let model: string | null = b.model ?? null;
   let provider: string | null = b.provider ?? null;
-  // Most bots have no model of their own: their config is the primary agent's, so say which model
-  // that is rather than showing a blank (or the old 'Default' placeholder the panel used to store).
-  if (engine === 'managed' && (!model || String(model).trim().toLowerCase() === 'default')) {
+  // Most bots have no model of their own: their config names one, so say which model that is rather
+  // than showing a blank (or the old 'Default' placeholder the panel used to store).
+  if (!model || String(model).trim().toLowerCase() === 'default') {
     try {
-      const block = readYaml(path.join(managedHome(b.id), 'config.yaml')).model;
+      const block = readYaml(path.join(home, 'config.yaml')).model;
       const name = typeof block === 'string' ? block : asBlock(block).default;
       if (typeof name === 'string' && name.trim()) model = name.trim();
       const fromCfg = asBlock(block).provider;
@@ -250,7 +250,7 @@ async function engineAuthRow(b: BotRow): Promise<BotEngineAuthRow | null> {
     provider,
     model,
     status,
-    keysPresent: keysPresentFor(b.id, engine),
+    keysPresent: keysPresentFor(home),
   };
 }
 
@@ -266,23 +266,23 @@ configApi.get('/config/engine-auth', async (c) => {
 configApi.put('/config/engine-auth/:botId', async (c) => {
   const b = ownBot(c.get('user').id, c.req.param('botId'));
   if (!b) return c.json({ error: 'not found' }, 404);
-  const engine = engineKind(b.id);
-  if (!engine) return c.json({ error: 'This bot has no agent.' }, 409);
+  const home = engineHome(b.id);
+  if (!home) return c.json({ error: 'This bot has no agent.' }, 409);
   const p = await optionalBody(c, EngineChoiceSchema, {});
   const provider = p.provider === undefined ? undefined : engineField(p.provider);
   // The settings panel shows the word Default when nothing is chosen; saving it back would pin a
   // model id no provider knows and quietly stop the bot answering. It means "no choice".
   const model = p.model === undefined ? undefined : (String(p.model ?? '').trim().toLowerCase() === 'default' ? null : engineField(p.model));
 
-  // A managed bot's own Hermes reads its model from its config.yaml, so patch those two fields there.
-  // The rest of the file (providers, base_url, toolsets, mcp_servers) is its own and is left alone.
-  if (engine === 'managed' && (provider !== undefined || model !== undefined)) {
-    const cfgFile = path.join(managedHome(b.id), 'config.yaml');
+  // The bot's own Hermes reads its model from its config.yaml. A field left out keeps its current
+  // value; applyModelChoice then brings the provider's own endpoint, so a switch away from a custom
+  // server does not leave its base_url behind.
+  if (provider !== undefined || model !== undefined) {
+    const cfgFile = path.join(home, 'config.yaml');
     const cfg = readYaml(cfgFile);
-    const m = { ...asBlock(cfg.model) };
-    if (provider !== undefined) { if (provider) m.provider = provider; else delete m.provider; }
-    if (model !== undefined) { if (model) m.default = model; else delete m.default; }
-    cfg.model = m;
+    const current = asBlock(cfg.model);
+    const text = (v: unknown) => (typeof v === 'string' && v.trim() ? v.trim() : null);
+    applyModelChoice(cfg, provider !== undefined ? provider : text(current.provider), model !== undefined ? model : text(current.default));
     writePrivate(cfgFile, YAML.stringify(cfg));
   }
 

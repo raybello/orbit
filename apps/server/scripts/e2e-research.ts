@@ -17,7 +17,7 @@ import assert from 'node:assert/strict';
  */
 
 process.env.DB_PATH ??= path.join(os.tmpdir(), `orbit-e2e-research-${process.pid}.db`);
-process.env.HERMES_HOME_PRIMARY ??= path.join(os.tmpdir(), 'orbit-e2e-research-home');
+process.env.ENGINES_DIR ??= path.join(os.tmpdir(), 'orbit-e2e-research-engines');
 
 const BASE = (process.env.BASE ?? 'http://127.0.0.1:8787').replace(/\/+$/, '');
 const EMAIL = process.env.EMAIL ?? 'owner@orbit.local';

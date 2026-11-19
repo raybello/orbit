@@ -33,7 +33,7 @@ skillsApi.put('/skills/:botId/:skillName', async (c) => {
   if (typeof enabled !== 'boolean') return c.json({ error: '"enabled" must be true or false.' }, 400);
 
   if (engineKind(botId) === 'primary') {
-    return c.json({ error: "The primary agent's skills are read-only. They come from its own Hermes config." }, 409);
+    return c.json({ error: "The primary agent's skills are read-only: they are the list every Bot picks from." }, 409);
   }
 
   try {

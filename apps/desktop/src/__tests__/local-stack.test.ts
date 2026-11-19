@@ -206,6 +206,8 @@ function harness(opts: {
   env?: Record<string, string>;
   /** Report the stack's images as already on this machine. */
   localImages?: boolean;
+  /** Answer the one-shot Hermes import (`compose run`). */
+  importRun?: () => DockerResult;
 }): Harness {
   const root = path.join(tmpRoot, opts.name);
   fs.rmSync(root, { recursive: true, force: true });
@@ -238,6 +240,7 @@ function harness(opts: {
     if (args[0] === 'compose' && args.includes('config') && args.includes('--images')) {
       return { code: 0, stdout: opts.localImages ? 'ghcr.io/raybello/orbit/app:edge\n' : '', stderr: '' };
     }
+    if (args[0] === 'compose' && args.includes('run')) return opts.importRun?.() ?? { code: 0, stdout: '[import-hermes] imported\n', stderr: '' };
     if (args[0] === 'compose' && args.includes('up')) {
       upCalls += 1;
       return opts.up?.(upCalls) ?? { code: 0, stdout: '', stderr: '' };
@@ -266,7 +269,8 @@ function harness(opts: {
     packaged: opts.packaged ?? false,
     resourcesDir: resources,
     platform: 'darwin',
-    env: { ORBIT_DOCKER_BIN: '/usr/bin/docker', ...opts.env } as NodeJS.ProcessEnv,
+    // No Hermes home unless a test makes one: the developer's own must never leak in.
+    env: { ORBIT_DOCKER_BIN: '/usr/bin/docker', HERMES_HOME: path.join(root, 'no-hermes'), ...opts.env } as NodeJS.ProcessEnv,
     exists: (file: string) => file === '/usr/bin/docker',
     exec,
     fetchImpl,
@@ -407,10 +411,10 @@ describe('LocalStackController: staging files', () => {
     const envPath = h.controller.prepareEnvFile();
     assert.equal(envPath, path.join(h.stackDir, '.env'));
     assert.equal(fs.readFileSync(envPath!, 'utf8'), IMAGES_ENV);
-    // Idempotent: a second call keeps the file it found (HERMES_KEY may already be in it).
-    fs.writeFileSync(envPath!, `${IMAGES_ENV}HERMES_KEY=abc\n`);
+    // Idempotent: a second call keeps the file it found.
+    fs.writeFileSync(envPath!, `${IMAGES_ENV}ORBIT_GPU_VOICE=1\n`);
     assert.equal(h.controller.prepareEnvFile(), envPath);
-    assert.match(fs.readFileSync(envPath!, 'utf8'), /HERMES_KEY=abc/);
+    assert.match(fs.readFileSync(envPath!, 'utf8'), /ORBIT_GPU_VOICE=1/);
   });
 
   test('prepareEnvFile fills missing required secrets in an existing .env (upgrade path)', () => {
@@ -543,5 +547,50 @@ describe('LocalStackController: stack identity', () => {
     const h = harness({ name: 'probe-other-url', server: selfAwareServer() });
     await h.controller.start();
     assert.equal(await h.controller.matchesDesiredStack('http://127.0.0.1:19999'), false);
+  });
+});
+
+describe('LocalStackController: the host Hermes import', () => {
+  const composeVerb = (args: string[]) => (args[0] === 'compose' ? args.find((a) => ['run', 'up', 'pull', 'config'].includes(a)) : args[0]);
+
+  test("imports this computer's Hermes home once per start, read-only, before compose up", async () => {
+    const hermes = path.join(tmpRoot, 'host-hermes-home');
+    fs.mkdirSync(hermes, { recursive: true });
+    const h = harness({ name: 'hermes-import', server: selfAwareServer(), env: { HERMES_HOME: hermes } });
+    const state = await h.controller.start();
+    assert.equal(state.phase, 'ready', state.error);
+
+    const verbs = h.calls.map(composeVerb);
+    assert.ok(verbs.indexOf('run') >= 0 && verbs.indexOf('run') < verbs.indexOf('up'), verbs.join(' '));
+    const run = h.calls.find((a) => a[0] === 'compose' && a.includes('run'))!;
+    assert.deepEqual(run.slice(run.indexOf('run')), [
+      'run', '--rm', '--no-deps', '-T', '-v', `${hermes}:/import:ro`, 'api', 'node', 'dist/import-hermes.js', '/import', '/data/engines/primary',
+    ]);
+  });
+
+  test('with no Hermes home there is nothing to import', async () => {
+    const h = harness({ name: 'hermes-import-none', server: selfAwareServer() });
+    const state = await h.controller.start();
+    assert.equal(state.phase, 'ready', state.error);
+    assert.ok(!h.calls.some((a) => a[0] === 'compose' && a.includes('run')));
+  });
+
+  test('a failed import does not stop the stack', async () => {
+    const hermes = path.join(tmpRoot, 'host-hermes-home-2');
+    fs.mkdirSync(hermes, { recursive: true });
+    const h = harness({
+      name: 'hermes-import-fails',
+      server: selfAwareServer(),
+      env: { HERMES_HOME: hermes },
+      importRun: () => ({ code: 1, stdout: '', stderr: 'boom' }),
+    });
+    const state = await h.controller.start();
+    assert.equal(state.phase, 'ready', state.error);
+  });
+
+  test('the stack .env carries nothing that points at the host Hermes', async () => {
+    const h = harness({ name: 'hermes-env', server: selfAwareServer(), env: { HERMES_HOME: tmpRoot } });
+    await h.controller.start();
+    assert.doesNotMatch(h.env(), /HERMES_HOME_HOST|HERMES_KEY|HERMES_URL/);
   });
 });

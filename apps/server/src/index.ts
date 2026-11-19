@@ -19,7 +19,7 @@ import { expireStaleApprovals } from './agent/loop.js';
 import { enqueue } from './core/turn-queue.js';
 import { desSelfTest } from './lib/des.js';
 import { startIdleWatcher } from './idle.js';
-import { initEngines, startPrimaryHqSync, startSubscriptionSync, syncAllManagedAuth } from './engine.js';
+import { importPrimaryHome, initEngines, startSubscriptionSync, syncAllManagedAuth } from './engine.js';
 import { recoverComputers, suspendComputers } from './computer-provider-registry.js';
 import { startDockerIdleSuspender } from './docker-provider.js';
 import { renameLegacyPrimary } from './bot-admin.js';
@@ -61,6 +61,8 @@ initProactive(enqueue);
 startIdleWatcher();
 // The direct Google OAuth integration is gone; revoke and drop anything an older version stored.
 void retireGoogleOAuth().catch((e) => console.warn('[google-oauth] retire failed', (e as Error).message));
+// The primary's home is where every agent's credentials come from, so it is seeded first.
+importPrimaryHome();
 // Every managed bot's credentials come from the primary agent, so the sync has to land *before* the
 // gateways start: a gateway reads its .env once, at start, and one started against a stale home
 // answers "not connected to any AI provider yet" for the rest of its life.
@@ -74,10 +76,6 @@ initEngines();
 // Subscription sign-ins are inherited as access tokens, so they have to be re-read as the primary
 // agent refreshes its own. A bot's gateway picks the new token up from auth.json without a restart.
 startSubscriptionSync();
-// Keep the primary bot's hq MCP entry current. Runs immediately (catches a changed URL or rotated
-// token from startup) and then every 2 minutes (recovers from the Hermes desktop app overwriting
-// the config when the user saves any setting).
-startPrimaryHqSync();
 // Containers left "running" by a crash are paused, not trusted: each bot's home folder on the host
 // is what survives, and the next open starts its container again.
 void recoverComputers().catch((e) => console.warn(`[docker] startup recovery failed: ${e?.message ?? e}`));

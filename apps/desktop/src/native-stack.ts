@@ -9,7 +9,6 @@
  */
 
 import fs from 'node:fs';
-import os from 'node:os';
 import path from 'node:path';
 import { createWriteStream, type WriteStream } from 'node:fs';
 import { randomBytes } from 'node:crypto';
@@ -18,7 +17,7 @@ import { ORBIT_HEADERS } from '@orbit/contracts';
 import { createLogger } from '@orbit/logger';
 import { DEFAULT_LOCAL_WEB_URL, normalizeServerUrl } from './setup-config';
 import { allocateLoopbackPort, bindLoopback, type BindFn } from './loopback-port';
-import { envValue } from './env-file';
+import { hermesHome } from './hermes-setup';
 import { nativePortsFile } from './docker-move';
 import type { NativeStack } from './stack-controller';
 import {
@@ -386,7 +385,8 @@ export interface NativeStackOptions {
   bundleDir?: string;
   /** `process.execPath` in Electron: the binary that runs as Node. */
   electronBinary?: string;
-  hermesHome?: string;
+  /** The person's own Hermes home, imported into the primary agent's once. */
+  hermesImportFrom?: string;
   env?: NodeJS.ProcessEnv;
   exists?: (file: string) => boolean;
   exec?: RuntimeExec;
@@ -494,24 +494,6 @@ export class NativeStackController implements NativeStack {
     } catch {
       return null;
     }
-  }
-
-  /**
-   * The file `HERMES_KEY` is mirrored into before `start()` spawns the API process.
-   *
-   * Native keeps its own secrets in `secrets.json`, but the MCP bearer the server reads comes
-   * from `stack/.env` — the same file the Docker stack uses, and the one `hermesKey()` reads
-   * back when it builds the child's environment. There is no `.env.example` here: the file
-   * itself is created by that write, so preparing the folder is what this has to do.
-   */
-  prepareEnvFile(): string | null {
-    try {
-      fs.mkdirSync(this.stackDir, { recursive: true, mode: 0o700 });
-    } catch (err) {
-      log.warn(`could not create ${this.stackDir} for the stack .env`, err);
-      return null;
-    }
-    return path.join(this.stackDir, '.env');
   }
 
   /**
@@ -788,10 +770,7 @@ export class NativeStackController implements NativeStack {
       COMPUTER_HOME_DIR: path.join(userData, 'computer-homes'),
       SESSION_SECRET: secrets.session_secret,
       STACK_TOKEN: secrets.stack_token,
-      HERMES_HOME: this.opts.hermesHome ?? path.join(os.homedir(), '.hermes'),
-      // `ensureHermesApiKey` writes HERMES_KEY into the stack `.env` for the Docker path;
-      // read it back here so the MCP bearer is the same in both stacks.
-      ...this.hermesKey(),
+      HERMES_IMPORT_FROM: this.opts.hermesImportFrom ?? hermesHome(this.env),
       // The bundle root, so the API can serve `web/` from the same directory it ran from.
       ORBIT_BUNDLE_DIR: bundleDir,
       // The native stack is the macOS path, and there is no Apple-silicon audio.cpp sidecar yet:
@@ -799,16 +778,6 @@ export class NativeStackController implements NativeStack {
       // AUDIOCPP_URL in the environment (a GPU box on the LAN) still wins.
       AUDIOCPP_URL: this.env.AUDIOCPP_URL?.trim() || 'off',
     };
-  }
-
-  private hermesKey(): { HERMES_KEY?: string } {
-    try {
-      const text = fs.readFileSync(path.join(this.stackDir, '.env'), 'utf8');
-      const key = envValue(text, 'HERMES_KEY');
-      return key ? { HERMES_KEY: key } : {};
-    } catch {
-      return {};
-    }
   }
 
   /**

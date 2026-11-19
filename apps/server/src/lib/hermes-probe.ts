@@ -1,7 +1,7 @@
-import { env } from '../env.js';
+import { primaryEngineUrl } from '../engine.js';
 
 /**
- * Is the primary Hermes API answering? Asked by the desktop app's stack probe, so it must never
+ * Is the primary agent's API answering? Asked by the desktop app's stack probe, so it must never
  * throw and must not make the probe wait long: the answer is cached for ten seconds and a probe
  * already in flight is shared.
  */
@@ -12,19 +12,13 @@ let cached: { at: number; up: boolean } | null = null;
 let inflight: Promise<boolean> | null = null;
 
 async function reachable(): Promise<boolean> {
-  const ctrl = new AbortController();
-  const timer = setTimeout(() => ctrl.abort(), TIMEOUT_MS);
+  const url = primaryEngineUrl();
+  if (!url) return false;
   try {
-    const res = await fetch(`${env.hermesUrl}/`, {
-      signal: ctrl.signal,
-      headers: env.hermesKey ? { authorization: `Bearer ${env.hermesKey}` } : {},
-    });
-    // Any answer below 500 means the API server is there; "/" may simply want a different path.
-    return res.status < 500;
+    const res = await fetch(`${url}/health`, { signal: AbortSignal.timeout(TIMEOUT_MS) });
+    return res.ok;
   } catch {
     return false;
-  } finally {
-    clearTimeout(timer);
   }
 }
 
