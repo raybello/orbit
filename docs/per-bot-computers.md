@@ -112,7 +112,7 @@ still driven over CDP (`browser.cdp_url`).
 ## Model
 
 Every new Bot, the primary included, runs `DEFAULT_BOT_PROVIDER` / `DEFAULT_BOT_MODEL` (default:
-`anthropic` / `claude-sonnet-4-5`) unless a model is picked when it is created: in the Create Bot
+`anthropic` / `claude-sonnet-4-6`) unless a model is picked when it is created: in the Create Bot
 dialog, or by the primary Bot, which reads the connected providers with `list_models` and passes
 `provider` and `model` to `create_bot`. The choice is stored on the Bot and written into its
 `config.yaml` `model` block each time its home is written, with the provider's `base_url` and

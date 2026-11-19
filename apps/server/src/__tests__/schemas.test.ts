@@ -37,7 +37,7 @@ const planDeps = {
   maxBots: 4,
   newBotId: () => 'bot_test',
   pickAvatar: (id: string, shape?: string, color?: string) => pickAvatar(id, shape, color),
-  defaultModel: { provider: 'anthropic', model: 'claude-sonnet-4-5' },
+  defaultModel: { provider: 'anthropic', model: 'claude-sonnet-4-6' },
 };
 
 function errorApp() {

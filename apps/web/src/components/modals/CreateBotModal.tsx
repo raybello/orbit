@@ -12,7 +12,7 @@ import { Modal } from './Modal';
 const ROWS = [PICKER_SHAPES.slice(0, 5), PICKER_SHAPES.slice(5, 10), PICKER_SHAPES.slice(10)];
 const COLOR_ROWS = [COLOR_ORDER.slice(0, 6), COLOR_ORDER.slice(6)];
 
-/** "claude-sonnet-4-5" reads as "Claude Sonnet 4.5"; any other id is shown as it is. */
+/** "claude-sonnet-4-6" reads as "Claude Sonnet 4.6"; any other id is shown as it is. */
 function modelLabel(id: string): string {
   const m = /^claude-([a-z]+)-(\d+)-(\d+)$/.exec(id);
   return m ? `Claude ${m[1][0].toUpperCase()}${m[1].slice(1)} ${m[2]}.${m[3]}` : id;
@@ -46,7 +46,7 @@ export function CreateBotModal() {
     return () => { live = false; };
   }, []);
   const providers = (models?.providers ?? []).filter((p) => p.models.length);
-  const defaultLabel = `Default (${modelLabel(models?.default.model ?? 'claude-sonnet-4-5')})`;
+  const defaultLabel = `Default (${modelLabel(models?.default.model ?? 'claude-sonnet-4-6')})`;
   const picked = parsePick(pick);
 
   const create = async () => {

@@ -20,10 +20,10 @@ const createBot = vi.mocked(api.createBot);
 
 const MODELS: ModelsResponse = {
   providers: [
-    { id: 'anthropic', name: 'Claude (Anthropic)', models: ['claude-sonnet-4-5', 'claude-opus-4-1'] },
+    { id: 'anthropic', name: 'Claude (Anthropic)', models: ['claude-sonnet-4-6', 'claude-opus-4-1'] },
     { id: 'strata', name: 'Strata', models: ['qwen3'] },
   ],
-  default: { provider: 'anthropic', model: 'claude-sonnet-4-5' },
+  default: { provider: 'anthropic', model: 'claude-sonnet-4-6' },
 };
 
 beforeEach(() => {
@@ -39,7 +39,7 @@ describe('CreateBotModal model picker', () => {
   it('offers the default first, then the connected models grouped by provider', async () => {
     render(<CreateBotModal />);
     const select = screen.getByLabelText('Model') as HTMLSelectElement;
-    expect(select.options[0].textContent).toBe('Default (Claude Sonnet 4.5)');
+    expect(select.options[0].textContent).toBe('Default (Claude Sonnet 4.6)');
     await waitFor(() => expect(select.querySelectorAll('optgroup')).toHaveLength(2));
     expect([...select.querySelectorAll('optgroup')].map((g) => g.label)).toEqual(['Claude (Anthropic)', 'Strata']);
     expect(screen.getByRole('option', { name: 'qwen3' })).toBeTruthy();
@@ -69,6 +69,6 @@ describe('CreateBotModal model picker', () => {
     render(<CreateBotModal />);
     const select = screen.getByLabelText('Model') as HTMLSelectElement;
     await waitFor(() => expect(models).toHaveBeenCalled());
-    expect([...select.options].map((o) => o.textContent)).toEqual(['Default (Claude Sonnet 4.5)']);
+    expect([...select.options].map((o) => o.textContent)).toEqual(['Default (Claude Sonnet 4.6)']);
   });
 });

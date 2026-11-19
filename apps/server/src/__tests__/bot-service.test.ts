@@ -19,7 +19,7 @@ function deps(over: Partial<BotCreationDeps> = {}): BotCreationDeps {
     maxBots: 4,
     newBotId: () => `bot_${++n}`,
     pickAvatar: (_id, shape, color) => pickAvatar('bot_hash', shape, color),
-    defaultModel: { provider: 'anthropic', model: 'claude-sonnet-4-5' },
+    defaultModel: { provider: 'anthropic', model: 'claude-sonnet-4-6' },
     ...over,
   };
 }
@@ -166,7 +166,7 @@ describe('pickAvatar', () => {
 
 describe('the model a new bot runs', () => {
   test('no choice in the request means the stack default', () => {
-    assert.deepEqual(planBotCreation(input(), deps()).modelChoice, { provider: 'anthropic', model: 'claude-sonnet-4-5' });
+    assert.deepEqual(planBotCreation(input(), deps()).modelChoice, { provider: 'anthropic', model: 'claude-sonnet-4-6' });
   });
 
   test('a chosen provider and model are kept as they are', () => {

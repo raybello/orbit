@@ -66,7 +66,7 @@ export const CreateBotSchema = z
   });
 
 /**
- * A model id or provider slug as a person or an agent names it: "anthropic", "claude-sonnet-4-5",
+ * A model id or provider slug as a person or an agent names it: "anthropic", "claude-sonnet-4-6",
  * "deepseek/deepseek-flash", "qwen3:32b". Not checked against the live list, which may be unreachable.
  */
 const ModelIdSchema = z.string().trim().min(1).max(120).regex(/^\S+$/, 'no spaces');

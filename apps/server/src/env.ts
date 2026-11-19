@@ -188,7 +188,7 @@ export const env = {
    * the Bot's row at creation and written into its Hermes config.yaml each time its home is written.
    */
   defaultBotProvider: process.env.DEFAULT_BOT_PROVIDER || 'anthropic',
-  defaultBotModel: process.env.DEFAULT_BOT_MODEL || 'claude-sonnet-4-5',
+  defaultBotModel: process.env.DEFAULT_BOT_MODEL || 'claude-sonnet-4-6',
   /** Host directory holding each bot's home folder and workspace checkpoints. */
   computerHomeDir: process.env.COMPUTER_HOME_DIR ?? fileURLToPath(new URL('../../../data/computers', import.meta.url)),
 

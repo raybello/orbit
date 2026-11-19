@@ -31,12 +31,12 @@ const STRATA = { base_url: 'http://10.0.0.92:8080/v1', key_env: 'HERMES_CUSTOM_S
 describe('applyModelChoice', () => {
   test('switching to a provider the config does not define drops the old endpoint', () => {
     const cfg = { model: { provider: 'strata', default: 'qwen3', base_url: STRATA.base_url, api_mode: 'chat_completions' }, providers: { strata: STRATA } };
-    applyModelChoice(cfg, 'anthropic', 'claude-sonnet-4-5');
-    assert.deepEqual(cfg.model, { provider: 'anthropic', default: 'claude-sonnet-4-5' });
+    applyModelChoice(cfg, 'anthropic', 'claude-sonnet-4-6');
+    assert.deepEqual(cfg.model, { provider: 'anthropic', default: 'claude-sonnet-4-6' });
   });
 
   test('a provider the config defines brings its base_url and api_mode, never its key', () => {
-    const cfg = { model: { provider: 'anthropic', default: 'claude-sonnet-4-5' }, providers: { strata: STRATA } };
+    const cfg = { model: { provider: 'anthropic', default: 'claude-sonnet-4-6' }, providers: { strata: STRATA } };
     applyModelChoice(cfg, 'strata', 'qwen3');
     assert.deepEqual(cfg.model, { provider: 'strata', default: 'qwen3', base_url: STRATA.base_url, api_mode: 'chat_completions' });
   });
@@ -53,16 +53,16 @@ describe('applyModelChoice', () => {
 
 const USER = 'usr_model_choice';
 db.prepare('INSERT OR REPLACE INTO users(id,email,name,created_at) VALUES (?,?,?,?)').run(USER, 'model@test.local', 'Model Test', Date.now());
-fs.writeFileSync(path.join(primaryHome, 'config.yaml'), YAML.stringify({ model: { provider: 'anthropic', default: 'claude-sonnet-4-5' }, providers: { strata: STRATA } }));
+fs.writeFileSync(path.join(primaryHome, 'config.yaml'), YAML.stringify({ model: { provider: 'anthropic', default: 'claude-sonnet-4-6' }, providers: { strata: STRATA } }));
 
 const primary = createBotFor(USER, { name: 'Atlas', isPrimary: true });
 const row = (id: string) => db.prepare('SELECT provider, model FROM bots WHERE id=?').get(id) as { provider: string | null; model: string | null };
 
 describe('creating a bot', () => {
-  test('the primary and any bot created without a choice get Claude Sonnet 4.5', () => {
-    assert.deepEqual(row(primary.id), { provider: 'anthropic', model: 'claude-sonnet-4-5' });
+  test('the primary and any bot created without a choice get Claude Sonnet 4.6', () => {
+    assert.deepEqual(row(primary.id), { provider: 'anthropic', model: 'claude-sonnet-4-6' });
     const plain = createBotFor(USER, { name: 'Plain' });
-    assert.deepEqual(row(plain.id), { provider: 'anthropic', model: 'claude-sonnet-4-5' });
+    assert.deepEqual(row(plain.id), { provider: 'anthropic', model: 'claude-sonnet-4-6' });
   });
 
   test('a chosen model is stored, and starting the bot writes it into its config.yaml', async () => {
@@ -97,7 +97,7 @@ describe('list_models', () => {
     await engineFor(primary.id).catch(() => {});
     const options = {
       providers: [
-        { slug: 'anthropic', name: 'Anthropic', authenticated: true, models: ['claude-sonnet-4-5', 'claude-opus-4-1'] },
+        { slug: 'anthropic', name: 'Anthropic', authenticated: true, models: ['claude-sonnet-4-6', 'claude-opus-4-1'] },
         { slug: 'openai-codex', name: 'OpenAI Codex', authenticated: false, models: ['gpt-5.5'] },
       ],
     };
@@ -111,9 +111,9 @@ describe('list_models', () => {
     try {
       db.prepare('UPDATE bots SET engine_port=? WHERE id=?').run((gateway.address() as AddressInfo).port, primary.id);
       const { output } = await tool('list_models').impl({}, ctx);
-      assert.match(output, /- anthropic \(Claude \(Anthropic\)\): claude-sonnet-4-5, claude-opus-4-1/);
+      assert.match(output, /- anthropic \(Claude \(Anthropic\)\): claude-sonnet-4-6, claude-opus-4-1/);
       assert.doesNotMatch(output, /openai-codex/);
-      assert.match(output, /Default for a new Bot: provider anthropic, model claude-sonnet-4-5/);
+      assert.match(output, /Default for a new Bot: provider anthropic, model claude-sonnet-4-6/);
     } finally {
       gateway.close();
     }
@@ -129,7 +129,7 @@ describe('the HTTP routes', () => {
   test('GET /api/models names the model a new Bot gets', async () => {
     const res = await app.request('/api/models', { headers: authed() });
     assert.equal(res.status, 200);
-    assert.deepEqual((await res.json()).default, { provider: 'anthropic', model: 'claude-sonnet-4-5' });
+    assert.deepEqual((await res.json()).default, { provider: 'anthropic', model: 'claude-sonnet-4-6' });
   });
 
   test('POST /api/bots refuses a model without its provider', async () => {

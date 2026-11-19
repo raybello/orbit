@@ -259,7 +259,7 @@ KEYS_FILE=/root/keys.txt PRIMARY_CDP_URL=http://127.0.0.1:9333 \
 <tr><td><code>COMPUTER_PAUSE_AFTER_MIN</code>, <code>COMPUTER_IDLE_TIMEOUT_MIN</code>, <code>COMPUTER_CPU_LIMIT</code>, <code>COMPUTER_MEMORY_LIMIT</code>, <code>COMPUTER_MEMORY_RESERVATION</code>, <code>COMPUTER_NETWORK</code></td><td>5, 30, 1, 900m, 600m, bridge</td><td>Container limits, idle pause and suspension.</td></tr>
 <tr><td><code>DOCKER_SOCKET</code></td><td>Docker default</td><td>Docker API socket.</td></tr>
 <tr><td><code>ORGO_API_KEY</code>, <code>ORGO_COMPUTER_ID</code>, <code>HQ_LOCAL</code>, <code>PRIMARY_CDP_URL</code></td><td></td><td>Orgo screens and the remote install.</td></tr>
-<tr><td><code>DEFAULT_BOT_MODEL</code>, <code>DEFAULT_BOT_PROVIDER</code></td><td>claude-sonnet-4-5, anthropic</td><td>The model every new Bot runs, the primary included, unless one is picked when it is created.</td></tr>
+<tr><td><code>DEFAULT_BOT_MODEL</code>, <code>DEFAULT_BOT_PROVIDER</code></td><td>claude-sonnet-4-6, anthropic</td><td>The model every new Bot runs, the primary included, unless one is picked when it is created.</td></tr>
 <tr><td><code>COMPOSIO_API_KEY</code></td><td></td><td>Connected apps (<a href="#composio">Connecting apps with Composio</a>).</td></tr>
 <tr><td><code>COMPOSIO_WEBHOOK_SECRET</code></td><td></td><td>Signing secret of the Composio webhook at <code>/webhooks/composio</code>; optional.</td></tr>
 <tr><td><code>DB_ENCRYPTION_KEY</code></td><td></td><td>64 hex characters (<code>openssl rand -hex 32</code>). Encrypts the Bot Vault and synced Google Calendar events; both are off without it.</td></tr>

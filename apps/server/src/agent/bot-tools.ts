@@ -101,7 +101,7 @@ export const BOT_TOOLS: ToolDef[] = [
       description: { type: 'string', description: 'One line about what it is for' },
       instructions: { type: 'string', description: 'Standing instructions it should follow' },
       provider: { type: 'string', description: 'Provider id from list_models, e.g. "anthropic". Pass with model, or leave both out for the default.' },
-      model: { type: 'string', description: 'Model id from list_models, e.g. "claude-sonnet-4-5". Pass with provider.' },
+      model: { type: 'string', description: 'Model id from list_models, e.g. "claude-sonnet-4-6". Pass with provider.' },
     }, ['name']),
     activity: 'working',
     label: 'Adding a Bot',
