@@ -1,7 +1,7 @@
 import { createLogger } from '@orbit/logger';
 import { db, now } from './db.js';
 import { newId } from './lib/ids.js';
-import type { PushPayload, PushPlatform } from './types.js';
+import type { PushPayload, PushPlatform } from '@orbit/contracts';
 
 const log = createLogger({ scope: 'server:push' });
 

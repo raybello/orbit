@@ -1,6 +1,6 @@
 import { Cron } from 'croner';
 import { isEventSchedule } from '../triggers.js';
-import type { CalendarEvent } from '../types.js';
+import type { CalendarEvent } from '@orbit/contracts';
 
 /** How long a calendar entry is shown as lasting. Routines have no end time of their own. */
 export const EVENT_MINUTES = 30;

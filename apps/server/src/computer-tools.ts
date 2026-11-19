@@ -4,7 +4,7 @@ import { hrtime } from 'node:process';
 import { env } from './env.js';
 import { providerFor } from './computer-provider-registry.js';
 import type { ToolCtx, ToolResult } from './agent/tools.js';
-import type { ActivityKind } from './types.js';
+import type { ActivityKind } from '@orbit/contracts';
 
 /**
  * Computer control as app tools, so a Bot drives the desktop it actually has.

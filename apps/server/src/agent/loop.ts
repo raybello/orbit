@@ -3,7 +3,7 @@ import { env } from '../env.js';
 import { newId } from '../lib/ids.js';
 import { hub } from '../lib/hub.js';
 import { appendRow, emitBot, getBotRow, getLive, getRow, setLive, updateRow } from '../store.js';
-import type { ActivityKind, CardBody, MessageBody, MessageFile, ToolCallBody } from '../types.js';
+import type { ActivityKind, CardBody, MessageBody, MessageFile, ToolCallBody } from '@orbit/contracts';
 import type { ReviewPayload } from '@orbit/contracts';
 import { toolkitInfo } from '../composio.js';
 import { screenForWork } from '../computer.js';

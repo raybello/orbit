@@ -8,6 +8,7 @@ import { ReviewEditError } from './review/index.js';
 import { listCalendars, listMirror, mirrorEvent, mirrorState, setCalendarEnabled, syncCalendar, syncIfStale, syncStatus } from './calendar/mirror.js';
 import { duplicateDefaults, linkRoutine, parentTitles } from './calendar/links.js';
 import { CalendarActionError, createGoogleEvent, deleteGoogleEvent, toGoogleEvent, updateGoogleEvent } from './calendar/actions.js';
+import type { CalendarEvent } from '@orbit/contracts';
 import { buildCalendar, type CalendarRoutineRow } from './domain/calendar-view.js';
 
 /** /api/calendar and the calendar's POST /api/routines. */

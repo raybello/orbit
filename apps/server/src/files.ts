@@ -3,7 +3,7 @@ import path from 'node:path';
 import { env } from './env.js';
 import { db } from './db.js';
 import { mediaTypeFor } from './lib/mime.js';
-import type { FileEntry, FilesResponse } from './types.js';
+import type { FileEntry, FilesResponse } from '@orbit/contracts';
 
 /**
  * The unified Files view: one list over a bot's Library, the files messages attached, and the
