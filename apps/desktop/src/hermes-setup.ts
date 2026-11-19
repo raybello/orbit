@@ -13,7 +13,7 @@ import path from 'node:path';
 import { execFile as nodeExecFile } from 'node:child_process';
 import { parseDocument } from 'yaml';
 import type { HermesStatus } from './shared/api';
-import { envValue, setEnvValue } from './env-file';
+import { envValue, normalizeEol, setEnvValue } from './env-file';
 
 export const HERMES_RELEASES_URL = 'https://api.github.com/repos/NousResearch/hermes-agent/releases/latest';
 export const HERMES_DOCS_URL = 'https://github.com/NousResearch/hermes-agent#install';
@@ -543,7 +543,7 @@ export function ensureHermesApiKey(
 
   if (options.stackEnvPath) {
     try {
-      const stackText = resolved.exists(options.stackEnvPath) ? resolved.readFile(options.stackEnvPath) : '';
+      const stackText = normalizeEol(resolved.exists(options.stackEnvPath) ? resolved.readFile(options.stackEnvPath) : '');
       if (envValue(stackText, 'HERMES_KEY') !== key) {
         fs.mkdirSync(path.dirname(options.stackEnvPath), { recursive: true, mode: 0o700 });
         fs.writeFileSync(options.stackEnvPath, setEnvValue(stackText, 'HERMES_KEY', key), {

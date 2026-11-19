@@ -423,6 +423,29 @@ describe('LocalStackController: staging files', () => {
     const content = fs.readFileSync(envPath, 'utf8');
     assert.match(content, /SANDBOX_SUPERVISOR_TOKEN=[0-9a-f]{64}/);
   });
+  test('a bare-CR .env from an older install is rewritten so compose sees its secrets', async () => {
+    const h = harness({ name: 'bare-cr-env', server: selfAwareServer() });
+    fs.mkdirSync(h.stackDir, { recursive: true });
+    // What a broken install left behind: every line ended with \r alone, so the JS regexes saw
+    // SANDBOX_SUPERVISOR_TOKEN while compose read the whole block as one comment line.
+    const secrets = ['SESSION_SECRET', 'DB_ENCRYPTION_KEY', 'STACK_TOKEN', 'SANDBOX_SUPERVISOR_TOKEN'];
+    const bareCr = ['# ---- secrets the desktop app generates ----', ...secrets.map((k) => `${k}=${'a'.repeat(64)}`), 'ORBIT_WEB_PORT=8787', ''].join('\r');
+    fs.writeFileSync(path.join(h.stackDir, '.env'), bareCr);
+    fs.writeFileSync(path.join(h.stackDir, '.env.example'), IMAGES_ENV.replace(/\n/g, '\r'));
+
+    const state = await h.controller.start();
+    assert.equal(state.phase, 'ready', state.error);
+    const text = h.env();
+    assert.equal(text.includes('\r'), false, 'no CR survives');
+    for (const key of secrets) {
+      assert.ok(text.split('\n').includes(`${key}=${'a'.repeat(64)}`), `${key} keeps its value on a line of its own`);
+    }
+    assert.equal(
+      fs.readFileSync(path.join(h.stackDir, '.env.example'), 'utf8'),
+      IMAGES_ENV,
+      'the stale template is restaged from the bundle',
+    );
+  });
 });
 
 describe('LocalStackController: port collisions', () => {

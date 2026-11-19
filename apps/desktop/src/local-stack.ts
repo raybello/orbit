@@ -19,6 +19,7 @@ import {
   fillEmptySecrets,
   migrateLegacyBotCap,
   missingStackSecrets,
+  normalizeEol,
   setEnvValue,
 } from './env-file';
 import {
@@ -228,7 +229,7 @@ export class LocalStackController implements DockerStack {
 
   private envText(): string {
     try {
-      return fs.readFileSync(path.join(this.stackDir, '.env'), 'utf8');
+      return normalizeEol(fs.readFileSync(path.join(this.stackDir, '.env'), 'utf8'));
     } catch {
       return '';
     }
@@ -297,23 +298,24 @@ export class LocalStackController implements DockerStack {
    * fix to an install that already ran: a dev profile holding the source-build compose file
    * (which can never start), and any app whose bundled compose changed since it was staged (a
    * new service, a healthcheck, a fixed env default) — otherwise upgrades never reach existing
-   * stacks. `.env` is never touched, so generated secrets and the user's edits survive.
+   * stacks. `.env.example` is only a template, so it follows the bundle too (an old install could
+   * have staged one with broken line endings). `.env` is never replaced, so generated secrets and
+   * the user's edits survive.
    */
   private stageOverStale(destination: string, target: string): boolean {
-    if (target !== 'docker-compose.yml') return false;
     try {
       const staged = fs.readFileSync(destination, 'utf8');
-      if (!this.opts.packaged && SOURCE_BUILD_CONTEXT.test(staged)) return true;
-      const bundled = this.bundledCompose();
+      if (target === 'docker-compose.yml' && !this.opts.packaged && SOURCE_BUILD_CONTEXT.test(staged)) return true;
+      const bundled = this.bundledFile(target);
       return Boolean(bundled) && bundled !== staged;
     } catch {
       return false;
     }
   }
 
-  private bundledCompose(): string | null {
+  private bundledFile(target: string): string | null {
     const resources = this.resourceDir();
-    const source = STACK_FILES.find((f) => f.target === 'docker-compose.yml')
+    const source = STACK_FILES.find((f) => f.target === target)
       ?.candidates.map((name) => path.join(resources, name))
       .find((file) => fs.existsSync(file));
     if (!source) return null;
@@ -338,11 +340,13 @@ export class LocalStackController implements DockerStack {
       // after the user's first run. start() calls prepareEnv() too, but doing it here means
       // mirrorHermesKey() sees a complete file before compose ever runs.
       try {
-        const existing = fs.readFileSync(envPath, 'utf8');
+        const raw = fs.readFileSync(envPath, 'utf8');
+        const existing = normalizeEol(raw);
+        if (existing !== raw) log.info('rewrote the stack .env with LF line endings');
         const { text: filledText, generated } = fillEmptySecrets(existing);
         const { text, changed } = migrateLegacyBotCap(filledText);
         if (changed) log.info('removed the old MAX_BOTS=4 template default from the stack .env');
-        if (changed || Object.keys(generated).length > 0) {
+        if (text !== raw) {
           fs.writeFileSync(envPath, text, { encoding: 'utf8', mode: 0o600 });
           try {
             fs.chmodSync(envPath, 0o600);
@@ -363,7 +367,7 @@ export class LocalStackController implements DockerStack {
     }
     const example = path.join(this.stackDir, '.env.example');
     if (!fs.existsSync(example)) return null;
-    fs.copyFileSync(example, envPath);
+    fs.writeFileSync(envPath, normalizeEol(fs.readFileSync(example, 'utf8')), { encoding: 'utf8', mode: 0o600 });
     try {
       fs.chmodSync(envPath, 0o600);
     } catch {
@@ -381,9 +385,11 @@ export class LocalStackController implements DockerStack {
    */
   private prepareEnv(port: number): { token: string; webUrl: string } {
     const envPath = path.join(this.stackDir, '.env');
-    const existing = fs.existsSync(envPath)
-      ? fs.readFileSync(envPath, 'utf8')
-      : fs.readFileSync(path.join(this.stackDir, '.env.example'), 'utf8');
+    const existing = normalizeEol(
+      fs.existsSync(envPath)
+        ? fs.readFileSync(envPath, 'utf8')
+        : fs.readFileSync(path.join(this.stackDir, '.env.example'), 'utf8'),
+    );
 
     const filled = fillEmptySecrets(existing);
     let text = migrateLegacyBotCap(filled.text).text;
