@@ -6,19 +6,20 @@ import { SHARED_CONFIG, SHARED_ENV, dotenvText, readDotenv, readYaml, writePriva
 /** Written into the primary's home once an import has run; its presence means never again. */
 export const IMPORT_MARKER = '.orbit-imported';
 
-/** What the import may carry over: everything a copy cannot fork. */
-const IMPORTED_FILES = ['SOUL.md', 'memories', 'skills'];
+/** What the import carries over besides model keys and config. */
+const IMPORTED_FILES = ['SOUL.md', 'memories', 'skills', 'auth.json', '.anthropic_oauth.json'];
 
 export type ImportResult = 'imported' | 'already-imported' | 'no-source';
 
 /**
  * Seed the primary agent's home from a person's own Hermes home, once.
  *
- * Only what two agents can hold at the same time is copied: model keys (SHARED_ENV, so never a
- * Telegram or Discord token, which would make two agents answer one bot), the model config blocks
- * minus `mcp_servers` (those point at the person's own tools and app), the persona, memories and
- * skills. Never `auth.json` or an OAuth singleton file: Hermes refresh tokens are single-use, and a
- * copy strands one of the two holders with `invalid_grant` (see inheritSubscriptions in engine.ts).
+ * Copied: model keys (SHARED_ENV, so never a Telegram or Discord token, which would make two agents
+ * answer one bot), the model config blocks minus `mcp_servers` (those point at the person's own
+ * tools and app), the persona, memories, skills, and the subscription sign-ins (`auth.json` and the
+ * OAuth singleton file), so the primary reaches the same subscriptions from its first turn. Hermes
+ * refresh tokens are single-use: after the import, whichever copy refreshes first can leave the
+ * person's own Hermes needing to sign in again.
  *
  * Anything the primary's home already has wins over the import, and the source is only read.
  */

@@ -42,12 +42,12 @@ it: the server, in every mode (Docker, native stack, `pnpm dev`).
   external-primary path entirely (`HERMES_URL`, `HERMES_KEY`, `engine-hq.ts`, the hq lease). The
   native stack and `pnpm dev` already need a host `hermes` binary for the managed bots, so they
   keep that requirement, and they no longer share `~/.hermes` with the person's own Hermes app.
-- **Import copies what cannot fork.** Model keys (`SHARED_ENV` only, never messaging tokens such as
-  Telegram or Discord, which would make two agents answer one bot), the `SHARED_CONFIG` blocks
-  minus `mcp_servers`, `SOUL.md`, `memories/`, `skills/`. Never `auth.json`: Hermes OAuth refresh
-  tokens are single-use, and a copy would strand either the host app or the stack primary with
-  `invalid_grant` (see `inheritSubscriptions`). Subscription sign-ins go through the in-app engine
-  login instead.
+- **Import copies the subscription sign-ins too.** Model keys (`SHARED_ENV` only, never messaging
+  tokens such as Telegram or Discord, which would make two agents answer one bot), the
+  `SHARED_CONFIG` blocks minus `mcp_servers`, `SOUL.md`, `memories/`, `skills/`, `auth.json` and the
+  OAuth singleton file. The primary reaches the person's Claude or ChatGPT subscription from its
+  first turn. Hermes refresh tokens are single-use, so whichever copy refreshes first can leave the
+  person's own Hermes app needing to sign in again.
 - **Import runs once.** A marker file in the primary's home records it. In Docker the desktop app
   runs it as a one-shot container (`~/.hermes` mounted read-only only for that run) before
   `compose up`, so the stack itself mounts nothing from the host.

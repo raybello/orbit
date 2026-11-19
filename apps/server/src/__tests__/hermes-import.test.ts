@@ -51,13 +51,13 @@ test('the import copies model keys, model config, persona, memories and skills',
   assert.equal(fs.readFileSync(path.join(dest, 'skills', 'triage', 'SKILL.md'), 'utf8'), '# Triage\n');
 });
 
-test('the import never carries a sign-in grant, a messaging token or the person\'s tools', () => {
+test('the import carries sign-ins but never a messaging token or the person\'s tools', () => {
   const src = hostHome();
   const dest = path.join(root, 'primary-b');
   importHostHermes(src, dest);
 
-  assert.ok(!fs.existsSync(path.join(dest, 'auth.json')), 'single-use OAuth grants would fork the sign-in');
-  assert.ok(!fs.existsSync(path.join(dest, '.anthropic_oauth.json')));
+  assert.ok(fs.existsSync(path.join(dest, 'auth.json')), 'subscription sign-ins come across');
+  assert.ok(fs.existsSync(path.join(dest, '.anthropic_oauth.json')));
   const vars = readDotenv(path.join(dest, '.env'));
   for (const k of ['TELEGRAM_BOT_TOKEN', 'DISCORD_BOT_TOKEN', 'API_SERVER_KEY']) assert.equal(vars[k], undefined, `${k} must stay behind`);
   const cfg = readYaml(path.join(dest, 'config.yaml'));
