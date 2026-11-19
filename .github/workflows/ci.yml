@@ -29,6 +29,9 @@ jobs:
 
       - run: pnpm install --frozen-lockfile
 
+      - name: Check generated docs are up to date
+        run: python3 scripts/build-docs.py && git diff --exit-code docs/
+
       - name: Typecheck every package
         run: pnpm run typecheck
 
