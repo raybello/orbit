@@ -21,7 +21,7 @@ import { asBlock, engineHome, engineInfo, engineKind, forgetEngineOptions, manag
 import { listMemories } from './engine-memory.js';
 import { idleConfig, viewerCount } from './idle.js';
 import { optionalBody, SkillBodySchema, EngineChoiceSchema, EngineLoginSchema, FileDownloadSchema } from './api/schemas.js';
-import type { BotEngineAuthRow, LibraryFile, Skill } from './types.js';
+import type { BotEngineAuthRow, LibraryFile, Skill } from '@orbit/contracts';
 import type { BotRow } from './infra/bot-repository.js';
 import YAML from 'yaml';
 

@@ -6,7 +6,7 @@ import { appendRow } from './store.js';
 import { parseUrlPattern, urlMatches } from './domain/url-pattern.js';
 import { findVaultEntry, openVaultSecret, parseLabel, parseStoredUrlPattern, VaultError, vaultStatus, type VaultEntryRow } from './vault.js';
 import type { ToolCtx, ToolResult } from './agent/tools.js';
-import type { ActivityKind } from './types.js';
+import type { ActivityKind } from '@orbit/contracts';
 
 /**
  * The Vault as a bot uses it: `vault_lookup` fills a saved login in on the bot's own screen, and

@@ -1,4 +1,4 @@
-import type { ServerEvent } from '../types.js';
+import type { ServerEvent } from '@orbit/contracts';
 
 type Listener = (ev: ServerEvent) => void;
 
