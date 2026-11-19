@@ -8,7 +8,7 @@ import { PageShell } from './PageShell';
 import { Segmented } from './config/ui';
 import { CreateCalendarEventModal, type DuplicateFrom } from './modals/CreateCalendarEventModal';
 import { GoogleEventModal, type GoogleEventIntent } from './modals/GoogleEventModal';
-import { daysOf } from '../lib/eventTime';
+import { daysOf, rangeFor, type CalendarRange } from '@orbit/domain';
 import '../styles/calendar.css';
 
 type Mode = 'month' | 'week' | 'day';
@@ -21,8 +21,6 @@ type Status = 'loading' | 'ready' | 'error';
 const pad2 = (n: number) => (n < 10 ? `0${n}` : `${n}`);
 const startOfDay = (d: Date) => new Date(d.getFullYear(), d.getMonth(), d.getDate());
 const addDays = (d: Date, n: number) => new Date(d.getFullYear(), d.getMonth(), d.getDate() + n);
-const startOfWeek = (d: Date) => addDays(startOfDay(d), -d.getDay());
-const startOfMonth = (d: Date) => new Date(d.getFullYear(), d.getMonth(), 1);
 
 /** Local calendar day key, e.g. 2026-11-04. */
 const dayKey = (d: Date) => `${d.getFullYear()}-${pad2(d.getMonth() + 1)}-${pad2(d.getDate())}`;
@@ -31,21 +29,7 @@ const sameDay = (a: Date, b: Date) => dayKey(a) === dayKey(b);
 const fmtTime = (iso: string) => new Date(iso).toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit' });
 const fmtLongDay = (d: Date) => d.toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric', year: 'numeric' });
 
-interface Range { start: Date; end: Date; days: Date[] }
-
-function rangeFor(mode: Mode, cursor: Date): Range {
-  if (mode === 'day') {
-    const start = startOfDay(cursor);
-    return { start, end: addDays(start, 1), days: [start] };
-  }
-  if (mode === 'week') {
-    const start = startOfWeek(cursor);
-    return { start, end: addDays(start, 7), days: Array.from({ length: 7 }, (_, i) => addDays(start, i)) };
-  }
-  // Month: always six weeks so the grid height never jumps between months.
-  const start = startOfWeek(startOfMonth(cursor));
-  return { start, end: addDays(start, 42), days: Array.from({ length: 42 }, (_, i) => addDays(start, i)) };
-}
+type Range = CalendarRange;
 
 /** "November 2026", "Nov 8 – 14, 2026", "Saturday, November 14, 2026". */
 function rangeLabel(mode: Mode, range: Range, cursor: Date): string {

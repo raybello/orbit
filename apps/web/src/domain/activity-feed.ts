@@ -1,16 +1,11 @@
 import type { ActivityItem, Bot, Row } from '@orbit/contracts';
 import { cardPreview } from './card-display';
+import { activityPreview } from '@orbit/domain';
+export { PREVIEW_CHARS, activityPreview } from '@orbit/domain';
 
 export const ACTIVITY_LIMIT = 200;
-/** A preview is one line in the feed; the cut (and its ellipsis) is pinned at this width by tests. */
-export const PREVIEW_CHARS = 110;
 /** `activitySeen` is pruned past this many keys so it cannot grow without bound. */
 export const SEEN_LIMIT = 1000;
-
-export function activityPreview(text: string, max = PREVIEW_CHARS): string {
-  const flat = text.replace(/\s+/g, ' ').trim();
-  return flat.length > max ? `${flat.slice(0, max).trimEnd()}…` : flat;
-}
 
 export const botNameFor = (bots: Bot[], botId: string) => bots.find((b) => b.id === botId)?.name ?? botId;
 

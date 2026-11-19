@@ -376,6 +376,9 @@ importers:
       '@orbit/contracts':
         specifier: workspace:*
         version: link:../../packages/contracts
+      '@orbit/domain':
+        specifier: workspace:*
+        version: link:../../packages/domain
       '@orbit/ui-tokens':
         specifier: workspace:*
         version: link:../../packages/ui-tokens
@@ -437,6 +440,16 @@ importers:
       typescript:
         specifier: ^5.7.2
         version: 5.9.3
+
+  packages/domain:
+    dependencies:
+      '@orbit/contracts':
+        specifier: workspace:*
+        version: link:../contracts
+    devDependencies:
+      typescript:
+        specifier: ^5.7.2
+        version: 5.8.3
 
   packages/logger:
     devDependencies:

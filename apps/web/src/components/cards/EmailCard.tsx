@@ -1,36 +1,15 @@
 import { useEffect, useRef, useState } from 'react';
-import type { CardBody, EmailEdits, EmailReview, Row } from '@orbit/contracts';
+import type { CardBody, EmailReview, Row } from '@orbit/contracts';
+import { emailFieldsOf, emailEditsOf, splitAddresses, joinAddresses, type EmailFields } from '@orbit/domain';
 import { api } from '../../lib/api';
 import { Icon } from '../Icon';
 import { ToolkitLogo } from '../ToolkitLogo';
-
-/**
- * The Email card. Two places use it:
- *  - a Gmail draft the bot wrote (`draft` card with `email`): edit, save, send or discard it here;
- *  - a send the bot asked to make (`approval` card with an email `review`): edit it, then send or don't.
- * Either way the email is shown in full, and what is sent is what the card shows.
- */
 
 type DraftCardBody = Extract<CardBody, { card: 'draft' }>;
 type ApprovalCardBody = Extract<CardBody, { card: 'approval' }>;
 
 const GMAIL_LOGO = 'https://logos.composio.dev/api/gmail';
-const split = (s: string) => s.split(',').map((x) => x.trim()).filter(Boolean);
-const join = (a: string[]) => a.join(', ');
-
-interface Fields { to: string; cc: string; bcc: string; subject: string; body: string }
-const fieldsOf = (e: EmailReview): Fields => ({ to: join(e.to), cc: join(e.cc), bcc: join(e.bcc), subject: e.subject, body: e.body });
-
-/** Only what changed, in the shape the server checks. */
-function editsOf(e: EmailReview, f: Fields): EmailEdits | undefined {
-  const out: EmailEdits = {};
-  if (join(split(f.to)) !== join(e.to)) out.to = split(f.to);
-  if (join(split(f.cc)) !== join(e.cc)) out.cc = split(f.cc);
-  if (join(split(f.bcc)) !== join(e.bcc)) out.bcc = split(f.bcc);
-  if (f.subject !== e.subject && e.action !== 'reply') out.subject = f.subject;
-  if (f.body !== e.body) out.body = f.body;
-  return Object.keys(out).length ? out : undefined;
-}
+type Fields = EmailFields;
 
 function useBusy() {
   const [busy, setBusy] = useState<string | null>(null);
@@ -99,12 +78,12 @@ export function DraftEmailCard({ row, body }: { row: Row; body: DraftCardBody })
   const email = body.email!;
   const pending = body.status === 'pending';
   const [editing, setEditing] = useState(false);
-  const [fields, setFields] = useState<Fields>(() => fieldsOf(email));
+  const [fields, setFields] = useState<Fields>(() => emailFieldsOf(email));
   const { busy, error, run } = useBusy();
-  useEffect(() => { if (!editing) setFields(fieldsOf(email)); }, [email, editing]);
+  useEffect(() => { if (!editing) setFields(emailFieldsOf(email)); }, [email, editing]);
 
   const act = (action: 'save' | 'send' | 'discard') => run(action, async () => {
-    await api.draftAction(row.botId, row.seq, action, action === 'discard' ? undefined : editsOf(email, fields));
+    await api.draftAction(row.botId, row.seq, action, action === 'discard' ? undefined : emailEditsOf(email, fields));
     setEditing(false);
   });
 
@@ -116,12 +95,12 @@ export function DraftEmailCard({ row, body }: { row: Row; body: DraftCardBody })
         <div className="card__actions">
           <button type="button" className="btn btn--secondary" disabled={!!busy} onClick={() => void act('discard')}>{busy === 'discard' ? 'Discarding…' : 'Discard'}</button>
           {editing && <button type="button" className="btn btn--secondary" disabled={!!busy} onClick={() => void act('save')}>{busy === 'save' ? 'Saving…' : 'Save draft'}</button>}
-          <button type="button" className="btn btn--primary" disabled={!!busy || !split(fields.to).length} onClick={() => void act('send')}>{busy === 'send' ? 'Sending…' : 'Send'}</button>
+          <button type="button" className="btn btn--primary" disabled={!!busy || !splitAddresses(fields.to).length} onClick={() => void act('send')}>{busy === 'send' ? 'Sending…' : 'Send'}</button>
         </div>
       ) : (
         <div className={`card__outcome is-${body.status}`}>
           <Icon name={body.status === 'sent' ? 'check' : 'close'} size={12} opacity={0.7} />
-          {body.status === 'sent' ? `Sent to ${join(email.to)}` : 'Discarded'}
+          {body.status === 'sent' ? `Sent to ${joinAddresses(email.to)}` : 'Discarded'}
         </div>
       )}
       {error && <div className="card__error" role="alert">{error}</div>}
@@ -136,7 +115,7 @@ export function ApprovalEmailCard({ body }: { body: ApprovalCardBody }) {
   const email = body.review as EmailReview;
   const pending = body.status === 'pending';
   const [editing, setEditing] = useState(false);
-  const [fields, setFields] = useState<Fields>(() => fieldsOf(email));
+  const [fields, setFields] = useState<Fields>(() => emailFieldsOf(email));
   const { busy, error, run } = useBusy();
   const ping = useRef<ReturnType<typeof setInterval> | null>(null);
 
@@ -149,7 +128,7 @@ export function ApprovalEmailCard({ body }: { body: ApprovalCardBody }) {
     return () => { if (ping.current) clearInterval(ping.current); };
   }, [editing, pending, body.approvalId]);
 
-  const decide = (d: 'allow' | 'always' | 'deny') => run(d, () => api.approve(body.approvalId, d, d === 'deny' ? undefined : editsOf(email, fields)));
+  const decide = (d: 'allow' | 'always' | 'deny') => run(d, () => api.approve(body.approvalId, d, d === 'deny' ? undefined : emailEditsOf(email, fields)));
   const verb = email.action === 'reply' ? 'reply' : email.action === 'forward' ? 'forward this' : 'send this email';
   const showAlways = !body.rule && (body.alwaysFor || body.offerAlways !== false);
   const outcome: Record<string, string> = { allowed: body.edited ? 'Sent with your changes' : 'Sent', always: 'Sent, and always allowed', denied: 'Not sent', expired: 'Expired' };
@@ -157,7 +136,7 @@ export function ApprovalEmailCard({ body }: { body: ApprovalCardBody }) {
   return (
     <div className={`card email-card${pending ? '' : ' is-resolved'}`}>
       <Head title={body.title} sub={email.action === 'send_draft' ? 'Gmail draft' : 'Gmail'} editing={editing} canEdit={pending && email.editable} onEdit={() => setEditing(true)} />
-      <EmailBody email={email} fields={pending ? fields : fieldsOf(email)} editing={editing && pending} onChange={setFields} idBase={`apr-${body.approvalId}`} />
+      <EmailBody email={email} fields={pending ? fields : emailFieldsOf(email)} editing={editing && pending} onChange={setFields} idBase={`apr-${body.approvalId}`} />
       {body.rule && <div className="card__rule">Asked because of your rule “{body.rule.description}”</div>}
       {pending ? (
         <div className="card__actions">
@@ -167,8 +146,8 @@ export function ApprovalEmailCard({ body }: { body: ApprovalCardBody }) {
               {body.alwaysFor ? `Always allow for ${body.alwaysFor.botName}` : 'Always allow'}
             </button>
           )}
-          <button type="button" className="btn btn--primary" disabled={!!busy || !split(fields.to).length} onClick={() => void decide('allow')}>
-            {editsOf(email, fields) ? 'Send with changes' : 'Send'}
+          <button type="button" className="btn btn--primary" disabled={!!busy || !splitAddresses(fields.to).length} onClick={() => void decide('allow')}>
+            {emailEditsOf(email, fields) ? 'Send with changes' : 'Send'}
           </button>
         </div>
       ) : (

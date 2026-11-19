@@ -1,5 +1,6 @@
 import { useMemo, useState } from 'react';
 import type { CreateRoutineRequest, DuplicateDefaults } from '@orbit/contracts';
+import { looksLikeCron, CRON_PRESETS, TIMINGS } from '@orbit/domain';
 import { api } from '../../lib/api';
 import { useStore } from '../../store';
 import { Field, Segmented } from '../config/ui';
@@ -8,14 +9,7 @@ import { Modal } from './Modal';
 
 type EventType = 'one_time' | 'recurring';
 
-interface CronPreset { value: string; label: string; cron: string }
-
-const PRESETS: CronPreset[] = [
-  { value: 'daily', label: 'Daily 09:00', cron: '0 9 * * *' },
-  { value: 'weekly', label: 'Weekly Mon 09:00', cron: '0 9 * * 1' },
-  { value: 'weekdays', label: 'Weekdays 09:00', cron: '0 9 * * 1-5' },
-  { value: 'custom', label: 'Custom', cron: '' },
-];
+const PRESETS = CRON_PRESETS;
 
 const pad2 = (n: number) => (n < 10 ? `0${n}` : `${n}`);
 
@@ -24,21 +18,10 @@ function toLocalInput(d: Date): string {
   return `${d.getFullYear()}-${pad2(d.getMonth() + 1)}-${pad2(d.getDate())}T${pad2(d.getHours())}:${pad2(d.getMinutes())}`;
 }
 
-/** Cron needs five (or six) whitespace-separated fields. */
-const looksLikeCron = (s: string) => /^\s*\S+(\s+\S+){4,5}\s*$/.test(s);
-
 /** Made from a Google event: its key and the defaults the server suggested. */
 export interface DuplicateFrom { key: string; defaults: DuplicateDefaults }
 
 interface Props { initialDate: Date; onClose: () => void; onSaved: () => void; duplicate?: DuplicateFrom }
-
-/** When the Orbit event runs, relative to the Google event it was made from. */
-const TIMINGS: { value: string; label: string; at: (start: Date) => Date }[] = [
-  { value: 'same', label: 'Same time', at: (s) => s },
-  { value: '15m', label: '15 min before', at: (s) => new Date(s.getTime() - 15 * 60_000) },
-  { value: '1h', label: '1 hour before', at: (s) => new Date(s.getTime() - 60 * 60_000) },
-  { value: 'eve', label: '9:00 the day before', at: (s) => new Date(s.getFullYear(), s.getMonth(), s.getDate() - 1, 9, 0) },
-];
 
 export function CreateCalendarEventModal({ initialDate, onClose, onSaved, duplicate }: Props) {
   const bots = useStore((s) => s.bots);
