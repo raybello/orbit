@@ -3,7 +3,7 @@ import path from 'node:path';
 import { hrtime } from 'node:process';
 import { env } from './env.js';
 import { providerFor } from './computer-provider-registry.js';
-import type { ToolCtx, ToolResult } from './agent/tools.js';
+import type { ToolCtx, ToolResult } from './agent/tools/index.js';
 import type { ActivityKind } from '@orbit/contracts';
 
 /**

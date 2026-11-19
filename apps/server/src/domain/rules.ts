@@ -1,6 +1,6 @@
 import { z } from 'zod';
 import type { BotRule, ComposioHint, RuleAction, RulePattern } from '@orbit/contracts';
-import type { Decision } from '../agent/tools.js';
+import type { Decision } from '../agent/tools/index.js';
 import { slugInToolkit } from './connections.js';
 
 /**

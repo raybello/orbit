@@ -12,7 +12,7 @@ process.env.COMPOSIO_API_KEY = '';
 const { composioIO } = await import('../composio.js');
 const { applyReviewEdits, buildReview, ReviewEditError } = await import('../review/index.js');
 const { readDraft } = await import('../review/email.js');
-const { innerOutcome } = await import('../agent/tools.js');
+const { innerOutcome } = await import('../agent/tools/index.js');
 
 after(() => cleanupTmpEnv());
 

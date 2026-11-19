@@ -3,7 +3,7 @@ import { db, now } from './db.js';
 import { appendRow, toRoutine, type RoutineRow } from './store.js';
 import { newId } from './lib/ids.js';
 import type { Routine } from '@orbit/contracts';
-import type { Trigger } from './agent/loop.js';
+import type { Trigger } from './core/turn-queue.js';
 import { isEventSchedule, setEventRoutineEnabled } from './triggers.js';
 import { routinePrompt, scheduledRunAllowed } from './initiative-store.js';
 import { parentContext, setLinkScheduler } from './calendar/links.js';

@@ -884,7 +884,7 @@ export async function* streamRelay(botId: string, callId: string, text: string, 
 
   const [{ appendRow, getBotRow: botRow }, { enqueue }, { db }] = await Promise.all([
     import('./store.js'),
-    import('./agent/loop.js'),
+    import('./core/turn-queue.js'),
     import('./db.js'),
   ]);
   const bot = botRow(botId);

@@ -185,7 +185,7 @@ export class DockerComputerProvider implements ComputerProvider {
   /** Of these bots, the one to give way: nobody watching, not working, frozen first, then least recently used. */
   private async idlest(botIds: string[]): Promise<string | null> {
     const { botViewerCount } = await import('./idle.js');
-    const { isBotBusy } = await import('./agent/loop.js');
+    const { isBotBusy } = await import('./core/turn-queue.js');
     const rows = dockerComputers().filter((r) => botIds.includes(r.bot_id));
     const candidates = rows.filter((r) => botViewerCount(r.bot_id) === 0 && !isBotBusy(r.bot_id));
     if (!candidates.length) return null;
@@ -507,7 +507,7 @@ export function startDockerIdleSuspender(): () => void {
     sweeping = true;
     try {
       const { botViewerCount } = await import('./idle.js');
-      const { isBotBusy } = await import('./agent/loop.js');
+      const { isBotBusy } = await import('./core/turn-queue.js');
       for (const row of dockerComputers()) {
         if (row.state !== 'running') continue;
         if (botViewerCount(row.bot_id) > 0 || isBotBusy(row.bot_id)) continue;
