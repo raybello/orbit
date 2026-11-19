@@ -273,9 +273,12 @@ export function Transcript({ bot, rows, live, loaded }: Props) {
             case 'divider':
               return <div key={it.key} className="divider">{dividerLabel(it.ts)}</div>;
             case 'steps':
-              return <Steps key={it.key} item={it} active={it.key === activeKey} open={it.key === openKey} extra={extraSteps} />;
+              return <div key={it.key} className="lane"><Steps item={it} active={it.key === activeKey} open={it.key === openKey} extra={extraSteps} /></div>;
             case 'row':
-              return <SystemRow key={it.key} row={it.row} />;
+              // Events mark the timeline, like dividers; everything else a bot produces sits in its text column.
+              return it.row.body.type === 'event'
+                ? <SystemRow key={it.key} row={it.row} />
+                : <div key={it.key} className="lane"><SystemRow row={it.row} /></div>;
             case 'group': {
               const mine = it.side === 'right';
               const name = mine ? 'You' : it.from?.kind === 'bot' ? it.from.name : displayName(bot);
