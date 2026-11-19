@@ -13,7 +13,7 @@ import { db } from './db.js';
 import { env } from './env.js';
 import { DEFAULT_PATH, defaultHermesLookup, hermesBin, resolveHermesBin } from './hermes-bin.js';
 import type { BotRow } from './infra/bot-repository.js';
-import type { EngineInfo, EngineProvider } from './types.js';
+import type { EngineInfo, EngineProvider } from '@orbit/contracts';
 
 /**
  * Every bot is run by a Hermes agent.

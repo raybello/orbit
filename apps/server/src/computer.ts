@@ -6,7 +6,7 @@ import { cdpPortFor, dressScreen, resetScreen, undressScreen, type DeskBot } fro
 import { box } from './box.js';
 import type { ComputerProvider, ComputerRef, ScreenShot, VncStream } from './computer-provider.js';
 import type { Secret } from './lib/secret-box.js';
-import type { ComputerState } from './types.js';
+import type { ComputerState } from '@orbit/contracts';
 import { websocketVncStream } from './lib/vnc-stream.js';
 
 /**

@@ -31,7 +31,7 @@ import { deleteEventTrigger } from './triggers.js';
 import { dispatchRoomMessage } from './agent/rooms.js';
 import { voiceApi } from './voice.js';
 import { templatesApi } from './routes-templates.js';
-import type { Toolkit } from './types.js';
+import type { Toolkit } from '@orbit/contracts';
 import { TeamFullError } from './core/bot-service.js';
 import { BotAdminError, createBotFor, deleteBotFor, setBotPrimary, updateBotFor } from './bot-admin.js';
 import { decideCard, IllegalCardMoveError } from './core/card-service.js';
