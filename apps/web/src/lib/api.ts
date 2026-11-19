@@ -1,4 +1,4 @@
-import type { Bot, CalendarResponse, ComputersResponse, CreateRoutineRequest, FileEntry, FilesResponse, ComputerState, LiveState, Routine, Row, SkillEntry, SkillsResponse, Toolkit, User, EventEdits, EventFields, GoogleCalendarInfo, DuplicateDefaults } from '@orbit/contracts';
+import type { Bot, CalendarResponse, ComputersResponse, CreateRoutineRequest, FileEntry, FilesResponse, ComputerState, LiveState, ModelChoice, ModelsResponse, Routine, Row, SkillEntry, SkillsResponse, Toolkit, User, EventEdits, EventFields, GoogleCalendarInfo, DuplicateDefaults } from '@orbit/contracts';
 
 export class ApiError extends Error {
   constructor(public status: number, message: string) { super(message); }
@@ -54,7 +54,9 @@ export const api = {
   logout: () => req<{ ok: true }>('POST', '/auth/logout'),
 
   bots: () => req<{ bots: Bot[]; live: LiveState[] }>('GET', '/bots'),
-  createBot: (b: Pick<Bot, 'name' | 'avatarShape' | 'avatarColor' | 'mode'>) => req<{ bot: Bot }>('POST', '/bots', b),
+  createBot: (b: Pick<Bot, 'name' | 'avatarShape' | 'avatarColor' | 'mode'> & (ModelChoice | object)) => req<{ bot: Bot }>('POST', '/bots', b),
+  /** The models a new Bot can run: the primary agent's connected providers, and the default. */
+  models: () => req<ModelsResponse>('GET', '/models'),
   markRead: (id: string) => req<{ ok: true }>('POST', `/bots/${id}/read`),
   rows: (id: string) => req<{ generation: number; rows: Row[] }>('GET', `/bots/${id}/rows`),
   send: (id: string, text: string, files?: { path: string; filename: string; mediaType: string }[]) =>
