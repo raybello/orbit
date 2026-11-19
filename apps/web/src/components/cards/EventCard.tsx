@@ -1,14 +1,10 @@
 import { useEffect, useState } from 'react';
-import type { CardBody, EventEdits, EventFields, EventReview } from '@orbit/contracts';
+import type { CardBody, EventFields, EventReview } from '@orbit/contracts';
+import { SCOPES, whenOf, eventEditsOf, splitAddresses } from '@orbit/domain';
+export { whenOf } from '@orbit/domain';
 import { api } from '../../lib/api';
 import { Icon } from '../Icon';
 import { ToolkitLogo } from '../ToolkitLogo';
-
-/**
- * The Event card: a Google Calendar change waiting for the person. It shows the event as it will be
- * (and, for a change, what it was), asks which events a change to a repeating event applies to, and
- * whether guests are told. Creates and changes can be edited before allowing.
- */
 
 type ApprovalCardBody = Extract<CardBody, { card: 'approval' }>;
 const CAL_LOGO = 'https://logos.composio.dev/api/googlecalendar';
@@ -17,40 +13,6 @@ const EDIT_PING_MS = 5 * 60_000;
 const ACTION_LABEL: Record<EventReview['action'], string> = {
   create: 'New event', update: 'Change to an event', delete: 'Delete an event', quick_add: 'Quick add', remove_attendee: 'Remove a guest', move: 'Move to another calendar',
 };
-const SCOPES: { value: 'this' | 'following' | 'all'; label: string }[] = [
-  { value: 'this', label: 'This event' },
-  { value: 'following', label: 'This and following' },
-  { value: 'all', label: 'All events' },
-];
-
-/** "2026-11-19T15:00" read as wall-clock time (no timezone conversion: it already is the event's). */
-const asDate = (local: string) => new Date(`${local.length === 10 ? `${local}T00:00` : local}:00Z`);
-const day = (local: string) => asDate(local).toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric', timeZone: 'UTC' });
-const time = (local: string) => asDate(local).toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit', timeZone: 'UTC' });
-
-/** "Thu, Nov 19 · 3:00 PM – 3:30 PM", "Thu, Dec 24 – Fri, Dec 25 · All day". */
-export function whenOf(f: Pick<EventFields, 'start' | 'end' | 'allDay'>): string {
-  if (!f.start) return 'No time set';
-  if (f.allDay) return `${day(f.start)}${f.end && f.end.slice(0, 10) !== f.start.slice(0, 10) ? ` – ${day(f.end)}` : ''} · All day`;
-  const sameDay = f.end.slice(0, 10) === f.start.slice(0, 10);
-  return `${day(f.start)} · ${time(f.start)} – ${sameDay ? '' : `${day(f.end)} `}${time(f.end)}`;
-}
-
-const split = (s: string) => s.split(',').map((x) => x.trim()).filter(Boolean);
-
-/** Only what the person changed, in the shape the server checks. */
-function editsOf(review: EventReview, f: EventFields | undefined, scope: string | undefined, notify: boolean): EventEdits | undefined {
-  const out: EventEdits = {};
-  if (f && review.fields) {
-    for (const k of ['summary', 'description', 'location', 'start', 'end', 'allDay', 'timezone', 'meet'] as const) {
-      if (f[k] !== review.fields[k]) (out as Record<string, unknown>)[k] = f[k];
-    }
-    if (f.attendees.join(',') !== review.fields.attendees.join(',')) out.attendees = f.attendees;
-  }
-  if (scope && review.recurring && scope !== review.recurring.scope) out.scope = scope as EventEdits['scope'];
-  if (notify !== review.notifyGuests) out.notifyGuests = notify;
-  return Object.keys(out).length ? out : undefined;
-}
 
 function Line({ icon, children, was }: { icon: string; children: React.ReactNode; was?: string }) {
   return (
@@ -110,7 +72,7 @@ export function EventEditor({ f, onChange, idBase }: { f: EventFields; onChange:
         <input id={`${idBase}-where`} className="text-input" value={f.location} onChange={(e) => put('location', e.target.value)} />
       </label>
       <label className="event-card__field" htmlFor={`${idBase}-guests`}><span>Guests</span>
-        <input id={`${idBase}-guests`} className="text-input" value={f.attendees.join(', ')} onChange={(e) => put('attendees', split(e.target.value))} placeholder="name@example.com, …" />
+        <input id={`${idBase}-guests`} className="text-input" value={f.attendees.join(', ')} onChange={(e) => put('attendees', splitAddresses(e.target.value))} placeholder="name@example.com, …" />
       </label>
       <label className="event-card__check" htmlFor={`${idBase}-meet`}>
         <input id={`${idBase}-meet`} type="checkbox" checked={f.meet} onChange={(e) => put('meet', e.target.checked)} /> Add a Google Meet link
@@ -142,7 +104,7 @@ export function ApprovalEventCard({ body }: { body: ApprovalCardBody }) {
     return () => clearInterval(t);
   }, [editing, pending, body.approvalId]);
 
-  const edits = editsOf(review, fields, scope, notify);
+  const edits = eventEditsOf(review, fields, scope, notify);
   const decide = async (d: 'allow' | 'always' | 'deny') => {
     setBusy(d); setError(null);
     try { await api.approve(body.approvalId, d, d === 'deny' ? undefined : edits); } catch (e) { setError((e as Error).message || 'Something went wrong'); } finally { setBusy(null); }

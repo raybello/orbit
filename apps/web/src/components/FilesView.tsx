@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import type { Bot, FileEntry } from '@orbit/contracts';
+import { kindOf, type FileKind } from '@orbit/domain';
 import { api } from '../lib/api';
 import { useStore } from '../store';
 import { BotAvatarFor } from '../avatar/BotAvatar';
@@ -12,7 +13,6 @@ import '../styles/files.css';
 
 type FileType = 'all' | 'library' | 'attachment' | 'workspace';
 type ViewMode = 'grid' | 'list';
-type FileKind = 'image' | 'audio' | 'video' | 'pdf' | 'code' | 'other';
 
 const PAGE_SIZE = 50;
 /** Text previews stop at 200 KB; bigger files keep downloading instead of hanging the tab. */
@@ -34,19 +34,6 @@ const KIND_ICON: Record<FileKind, IconName> = {
   code: 'edit',
   other: 'paperclip',
 };
-
-/** Extensions worth showing as text even when the server reports application/octet-stream. */
-const TEXT_EXT = /\.(?:txt|md|markdown|mdx|log|csv|tsv|json|jsonl|ndjson|ya?ml|toml|ini|cfg|conf|env|xml|html?|css|scss|less|jsx?|mjs|cjs|tsx?|py|rb|go|rs|java|kt|kts|swift|c|h|cc|cpp|hpp|cs|php|pl|sh|bash|zsh|fish|sql|graphql|gql|tex|lua|r|dart|vue|svelte)$/i;
-
-function kindOf(entry: FileEntry): FileKind {
-  const media = (entry.mediaType || '').toLowerCase();
-  if (media.startsWith('image/')) return 'image';
-  if (media.startsWith('audio/')) return 'audio';
-  if (media.startsWith('video/')) return 'video';
-  if (media === 'application/pdf') return 'pdf';
-  if (media.startsWith('text/') || /(?:json|javascript|typescript|xml|yaml|x-sh|x-python|sql)/.test(media) || TEXT_EXT.test(entry.filename)) return 'code';
-  return 'other';
-}
 
 function readView(): ViewMode {
   try { return localStorage.getItem(LS_VIEW) === 'list' ? 'list' : 'grid'; } catch { return 'grid'; }

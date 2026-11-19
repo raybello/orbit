@@ -2,7 +2,8 @@ import { useMemo, useState } from 'react';
 import type { EventEdits, EventFields, GoogleCalendarEvent, GoogleCalendarInfo } from '@orbit/contracts';
 import { api } from '../../lib/api';
 import { fieldsOfGoogle } from '../../lib/eventTime';
-import { EventEditor, whenOf } from '../cards/EventCard';
+import { whenOf } from '@orbit/domain';
+import { EventEditor } from '../cards/EventCard';
 import { Modal } from './Modal';
 
 /**

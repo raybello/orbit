@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react';
-import type { CardBody, DocEdits, DocReview, SheetEdits, SheetReview, WorkspaceFile } from '@orbit/contracts';
+import type { CardBody, DocReview, SheetReview, WorkspaceFile } from '@orbit/contracts';
+import { OUTCOME, sheetEditsOf, docEditsOf } from '@orbit/domain';
 import { api } from '../../lib/api';
 import { Icon } from '../Icon';
 import { ToolkitLogo } from '../ToolkitLogo';
@@ -32,8 +33,6 @@ function useDecision(body: ApprovalCardBody, editing: boolean) {
   return { busy, error, decide };
 }
 
-const OUTCOME: Record<string, string> = { allowed: 'Done', always: 'Done, and always allowed', denied: 'Not done', expired: 'Expired' };
-
 function Footer({ body, busy, edited, onDecide, error }: { body: ApprovalCardBody; busy: string | null; edited: boolean; onDecide: (d: 'allow' | 'always' | 'deny') => void; error: string | null }) {
   const showAlways = !body.rule && (body.alwaysFor || body.offerAlways !== false);
   return (
@@ -65,8 +64,7 @@ export function SheetReviewCard({ body }: { body: ApprovalCardBody }) {
   const [cells, setCells] = useState<Record<string, string>>({});
   const editing = Object.keys(cells).length > 0;
   const { busy, error, decide } = useDecision(body, editing);
-  const changed = Object.fromEntries(Object.entries(cells).filter(([k, v]) => review.changes.find((c) => c.cell === k)?.after !== v));
-  const edits: SheetEdits | undefined = Object.keys(changed).length ? { cells: changed } : undefined;
+  const edits = sheetEditsOf(review, cells);
 
   return (
     <div className={`card ws-card${pending ? '' : ' is-resolved'}`}>
@@ -115,11 +113,8 @@ export function DocReviewCard({ body }: { body: ApprovalCardBody }) {
   const [markdown, setMarkdown] = useState(review.markdown);
   const [editing, setEditing] = useState(false);
   const { busy, error, decide } = useDecision(body, editing);
-  const edits: DocEdits = {};
-  if (insert !== review.insert && insert !== undefined) edits.insert = insert;
-  if (replaceWith !== review.replace?.with && replaceWith !== undefined) edits.replaceWith = replaceWith;
-  if (markdown !== review.markdown && markdown !== undefined) edits.markdown = markdown;
-  const hasEdits = Object.keys(edits).length > 0;
+  const edits = docEditsOf(review, insert, replaceWith, markdown);
+  const hasEdits = !!edits;
   const canEdit = pending && review.editable;
 
   return (
