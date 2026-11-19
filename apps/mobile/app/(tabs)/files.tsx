@@ -17,7 +17,8 @@ import type { FileEntry } from '@orbit/contracts';
 import { FileRow } from '../../components/FileRow';
 import { FileViewer } from '../../components/FileViewer';
 import { Chip, ScreenHeader, StateBlock } from '../../components/ui';
-import { fileKind, canPreview, currentFileUrl, openDownloadInBrowser, shareFile } from '../../lib/files';
+import { kindOf } from '@orbit/domain';
+import { canPreview, currentFileUrl, openDownloadInBrowser, shareFile } from '../../lib/files';
 import { getSessionToken } from '../../lib/session';
 import { useMobileTokens, type MobileTokens } from '../../lib/native';
 import { useFilesQuery } from '../../lib/queries';
@@ -79,7 +80,7 @@ export default function FilesScreen() {
 
   const open = useCallback(
     (entry: FileEntry) => {
-      if (fileKind(entry) === 'image') setViewing(entry);
+      if (kindOf(entry) === 'image') setViewing(entry);
       else void share(entry);
     },
     [share],

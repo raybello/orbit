@@ -1,4 +1,5 @@
 import type { ActivityItem, Bot, LiveState } from '@orbit/contracts';
+import { activityPreview } from '@orbit/domain';
 
 /**
  * The cross-bot Activity feed.
@@ -10,17 +11,10 @@ import type { ActivityItem, Bot, LiveState } from '@orbit/contracts';
  * this screen gets richer without changing.
  */
 
-/** How many entries the feed keeps, and how long a preview line is. */
+/** How many entries the feed keeps. */
 const FEED_LIMIT = 200;
-const PREVIEW_CHARS = 110;
 /** No single bot may fill the feed: the point of it is to see across bots. */
 const PER_BOT_LIMIT = 12;
-
-/** One line of preview text: whitespace collapsed, cut at ~110 characters. */
-export function activityPreview(text: string, max = PREVIEW_CHARS): string {
-  const flat = text.replace(/\s+/g, ' ').trim();
-  return flat.length > max ? `${flat.slice(0, max).trimEnd()}…` : flat;
-}
 
 /** "searching_web" → "Searching web" — the same wording the thread header uses. */
 export function activityLabel(kind: string | null | undefined): string {

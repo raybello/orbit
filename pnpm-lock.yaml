@@ -212,6 +212,9 @@ importers:
       '@orbit/contracts':
         specifier: workspace:*
         version: link:../../packages/contracts
+      '@orbit/domain':
+        specifier: workspace:*
+        version: link:../../packages/domain
       '@orbit/ui-tokens':
         specifier: workspace:*
         version: link:../../packages/ui-tokens

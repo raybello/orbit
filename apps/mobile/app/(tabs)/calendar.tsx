@@ -12,6 +12,7 @@ import { dayFromKey, dayKey } from '../../lib/format';
 import { useMobileTokens, type MobileTokens } from '../../lib/native';
 import { fetchDuplicateDefaults, useBotsQuery, useCalendarQuery, useGoogleCalendarActions, useGoogleCalendarsQuery } from '../../lib/queries';
 import { useOrbitStore } from '../../lib/store';
+import { daysOf, rangeFor } from '@orbit/domain';
 
 /**
  * The calendar: a month grid, the selected day's events underneath, and a way to create one.
@@ -22,31 +23,9 @@ import { useOrbitStore } from '../../lib/store';
  * window, so a day cannot render without its events.
  */
 
-/** Six weeks starting the Sunday before the month's first day — the shape of the month grid. */
-function gridRange(cursor: Date): { start: Date; end: Date } {
-  const first = new Date(cursor.getFullYear(), cursor.getMonth(), 1);
-  const start = new Date(first.getFullYear(), first.getMonth(), first.getDate() - first.getDay());
-  const end = new Date(start.getFullYear(), start.getMonth(), start.getDate() + 42);
-  return { start, end };
-}
-
 /** One row of the day list: a Bot's Orbit event, or one of the person's Google events. */
 type Item = { kind: 'orbit'; ev: CalendarEvent; start: string } | { kind: 'google'; ev: GoogleCalendarEvent; start: string };
 const GOOGLE = 'google';
-const addDaysKey = (key: string, n: number) => { const d = new Date(`${key}T00:00:00Z`); d.setUTCDate(d.getUTCDate() + n); return d.toISOString().slice(0, 10); };
-/** The local days an event covers (all-day events by their own dates, end exclusive). */
-function daysOf(e: GoogleCalendarEvent): string[] {
-  const out: string[] = [];
-  if (e.allDay) {
-    for (let d = e.start.slice(0, 10); d < e.end.slice(0, 10) && out.length < 62; d = addDaysKey(d, 1)) out.push(d);
-    return out.length ? out : [e.start.slice(0, 10)];
-  }
-  const s = new Date(e.start);
-  const end = new Date(Math.max(Date.parse(e.end) - 1, s.getTime()));
-  for (let d = new Date(s.getFullYear(), s.getMonth(), s.getDate()); d <= end && out.length < 62; d = new Date(d.getFullYear(), d.getMonth(), d.getDate() + 1)) out.push(dayKey(d));
-  return out;
-}
-
 const timeLabel = (iso: string) => new Date(iso).toLocaleTimeString(undefined, { hour: 'numeric', minute: '2-digit' });
 
 /** "Thu, Nov 20" — the heading over the selected day's list. */
@@ -67,7 +46,7 @@ export default function CalendarScreen() {
   const [duplicating, setDuplicating] = useState<{ key: string; defaults: DuplicateDefaults } | null>(null);
   const actions = useGoogleCalendarActions();
 
-  const range = useMemo(() => gridRange(cursor), [cursor]);
+  const range = useMemo(() => rangeFor('month', cursor), [cursor]);
   const fromIso = range.start.toISOString();
   const toIso = range.end.toISOString();
   const { data, isLoading, isError, error, refetch, isRefetching } = useCalendarQuery(fromIso, toIso);
@@ -91,7 +70,7 @@ export default function CalendarScreen() {
     const map = new Map<string, Item[]>();
     const add = (key: string, item: Item) => { const list = map.get(key); if (list) list.push(item); else map.set(key, [item]); };
     for (const ev of events) if (!hidden.has(ev.botId)) add(dayKey(new Date(ev.start)), { kind: 'orbit', ev, start: ev.start });
-    if (!hidden.has(GOOGLE)) for (const ev of google) for (const key of daysOf(ev)) add(key, { kind: 'google', ev, start: ev.allDay ? `${key}T00:00:00` : ev.start });
+    if (!hidden.has(GOOGLE)) for (const ev of google) for (const key of daysOf(ev.start, ev.end, ev.allDay, dayKey)) add(key, { kind: 'google', ev, start: ev.allDay ? `${key}T00:00:00` : ev.start });
     for (const list of map.values()) list.sort((a, b) => new Date(a.start).getTime() - new Date(b.start).getTime());
     return map;
   }, [events, google, hidden]);

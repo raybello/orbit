@@ -2,7 +2,7 @@ import { memo } from 'react';
 import { Pressable, StyleSheet, Text, View } from 'react-native';
 import Svg, { Path } from 'react-native-svg';
 import type { FileEntry } from '@orbit/contracts';
-import { fileKind, type FileKind } from '../lib/files';
+import { kindOf, type FileKind } from '@orbit/domain';
 import { formatBytes, shortDate } from '../lib/format';
 import { useMobileTokens, type MobileTokens } from '../lib/native';
 
@@ -17,7 +17,7 @@ const ICONS: Record<FileKind, string> = {
   audio: 'M12 4a2.5 2.5 0 0 0-2.5 2.5v5a2.5 2.5 0 0 0 5 0v-5A2.5 2.5 0 0 0 12 4ZM6.5 11a5.5 5.5 0 0 0 11 0M12 16.5V20',
   video: 'M4 6.5h11v11H4zM15 10l5-3v10l-5-3',
   pdf: 'M7 3.5h7l4 4v13H7zM14 3.5V8h4M9.5 12.5h5M9.5 16h5',
-  text: 'M7 3.5h7l4 4v13H7zM14 3.5V8h4M9.5 11.5h5M9.5 15h3',
+  code: 'M7 3.5h7l4 4v13H7zM14 3.5V8h4M9.5 11.5h5M9.5 15h3',
   other: 'M14 3.5H7v17h10v-13zM14 3.5V8h3',
 };
 
@@ -26,7 +26,7 @@ const KIND_LABEL: Record<FileKind, string> = {
   audio: 'Audio',
   video: 'Video',
   pdf: 'PDF',
-  text: 'Text',
+  code: 'Text',
   other: 'File',
 };
 
@@ -40,7 +40,7 @@ export type FileRowProps = {
 
 function FileRowBase({ entry, onPress, onLongPress, showBot = true }: FileRowProps) {
   const tokens = useMobileTokens();
-  const kind = fileKind(entry);
+  const kind = kindOf(entry);
 
   return (
     <Pressable

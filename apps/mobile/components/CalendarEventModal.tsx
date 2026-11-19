@@ -15,6 +15,7 @@ import type { Bot, CreateRoutineRequest, DuplicateDefaults } from '@orbit/contra
 import { useMobileTokens, type MobileTokens } from '../lib/native';
 import { useCreateRoutine } from '../lib/queries';
 import { Chip, PrimaryButton, Segmented } from './ui';
+import { CRON_PRESETS, looksLikeCron, TIMINGS } from '@orbit/domain';
 
 /**
  * Create one calendar event: a one-time routine at a date and time, or a recurring cron routine.
@@ -26,18 +27,6 @@ import { Chip, PrimaryButton, Segmented } from './ui';
  */
 
 type EventType = 'one_time' | 'recurring';
-
-const PRESETS = [
-  { value: 'daily', label: 'Daily 9am', cron: '0 9 * * *' },
-  { value: 'weekly', label: 'Weekly Mon 9am', cron: '0 9 * * 1' },
-  { value: 'weekdays', label: 'Weekdays 9am', cron: '0 9 * * 1-5' },
-  { value: 'custom', label: 'Custom', cron: '' },
-] as const;
-
-type PresetValue = (typeof PRESETS)[number]['value'];
-
-/** Cron needs five (or six) whitespace-separated fields. */
-const looksLikeCron = (value: string) => /^\s*\S+(\s+\S+){4,5}\s*$/.test(value);
 
 const HALF_HOUR = 30 * 60_000;
 const DAY = 24 * 60 * 60 * 1000;
@@ -64,14 +53,6 @@ export type CalendarEventModalProps = {
   duplicate?: { key: string; defaults: DuplicateDefaults };
 };
 
-/** When a duplicated Orbit event runs, relative to its Google event. */
-const TIMINGS = [
-  { value: 'same', label: 'Same time', at: (s: Date) => s },
-  { value: '15m', label: '15 min before', at: (s: Date) => new Date(s.getTime() - 15 * 60_000) },
-  { value: '1h', label: '1 hour before', at: (s: Date) => new Date(s.getTime() - 60 * 60_000) },
-  { value: 'eve', label: '9:00 the day before', at: (s: Date) => new Date(s.getFullYear(), s.getMonth(), s.getDate() - 1, 9, 0) },
-] as const;
-
 export function CalendarEventModal({ initialDate, bots, onClose, onSaved, duplicate }: CalendarEventModalProps) {
   const tokens = useMobileTokens();
   const insets = useSafeAreaInsets();
@@ -92,8 +73,8 @@ export function CalendarEventModal({ initialDate, bots, onClose, onSaved, duplic
     const day = startOfDay(initialDate);
     return new Date(day.getFullYear(), day.getMonth(), day.getDate(), 9, 0, 0, 0);
   });
-  const [preset, setPreset] = useState<PresetValue>('daily');
-  const [cron, setCron] = useState<string>(PRESETS[0].cron);
+  const [preset, setPreset] = useState<string>('daily');
+  const [cron, setCron] = useState<string>(CRON_PRESETS[0].cron);
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
 
@@ -106,9 +87,9 @@ export function CalendarEventModal({ initialDate, bots, onClose, onSaved, duplic
 
   const shiftTime = (delta: number) => setWhen((current) => new Date(current.getTime() + delta));
 
-  const pickPreset = (value: PresetValue) => {
+  const pickPreset = (value: string) => {
     setPreset(value);
-    const found = PRESETS.find((p) => p.value === value);
+    const found = CRON_PRESETS.find((p) => p.value === value);
     if (found && value !== 'custom') setCron(found.cron);
     setError(null);
   };
@@ -320,7 +301,7 @@ export function CalendarEventModal({ initialDate, bots, onClose, onSaved, duplic
                 <>
                   <Field label="Repeats" tokens={tokens}>
                     <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: tokens.space.sm }}>
-                      {PRESETS.map((option) => (
+                      {CRON_PRESETS.map((option) => (
                         <Chip
                           key={option.value}
                           label={option.label}

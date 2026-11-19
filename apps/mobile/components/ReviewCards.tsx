@@ -1,6 +1,7 @@
 import { useEffect, useState, type ReactNode } from 'react';
 import { Linking, Pressable, StyleSheet, Switch, Text, TextInput, View } from 'react-native';
 import type { CardBody, DocReview, EmailReview, EventFields, EventReview, SheetReview, WorkspaceFile } from '@orbit/contracts';
+import { docEditsOf, emailEditsOf, emailFieldsOf, eventEditsOf, joinAddresses as join, OUTCOME, SCOPES, sheetEditsOf, splitAddresses as split, whenOf, type EmailFields } from '@orbit/domain';
 import type { MobileTokens } from '../lib/native';
 import { touchApproval, useApproval, useDraftAction } from '../lib/queries';
 
@@ -13,9 +14,6 @@ import { touchApproval, useApproval, useDraftAction } from '../lib/queries';
 type Approval = Extract<CardBody, { card: 'approval' }>;
 type Draft = Extract<CardBody, { card: 'draft' }>;
 const EDIT_PING_MS = 5 * 60_000;
-
-const split = (s: string) => s.split(',').map((x) => x.trim()).filter(Boolean);
-const join = (a: string[]) => a.join(', ');
 
 function box(tokens: MobileTokens) {
   return {
@@ -75,8 +73,6 @@ function Outcome({ tokens, text }: { tokens: MobileTokens; text: string }) {
   return <Text style={{ color: tokens.colors.fgTertiary, fontSize: tokens.fontSizes.caption }}>{text}</Text>;
 }
 
-const OUTCOME: Record<string, string> = { allowed: 'Done', always: 'Done, and always allowed', denied: 'Not done', expired: 'Expired' };
-
 /** Keep the bot's call waiting while the person edits. */
 function useEditPing(approvalId: string, editing: boolean, pending: boolean) {
   useEffect(() => {
@@ -106,19 +102,7 @@ function ApprovalButtons({ tokens, body, botId, edits, allowLabel, danger }: { t
 
 // ---------------------------------------------------------------- email
 
-interface EmailForm { to: string; cc: string; bcc: string; subject: string; body: string }
-const emailForm = (e: EmailReview): EmailForm => ({ to: join(e.to), cc: join(e.cc), bcc: join(e.bcc), subject: e.subject, body: e.body });
-function emailEdits(e: EmailReview, f: EmailForm) {
-  const out: Record<string, unknown> = {};
-  if (join(split(f.to)) !== join(e.to)) out.to = split(f.to);
-  if (join(split(f.cc)) !== join(e.cc)) out.cc = split(f.cc);
-  if (join(split(f.bcc)) !== join(e.bcc)) out.bcc = split(f.bcc);
-  if (f.subject !== e.subject && e.action !== 'reply') out.subject = f.subject;
-  if (f.body !== e.body) out.body = f.body;
-  return Object.keys(out).length ? out : undefined;
-}
-
-function EmailView({ tokens, email, form, editing, setForm }: { tokens: MobileTokens; email: EmailReview; form: EmailForm; editing: boolean; setForm: (f: EmailForm) => void }) {
+function EmailView({ tokens, email, form, editing, setForm }: { tokens: MobileTokens; email: EmailReview; form: EmailFields; editing: boolean; setForm: (f: EmailFields) => void }) {
   if (!editing) {
     return (
       <View style={{ gap: tokens.space.xs }}>
@@ -130,7 +114,7 @@ function EmailView({ tokens, email, form, editing, setForm }: { tokens: MobileTo
       </View>
     );
   }
-  const put = (k: keyof EmailForm) => (v: string) => setForm({ ...form, [k]: v });
+  const put = (k: keyof EmailFields) => (v: string) => setForm({ ...form, [k]: v });
   return (
     <View style={{ gap: tokens.space.sm }}>
       <Input tokens={tokens} label="To" value={form.to} onChange={put('to')} />
@@ -146,14 +130,14 @@ export function MobileEmailApproval({ body, botId, tokens }: { body: Approval; b
   const email = body.review as EmailReview;
   const pending = body.status === 'pending';
   const [editing, setEditing] = useState(false);
-  const [form, setForm] = useState(() => emailForm(email));
+  const [form, setForm] = useState(() => emailFieldsOf(email));
   useEditPing(body.approvalId, editing, pending);
-  const edits = emailEdits(email, form);
+  const edits = emailEditsOf(email, form);
   return (
     <View style={box(tokens)}>
       <Kicker tokens={tokens}>Gmail · {email.action === 'reply' ? 'reply' : 'send'}</Kicker>
       <Text style={{ color: tokens.colors.fg, fontSize: tokens.fontSizes.message, fontWeight: '600' }}>{body.title}</Text>
-      <EmailView tokens={tokens} email={email} form={pending ? form : emailForm(email)} editing={editing && pending} setForm={setForm} />
+      <EmailView tokens={tokens} email={email} form={pending ? form : emailFieldsOf(email)} editing={editing && pending} setForm={setForm} />
       {pending ? (
         <>
           {!editing && email.editable ? <Button tokens={tokens} label="Edit" onPress={() => setEditing(true)} /> : null}
@@ -168,10 +152,10 @@ export function MobileDraftEmail({ body, seq, botId, tokens }: { body: Draft; se
   const email = body.email!;
   const pending = body.status === 'pending';
   const [editing, setEditing] = useState(false);
-  const [form, setForm] = useState(() => emailForm(email));
+  const [form, setForm] = useState(() => emailFieldsOf(email));
   const act = useDraftAction(botId);
-  useEffect(() => { if (!editing) setForm(emailForm(email)); }, [email, editing]);
-  const run = (action: 'save' | 'send' | 'discard') => act.mutate({ seq, action, ...(action !== 'discard' ? { edits: emailEdits(email, form) } : {}) }, { onSuccess: () => setEditing(false) });
+  useEffect(() => { if (!editing) setForm(emailFieldsOf(email)); }, [email, editing]);
+  const run = (action: 'save' | 'send' | 'discard') => act.mutate({ seq, action, ...(action !== 'discard' ? { edits: emailEditsOf(email, form) } : {}) }, { onSuccess: () => setEditing(false) });
   return (
     <View style={box(tokens)}>
       <Kicker tokens={tokens}>Gmail draft</Kicker>
@@ -190,18 +174,6 @@ export function MobileDraftEmail({ body, seq, botId, tokens }: { body: Draft; se
 
 // ---------------------------------------------------------------- calendar event
 
-const asDate = (local: string) => new Date(`${local.length === 10 ? `${local}T00:00` : local}:00Z`);
-/** "Thu, Nov 19 · 3:00 PM – 3:30 PM" in the event's own wall-clock time. */
-export function whenOf(f: Pick<EventFields, 'start' | 'end' | 'allDay'>): string {
-  if (!f.start) return 'No time set';
-  const day = (l: string) => asDate(l).toLocaleDateString(undefined, { weekday: 'short', month: 'short', day: 'numeric', timeZone: 'UTC' });
-  const time = (l: string) => asDate(l).toLocaleTimeString(undefined, { hour: 'numeric', minute: '2-digit', timeZone: 'UTC' });
-  if (f.allDay) return `${day(f.start)}${f.end && f.end !== f.start ? ` – ${day(f.end)}` : ''} · All day`;
-  return `${day(f.start)} · ${time(f.start)} – ${time(f.end)}`;
-}
-
-const SCOPES = [{ value: 'this', label: 'This event' }, { value: 'following', label: 'This and following' }, { value: 'all', label: 'All events' }] as const;
-
 export function MobileEventApproval({ body, botId, tokens }: { body: Approval; botId: string; tokens: MobileTokens }) {
   const review = body.review as EventReview;
   const pending = body.status === 'pending';
@@ -213,14 +185,7 @@ export function MobileEventApproval({ body, botId, tokens }: { body: Approval; b
   const [notify, setNotify] = useState(review.notifyGuests);
   useEditPing(body.approvalId, editing, pending);
 
-  const edits: Record<string, unknown> = {};
-  if (f && review.fields) {
-    for (const k of ['summary', 'location', 'start', 'end', 'description'] as const) if (f[k] !== review.fields[k]) edits[k] = f[k];
-    if (join(f.attendees) !== join(review.fields.attendees)) edits.attendees = f.attendees;
-  }
-  if (scope && review.recurring && scope !== review.recurring.scope) edits.scope = scope;
-  if (notify !== review.notifyGuests) edits.notifyGuests = notify;
-  const hasEdits = Object.keys(edits).length > 0;
+  const edits = eventEditsOf(review, f, scope, notify);
   const shown = deleting ? review.before : f ?? review.before;
   const before = review.action === 'update' ? review.before : undefined;
   const hasGuests = (shown?.attendees.length ?? 0) > 0;
@@ -266,7 +231,7 @@ export function MobileEventApproval({ body, botId, tokens }: { body: Approval; b
       {pending ? (
         <>
           {canEdit && !editing ? <Button tokens={tokens} label="Edit" onPress={() => setEditing(true)} /> : null}
-          <ApprovalButtons tokens={tokens} body={body} botId={botId} edits={hasEdits ? edits : undefined} allowLabel={deleting ? 'Delete' : hasEdits ? 'Allow with changes' : 'Allow'} danger={deleting} />
+          <ApprovalButtons tokens={tokens} body={body} botId={botId} edits={edits} allowLabel={deleting ? 'Delete' : edits ? 'Allow with changes' : 'Allow'} danger={deleting} />
         </>
       ) : <Outcome tokens={tokens} text={body.edited && body.status === 'allowed' ? 'Done, with your changes' : OUTCOME[body.status] ?? body.status} />}
     </View>
@@ -279,8 +244,7 @@ export function MobileSheetApproval({ body, botId, tokens }: { body: Approval; b
   const review = body.review as SheetReview;
   const pending = body.status === 'pending';
   const [cells, setCells] = useState<Record<string, string>>({});
-  const changed = Object.fromEntries(Object.entries(cells).filter(([k, v]) => review.changes.find((c) => c.cell === k)?.after !== v));
-  const edits = Object.keys(changed).length ? { cells: changed } : undefined;
+  const edits = sheetEditsOf(review, cells);
   useEditPing(body.approvalId, Object.keys(cells).length > 0, pending);
   return (
     <View style={box(tokens)}>
@@ -311,11 +275,7 @@ export function MobileDocApproval({ body, botId, tokens }: { body: Approval; bot
   const [markdown, setMarkdown] = useState(review.markdown ?? '');
   const [editing, setEditing] = useState(false);
   useEditPing(body.approvalId, editing, pending);
-  const edits: Record<string, string> = {};
-  if (review.insert !== undefined && insert !== review.insert) edits.insert = insert;
-  if (review.replace && replaceWith !== review.replace.with) edits.replaceWith = replaceWith;
-  if (review.markdown !== undefined && markdown !== review.markdown) edits.markdown = markdown;
-  const hasEdits = Object.keys(edits).length > 0;
+  const edits = docEditsOf(review, review.insert !== undefined ? insert : undefined, review.replace ? replaceWith : undefined, review.markdown !== undefined ? markdown : undefined);
   return (
     <View style={box(tokens)}>
       <Kicker tokens={tokens}>Google Docs{review.title ? ` · ${review.title}` : ''}</Kicker>
@@ -338,7 +298,7 @@ export function MobileDocApproval({ body, botId, tokens }: { body: Approval; bot
       {pending ? (
         <>
           {review.editable && !editing ? <Button tokens={tokens} label="Edit" onPress={() => setEditing(true)} /> : null}
-          <ApprovalButtons tokens={tokens} body={body} botId={botId} edits={hasEdits ? edits : undefined} allowLabel={hasEdits ? 'Allow with changes' : 'Allow'} />
+          <ApprovalButtons tokens={tokens} body={body} botId={botId} edits={edits} allowLabel={edits ? 'Allow with changes' : 'Allow'} />
         </>
       ) : <Outcome tokens={tokens} text={OUTCOME[body.status] ?? body.status} />}
     </View>
