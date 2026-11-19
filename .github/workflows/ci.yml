@@ -29,6 +29,11 @@ jobs:
 
       - run: pnpm install --frozen-lockfile
 
+      - name: Guard generated docs
+        run: |
+          python3 scripts/build-docs.py
+          git diff --exit-code docs/
+
       - name: Typecheck every package
         run: pnpm run typecheck
 
