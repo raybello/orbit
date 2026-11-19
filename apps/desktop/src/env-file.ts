@@ -24,6 +24,18 @@ export const REQUIRED_SECRETS: SecretSpec[] = [
 ];
 
 /**
+ * Rewrite every line ending as LF.
+ *
+ * Docker Compose's dotenv parser splits lines on `\n` only, but a JS `m`-flag `^` also matches
+ * after a bare `\r`. A `.env` with classic-Mac (bare CR) line endings therefore *looks* complete
+ * to envValue() while compose reads the whole secrets block as one comment line and fails with
+ * "SANDBOX_SUPERVISOR_TOKEN is required". Normalizing on every read keeps the two views equal.
+ */
+export function normalizeEol(envText: string): string {
+  return envText.replace(/\r\n?/g, '\n');
+}
+
+/**
  * The current value of KEY in a `.env` body, or null when unset/empty.
  *
  * A commented-out `# KEY=` line is not a value, which is why the match is anchored.

@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
-import { envValue, fillEmptySecrets, migrateLegacyBotCap, missingStackSecrets, setEnvValue } from '../env-file';
+import { envValue, fillEmptySecrets, migrateLegacyBotCap, missingStackSecrets, normalizeEol, setEnvValue } from '../env-file';
 
 // The shape of .env.images.example: a comment block right above the empty secrets.
 const EXAMPLE = [
@@ -56,3 +56,11 @@ test('migrateLegacyBotCap leaves Orgo installs and other values alone', () => {
   assert.equal(migrateLegacyBotCap('MAX_BOTS=6\n').changed, false);
   assert.equal(migrateLegacyBotCap('# MAX_BOTS=10\n').changed, false);
 });
+
+test('normalizeEol turns CRLF and bare CR into LF', () => {
+  assert.equal(normalizeEol('A=1\r\nB=2\rC=3\n'), 'A=1\nB=2\nC=3\n');
+  // Compose would read this as a single comment line; after normalizing it is three lines.
+  const text = normalizeEol('# secrets\rSESSION_SECRET=x\rSTACK_TOKEN=y\r');
+  assert.deepEqual(text.split('\n'), ['# secrets', 'SESSION_SECRET=x', 'STACK_TOKEN=y', '']);
+});
+
