@@ -35,11 +35,13 @@
 .details-tab {
   position: relative; flex: 1 1 0; min-width: 0; height: 34px; padding: 0 4px;
   font-size: 13px; line-height: 18px; letter-spacing: 0.195px; color: var(--color-text-secondary);
+  text-align: center;
   white-space: nowrap; overflow: hidden; text-overflow: ellipsis; border-radius: 6px 6px 0 0;
   transition: color 140ms var(--ease-out), background-color 140ms var(--ease-out);
 }
 .details-tab::after {
-  content: ''; position: absolute; left: 6px; right: 6px; bottom: 0; height: 2px;
+  content: ''; position: absolute; left: 50%; transform: translateX(-50%); bottom: 0; height: 2px;
+  width: calc(100% - 12px);
   border-radius: 2px 2px 0 0; background: transparent;
   transition: background-color 140ms var(--ease-out);
 }

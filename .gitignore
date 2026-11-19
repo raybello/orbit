@@ -6,6 +6,7 @@ dist/
 *.db
 *.db-*
 data/
+*.log
 .DS_Store
 .claude/worktrees/
 
