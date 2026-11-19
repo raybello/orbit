@@ -10,8 +10,9 @@ async function req<T>(method: string, path: string, body?: unknown): Promise<T> 
   });
   if (!res.ok) {
     let msg = res.statusText;
-    try { msg = ((await res.json()) as { error?: string }).error ?? msg; } catch { /* not json */ }
-    throw new ApiError(res.status, msg);
+    let body: unknown;
+    try { body = await res.json(); msg = (body as { error?: string }).error ?? msg; } catch { /* not json */ }
+    throw new ApiError(res.status, msg, body);
   }
   return res.json() as Promise<T>;
 }
@@ -31,6 +32,9 @@ export interface ComputerDetails {
   screens: { botId: string; screenId: string; lastUsedAt: number }[];
   hibernation: { idleMinutes: number; viewers: number; dryRun: boolean };
 }
+
+export interface HermesSettings { env: string; config: string }
+export type HermesSettingsFile = keyof HermesSettings;
 
 export type BotPatch = Partial<Pick<Bot, 'name' | 'label' | 'description' | 'instructions' | 'avatarShape' | 'avatarColor' | 'effort' | 'mode' | 'initiative' | 'alwaysAllow'>>;
 
@@ -88,6 +92,15 @@ export const configApi = {
   policies: () => req<{ policies: { tool: string; mode: string }[] }>('GET', '/policies'),
   deletePolicy: (tool: string) => req<{ ok: true }>('DELETE', `/policies/${encodeURIComponent(tool)}`),
 
-  connectedApps: () => req<{ connectedApps?: Toolkit[]; connected: string[] }>('GET', '/apps?limit=1'),
+  connectedApps: () => req<{ connectedApps?: Toolkit[]; connected: string[]; revoked?: Record<string, string[]> }>('GET', '/apps?limit=1'),
+  /** Allow or stop one Bot using one connected app. Answers with the apps now turned off for that Bot. */
+  setAppAccess: (toolkit: string, botId: string, allowed: boolean) =>
+    req<{ ok: true; revoked: string[] }>('PUT', `/apps/${encodeURIComponent(toolkit)}/access/${encodeURIComponent(botId)}`, { allowed }),
+
+  /** The Hermes settings every Bot shares: the primary agent's .env and config.yaml, as text. */
+  hermesSettings: () => req<HermesSettings>('GET', '/config/hermes-settings'),
+  /** Save either file; what changed is copied to every Bot and running Bots restart. A bad file answers 400 with its line. */
+  saveHermesSettings: (p: Partial<HermesSettings>) =>
+    req<{ updated: string[]; restarting: number; settings: HermesSettings }>('PUT', '/config/hermes-settings', p),
   logout: () => req<{ ok: true }>('POST', '/auth/logout'),
 };

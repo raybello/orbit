@@ -7,6 +7,8 @@ import { safetyIdentifier } from '../../lib/xai.js';
 import { appendRow, listRoutines, toRoutine, describeCron, type RoutineRow } from '../../store.js';
 import type { Trigger } from '../../core/turn-queue.js';
 import { connectedToolkits, toolkitInfo } from '../../composio.js';
+import { appAllowed } from '../../core/app-access.js';
+import { appOffNotice } from '../../domain/app-access.js';
 import { type ReviewCard } from '../../domain/google-actions.js';
 import { scheduleRoutine, unscheduleRoutine } from '../../routines.js';
 import { createEventRoutine, deleteEventTrigger, describeEvent, listTriggerTypes } from '../../triggers.js';
@@ -243,7 +245,8 @@ export const TOOLS: ToolDef[] = [
       const out: Record<string, unknown> = { from: from.toISOString().slice(0, 10), to: new Date(to.getTime() - 1).toISOString().slice(0, 10) };
       if (include !== 'routines') {
         const state = mirrorState();
-        if (!state.available) out.google = { unavailable: state.reason };
+        if (!appAllowed(ctx.botId, 'googlecalendar')) out.google = { unavailable: appOffNotice('Google Calendar') };
+        else if (!state.available) out.google = { unavailable: state.reason };
         else {
           let cals = new Map(listCalendars(ctx.userId).map((c) => [c.key, c]));
           // Connected but never synced (just connected, or the scheduler is off): sync now rather than

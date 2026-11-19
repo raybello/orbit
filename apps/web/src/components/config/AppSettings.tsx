@@ -34,6 +34,8 @@ import { formatSize } from '../voice/format';
 import { Icon, type IconName } from '../Icon';
 import { ToolkitLogo } from '../ToolkitLogo';
 import { EngineAuthPanel } from './EngineAuthPanel';
+import { HermesSettingsPanel } from './HermesSettingsPanel';
+import '../../styles/code-editor.css';
 import { Glyph } from './glyphs';
 import { ConfirmButton } from './ui';
 
@@ -43,6 +45,7 @@ const SECTION_META: Record<AppSection, SectionMeta> = {
   general: { id: 'general', label: 'General', icon: 'sliders' },
   appearance: { id: 'appearance', label: 'Appearance', icon: 'palette', sub: 'Light or dark, a colour theme, and the accent every control uses.' },
   'engine-auth': { id: 'engine-auth', label: 'Engine Auth', icon: 'key', sub: 'Which provider and model runs each Bot, and whether it has the credentials to reach them.' },
+  'api-keys': { id: 'api-keys', label: 'API keys', icon: 'edit', sub: 'The Hermes settings every Bot shares: API keys in .env and the rest in config.yaml. Saving reaches every Bot.' },
   computer: { id: 'computer', label: 'Computer', icon: 'monitor', sub: 'Your Bots share one cloud computer. Each Bot works on its own screen.' },
   devices: { id: 'devices', label: 'Devices & permissions', icon: 'mic', sub: 'What Orbit may use on this computer, and which device it should use. Nothing is captured unless a call is open.' },
   permissions: { id: 'permissions', label: 'Permissions', icon: 'shield', sub: 'Actions your Bots can take without asking first. Remove one and they’ll ask again next time.' },
@@ -53,7 +56,7 @@ const SECTION_META: Record<AppSection, SectionMeta> = {
 /** The nav, grouped the way the sections relate; Account sits in the footer as the signed-in person. */
 const NAV_GROUPS: { label: string; items: AppSection[] }[] = [
   { label: 'Settings', items: ['general', 'appearance'] },
-  { label: 'Bots', items: ['engine-auth', 'computer', 'permissions', 'apps'] },
+  { label: 'Bots', items: ['engine-auth', 'api-keys', 'computer', 'permissions', 'apps'] },
   { label: 'System', items: ['devices'] },
 ];
 
@@ -137,6 +140,7 @@ export function AppSettings() {
               {section === 'general' && <GeneralSection />}
               {section === 'appearance' && <AppearanceSection />}
               {section === 'engine-auth' && <EngineAuthSection />}
+              {section === 'api-keys' && <section className="cfg-section"><HermesSettingsPanel /></section>}
               {section === 'computer' && <ComputerSection />}
               {section === 'devices' && <DevicesSection />}
               {section === 'permissions' && <PermissionsSection />}
@@ -771,8 +775,28 @@ function PermissionsSection() {
 function AppsSection() {
   const version = useStore((s) => s.connectionsVersion);
   const [apps, setApps] = useState<Toolkit[] | null>(null);
-  useEffect(() => { configApi.connectedApps().then((r) => setApps(r.connectedApps ?? [])).catch(() => setApps([])); }, [version]);
+  const [revoked, setRevoked] = useState<Record<string, string[]>>({});
+  const [busy, setBusy] = useState<string | null>(null);
+  const [accessError, setAccessError] = useState<string | null>(null);
+  const bots = useStore((s) => s.bots).filter((b) => b.kind !== 'room');
+  useEffect(() => {
+    configApi.connectedApps()
+      .then((r) => { setApps(r.connectedApps ?? []); setRevoked(r.revoked ?? {}); })
+      .catch(() => setApps([]));
+  }, [version]);
   const openApps = () => { useConfigUI.getState().closeAppSettings(); useStore.getState().setModal('apps'); };
+  const toggle = async (toolkit: string, botId: string, allowed: boolean) => {
+    const key = `${toolkit}:${botId}`;
+    setBusy(key); setAccessError(null);
+    try {
+      const r = await configApi.setAppAccess(toolkit, botId, allowed);
+      setRevoked((m) => ({ ...m, [botId]: r.revoked }));
+    } catch (e) {
+      setAccessError((e as Error).message || 'The server did not answer.');
+    } finally {
+      setBusy(null);
+    }
+  };
   return (
     <>
       <section className="cfg-section">
@@ -784,17 +808,44 @@ function AppsSection() {
             </div>
             <button type="button" className="cfg-btn cfg-btn--primary" onClick={openApps}>{apps?.length ? 'Manage apps' : 'Connect apps'}</button>
           </div>
-          {apps?.map((a) => (
-            <div key={a.slug} className="cfg-row">
-              <ToolkitLogo name={a.name} logo={a.logo} size={28} radius={7} />
-              <div className="cfg-row__text">
-                <div className="cfg-row__title">{a.name}</div>
-                {a.description && <div className="cfg-row__sub">{a.description}</div>}
+          {apps?.map((a) => {
+            const allowed = bots.filter((b) => !(revoked[b.id] ?? []).includes(a.slug));
+            return (
+              <div key={a.slug} className="app-access-row">
+                <div className="cfg-row">
+                  <ToolkitLogo name={a.name} logo={a.logo} size={28} radius={7} />
+                  <div className="cfg-row__text">
+                    <div className="cfg-row__title">{a.name}</div>
+                    <div className="cfg-row__sub">{allowed.length === bots.length ? 'Every Bot can use it' : allowed.length ? `${allowed.length} of ${bots.length} Bots can use it` : 'No Bot can use it'}</div>
+                  </div>
+                  <span className="cfg-chip">Connected</span>
+                </div>
+                {bots.length > 0 && (
+                  <div className="app-access" role="group" aria-label={`Bots that can use ${a.name}`}>
+                    {bots.map((b) => {
+                      const on = !(revoked[b.id] ?? []).includes(a.slug);
+                      return (
+                        <button
+                          key={b.id}
+                          type="button"
+                          className={`app-access__bot${on ? ' is-on' : ''}`}
+                          aria-pressed={on}
+                          title={on ? `${b.name} can use ${a.name}. Click to turn it off for ${b.name}.` : `${b.name} cannot use ${a.name}. Click to allow it.`}
+                          disabled={busy === `${a.slug}:${b.id}`}
+                          onClick={() => void toggle(a.slug, b.id, !on)}
+                        >
+                          <span aria-hidden><BotAvatarFor bot={b} size={18} /></span>
+                          {b.name}
+                        </button>
+                      );
+                    })}
+                  </div>
+                )}
               </div>
-              <span className="cfg-chip">Connected</span>
-            </div>
-          ))}
+            );
+          })}
         </div>
+        {accessError && <div className="cfg-error cfg-error--small" role="alert">Couldn’t change access: {accessError}</div>}
       </section>
     </>
   );
