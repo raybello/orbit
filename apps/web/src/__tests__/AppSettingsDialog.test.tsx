@@ -27,7 +27,7 @@ describe('Settings dialog', () => {
     render(<AppSettings />);
     const dialog = screen.getByRole('dialog', { name: 'Appearance' });
     expect(dialog.getAttribute('aria-modal')).toBe('true');
-    for (const label of ['General', 'Appearance', 'Engine Auth', 'Computer', 'Devices & permissions', 'Permissions', 'Connected apps', 'Account']) {
+    for (const label of ['General', 'Appearance', 'Engine Auth', 'API keys', 'Computer', 'Devices & permissions', 'Permissions', 'Connected apps', 'Account']) {
       expect(screen.getByRole('button', { name: label })).toBeTruthy();
     }
     expect(screen.queryByText(/Back to Bots/)).toBeNull();

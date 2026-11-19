@@ -7,7 +7,7 @@ import test, { after } from 'node:test';
 import YAML from 'yaml';
 
 // Loaded dynamically so env.ts (and the db it names) read the temp paths above.
-const { inheritSubscriptions, managedHome, primarySubscriptions, subscriptionEnv, syncAllManagedAuth, syncManagedAuth } = await import('../engine.js');
+const { applySubscriptionEnv, inheritSubscriptions, managedHome, primarySubscriptions, subscriptionEnv, syncAllManagedAuth, syncManagedAuth } = await import('../engine.js');
 const { SHARED_ENV, readDotenv, readYaml, writePrivate } = await import('../hermes-files.js');
 const { db } = await import('../db.js');
 
@@ -350,6 +350,70 @@ test("a bot's own sign-in is never overwritten by the primary's", () => {
   const rows = botAuth(bot).credential_pool.anthropic;
   assert.equal(rows.length, 1);
   assert.equal(rows[0].label, 'my-own-key', "a bot's own credential must survive a sync");
+});
+
+const rotatePrimary = (token: string) => primaryAuth({ anthropic: [{
+  id: 'aaa001', label: 'anthropic-oauth-3', auth_type: 'oauth', source: 'manual:hermes_pkce',
+  access_token: token, refresh_token: `${token}-refresh`, expires_at_ms: Date.now() + 6 * 3600_000,
+}] });
+
+/** What writing a bot's home does to its .env: the file as it was, and what is written back. */
+function rewriteEnv(botId: string): Record<string, string> {
+  const file = path.join(managedHome(botId), '.env');
+  const before = readDotenv(file);
+  const vars = { ...before };
+  applySubscriptionEnv(managedHome(botId), before, vars);
+  writePrivate(file, Object.entries(vars).map(([k, v]) => `${k}=${v}`).join('\n') + '\n');
+  return vars;
+}
+
+test('an inherited token keeps refreshing however many times the home is rewritten', () => {
+  resetBots();
+  const bot = addBot('bot_rewrite', 'managed');
+  managedFiles(bot, {}, {});
+  rotatePrimary('sk-ant-oat01-first');
+
+  rewriteEnv(bot);
+  const second = rewriteEnv(bot);
+  assert.equal(second.ANTHROPIC_TOKEN_OWN, undefined, 'a rewrite must not mark the inherited token as the bot\'s own');
+
+  rotatePrimary('sk-ant-oat01-second');
+  assert.equal(rewriteEnv(bot).ANTHROPIC_TOKEN, 'sk-ant-oat01-second');
+  syncManagedAuth(bot);
+  rotatePrimary('sk-ant-oat01-third');
+  syncManagedAuth(bot);
+  assert.equal(readDotenv(path.join(managedHome(bot), '.env')).ANTHROPIC_TOKEN, 'sk-ant-oat01-third');
+});
+
+test('a stale token frozen by an older build\'s _OWN marker is refreshed and the marker dropped', () => {
+  resetBots();
+  const bot = addBot('bot_frozen', 'managed');
+  managedFiles(bot, { ANTHROPIC_TOKEN: 'sk-ant-oat01-expired', ANTHROPIC_TOKEN_OWN: '1', API_SERVER_KEY: 'k' }, {});
+  rotatePrimary('sk-ant-oat01-live');
+
+  const synced = syncManagedAuth(bot);
+
+  const vars = readDotenv(path.join(managedHome(bot), '.env'));
+  assert.equal(vars.ANTHROPIC_TOKEN, 'sk-ant-oat01-live');
+  assert.equal(vars.ANTHROPIC_TOKEN_OWN, undefined);
+  assert.equal(vars.API_SERVER_KEY, 'k');
+  assert.ok(synced.includes('ANTHROPIC_TOKEN'));
+});
+
+test('a token set by hand in a bot\'s .env survives the primary refreshing', () => {
+  resetBots();
+  const bot = addBot('bot_hand_key', 'managed');
+  managedFiles(bot, {}, {});
+  rotatePrimary('sk-ant-oat01-inherited');
+  rewriteEnv(bot);
+
+  const file = path.join(managedHome(bot), '.env');
+  writePrivate(file, `${fs.readFileSync(file, 'utf8')}`.replace('sk-ant-oat01-inherited', 'sk-ant-oat01-mine'));
+  rotatePrimary('sk-ant-oat01-refreshed');
+  syncManagedAuth(bot);
+  rewriteEnv(bot);
+
+  assert.equal(readDotenv(file).ANTHROPIC_TOKEN, 'sk-ant-oat01-mine');
 });
 
 after(() => {

@@ -215,6 +215,13 @@ db.exec(`CREATE TABLE IF NOT EXISTS bot_policies (
   created_at INTEGER NOT NULL,
   PRIMARY KEY (bot_id, tool)
 )`);
+// Connected apps a bot may not use (every bot shares the person's connections). See core/app-access.ts.
+db.exec(`CREATE TABLE IF NOT EXISTS bot_app_revocations (
+  bot_id TEXT NOT NULL REFERENCES bots(id) ON DELETE CASCADE,
+  toolkit TEXT NOT NULL,
+  created_at INTEGER NOT NULL,
+  PRIMARY KEY (bot_id, toolkit)
+)`);
 addColumn('bots', 'avatar_portrait_path', 'TEXT');
 migrateUnsetVoiceProviders(db);
 // Hermes engine: per-bot model choice, which engine runs the bot ('primary' = the existing agent,

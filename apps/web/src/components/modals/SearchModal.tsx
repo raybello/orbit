@@ -42,6 +42,7 @@ const SETTINGS_ITEMS: { id: AppSection; label: string; hint: string; keywords: s
   { id: 'account', label: 'Account', hint: 'Sign out, manage your account', keywords: ['account', 'sign out', 'logout', 'profile', 'avatar'] },
   { id: 'appearance', label: 'Appearance', hint: 'Theme, colors, font size', keywords: ['appearance', 'theme', 'dark', 'light', 'font', 'color'] },
   { id: 'engine-auth', label: 'AI Models', hint: 'Configure AI model and API keys', keywords: ['models', 'ai', 'claude', 'openai', 'api key', 'engine'] },
+  { id: 'api-keys', label: 'API keys', hint: 'Edit the Hermes .env and config.yaml every Bot shares', keywords: ['api key', 'keys', 'hermes', 'env', 'config', 'yaml', 'settings', 'mcp'] },
   { id: 'computer', label: 'Computer', hint: 'Remote computer access', keywords: ['computer', 'remote', 'screen', 'vnc'] },
   { id: 'permissions', label: 'Permissions', hint: 'Data and permissions', keywords: ['permissions', 'privacy', 'security', 'data'] },
   { id: 'apps', label: 'Connect Apps', hint: 'Connect external apps and services', keywords: ['apps', 'connect', 'integrations', 'slack'] },

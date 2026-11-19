@@ -164,6 +164,12 @@ export const RoutineEnableSchema = z.object({ enabled: z.boolean() }).loose();
 /** POST /api/bots/:id/screen/control — action is checked in the route ("action must be 'take' or 'give'"). */
 export const ScreenControlSchema = z.object({ action: z.string().optional() }).loose();
 
+/** PUT /api/config/hermes-settings — the text of either file; a file left out is not touched. */
+export const SharedSettingsSchema = z.object({ env: z.string().max(256_000).optional(), config: z.string().max(1_000_000).optional() });
+
+/** PUT /api/apps/:slug/access/:botId */
+export const AppAccessSchema = z.object({ allowed: z.boolean() });
+
 /** POST /api/apps/:slug/connect — both fields only decorate the OAuth callback URL. */
 export const AppConnectSchema = z.object({ botId: z.string().optional(), seq: z.number().optional() }).loose();
 

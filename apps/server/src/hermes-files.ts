@@ -77,9 +77,14 @@ export function applyModelChoice(cfg: HermesConfig, provider: string | null, mod
 
 /** KEY=value lines of a dotenv file (quotes stripped). Missing file = {}. */
 export function readDotenv(file: string): Record<string, string> {
-  const out: Record<string, string> = {};
   let text = '';
-  try { text = fs.readFileSync(file, 'utf8'); } catch { return out; }
+  try { text = fs.readFileSync(file, 'utf8'); } catch { return {}; }
+  return parseDotenv(text);
+}
+
+/** KEY=value lines of dotenv text (quotes stripped); other lines are skipped. */
+export function parseDotenv(text: string): Record<string, string> {
+  const out: Record<string, string> = {};
   for (const line of text.split('\n')) {
     const m = /^\s*(?:export\s+)?([A-Za-z_][A-Za-z0-9_]*)\s*=\s*(.*)$/.exec(line);
     if (!m) continue;

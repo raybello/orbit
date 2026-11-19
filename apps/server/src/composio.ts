@@ -124,7 +124,7 @@ export async function disconnect(userId: string, toolkit: string) {
   for (const c of await connectionsDetail(userId)) {
     if (c.toolkit === toolkit) await composio.connectedAccounts.delete(c.id);
   }
-  sessionCache.delete(userId);
+  for (const k of [...sessionCache.keys()]) if (k === userId || k.startsWith(`${userId}|`)) sessionCache.delete(k);
 }
 
 // ---------- sessions (tool router) ----------
@@ -140,7 +140,20 @@ interface ComposioSession {
 
 const sessionCache = new Map<string, ComposioSession>();
 
-export async function sessionFor(userId: string): Promise<ComposioSession> {
+/**
+ * The person's Composio session. A bot with apps turned off gets its own session with those
+ * toolkits disabled, so Composio itself refuses them whatever route the bot takes (search, a batch,
+ * the workbench). Those sessions are cheap to make and are cached in memory only.
+ */
+export async function sessionFor(userId: string, disabled: readonly string[] = []): Promise<ComposioSession> {
+  if (disabled.length) {
+    const key = `${userId}|-${[...disabled].sort().join(',')}`;
+    const hit = sessionCache.get(key);
+    if (hit) return hit;
+    const scoped = (await composio.create(userId, { manageConnections: false, toolkits: { disable: [...disabled] } })) as unknown as ComposioSession;
+    sessionCache.set(key, scoped);
+    return scoped;
+  }
   const cached = sessionCache.get(userId);
   if (cached) return cached;
   const row = db.prepare('SELECT session_id FROM composio_sessions WHERE user_id=?').get(userId) as
@@ -171,10 +184,10 @@ export async function startConnect(userId: string, toolkit: string, callbackUrl:
 }
 
 /** OpenAI-Responses-format function tools for this user's Composio session (meta tools). */
-export async function composioTools(userId: string): Promise<unknown[]> {
+export async function composioTools(userId: string, disabled: readonly string[] = []): Promise<unknown[]> {
   if (!composioEnabled()) return [];
   try {
-    const session = await sessionFor(userId);
+    const session = await sessionFor(userId, disabled);
     const tools = await session.tools();
     return Array.isArray(tools) ? tools : [];
   } catch (e) {
@@ -203,8 +216,8 @@ let pinnedClient: Composio<OpenAIResponsesProvider> | null = null;
 export const composioIO = {
   /** The apps this person has connected (active accounts only). */
   connected: (userId: string): Promise<Set<string>> => activeToolkits(userId),
-  async executeMeta(userId: string, name: string, args: Record<string, unknown>): Promise<MetaResult> {
-    const session = await sessionFor(userId);
+  async executeMeta(userId: string, name: string, args: Record<string, unknown>, disabled: readonly string[] = []): Promise<MetaResult> {
+    const session = await sessionFor(userId, disabled);
     return (await session.execute(name, args)) as MetaResult;
   },
   async runAction(userId: string, slug: string, args: Record<string, unknown>): Promise<ActionResult> {
@@ -214,7 +227,8 @@ export const composioIO = {
   },
 };
 
-export const executeComposio = (userId: string, name: string, args: Record<string, unknown>) => composioIO.executeMeta(userId, name, args);
+export const executeComposio = (userId: string, name: string, args: Record<string, unknown>, disabled: readonly string[] = []) =>
+  composioIO.executeMeta(userId, name, args, disabled);
 
 /** Run one Gmail, Calendar, Sheets or Docs action for this user, outside any bot's session. */
 export const runAction = (userId: string, slug: string, args: Record<string, unknown>) => composioIO.runAction(userId, slug, args);

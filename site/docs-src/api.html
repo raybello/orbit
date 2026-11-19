@@ -120,6 +120,8 @@ POST|/api/bots/:id/handback|Hands the screen back to the bot after you drove it.
 GET|/api/config/engine-auth|Engine auth status for every bot.
 PUT|/api/config/engine-auth/:botId|<code>{ provider, model }</code> for one bot.
 POST|/api/config/engine-auth/sync|Re-syncs inherited credentials to managed bots.
+GET|/api/config/hermes-settings|`{ env, config }`: the text of the Hermes `.env` and `config.yaml` every bot shares. Owner of the primary bot only.
+PUT|/api/config/hermes-settings|`{ env?, config? }`. Saves either file, copies what changed to every managed bot and restarts running engines → `{ updated, restarting, settings }`. A file that does not parse answers 400 `{ error, file, line }`.
 -->
 
 <h2 id="computers">Computers and screens</h2>
@@ -150,6 +152,7 @@ GET|/api/apps|<code>?search=&amp;category=&amp;limit=</code>. Composio toolkits 
 POST|/api/apps/:slug/connect|<code>{ botId?, seq? }</code> → an OAuth redirect URL.
 GET|/api/apps/callback|Composio OAuth callback; resolves the connect card it came from.
 DELETE|/api/apps/:slug|Disconnects an app.
+PUT|/api/apps/:slug/access/:botId|`{ allowed }`. Allows or stops one bot using one connected app → `{ revoked }`, the apps now turned off for that bot. `GET /api/apps` lists them all as `revoked`.
 GET|/api/policies|Saved "always allow" tool policies.
 DELETE|/api/policies/:tool|Removes a policy.
 -->

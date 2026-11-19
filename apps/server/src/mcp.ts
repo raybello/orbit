@@ -14,6 +14,8 @@ import { runComposioTool, toolMap, TOOLS, type ToolCtx } from './agent/tools/ind
 import { policyFor } from './core/policy-service.js';
 import { strictest } from './domain/rules.js';
 import { blockedByRule, recordReview, reviewToolCall } from './core/rule-service.js';
+import { blockedApp, revokedApps } from './core/app-access.js';
+import { appOffNotice, ownToolApps } from './domain/app-access.js';
 
 /**
  * The app's tools, served to the Hermes engines over MCP (streamable HTTP, JSON answers only).
@@ -57,7 +59,7 @@ async function listTools(botId: string | null) {
   const own = TOOLS.map((t) => ({ name: t.name, description: t.description, inputSchema: t.parameters }));
   const bot = botId ? getBotRow(botId) : null;
   if (!bot) return own;
-  const apps = (await composioTools(bot.user_id))
+  const apps = (await composioTools(bot.user_id, revokedApps(bot.id)))
     .filter((t: unknown) => (t as { type?: unknown; name?: unknown } | null)?.type === 'function' && typeof (t as { name?: unknown }).name === 'string' && !toolMap.has((t as { name: string }).name))
     .map((t) => {
       const tool = t as { name: string; description?: unknown; parameters?: unknown };
@@ -191,6 +193,12 @@ async function callTool(botId: string | null, rawName: string, rawArgs: Record<s
   const own = toolMap.get(name);
   const args = own ? rawArgs : canonicalComposioArgs(name, rawArgs);
   try {
+    // An app the person turned off for this bot is refused before anything else: no card, no run.
+    const offApp = blockedApp(botId, own ? ownToolApps(name, args) : innerToolSlugs(name, args));
+    if (offApp) {
+      noteToolOutcome(botId, rowSeq, { status: 'denied', summary: `${offApp} is turned off for this Bot` });
+      return text(appOffNotice(offApp));
+    }
     // An app whose sign-in expired cannot run this, so say so before asking anyone to approve it.
     const expiredApp = own ? null : await connectionWatch.expiredAppFor(userId, botId, innerToolSlugs(name, args));
     if (expiredApp) {

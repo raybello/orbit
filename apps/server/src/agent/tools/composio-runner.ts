@@ -1,4 +1,5 @@
 import { executeComposio } from '../../composio.js';
+import { revokedApps } from '../../core/app-access.js';
 import type { ToolArgs, ToolCtx, ToolResult } from './registry.js';
 
 export function humanizeSlug(slug: string) {
@@ -20,7 +21,7 @@ export function innerOutcome(data: unknown): { total: number; failed: number } {
 
 /** Run a Composio call. `summary` is 'done', 'partial' (some actions in a batch failed) or 'failed'. */
 export async function runComposioTool(ctx: ToolCtx, name: string, args: ToolArgs): Promise<ToolResult> {
-  const r = await executeComposio(ctx.userId, name, args);
+  const r = await executeComposio(ctx.userId, name, args, revokedApps(ctx.botId));
   const ok = r.resultType ? r.resultType === 'completed' : !r.error;
   const inner = ok ? innerOutcome(r.data) : { total: 0, failed: 0 };
   const payload = ok ? r.data : { error: r.error, logId: r.logId };

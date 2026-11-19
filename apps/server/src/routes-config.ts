@@ -21,7 +21,8 @@ import { engineHome, engineInfo, engineKind, forgetEngineOptions, restartEngine,
 import { applyModelChoice, asBlock, readDotenv, readYaml, writePrivate, SHARED_ENV } from './hermes-files.js';
 import { listMemories } from './engine-memory.js';
 import { idleConfig, viewerCount } from './idle.js';
-import { optionalBody, SkillBodySchema, EngineChoiceSchema, EngineLoginSchema, FileDownloadSchema } from './api/schemas.js';
+import { optionalBody, requireBody, SharedSettingsSchema, SkillBodySchema, EngineChoiceSchema, EngineLoginSchema, FileDownloadSchema } from './api/schemas.js';
+import { checkSettings, readSharedSettings, saveSharedSettings } from './hermes-settings.js';
 import type { BotEngineAuthRow, LibraryFile, Skill } from '@orbit/contracts';
 import type { BotRow } from './infra/bot-repository.js';
 import YAML from 'yaml';
@@ -300,6 +301,30 @@ configApi.post('/config/engine-auth/sync', async (c) => {
   // The web app keeps an engine row per bot; a sync can change what each one reports.
   for (const b of db.prepare("SELECT id FROM bots WHERE user_id=? AND engine='managed'").all(c.get('user').id) as { id: string }[]) emitBot(b.id);
   return c.json({ synced });
+});
+
+/**
+ * The shared Hermes settings hold every model key in plain text, so only the person whose computer
+ * runs the primary agent may read or change them (anyone, on a fresh install with no primary yet).
+ */
+const mayEditSharedSettings = (userId: string) => {
+  const owner = db.prepare("SELECT user_id FROM bots WHERE engine='primary' LIMIT 1").get() as { user_id: string } | undefined;
+  return !owner || owner.user_id === userId;
+};
+
+configApi.get('/config/hermes-settings', (c) => {
+  if (!mayEditSharedSettings(c.get('user').id)) return c.json({ error: 'Only the owner of the primary Bot can see these settings.' }, 403);
+  return c.json(readSharedSettings());
+});
+
+configApi.put('/config/hermes-settings', async (c) => {
+  if (!mayEditSharedSettings(c.get('user').id)) return c.json({ error: 'Only the owner of the primary Bot can change these settings.' }, 403);
+  const next = await requireBody(c, SharedSettingsSchema);
+  const problem = checkSettings(next);
+  if (problem) return c.json({ error: problem.message, ...problem }, 400);
+  const result = saveSharedSettings(next);
+  for (const id of result.updated) emitBot(id);
+  return c.json({ ...result, settings: readSharedSettings() });
 });
 
 const LIB_ROOT = `${env.botDataDir}/files`;

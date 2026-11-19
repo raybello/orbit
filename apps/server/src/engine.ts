@@ -231,6 +231,43 @@ export function subscriptionEnv(subs: PrimarySubscription[]): Record<string, str
   return vars;
 }
 
+/** Fingerprints of the subscription tokens this server last put in a bot's .env, by variable. */
+const INHERITED_FILE = '.orbit-inherited.json';
+const fingerprint = (v: string) => crypto.createHash('sha256').update(v).digest('hex').slice(0, 16);
+
+/**
+ * Put the primary's subscription tokens into a managed bot's env `vars`, judged against `before`
+ * (the bot's .env as it was on disk). A token the bot holds is its own only when it differs from the
+ * one this server last handed it, so a key set by hand survives while an inherited one keeps
+ * refreshing. `<NAME>_OWN` markers from older builds are dropped: those builds set the marker on the
+ * inherited token itself, freezing it until it expired.
+ *
+ * Mutates `vars` and returns the variable names whose value changed.
+ */
+export function applySubscriptionEnv(home: string, before: Record<string, string>, vars: Record<string, string>): string[] {
+  const file = path.join(home, INHERITED_FILE);
+  let given: Record<string, string> = {};
+  try {
+    given = asBlock(JSON.parse(fs.readFileSync(file, 'utf8'))) as Record<string, string>;
+  } catch {}
+  let record = false;
+  for (const [name, value] of Object.entries(subscriptionEnv(primarySubscriptions()))) {
+    delete vars[`${name}_OWN`];
+    const held = before[name];
+    if (held && given[name] && fingerprint(held) !== given[name]) {
+      vars[name] = held;
+      continue;
+    }
+    vars[name] = value;
+    if (given[name] !== fingerprint(value)) {
+      given[name] = fingerprint(value);
+      record = true;
+    }
+  }
+  if (record) writePrivate(file, `${JSON.stringify(given, null, 2)}\n`);
+  return [...new Set([...Object.keys(before), ...Object.keys(vars)])].filter((k) => before[k] !== vars[k]);
+}
+
 /**
  * Hand a managed bot the primary agent's subscription sign-ins, without copying the grant.
  *
@@ -315,8 +352,6 @@ export function inheritSubscriptions(home: string): string[] {
  */
 export function startSubscriptionSync(intervalMs = 5 * 60_000): NodeJS.Timeout {
   const run = async () => {
-    const subs = primarySubscriptions();
-    const envVars = subscriptionEnv(subs);
     let bots: { id: string }[] = [];
     try {
       bots = db.prepare("SELECT id FROM bots WHERE engine='managed'").all() as { id: string }[];
@@ -329,16 +364,9 @@ export function startSubscriptionSync(intervalMs = 5 * 60_000): NodeJS.Timeout {
         if (!fs.existsSync(home)) continue;
         inheritSubscriptions(home);
         const envFile = path.join(home, '.env');
-        const vars = readDotenv(envFile);
-        let changed = false;
-        for (const [name, value] of Object.entries(envVars)) {
-          // A bot with its own key keeps it: the user set it for this bot.
-          if (vars[`${name}_OWN`]) continue;
-          if (vars[name] === value) continue;
-          vars[name] = value;
-          changed = true;
-        }
-        if (!changed) continue;
+        const before = readDotenv(envFile);
+        const vars = { ...before };
+        if (!applySubscriptionEnv(home, before, vars).length) continue;
         writePrivate(envFile, dotenvText(vars));
         await restartEngine(b.id).catch((e) => console.warn(`[engine] restart after subscription sync ${b.id} failed: ${messageOf(e)}`));
         console.log(`[engine] subscription sync ${b.id}: restarted with a refreshed token`);
@@ -487,13 +515,7 @@ async function writeHome(rec: EngineRecord): Promise<{ key: string; display: str
     if (v) vars[k] = v;
   }
   // Subscription sign-ins travel as access tokens in the environment (never a copy of the grant).
-  if (managed) {
-    for (const [name, value] of Object.entries(subscriptionEnv(primarySubscriptions()))) {
-      const own = mine[name] && vars[name] === mine[name];
-      if (own) vars[`${name}_OWN`] ??= '1'; // the user put this bot's own key there; keep it
-      if (!own) vars[name] = value;
-    }
-  }
+  if (managed) applySubscriptionEnv(home, mine, vars);
   Object.assign(vars, { API_SERVER_ENABLED: 'true', API_SERVER_KEY: key, API_SERVER_PORT: String(rec.port), API_SERVER_HOST: '127.0.0.1' });
   if (cdp) vars.BROWSER_CDP_URL = cdp; else delete vars.BROWSER_CDP_URL;
   writePrivate(envFile, dotenvText(vars));
@@ -527,7 +549,8 @@ export function syncManagedAuth(botId: string): string[] {
   const primaryEnv = readDotenv(path.join(env.primaryHome, '.env'));
   if (!SHARED_ENV.some((k) => (primaryEnv[k] ?? '').trim())) warnNoPrimaryCredentials();
   const envFile = path.join(home, '.env');
-  const vars = readDotenv(envFile);
+  const before = readDotenv(envFile);
+  const vars = { ...before };
   const envSynced: string[] = [];
   for (const k of modelKeyNames(readYaml(path.join(env.primaryHome, 'config.yaml')))) {
     // The stack's own environment counts too: it is where a containerized server keeps its .env.
@@ -539,11 +562,7 @@ export function syncManagedAuth(botId: string): string[] {
   }
   // Subscription sign-ins as environment tokens (see inheritSubscriptions): refreshed whenever the
   // primary agent refreshes its own, so a bot never runs on a token the user's sign-in outgrew.
-  for (const [name, value] of Object.entries(subscriptionEnv(primarySubscriptions()))) {
-    if (vars[`${name}_OWN`] || vars[name] === value) continue;
-    vars[name] = value;
-    envSynced.push(name);
-  }
+  for (const name of applySubscriptionEnv(home, before, vars)) if (!envSynced.includes(name)) envSynced.push(name);
   if (envSynced.length) {
     writePrivate(envFile, dotenvText(vars));
     synced.push(...envSynced);
@@ -682,6 +701,12 @@ function gatewayPid(home: string): number | null {
     if (!fs.readFileSync(`/proc/${pid}/cmdline`, 'utf8').includes('gateway')) return null;
   } catch { /* no /proc: trust the pid file */ }
   return pid;
+}
+
+/** Whether this bot's gateway process is up right now. */
+export function engineRunning(botId: string): boolean {
+  const home = engineHome(botId);
+  return home ? gatewayPid(home) !== null : false;
 }
 
 async function stopGateway(home: string) {

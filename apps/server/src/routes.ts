@@ -24,6 +24,7 @@ import { computerKindFor, providerFor } from './computer-provider-registry.js';
 import { deleteMemory, listMemories, memoryBot } from './engine-memory.js';
 import { availableModels } from './engine.js';
 import { orgo } from './orgo.js';
+import { revocationsFor, setAppAccess } from './core/app-access.js';
 import { catalog, composioEnabled, connectedToolkits, connectionHealthOf, deleteConnection, disconnect, googleProfile, startConnect, startGoogleLogin, toolkitInfo } from './composio.js';
 import { connectionWatch } from './core/connection-watch.js';
 import { libraryRoot, safeRel } from './files.js';
@@ -40,6 +41,7 @@ import { decideCard } from './core/card-service.js';
 import type { CardEvent } from './domain/card-workflow.js';
 import { botRow, botRowsForUser, type BotRow } from './infra/bot-repository.js';
 import {
+  AppAccessSchema,
   AppConnectSchema,
   ApprovalDecisionSchema,
   DraftActionSchema,
@@ -648,7 +650,20 @@ api.get('/apps', async (c) => {
   const categories = [...new Set(all.flatMap((t) => t.categories))].sort();
   const connectedApps = all.filter((t) => connected.has(t.slug)).map((t) => ({ ...t, connected: true }));
   const expiredApps: Toolkit[] = all.filter((t) => expired.has(t.slug)).map((t) => ({ ...t, connected: false, needsReconnect: true }));
-  return c.json({ apps: items.slice(0, Number(c.req.query('limit') ?? 120)), connected: [...connected], connectedApps, expiredApps, categories, total: items.length });
+  return c.json({ apps: items.slice(0, Number(c.req.query('limit') ?? 120)), connected: [...connected], connectedApps, expiredApps, categories, total: items.length, revoked: revocationsFor(user.id) });
+});
+
+/** Allow or stop one Bot using one connected app. Only the person decides this; no Bot tool can. */
+api.put('/apps/:slug/access/:botId', async (c) => {
+  const user = c.get('user');
+  const b = ownBot(user.id, c.req.param('botId'));
+  if (!b) return c.json({ error: 'not found' }, 404);
+  const slug = c.req.param('slug').trim().toLowerCase();
+  if (!/^[a-z0-9_-]{1,64}$/.test(slug)) return c.json({ error: 'invalid app' }, 400);
+  const { allowed } = await requireBody(c, AppAccessSchema);
+  setAppAccess(b.id, slug, allowed);
+  hub.emit(user.id, { type: 'connections' });
+  return c.json({ ok: true, revoked: revocationsFor(user.id)[b.id] ?? [] });
 });
 
 api.post('/apps/:slug/connect', async (c) => {

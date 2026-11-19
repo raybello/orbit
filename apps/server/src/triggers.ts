@@ -3,6 +3,7 @@ import { composio } from './composio.js';
 import { appendRow } from './store.js';
 import { hub } from './lib/hub.js';
 import type { Trigger } from './core/turn-queue.js';
+import { blockedApp } from './core/app-access.js';
 
 /**
  * Event routines: Composio triggers (e.g. GMAIL_NEW_GMAIL_MESSAGE, SLACK_RECEIVE_MESSAGE,
@@ -59,6 +60,8 @@ function onTrigger(data: unknown) {
   const rows = db.prepare(`SELECT * FROM routines WHERE trigger_id IN (${ids.map(() => '?').join(',')}) AND enabled=1`).all(...ids) as
     { id: string; bot_id: string; name: string; prompt: string; schedule: string }[];
   for (const r of rows) {
+    // The event's data must not reach a bot the person has since turned this app off for.
+    if (blockedApp(r.bot_id, [r.schedule.slice(6)])) continue;
     const payload = JSON.stringify(d?.payload ?? d?.originalPayload ?? {}, null, 1).slice(0, 8000);
     db.prepare('UPDATE routines SET last_run_at=? WHERE id=?').run(now(), r.id);
     appendRow(r.bot_id, 'event', { type: 'event', event: 'routine-run', text: `Routine triggered: ${r.name}`, ref: r.id });

@@ -1,6 +1,7 @@
 import { db } from '../db.js';
 import { getBotRow, listRoutines } from '../store.js';
 import { connectedToolkits } from '../composio.js';
+import { revokedApps } from '../core/app-access.js';
 import { LIBRARY_ROOT } from './tools/index.js';
 import { appSheets } from './app-sheets.js';
 
@@ -28,7 +29,12 @@ export async function instructionsFor(userId: string, botId: string): Promise<st
   const routines = listRoutines(botId).map((r) => `- ${r.name} (${r.id}): ${r.enabled ? r.description : 'paused'}; ${r.prompt.slice(0, 120)}`).join('\n');
   let apps = '';
   let appList: string[] = [];
-  try { appList = [...(await connectedToolkits(userId))].sort(); apps = appList.join(', '); } catch { apps = '(could not check right now)'; }
+  const off = revokedApps(botId);
+  try {
+    const connected = [...(await connectedToolkits(userId))].sort();
+    appList = connected.filter((t) => !off.includes(t));
+    apps = appList.join(', ');
+  } catch { apps = '(could not check right now)'; }
 
   const who = primaryEngine
     ? `This conversation comes from ${owner}'s team app, where you appear as "${bot.name}"${bot.label ? ` (${bot.label})` : ''}. Keep your own identity, memory and voice.${bot.is_primary ? ` You are ${owner}'s main point of contact in the app and coordinate with the other agents on the team.` : ''}`
@@ -65,7 +71,7 @@ ${google ? `\n## Connected Google apps\n${google}\n` : ''}
 ## Context
 - User: ${owner}${user?.email ? ` <${user.email}>` : ''}
 - ${tz ? `${owner}'s timezone: ${tz}. Give and take times in it unless they say otherwise.` : `${owner}'s timezone is not known; ask before scheduling anything at a clock time.`}
-- Connected apps: ${apps || 'none yet'}
+- Connected apps: ${apps || 'none yet'}${off.length ? `\n- Apps ${owner} turned off for you (do not use them or ask to connect them): ${off.join(', ')}` : ''}
 ${team ? `- Other agents on the team:\n${team}` : '- You are the only agent on the team so far.'}${groups ? `\n- Group chats you are in: ${groups}` : ''}
 ${routines ? `\n## Your routines in the app\n${routines}\n` : ''}${skills ? `\n## Skills ${owner} gave you\n${skills}\n` : ''}${bot.instructions ? `\n## Instructions from ${owner}\n${bot.instructions}\n` : ''}`;
 }
