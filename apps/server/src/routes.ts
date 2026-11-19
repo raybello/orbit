@@ -2,7 +2,6 @@ import crypto from 'node:crypto';
 import fs from 'node:fs';
 import path from 'node:path';
 import { Hono } from 'hono';
-import { HTTPException } from 'hono/http-exception';
 import { streamSSE } from 'hono/streaming';
 import { asUserId, ORBIT_HEADERS, type CardBody, type DesktopConfigResponse, type DesktopProbeResponse, type PushPlatform, type SignInResponse } from '@orbit/contracts';
 import { db, now } from './db.js';
@@ -16,7 +15,8 @@ import { registerPushToken, removePushToken, removePushTokens } from './push.js'
 import { allLive, appendRow, clearConversation, emitBot, getBot, getRow, listBots, listRoutines, listRows, listTasks, toRoutine, updateRow, type RoutineRow, type TaskRow } from './store.js';
 import { enqueue, interrupt, resolveApproval, touchApproval } from './agent/loop.js';
 import { ReviewEditError } from './review/index.js';
-import { actOnDraft, DraftActionError } from './review/drafts.js';
+import { actOnDraft } from './review/drafts.js';
+import { ApiError } from './api/errors.js';
 import { clearMirror } from './calendar/mirror.js';
 import { computerState, ensureComputer, refreshComputer, suspendComputer } from './computer.js';
 import { computerKindFor, providerFor } from './computer-provider-registry.js';
@@ -33,8 +33,8 @@ import { voiceApi } from './voice.js';
 import { templatesApi } from './routes-templates.js';
 import type { Toolkit } from '@orbit/contracts';
 import { TeamFullError } from './core/bot-service.js';
-import { BotAdminError, createBotFor, deleteBotFor, setBotPrimary, updateBotFor } from './bot-admin.js';
-import { decideCard, IllegalCardMoveError } from './core/card-service.js';
+import { createBotFor, deleteBotFor, setBotPrimary, updateBotFor } from './bot-admin.js';
+import { decideCard } from './core/card-service.js';
 import type { CardEvent } from './domain/card-workflow.js';
 import { botRow, botRowsForUser, type BotRow } from './infra/bot-repository.js';
 import {
@@ -59,27 +59,17 @@ import {
 
 export const api = new Hono<AuthVars>();
 
-/** Thrown for things the user can fix; the message is shown to them. */
-class UserError extends Error {}
-
-/** A route's error message when it is one we raised for the user, otherwise the caller's fallback. */
-const userFacing = (e: unknown, fallback: string): string =>
-  e instanceof UserError || e instanceof TeamFullError ? e.message : fallback;
+/** Every sign-in failure answers 403; only one raised for the person keeps its message. */
+const signInError = (e: unknown): ApiError =>
+  e instanceof ApiError || e instanceof TeamFullError ? new ApiError(403, e.message) : new ApiError(403, 'could not sign in');
 
 /** Message off a caught value, which may be an Error or anything a dependency threw. */
 const messageOf = (e: unknown): string => String((e as { message?: unknown } | null)?.message ?? e);
 
-/** An admin operation's own status when it raised one, otherwise rethrow for the app's 500 handler. */
-function adminFailure(c: { json: (body: { error: string }, status: 400 | 404 | 409) => Response }, e: unknown) {
-  if (e instanceof BotAdminError) return c.json({ error: e.message }, e.status);
-  if (e instanceof TeamFullError) return c.json({ error: e.message }, 409);
-  throw e;
-}
-
 function findOrCreateUser(email: string, name?: string, preferId?: string) {
   const existing = db.prepare('SELECT * FROM users WHERE lower(email)=lower(?)').get(email) as { id: string } | undefined;
   if (existing) return { id: existing.id, isNew: false };
-  if (env.allowedEmails.length && !env.allowedEmails.includes(email.toLowerCase())) throw new UserError('This account is not allowed to sign in here.');
+  if (env.allowedEmails.length && !env.allowedEmails.includes(email.toLowerCase())) throw new ApiError(403, 'This account is not allowed to sign in here.');
   const id = preferId ?? newId('usr');
   db.prepare('INSERT INTO users(id,email,name,created_at) VALUES (?,?,?,?)').run(id, email, name ?? email.split('@')[0], now());
   createBotFor(id, { name: env.primaryBotName, label: env.primaryBotLabel, description: 'Your main point of contact. Checks in proactively and coordinates work with your other Bots.', avatarShape: 'blob', avatarColor: 'black', isPrimary: true });
@@ -176,7 +166,7 @@ api.post('/auth/dev', async (c) => {
     createSession(c, id);
     return c.json({ ok: true });
   } catch (e) {
-    return c.json({ error: userFacing(e, 'could not sign in') }, 403);
+    throw signInError(e);
   }
 });
 
@@ -198,7 +188,7 @@ api.post('/auth/sign-in', async (c) => {
     if (!user) return c.json({ error: 'could not sign in' }, 500);
     return c.json({ ok: true, token, user, expiresAt } satisfies SignInResponse);
   } catch (e) {
-    return c.json({ error: userFacing(e, 'could not sign in') }, 403);
+    throw signInError(e);
   }
 });
 
@@ -221,7 +211,7 @@ api.post('/auth/owner', async (c) => {
     createSession(c, id);
     return c.json({ ok: true });
   } catch (e) {
-    return c.json({ error: userFacing(e, 'could not sign in') }, 403);
+    throw signInError(e);
   }
 });
 
@@ -336,29 +326,17 @@ api.get('/bots', (c) => c.json({ bots: listBots(c.get('user').id), live: allLive
 
 api.post('/bots', async (c) => {
   const body = await requireBody(c, CreateBotSchema);
-  try {
-    return c.json({ bot: createBotFor(c.get('user').id, body) });
-  } catch (e) {
-    return adminFailure(c, e);
-  }
+  return c.json({ bot: createBotFor(c.get('user').id, body) });
 });
 
 api.patch('/bots/:id', async (c) => {
   const p = await requireBody(c, PatchBotSchema);
-  try {
-    return c.json({ bot: updateBotFor(c.get('user').id, c.req.param('id'), p) });
-  } catch (e) {
-    return adminFailure(c, e);
-  }
+  return c.json({ bot: updateBotFor(c.get('user').id, c.req.param('id'), p) });
 });
 
 api.delete('/bots/:id', async (c) => {
-  try {
-    const { promoted } = await deleteBotFor(c.get('user').id, c.req.param('id'));
-    return c.json({ ok: true, promoted });
-  } catch (e) {
-    return adminFailure(c, e);
-  }
+  const { promoted } = await deleteBotFor(c.get('user').id, c.req.param('id'));
+  return c.json({ ok: true, promoted });
 });
 
 /**
@@ -366,22 +344,14 @@ api.delete('/bots/:id', async (c) => {
  * longer demotes the others (that was the single-primary rule).
  */
 api.post('/bots/:id/primary', (c) => {
-  try {
-    const { primaries } = setBotPrimary(c.get('user').id, c.req.param('id'), 'promote');
-    return c.json({ ok: true, primaries });
-  } catch (e) {
-    return adminFailure(c, e);
-  }
+  const { primaries } = setBotPrimary(c.get('user').id, c.req.param('id'), 'promote');
+  return c.json({ ok: true, primaries });
 });
 
 /** Restore a primary Bot to default. Refused when it is the last one, so the team keeps a coordinator. */
 api.post('/bots/:id/primary/restore', (c) => {
-  try {
-    const { primaries } = setBotPrimary(c.get('user').id, c.req.param('id'), 'restore');
-    return c.json({ ok: true, primaries });
-  } catch (e) {
-    return adminFailure(c, e);
-  }
+  const { primaries } = setBotPrimary(c.get('user').id, c.req.param('id'), 'restore');
+  return c.json({ ok: true, primaries });
 });
 
 api.post('/bots/:id/read', (c) => {
@@ -465,7 +435,7 @@ api.post('/approvals/:id', async (c) => {
   try {
     resolveApproval(c.get('user').id, c.req.param('id'), decision, edits);
   } catch (e) {
-    if (e instanceof ReviewEditError) return c.json({ error: e.message }, 400);
+    if (e instanceof ReviewEditError) throw e;
     return c.json({ error: 'not found' }, 404);
   }
   return c.json({ ok: true });
@@ -476,14 +446,9 @@ api.post('/bots/:id/cards/:seq/draft', async (c) => {
   const b = ownBot(c.get('user').id, c.req.param('id'));
   if (!b) return c.json({ error: 'not found' }, 404);
   const { action, edits } = await requireBody(c, DraftActionSchema);
-  try {
-    const { card, tell } = await actOnDraft(c.get('user').id, b.id, Number(c.req.param('seq')), action, edits);
-    if (tell) enqueue(b.id, { type: 'system', text: tell });
-    return c.json({ card });
-  } catch (e) {
-    if (e instanceof DraftActionError) return c.json({ error: e.message }, e.status);
-    throw e;
-  }
+  const { card, tell } = await actOnDraft(c.get('user').id, b.id, Number(c.req.param('seq')), action, edits);
+  if (tell) enqueue(b.id, { type: 'system', text: tell });
+  return c.json({ card });
 });
 
 /** The person is editing an approval card: keep the bot's call waiting for them (up to two hours in all). */
@@ -495,20 +460,6 @@ api.post('/approvals/:id/editing', (c) => {
   }
 });
 
-/**
- * The route-level reading of the card machine: a move the card does not allow is a bad request, not
- * a server error — the card has already been decided, or it never was the kind the route assumed.
- * app.ts renders the HTTPException as `{ error }` with the card machine's message.
- */
-function decideCardRow(body: CardBody, event: CardEvent, cardId: string): CardBody {
-  try {
-    return decideCard(body, event, cardId);
-  } catch (e) {
-    if (e instanceof IllegalCardMoveError) throw new HTTPException(400, { message: e.message });
-    throw e;
-  }
-}
-
 api.post('/bots/:id/cards/:seq/answer', async (c) => {
   const b = ownBot(c.get('user').id, c.req.param('id'));
   if (!b) return c.json({ error: 'not found' }, 404);
@@ -518,7 +469,7 @@ api.post('/bots/:id/cards/:seq/answer', async (c) => {
   // Already decided: idempotent success, like resolveApproval on a settled approval. A second tap
   // must not append the answer to the conversation a second time.
   if (row.body.status !== 'pending') return c.json({ ok: true });
-  const body = decideCardRow(row.body, { type: 'answer', userId: c.get('user').id, at: now(), answer }, String(row.seq));
+  const body = decideCard(row.body, { type: 'answer', userId: c.get('user').id, at: now(), answer }, String(row.seq));
   updateRow(b.id, row.seq, body);
   appendRow(b.id, 'message', { type: 'message', role: 'user', text: answer });
   enqueue(b.id, { type: 'user', text: `[Answer to "${row.body.question}"] ${answer}` });
@@ -539,7 +490,7 @@ api.post('/bots/:id/cards/:seq/dismiss', async (c) => {
   const event: CardEvent = row.body.card === 'connect'
     ? { type: 'skip', userId: c.get('user').id, at: now() }
     : { type: 'dismiss', userId: c.get('user').id, at: now() };
-  const body = decideCardRow(row.body, event, String(row.seq));
+  const body = decideCard(row.body, event, String(row.seq));
   updateRow(b.id, row.seq, body);
   if (row.body.card === 'connect') enqueue(b.id, { type: 'system', text: `The user skipped connecting ${row.body.toolkitName}. Continue without it.` });
   if (row.body.card === 'secure-form') enqueue(b.id, { type: 'system', text: `The user closed the secure form for "${row.body.label}" without entering anything. Continue without that login, or ask them how they want to proceed.` });
