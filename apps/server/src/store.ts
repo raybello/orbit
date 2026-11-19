@@ -1,6 +1,6 @@
 import { db, now } from './db.js';
 import { hub } from './lib/hub.js';
-import type { Bot, LiveState, Row, RowBody, RowKind, Routine, Task } from './types.js';
+import type { Bot, LiveState, Row, RowBody, RowKind, Routine, Task } from '@orbit/contracts';
 import type { BotRow } from './infra/bot-repository.js';
 import { Cron } from 'croner';
 import { resolveAudiocppVoice, resolveVoiceProvider } from '@orbit/contracts';

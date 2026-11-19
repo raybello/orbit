@@ -12,7 +12,7 @@ import { scheduleRoutine, unscheduleRoutine } from '../routines.js';
 import { createEventRoutine, deleteEventTrigger, describeEvent, listTriggerTypes } from '../triggers.js';
 import { setCheckins } from '../proactive.js';
 import { createRoom, postToRoom } from './rooms.js';
-import type { ActivityKind } from '../types.js';
+import type { ActivityKind } from '@orbit/contracts';
 import { Cron } from 'croner';
 import { COMPUTER_TOOLS } from '../computer-tools.js';
 import { RESEARCH_TOOLS } from '../computer-research.js';

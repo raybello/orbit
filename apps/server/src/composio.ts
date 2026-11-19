@@ -2,7 +2,7 @@ import { Composio } from '@composio/core';
 import { OpenAIResponsesProvider } from '@composio/openai';
 import { db } from './db.js';
 import { env } from './env.js';
-import type { Toolkit } from './types.js';
+import type { Toolkit } from '@orbit/contracts';
 import { connectionHealth, type ConnectionAccount, type ConnectionHealth } from './domain/connections.js';
 import { GOOGLE_TOOLKIT_VERSION } from './domain/google-actions.js';
 

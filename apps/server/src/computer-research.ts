@@ -5,7 +5,7 @@ import { providerFor } from './computer-provider-registry.js';
 import { CdpSession, cdpAlive, listTabs, openTab, closeTab, type CdpTab } from './lib/cdp.js';
 import { BING_IMAGE_READY, IMAGE_READY, RESULTS_READY, SEARCH_ENGINES, VIDEO_READY, bingImageScript, bingImageUrl, extractScript, imageScript, pageTextScript, searchUrl, videoScript, type SearchEngine } from './computer-research-scripts.js';
 import type { ToolCtx, ToolResult } from './agent/tools.js';
-import type { ActivityKind } from './types.js';
+import type { ActivityKind } from '@orbit/contracts';
 
 /**
  * Research that happens on the Bot's own computer.
