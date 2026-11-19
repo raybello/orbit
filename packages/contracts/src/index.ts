@@ -312,6 +312,12 @@ export interface GithubSkillInspect { repo: string; ref: string; commit: string;
 
 export interface LibraryFile { name: string; size: number; modifiedAt: number; isDir: boolean }
 
+/**
+ * GET /api/data/files: one folder of the server's data folder (`/data` in the Docker stack).
+ * `path` is relative to `root`. With `?bot=`, `workspace` is where that Bot's agent saves its work.
+ */
+export interface DataListing { root: string; path: string; files: LibraryFile[]; workspace?: string }
+
 export interface ComputerState {
   status: 'absent' | 'creating' | 'starting' | 'running' | 'suspending' | 'suspended' | 'resuming' | 'error' | 'stopped';
   orgoId: string | null;

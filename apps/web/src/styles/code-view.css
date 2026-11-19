@@ -1,0 +1,33 @@
+/* The read-only code view (components/files/CodeView.tsx): CodeMirror with the app's colours. */
+.code-view {
+  --syn-keyword: #8a3ffc; --syn-string: #0a7d36; --syn-number: #b54708; --syn-comment: #6b7280;
+  --syn-type: #0e6aa8; --syn-function: #1d4ed8; --syn-property: #9a3412; --syn-heading: #111827; --syn-link: #2563eb;
+  display: flex; min-height: 0; height: 100%; overflow: hidden;
+  background: var(--color-bg-pane); color: var(--color-text-primary);
+}
+:root[data-theme='dark'] .code-view {
+  --syn-keyword: #c792ea; --syn-string: #a5d6a7; --syn-number: #f78c6c; --syn-comment: #7f8796;
+  --syn-type: #82aaff; --syn-function: #89ddff; --syn-property: #ffcb6b; --syn-heading: #f5f5f5; --syn-link: #82aaff;
+}
+.code-view .cm-editor { flex: 1; min-width: 0; height: 100%; background: transparent; color: inherit; font-size: 12px; }
+.code-view .cm-editor.cm-focused { outline: none; }
+.code-view .cm-scroller { font-family: var(--font-mono-stack, ui-monospace, SFMono-Regular, Menlo, monospace); line-height: 18px; }
+.code-view .cm-gutters { background: transparent; color: var(--color-text-tertiary); border-right: 1px solid var(--color-border-tertiary); }
+.code-view .cm-activeLine, .code-view .cm-activeLineGutter { background: var(--color-bg-hover); }
+.code-view .cm-selectionBackground, .code-view .cm-content ::selection { background: color-mix(in srgb, var(--color-primary) 28%, transparent) !important; }
+.code-view .cm-selectionMatch { background: color-mix(in srgb, var(--color-primary) 16%, transparent); }
+.code-view .cm-panels { background: var(--color-bg-secondary, var(--color-bg-pane)); color: inherit; border-color: var(--color-border-tertiary); }
+.code-view .cm-panels input, .code-view .cm-panels button { font: inherit; color: inherit; }
+
+.code-view .tok-keyword, .code-view .tok-operatorKeyword, .code-view .tok-modifier { color: var(--syn-keyword); }
+.code-view .tok-string, .code-view .tok-string2 { color: var(--syn-string); }
+.code-view .tok-number, .code-view .tok-bool, .code-view .tok-atom { color: var(--syn-number); }
+.code-view .tok-comment, .code-view .tok-meta { color: var(--syn-comment); font-style: italic; }
+.code-view .tok-typeName, .code-view .tok-className, .code-view .tok-namespace { color: var(--syn-type); }
+.code-view .tok-variableName.tok-definition, .code-view .tok-function { color: var(--syn-function); }
+.code-view .tok-propertyName, .code-view .tok-attributeName { color: var(--syn-property); }
+.code-view .tok-heading { color: var(--syn-heading); font-weight: 600; }
+.code-view .tok-link, .code-view .tok-url { color: var(--syn-link); text-decoration: underline; }
+.code-view .tok-emphasis { font-style: italic; }
+.code-view .tok-strong { font-weight: 600; }
+.code-view .tok-invalid { color: var(--color-danger-text); }

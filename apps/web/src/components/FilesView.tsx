@@ -1,12 +1,11 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import type { Bot, FileEntry } from '@orbit/contracts';
-import { kindOf, type FileKind } from '@orbit/domain';
+import { kindOf, viewerFor, type FileKind } from '@orbit/domain';
 import { api } from '../lib/api';
 import { useStore } from '../store';
 import { BotAvatarFor } from '../avatar/BotAvatar';
 import { Icon, type IconName } from './Icon';
-import { ImageViewer } from './ImageViewer';
-import { Modal } from './modals/Modal';
+import { FileViewer } from './files/FileViewer';
 import { formatBytes, shortDate } from './config/ui';
 import { PageShell } from './PageShell';
 import '../styles/files.css';
@@ -15,8 +14,6 @@ type FileType = 'all' | 'library' | 'attachment' | 'workspace';
 type ViewMode = 'grid' | 'list';
 
 const PAGE_SIZE = 50;
-/** Text previews stop at 200 KB; bigger files keep downloading instead of hanging the tab. */
-const TEXT_CAP = 200_000;
 const LS_VIEW = 'grokbot.filesView';
 
 const TABS: { value: FileType; label: string }[] = [
@@ -51,56 +48,6 @@ function download(entry: FileEntry) {
   document.body.appendChild(a);
   a.click();
   a.remove();
-}
-
-function TextPreview({ entry, onClose }: { entry: FileEntry; onClose: () => void }) {
-  const [text, setText] = useState<string | null>(null);
-  const [error, setError] = useState<string | null>(null);
-  const [capped, setCapped] = useState(false);
-  const url = api.fileUrl(entry);
-
-  useEffect(() => {
-    let alive = true;
-    setText(null);
-    setError(null);
-    setCapped(false);
-    fetch(url, { credentials: 'include' })
-      .then((res) => {
-        if (!res.ok) throw new Error(`${res.status} ${res.statusText}`.trim());
-        return res.text();
-      })
-      .then((body) => {
-        if (!alive) return;
-        if (body.length > TEXT_CAP) { setText(body.slice(0, TEXT_CAP)); setCapped(true); }
-        else setText(body);
-      })
-      .catch((err: Error) => { if (alive) setError(err.message || 'Could not load the file'); });
-    return () => { alive = false; };
-  }, [url]);
-
-  return (
-    <Modal onClose={onClose} label={`Preview of ${entry.filename}`} className="files-preview">
-      <div className="files-preview__head">
-        <span className="files-preview__name" title={entry.filename}>{entry.filename}</span>
-        <div className="files-preview__tools">
-          <a className="btn btn--sm btn--secondary" href={url} download={entry.filename} title={`Download ${entry.filename}`}>
-            <Icon name="arrow_down" size={12} /> Download
-          </a>
-          <button type="button" className="icon-btn icon-btn--plain" onClick={onClose} aria-label="Close preview" title="Close">
-            <Icon name="close" size={14} />
-          </button>
-        </div>
-      </div>
-      {error ? (
-        <div className="files-preview__error" role="alert">Couldn’t preview this file. {error}</div>
-      ) : text === null ? (
-        <div className="files-preview__loading" role="status">Loading preview…</div>
-      ) : (
-        <pre className="files-preview__code">{text}</pre>
-      )}
-      {capped && <div className="files-preview__cut">Showing the first 200 KB.</div>}
-    </Modal>
-  );
 }
 
 function FileItem({
@@ -208,8 +155,7 @@ export function FilesView({ botId: scopedBotId }: { botId?: string } = {}) {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [nonce, setNonce] = useState(0);
-  const [image, setImage] = useState<FileEntry | null>(null);
-  const [text, setText] = useState<FileEntry | null>(null);
+  const [viewed, setViewed] = useState<FileEntry | null>(null);
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const request = useRef(0);
 
@@ -252,17 +198,15 @@ export function FilesView({ botId: scopedBotId }: { botId?: string } = {}) {
 
   const changeView = (next: ViewMode) => { setView(next); writeView(next); };
 
+  // Markdown renders, images open in the image viewer, text opens in the code view; the rest downloads.
   const open = (entry: FileEntry) => {
-    const kind = kindOf(entry);
-    if (kind === 'image') setImage(entry);
-    else if (kind === 'code') setText(entry);
-    else download(entry);
+    if (viewerFor(entry.filename, entry.mediaType) === 'other') download(entry);
+    else setViewed(entry);
   };
 
   const loadMore = () => setQuery((q) => ({ ...q, page: q.page + 1 }));
   const retry = () => setNonce((n) => n + 1);
-  const closeImage = useCallback(() => setImage(null), []);
-  const closeText = useCallback(() => setText(null), []);
+  const closeViewer = useCallback(() => setViewed(null), []);
   const selectFile = useCallback((id: string) => setSelectedId((cur) => (cur === id ? null : id)), []);
 
   const hasMore = files.length < total;
@@ -404,8 +348,7 @@ export function FilesView({ botId: scopedBotId }: { botId?: string } = {}) {
         </div>
       )}
 
-      {image && <ImageViewer url={api.fileUrl(image)} name={image.filename} onClose={closeImage} />}
-      {text && <TextPreview entry={text} onClose={closeText} />}
+      {viewed && <FileViewer file={{ name: viewed.filename, url: api.fileUrl(viewed), size: viewed.size, mediaType: viewed.mediaType }} onClose={closeViewer} />}
     </div>
   );
 

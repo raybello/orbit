@@ -1,0 +1,40 @@
+/* The shared file viewer (components/files/FileViewer.tsx): Markdown, text and code in one modal. */
+.file-viewer { width: min(960px, calc(100vw - 48px)); height: min(82vh, 820px); display: flex; flex-direction: column; }
+.file-viewer__head {
+  display: flex; align-items: center; gap: var(--space-2); padding: var(--space-2) var(--space-2) var(--space-2) var(--space-4);
+  border-bottom: 1px solid var(--color-border-subtle);
+}
+.file-viewer__title { flex: 1 1 0; min-width: 0; display: flex; flex-direction: column; }
+.file-viewer__name {
+  font-size: 14px; font-weight: 600; line-height: 20px; color: var(--color-fg-default);
+  white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+}
+.file-viewer__meta {
+  font-family: var(--font-mono-stack); font-size: 11px; line-height: 16px; color: var(--color-fg-muted);
+  white-space: nowrap; overflow: hidden; text-overflow: ellipsis; direction: rtl; text-align: left;
+}
+.file-viewer__tools { display: flex; align-items: center; gap: var(--space-1); flex-shrink: 0; }
+.file-viewer__seg { display: inline-flex; gap: 2px; padding: 2px; margin-right: var(--space-1); border-radius: 8px; background: var(--color-bg-tertiary); }
+.file-viewer__seg button { height: 24px; padding: 0 10px; border-radius: 6px; font-size: 12px; font-weight: 500; color: var(--color-text-secondary); }
+.file-viewer__seg button.is-on { background: var(--color-bg-pane); color: var(--color-text-primary); box-shadow: var(--color-border-tertiary) 0 0 0 0.5px; }
+.file-viewer__body { flex: 1 1 auto; min-height: 0; display: flex; flex-direction: column; overflow: hidden; }
+.file-viewer__body > .code-view { flex: 1 1 auto; }
+.file-viewer__md { flex: 1 1 auto; min-height: 0; overflow: auto; padding: var(--space-4) var(--space-5); }
+.file-viewer__md .md img { max-width: 100%; border-radius: 8px; }
+.file-viewer__note { padding: var(--space-5) var(--space-4); font-size: 13px; line-height: 18px; color: var(--color-fg-subtle); }
+.file-viewer__note.is-error { color: var(--color-danger); }
+.file-viewer__cut {
+  padding: var(--space-2) var(--space-4); border-top: 1px solid var(--color-border-subtle);
+  font-size: 12px; line-height: 16px; color: var(--color-fg-muted);
+}
+
+/* A document reads as a document: real heading sizes, ruled tables, a comfortable line length. */
+.file-viewer__md .md { max-width: 780px; margin: 0 auto; font-size: 14px; line-height: 22px; }
+.file-viewer__md .md h1 { margin: 4px 0 12px; font-size: 22px; line-height: 30px; font-weight: 650; }
+.file-viewer__md .md h2 { margin: 22px 0 8px; padding-bottom: 4px; font-size: 17px; line-height: 24px; font-weight: 600; border-bottom: 1px solid var(--color-border-tertiary); }
+.file-viewer__md .md h3 { margin: 16px 0 6px; font-size: 15px; line-height: 22px; font-weight: 600; }
+.file-viewer__md .md h4 { margin: 12px 0 4px; font-size: 14px; font-weight: 600; }
+.file-viewer__md .md hr { margin: 18px 0; border: 0; border-top: 1px solid var(--color-border-tertiary); }
+.file-viewer__md .md table { border-collapse: collapse; }
+.file-viewer__md .md th, .file-viewer__md .md td { padding: 4px 10px; border: 1px solid var(--color-border-tertiary); text-align: left; }
+.file-viewer__md .md th { background: var(--color-bg-tertiary); font-weight: 600; }

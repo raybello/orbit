@@ -1,6 +1,7 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import { env } from './env.js';
+import { engineHome } from './engine.js';
 import { db } from './db.js';
 import { mediaTypeFor } from './lib/mime.js';
 import type { FileEntry, FilesResponse } from '@orbit/contracts';
@@ -17,7 +18,11 @@ export type FileKind = 'library' | 'attachment' | 'workspace';
 export const LIB_ROOT = path.join(env.botDataDir, 'files');
 
 export const libraryRoot = (botId: string) => path.join(LIB_ROOT, botId);
-export const workspaceRoot = (botId: string) => path.join(env.enginesDir, botId, 'workspace');
+/**
+ * Where a bot's agent works: the `workspace` folder of its Hermes home. The primary agent's home is
+ * `engines/primary`, every other bot's `engines/<botId>`.
+ */
+export const workspaceRoot = (botId: string) => path.join(engineHome(botId) ?? path.join(env.enginesDir, botId), 'workspace');
 
 const rootFor = (kind: FileKind, botId: string) =>
   kind === 'workspace' ? workspaceRoot(botId) : libraryRoot(botId);
@@ -258,8 +263,8 @@ export function aggregateFiles(opts: AggregateFilesOptions): FilesResponse {
   for (const bot of botsFor(opts.userId, opts.botId)) {
     if (type === 'all' || type === 'library') files.push(...listLibraryFiles(bot.id, bot.name));
     if (type === 'all' || type === 'attachment') files.push(...listAttachmentFiles(bot.id, bot.name));
-    // Only a managed bot has a workspace of its own; the primary bot works in its Library.
-    if ((type === 'all' || type === 'workspace') && bot.engine === 'managed') files.push(...listWorkspaceFiles(bot.id, bot.name));
+    // Every agent has a workspace, the primary's included (engines/primary/workspace).
+    if ((type === 'all' || type === 'workspace') && (bot.engine === 'managed' || bot.engine === 'primary')) files.push(...listWorkspaceFiles(bot.id, bot.name));
   }
 
   const matched = search ? files.filter((f) => f.filename.toLowerCase().includes(search)) : files;

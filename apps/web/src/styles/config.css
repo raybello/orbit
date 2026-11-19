@@ -335,3 +335,4 @@
 
 /* Initiative: the briefing time and the idle select sit at the end of a settings row, so they beat .text-input's full width. */
 .cfg-row .cfg-initiative__input { flex: 0 0 auto; width: 120px; height: 30px; padding: 4px 8px; }
+.lib-actions { display: flex; align-items: center; gap: 8px; flex-shrink: 0; }

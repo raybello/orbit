@@ -1,12 +1,11 @@
 import { Hono } from 'hono';
 import { db, now } from './db.js';
 import './db-config.js';
-import { newId } from './lib/ids.js';
 import { hub } from './lib/hub.js';
 import { requireUser, type AuthVars } from './lib/auth.js';
 import fs from 'node:fs';
 import path from 'node:path';
-import { mediaTypeFor } from './lib/mime.js';
+import { fileHeaders } from './lib/mime.js';
 import { Readable } from 'node:stream';
 import { env } from './env.js';
 import { emitBot, getBotRow, listRoutines, listTasks } from './store.js';
@@ -15,16 +14,16 @@ import { computerKindFor, providerFor } from './computer-provider-registry.js';
 import { box, type Box } from './box.js';
 import { dockerBox } from './docker/docker-box.js';
 import { getComputer } from './computer-store.js';
-import { orgo } from './orgo.js';
 import { openTerminal } from './desk.js';
 import { engineHome, engineInfo, engineKind, forgetEngineOptions, restartEngine, stopOwnScreen, syncAllManagedAuth } from './engine.js';
 import { applyModelChoice, asBlock, readDotenv, readYaml, writePrivate, SHARED_ENV } from './hermes-files.js';
 import { listMemories } from './engine-memory.js';
 import { idleConfig, viewerCount } from './idle.js';
-import { optionalBody, requireBody, SharedSettingsSchema, EngineChoiceSchema, EngineLoginSchema, FileDownloadSchema } from './api/schemas.js';
+import { optionalBody, requireBody, SharedSettingsSchema, EngineChoiceSchema, EngineLoginSchema } from './api/schemas.js';
 import { listLibrary } from './core/skill-library.js';
+import { isInstanceOwner } from './core/data-files.js';
 import { checkSettings, readSharedSettings, saveSharedSettings } from './hermes-settings.js';
-import type { BotEngineAuthRow, LibraryFile } from '@orbit/contracts';
+import type { BotEngineAuthRow } from '@orbit/contracts';
 import type { BotRow } from './infra/bot-repository.js';
 import YAML from 'yaml';
 
@@ -244,10 +243,7 @@ configApi.post('/config/engine-auth/sync', async (c) => {
  * The shared Hermes settings hold every model key in plain text, so only the person whose computer
  * runs the primary agent may read or change them (anyone, on a fresh install with no primary yet).
  */
-const mayEditSharedSettings = (userId: string) => {
-  const owner = db.prepare("SELECT user_id FROM bots WHERE engine='primary' LIMIT 1").get() as { user_id: string } | undefined;
-  return !owner || owner.user_id === userId;
-};
+const mayEditSharedSettings = isInstanceOwner;
 
 configApi.get('/config/hermes-settings', (c) => {
   if (!mayEditSharedSettings(c.get('user').id)) return c.json({ error: 'Only the owner of the primary Bot can see these settings.' }, 403);
@@ -275,19 +271,6 @@ function safeRel(p: string | undefined): string | null {
 
 const shq = (s: string) => `'${s.replace(/'/g, `'\\''`)}'`;
 
-/** Parse `ls -la --time-style=+%s` output. */
-export function parseLs(out: string): LibraryFile[] {
-  const files: LibraryFile[] = [];
-  for (const line of out.split('\n')) {
-    const m = line.match(/^([-dlcbps])\S*\s+\d+\s+\S+\s+\S+\s+(\d+)\s+(\d+)\s+(.+)$/);
-    if (!m) continue;
-    let name = m[4];
-    if (m[1] === 'l') name = name.replace(/ -> .*$/, '');
-    if (name === '.' || name === '..') continue;
-    files.push({ name, size: Number(m[2]), modifiedAt: Number(m[3]) * 1000, isDir: m[1] === 'd' });
-  }
-  return files.sort((a, b) => Number(b.isDir) - Number(a.isDir) || b.modifiedAt - a.modifiedAt);
-}
 
 /** A Docker bot's files live on its own computer, at its home folder. */
 const CONTAINER_HOME = '/home/bot';
@@ -329,117 +312,10 @@ function resolveUnder(root: string, rel: string): string | null {
   }
 }
 
-/** One directory as the explorer shows it: folders first, then names. */
-function listDirectory(root: string, rel: string): LibraryFile[] {
-  const dir = resolveUnder(root, rel);
-  if (!dir) return [];
-  let entries: fs.Dirent[];
-  try {
-    entries = fs.readdirSync(dir, { withFileTypes: true });
-  } catch {
-    return [];
-  }
-  const files = entries.map((e) => {
-    let size = 0; let modifiedAt = 0; let isDir = e.isDirectory();
-    try {
-      const st = fs.statSync(path.join(dir, e.name));
-      size = st.size; modifiedAt = st.mtimeMs; isDir = st.isDirectory();
-    } catch { /* a link that points nowhere counts as an empty file */ }
-    return { name: e.name, size, modifiedAt, isDir };
-  });
-  return files.sort((a, b) => Number(b.isDir) - Number(a.isDir) || a.name.localeCompare(b.name));
-}
 
-/** One directory inside a Docker bot's computer, through the same box its desk uses. */
-async function listInContainer(b: Box, rel: string): Promise<{ status: 'ok' | 'asleep' | 'error'; files: LibraryFile[]; error?: string }> {
-  const dir = rel ? `${CONTAINER_HOME}/${rel}` : CONTAINER_HOME;
-  try {
-    const r = await b.bash(`ls -la --time-style=+%s -- ${shq(dir)} 2>&1`, 20);
-    if (r.exit_code === 0) return { status: 'ok', files: parseLs(r.output ?? '') };
-    const out = (r.output ?? '').slice(0, 300);
-    // A folder that is gone reads as empty; anything else means the computer is not answering.
-    if (/No such file or directory/.test(out)) return { status: 'ok', files: [] };
-    return { status: 'asleep', files: [] };
-  } catch {
-    // `docker exec` refuses a stopped container: the panel offers to start it.
-    return { status: 'asleep', files: [] };
-  }
-}
 
-configApi.get('/bots/:id/files', async (c) => {
-  const user = c.get('user');
-  const b = ownBot(user.id, c.req.param('id'));
-  if (!b) return c.json({ error: 'not found' }, 404);
-  const rel = safeRel(c.req.query('path'));
-  if (rel === null) return c.json({ error: 'bad path' }, 400);
-  const wake = c.req.query('wake') === '1';
-  try {
-    let source = librarySource(b.id);
-    if ((source.kind === 'missing' || source.kind === 'docker') && wake) {
-      // Starting the computer is what creates the container the browser reads through.
-      await providerFor(b.id).ensureComputer(b.id).catch(() => {});
-      source = librarySource(b.id);
-    }
-    if (source.kind === 'missing') return c.json({ status: 'asleep', path: rel, root: CONTAINER_HOME, files: [] });
 
-    if (source.kind === 'local') {
-      fs.mkdirSync(source.root, { recursive: true });
-      return c.json({ status: 'ok', path: rel, root: source.root, files: listDirectory(source.root, rel) });
-    }
-    if (source.kind === 'docker') {
-      const listed = await listInContainer(source.box, rel);
-      return c.json({ status: listed.status, path: rel, root: CONTAINER_HOME, files: listed.files, ...(listed.error ? { error: listed.error } : {}) });
-    }
 
-    if (computerState(user.id).status !== 'running') return c.json({ status: 'asleep', path: rel, files: [] });
-    const root = `${LIB_ROOT}/${b.id}`;
-    const dir = `${root}${rel ? `/${rel}` : ''}`;
-    const r = await box.bash(`mkdir -p ${shq(root)} && ls -la --time-style=+%s ${shq(dir)} 2>&1`, 30);
-    if (r.exit_code !== 0) return c.json({ status: 'error', path: rel, files: [], error: (r.output ?? '').slice(0, 300) });
-    return c.json({ status: 'ok', path: rel, files: parseLs(r.output ?? '') });
-  } catch (e) {
-    return c.json({ status: 'error', path: rel, files: [], error: messageOf(e).slice(0, 300) });
-  }
-});
-
-configApi.post('/bots/:id/files/download', async (c) => {
-  const user = c.get('user');
-  const b = ownBot(user.id, c.req.param('id'));
-  if (!b) return c.json({ error: 'not found' }, 404);
-  const { path } = await optionalBody(c, FileDownloadSchema, {});
-  const rel = safeRel(path);
-  if (!rel) return c.json({ error: 'bad path' }, 400);
-  const source = librarySource(b.id);
-  // A computer this server can read (its own disk or the bot's container): serve it directly.
-  if (source.kind === 'docker' || source.kind === 'local') {
-    return c.json({ url: `/api/bots/${b.id}/files/raw?path=${encodeURIComponent(rel)}` });
-  }
-  if (source.kind === 'missing') return c.json({ error: 'computer unavailable' }, 409);
-  try {
-    if (!env.orgoComputerId) return c.json({ error: 'computer unavailable' }, 409);
-    const r = (await orgo.exportFile(env.orgoComputerId, `${LIB_ROOT}/${b.id}/${rel}`)) as
-      | { url?: string; file?: { url?: string }; download_url?: string }
-      | null
-      | undefined;
-    const url = r?.url ?? r?.file?.url ?? r?.download_url;
-    if (!url) return c.json({ error: 'export returned no link' }, 502);
-    return c.json({ url });
-  } catch (e) {
-    return c.json({ error: messageOf(e).slice(0, 300) }, 502);
-  }
-});
-
-/** How a file is served: images, audio, video and PDFs open in the browser, the rest download. */
-function fileHeaders(name: string, size: number): Record<string, string> {
-  const mediaType = mediaTypeFor(name);
-  const inline = mediaType.startsWith('image/') || mediaType.startsWith('audio/') || mediaType.startsWith('video/') || mediaType === 'application/pdf';
-  return {
-    'content-type': mediaType,
-    'content-length': String(size),
-    'content-disposition': `${inline ? 'inline' : 'attachment'}; filename*=UTF-8''${encodeURIComponent(name)}`,
-    'x-content-type-options': 'nosniff',
-  };
-}
 
 configApi.get('/bots/:id/files/raw', async (c) => {
   const b = ownBot(c.get('user').id, c.req.param('id'));

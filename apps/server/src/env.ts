@@ -71,6 +71,13 @@ export const env = {
   sessionSecret: req('SESSION_SECRET'),
   devLogin: process.env.DEV_LOGIN === '1',
   dbPath: process.env.DB_PATH ?? fileURLToPath(new URL('../../../data/grokbot.db', import.meta.url)),
+  /**
+   * The server's data folder, which the file browser shows as its root: the folder the database
+   * lives in (`/data` in the Docker stack, `./data` in a dev run), unless DATA_DIR says otherwise.
+   */
+  get dataDir(): string {
+    return process.env.DATA_DIR ? path.resolve(process.env.DATA_DIR) : path.dirname(path.resolve(this.dbPath));
+  },
   /** Local directory for bot files and Chrome profiles. Replaces /root/grokbot on non-root dev machines. */
   botDataDir: process.env.BOT_DATA_DIR ?? path.join(os.homedir(), '.local', 'share', 'bot-hq'),
   /**

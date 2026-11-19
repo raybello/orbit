@@ -1,4 +1,4 @@
-import type { Bot, BotEngineAuthRow, ComputerState, EngineAuthResponse, EngineInfo, InitiativeSettings, InitiativeSettingsPatch, GithubSkillInspect, LibraryFile, LibrarySkill, Memory, Routine, SkillLibraryResponse, Task, Toolkit } from '@orbit/contracts';
+import type { DataListing, Bot, BotEngineAuthRow, ComputerState, EngineAuthResponse, EngineInfo, InitiativeSettings, InitiativeSettingsPatch, GithubSkillInspect, LibrarySkill, Memory, Routine, SkillLibraryResponse, Task, Toolkit } from '@orbit/contracts';
 import { ApiError } from './api';
 
 async function req<T>(method: string, path: string, body?: unknown): Promise<T> {
@@ -26,7 +26,6 @@ export interface BotSettingsBundle {
   memory: { lastConsolidatedAt: number | null; historyChars: number; compactAtChars: number; lastCompaction: { method: string; created_at: number } | null };
 }
 
-export interface LibraryListing { status: 'ok' | 'asleep' | 'error'; path: string; root?: string; files: LibraryFile[]; error?: string }
 
 export interface ComputerDetails {
   computer: ComputerState;
@@ -75,8 +74,16 @@ export const configApi = {
   tasks: () => req<{ tasks: Task[] }>('GET', '/tasks'),
   botTasks: (botId: string) => req<{ tasks: Task[] }>('GET', `/bots/${botId}/tasks`),
 
-  files: (botId: string, path = '', wake = false) => req<LibraryListing>('GET', `/bots/${botId}/files?path=${encodeURIComponent(path)}${wake ? '&wake=1' : ''}`),
-  downloadFile: (botId: string, path: string) => req<{ url: string }>('POST', `/bots/${botId}/files/download`, { path }),
+  /**
+   * One folder of the server's data folder. Without `path`, a Bot's listing opens at its workspace,
+   * where its agent saves what it makes.
+   */
+  dataFiles: (opts: { path?: string; botId?: string }) => {
+    const q = new URLSearchParams();
+    if (opts.path !== undefined) q.set('path', opts.path);
+    if (opts.botId) q.set('bot', opts.botId);
+    return req<DataListing>('GET', `/data/files?${q}`);
+  },
 
   computerDetails: () => req<ComputerDetails>('GET', '/computer/details'),
   wake: () => req<{ computer: ComputerState }>('POST', '/computer/ensure'),
@@ -114,3 +121,6 @@ export const configApi = {
     req<{ updated: string[]; restarting: number; settings: HermesSettings }>('PUT', '/config/hermes-settings', p),
   logout: () => req<{ ok: true }>('POST', '/auth/logout'),
 };
+
+/** Where a file in the server's data folder is served from. */
+export const dataFileUrl = (path: string) => `/api/data/raw?path=${encodeURIComponent(path)}`;

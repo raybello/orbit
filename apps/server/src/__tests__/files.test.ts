@@ -285,3 +285,14 @@ test("GET /files/:id/download is 404 for another user's file and for a bad id", 
   // Signed out, the download does not even look at the disk.
   assert.equal((await filesApi.request(`/${bob.id}/download`)).status, 401);
 });
+
+test("the primary Bot's workspace (engines/primary/workspace) is listed and opens like any other", () => {
+  addUser('usr_p', 'p@example.com');
+  addBot('bot_prime', 'usr_p', 'Atlas', 'primary');
+  touch(write(path.join(process.env.ENGINES_DIR!, 'primary', 'workspace'), 'US_Military_Report.md', '# Report'), at(200));
+
+  const { files } = aggregateFiles({ userId: 'usr_p', type: 'workspace' });
+  assert.deepEqual(files.map((f) => [f.type, f.filename]), [['workspace', 'US_Military_Report.md']]);
+  const resolved = resolveFileId(files[0].id);
+  assert.ok(resolved?.file.endsWith(path.join('primary', 'workspace', 'US_Military_Report.md')), JSON.stringify(resolved));
+});
