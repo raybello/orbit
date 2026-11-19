@@ -1,6 +1,7 @@
 import type { FileEntry } from '@orbit/contracts';
 import * as Sharing from 'expo-sharing';
 import { Linking } from 'react-native';
+import { kindOf } from '@orbit/domain';
 import { currentApiBase } from './api-server';
 
 /**
@@ -10,28 +11,6 @@ import { currentApiBase } from './api-server';
  * know which address the client reached it on. Downloads sit behind the session, so this module is
  * where a row becomes something the OS can do with it.
  */
-
-export type FileKind = 'image' | 'audio' | 'video' | 'pdf' | 'text' | 'other';
-
-/** Extensions worth treating as text even when the server says application/octet-stream. */
-const TEXT_EXT = /\.(?:txt|md|markdown|mdx|log|csv|tsv|json|jsonl|ndjson|ya?ml|toml|ini|cfg|conf|env|xml|html?|css|scss|less|jsx?|mjs|cjs|tsx?|py|rb|go|rs|java|kt|kts|swift|c|h|cc|cpp|hpp|cs|php|pl|sh|bash|zsh|fish|sql|graphql|gql|tex|lua|r|dart|vue|svelte)$/i;
-
-/** What a file is, from its media type — the same buckets the web Files view uses. */
-export function fileKind(entry: Pick<FileEntry, 'mediaType' | 'filename'>): FileKind {
-  const media = (entry.mediaType || '').toLowerCase();
-  if (media.startsWith('image/')) return 'image';
-  if (media.startsWith('audio/')) return 'audio';
-  if (media.startsWith('video/')) return 'video';
-  if (media === 'application/pdf') return 'pdf';
-  if (
-    media.startsWith('text/') ||
-    /(?:json|javascript|typescript|xml|yaml|x-sh|x-python|sql)/.test(media) ||
-    TEXT_EXT.test(entry.filename)
-  ) {
-    return 'text';
-  }
-  return 'other';
-}
 
 /** The absolute, authenticated-in-header download URL for an entry. */
 export function fileUrl(apiBase: string, entry: Pick<FileEntry, 'downloadUrl'>): string {
@@ -78,7 +57,7 @@ export async function openDownloadInBrowser(entry: FileEntry): Promise<boolean> 
 }
 
 /** True for the kinds the app can render itself, given the session header. */
-export function canPreview(entry: Pick<FileEntry, 'mediaType' | 'filename'>): boolean {
-  const kind = fileKind(entry);
-  return kind === 'image' || kind === 'pdf' || kind === 'text';
+export function canPreview(entry: FileEntry): boolean {
+  const kind = kindOf(entry);
+  return kind === 'image' || kind === 'pdf' || kind === 'code';
 }

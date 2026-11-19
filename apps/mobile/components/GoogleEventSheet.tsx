@@ -4,7 +4,7 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import type { EventFields, GoogleCalendarEvent, GoogleCalendarInfo } from '@orbit/contracts';
 import { useMobileTokens } from '../lib/native';
 import { useGoogleCalendarActions } from '../lib/queries';
-import { whenOf } from './ReviewCards';
+import { fieldsOfGoogle, splitAddresses as split, whenOf } from '@orbit/domain';
 import { PrimaryButton } from './ui';
 
 /**
@@ -15,22 +15,6 @@ import { PrimaryButton } from './ui';
 const pad = (n: number) => String(n).padStart(2, '0');
 const local = (d: Date) => `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}T${pad(d.getHours())}:${pad(d.getMinutes())}`;
 const zone = () => Intl.DateTimeFormat().resolvedOptions().timeZone;
-const split = (s: string) => s.split(',').map((x) => x.trim()).filter(Boolean);
-
-function wallClock(iso: string, timeZone: string): string {
-  const p = Object.fromEntries(new Intl.DateTimeFormat('en-CA', { timeZone, year: 'numeric', month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit', hourCycle: 'h23' }).formatToParts(new Date(iso)).map((x) => [x.type, x.value]));
-  return `${p.year}-${p.month}-${p.day}T${p.hour}:${p.minute}`;
-}
-const addDays = (date: string, n: number) => { const d = new Date(`${date}T00:00:00Z`); d.setUTCDate(d.getUTCDate() + n); return d.toISOString().slice(0, 10); };
-
-export function fieldsOfGoogle(e: GoogleCalendarEvent): EventFields {
-  return {
-    summary: e.title, description: e.description, location: e.location,
-    start: e.allDay ? e.start.slice(0, 10) : wallClock(e.start, e.timezone),
-    end: e.allDay ? addDays(e.end.slice(0, 10), -1) : wallClock(e.end, e.timezone),
-    allDay: e.allDay, timezone: e.timezone, attendees: e.attendees, meet: Boolean(e.meetLink),
-  };
-}
 
 export function GoogleEventSheet({ event, date, calendars, onClose }: { event?: GoogleCalendarEvent; date?: Date; calendars: GoogleCalendarInfo[]; onClose: () => void }) {
   const tokens = useMobileTokens();
