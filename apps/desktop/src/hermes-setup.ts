@@ -477,20 +477,22 @@ export interface WireMcpOptions {
 }
 
 /**
- * Add (or refresh) `mcp_servers.orbit` in `~/.hermes/config.yaml`.
+ * Remove the stale `mcp_servers.orbit` entry from `~/.hermes/config.yaml` if present.
  *
- * Read-modify-write with the `yaml` document API: a round-trip through a plain object
- * would drop comments and reorder the file the user maintains by hand.
+ * Older desktop versions wrote an `orbit` entry pointing at `/mcp` (no bot slug) with the
+ * stack token — both wrong. The server's `syncPrimaryHqConfig` now owns the correct `hq`
+ * entry; this function only cleans up the leftover so Hermes stops trying to connect to a
+ * dead endpoint.
+ *
+ * Read-modify-write with the `yaml` document API so comments and ordering are preserved.
  */
 export function wireHermesMcp(
-  token: string,
+  _token: string,
   deps: HermesDeps = {},
   options: WireMcpOptions = {},
-): { configPath: string; url: string } {
+): { configPath: string } {
   const resolved = resolveDeps(deps);
   const configPath = options.configPath ?? path.join(hermesHome(resolved.env, deps), 'config.yaml');
-  const base = (options.serverUrl ?? 'http://127.0.0.1:8787').replace(/\/+$/, '');
-  const url = `${base}${options.mcpPath ?? '/mcp'}`;
 
   const existing = resolved.exists(configPath) ? resolved.readFile(configPath) : '';
   const doc = parseDocument(existing || '{}');
@@ -501,16 +503,15 @@ export function wireHermesMcp(
     );
   }
 
-  doc.setIn(['mcp_servers', 'orbit'], {
-    type: 'http',
-    url,
-    headers: { Authorization: `Bearer ${token}` },
-  });
+  // Only write if there is actually something to remove.
+  if (doc.getIn(['mcp_servers', 'orbit']) !== undefined) {
+    doc.deleteIn(['mcp_servers', 'orbit']);
+    const text = doc.toString({ lineWidth: 0 });
+    resolved.writeFile(configPath, text, 0o600);
+    resolved.log('removed stale mcp_servers.orbit entry');
+  }
 
-  const text = doc.toString({ lineWidth: 0 });
-  resolved.writeFile(configPath, text, 0o600);
-  resolved.log(`wired mcp_servers.orbit -> ${url}`);
-  return { configPath, url };
+  return { configPath };
 }
 
 // ------------------------------------------------------------------ API key

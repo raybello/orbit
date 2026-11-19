@@ -160,29 +160,48 @@ describe('detectHermes', () => {
 });
 
 describe('wireHermesMcp', () => {
-  test('adds mcp_servers.orbit and keeps the rest of the YAML, comments included', () => {
+  test('removes stale mcp_servers.orbit entry and keeps the rest of the YAML, comments included', () => {
     const configPath = path.join(HOME, '.hermes', 'config.yaml');
-    const original = ['# my hand-written config', 'model: deepseek-flash', 'mcp_servers:', '  other:', '    type: stdio'].join('\n');
+    const original = [
+      '# my hand-written config',
+      'model: deepseek-flash',
+      'mcp_servers:',
+      '  other:',
+      '    type: stdio',
+      '  orbit:',
+      '    type: http',
+      '    url: http://127.0.0.1:65423/mcp',
+      '    headers:',
+      '      Authorization: Bearer stale_token',
+    ].join('\n');
     const { deps, written } = fakeFs({ [configPath]: original });
 
     const result = wireHermesMcp('tok_123', deps, { serverUrl: 'http://127.0.0.1:9123' });
-    assert.equal(result.url, 'http://127.0.0.1:9123/mcp');
+    assert.equal(result.configPath, configPath);
 
     const out = written[configPath];
     assert.match(out, /model: deepseek-flash/);
     assert.match(out, /# my hand-written config/);
     assert.match(out, /other:/);
-    assert.match(out, /orbit:/);
-    assert.match(out, /type: http/);
-    assert.match(out, /url: http:\/\/127\.0\.0\.1:9123\/mcp/);
-    assert.match(out, /Authorization: Bearer tok_123/);
+    // stale orbit entry must be gone
+    assert.doesNotMatch(out, /orbit:/);
+    assert.doesNotMatch(out, /stale_token/);
   });
 
-  test('creates the file when it does not exist', () => {
+  test('does nothing when no orbit entry exists', () => {
+    const configPath = path.join(HOME, '.hermes', 'config.yaml');
+    const original = ['model: deepseek-flash', 'mcp_servers:', '  hq:', '    type: http'].join('\n');
+    const { deps, written } = fakeFs({ [configPath]: original });
+    wireHermesMcp('abc', deps, { configPath });
+    // file must not be rewritten when nothing changed
+    assert.equal(written[configPath], undefined);
+  });
+
+  test('does nothing when file does not exist', () => {
     const configPath = path.join(HOME, '.hermes', 'config.yaml');
     const { deps, written } = fakeFs();
     wireHermesMcp('abc', deps, { configPath });
-    assert.match(written[configPath], /mcp_servers:/);
+    assert.equal(written[configPath], undefined);
   });
 
   test('refuses to rewrite a config it cannot parse', () => {
@@ -192,9 +211,10 @@ describe('wireHermesMcp', () => {
     assert.equal(written[configPath], undefined, 'the original file must be untouched');
   });
 
-  test('writes the config 0600', { skip: process.platform === 'win32' }, () => {
+  test('writes the config 0600 when removing orbit', { skip: process.platform === 'win32' }, () => {
     const configPath = path.join(HOME, '.hermes', 'config.yaml');
-    const { deps, modes } = fakeFs();
+    const original = ['mcp_servers:', '  orbit:', '    type: http'].join('\n');
+    const { deps, modes } = fakeFs({ [configPath]: original });
     wireHermesMcp('abc', deps, { configPath });
     assert.equal(modes[configPath], 0o600);
   });
