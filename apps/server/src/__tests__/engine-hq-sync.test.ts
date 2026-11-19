@@ -12,7 +12,7 @@ const {
   mcpToken,
   readHqLease,
   syncPrimaryHqConfig,
-} = await import('../engine.js');
+} = await import('../engine-hq.js');
 const { db } = await import('../db.js');
 const { env } = await import('../env.js');
 
