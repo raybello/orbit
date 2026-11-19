@@ -6,8 +6,8 @@ import { env } from '../env.js';
 import { safetyIdentifier } from '../lib/xai.js';
 import { appendRow, getBotRow, listRoutines, toRoutine, describeCron, type RoutineRow } from '../store.js';
 import type { Trigger } from './loop.js';
-import { connectedToolkits, executeComposio, innerToolCalls, toolkitInfo } from '../composio.js';
-import { classifyGoogleCall, isReadOnlySlug, type ReviewCard } from '../domain/google-actions.js';
+import { connectedToolkits, executeComposio, toolkitInfo } from '../composio.js';
+import { type ReviewCard } from '../domain/google-actions.js';
 import { scheduleRoutine, unscheduleRoutine } from '../routines.js';
 import { createEventRoutine, deleteEventTrigger, describeEvent, listTriggerTypes } from '../triggers.js';
 import { setCheckins } from '../proactive.js';
@@ -458,92 +458,6 @@ export interface PolicyVerdict {
   alwaysFor?: { botId: string; botName: string };
   /** The custom card for the action that asks, when it has one (phase 3 renders these). */
   card?: ReviewCard;
-}
-
-const storedMode = (userId: string, tool: string) =>
-  (db.prepare('SELECT mode FROM policies WHERE user_id=? AND tool=?').get(userId, tool) as { mode: string } | undefined)?.mode;
-
-/** The bot, when its person turned per-bot "Always allow" on for it. */
-function trustedBot(botId: string | undefined): { botId: string; botName: string } | undefined {
-  if (!botId) return undefined;
-  const b = db.prepare('SELECT id, name, always_allow FROM bots WHERE id=?').get(botId) as { id: string; name: string; always_allow: number | null } | undefined;
-  return b?.always_allow ? { botId: b.id, botName: b.name } : undefined;
-}
-
-/** Whether the person always-allowed this tool or action for this bot. */
-const botAllows = (botId: string, tool: string) => !!db.prepare('SELECT 1 FROM bot_policies WHERE bot_id=? AND tool=? COLLATE NOCASE').get(botId, tool);
-
-/**
- * The approval gate's verdict for one call. Precedence, strongest first: a "Never" the person stored
- * blocks; an action always-allowed for this bot (while its per-bot setting is on) runs, sends
- * included; then the person's own "Always allow" for everyone, which never covers sending email;
- * then the catalogue (Gmail, Calendar, Sheets, Docs) or, for other apps, the action's name.
- * The bot's rules are applied on top by the caller and win over all of this.
- */
-export function policyFor(userId: string, toolName: string, args: ToolArgs, botId?: string): PolicyVerdict {
-  const trusted = trustedBot(botId);
-  const asked = (v: Omit<PolicyVerdict, 'decision'> & { decision: Decision }): PolicyVerdict =>
-    v.decision === 'ask' && trusted ? { ...v, offerAlways: true, alwaysFor: trusted } : v;
-  const simple = (key: string, title: string): PolicyVerdict => {
-    const mode = storedMode(userId, key) ?? 'needs_approval';
-    if (mode === 'blocked') return { decision: 'block', key, title };
-    if (mode === 'always_allow' || (trusted && botAllows(trusted.botId, key))) return { decision: 'allow', key, title };
-    return asked({ decision: 'ask', key, title });
-  };
-
-  const ownTool = toolMap.get(toolName);
-  if (ownTool) {
-    if (ownTool.policy !== 'needs_approval') return { decision: 'allow', key: toolName, title: toolName };
-    // Owned tool that requires approval — check the policy table (supports always_allow / blocked overrides).
-    return simple(toolName, ownTool.label);
-  }
-  const calls = innerToolCalls(toolName, args);
-  if (!calls.length) {
-    // Composio's sandbox can run app actions from code, which would slip past the per-action
-    // approvals below. Code that reaches for them is treated like a write to an app.
-    if (/^COMPOSIO_REMOTE_(WORKBENCH|BASH_TOOL)$/.test(toolName) && /run_composio_tool|proxy_execute|execute_tool|composio/i.test(JSON.stringify(args ?? {}))) {
-      return simple(toolName, 'Run code that uses your connected apps');
-    }
-    return { decision: 'allow', key: toolName, title: toolName };
-  }
-  let decision: Decision = 'allow';
-  let key = calls[0].slug;
-  let offerAlways = true;
-  let card: ReviewCard | undefined;
-  for (const { slug, args: inner } of calls) {
-    let mode = storedMode(userId, slug);
-    if (mode === 'blocked') return { decision: 'block', key: slug, title: humanizeSlug(slug) };
-    if (trusted && botAllows(trusted.botId, slug)) continue;
-    // Gmail, Calendar, Sheets and Docs follow the catalogue; every other app is read by name.
-    const action = classifyGoogleCall(slug, inner);
-    mode ??= action ? (action.kind === 'review' ? 'needs_approval' : 'always_allow') : isReadOnlySlug(slug) ? 'always_allow' : 'needs_approval';
-    // The person's own "Always allow" does not cover an action that must ask every time.
-    if (mode === 'always_allow' && action?.kind === 'review' && !action.allowAlways) mode = 'needs_approval';
-    if (mode === 'needs_approval') {
-      decision = 'ask';
-      key = slug;
-      card = action?.card;
-      if (action && !action.allowAlways) offerAlways = false;
-    }
-  }
-  return asked({ decision, key, toolkit: key.split('_')[0].toLowerCase(), title: humanizeSlug(key), ...(decision === 'ask' ? { offerAlways, ...(card ? { card } : {}) } : {}) });
-}
-
-/** Whether a person-wide "Always allow" may be stored for this tool or action. */
-export const mayAlwaysAllow = (tool: string): boolean => classifyGoogleCall(tool, {})?.allowAlways ?? true;
-
-/**
- * Remember "Always allow" from an approval card: for this bot only when its per-bot setting is on,
- * otherwise for the person (never for sending email). Answers which one was stored, or null.
- */
-export function rememberAlwaysAllow(userId: string, botId: string, tool: string): 'bot' | 'user' | null {
-  if (trustedBot(botId)) {
-    db.prepare('INSERT OR REPLACE INTO bot_policies(bot_id, tool, created_at) VALUES (?,?,?)').run(botId, tool, Date.now());
-    return 'bot';
-  }
-  if (!mayAlwaysAllow(tool)) return null;
-  db.prepare("INSERT OR REPLACE INTO policies(user_id,tool,mode) VALUES (?,?,'always_allow')").run(userId, tool);
-  return 'user';
 }
 
 export function humanizeSlug(slug: string) {

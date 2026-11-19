@@ -11,7 +11,7 @@ process.env.COMPOSIO_API_KEY = '';
 const { db, now } = await import('../db.js');
 const { GOOGLE_ACTIONS, GOOGLE_TOOLKIT_VERSION, classifyGoogleCall, isSelectOnly } = await import('../domain/google-actions.js');
 const { innerToolCalls } = await import('../composio.js');
-const { policyFor, mayAlwaysAllow } = await import('../agent/tools.js');
+const { policyFor, mayAlwaysAllow } = await import('../core/policy-service.js');
 
 after(() => cleanupTmpEnv());
 
