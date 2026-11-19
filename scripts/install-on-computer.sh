@@ -9,12 +9,13 @@
 # ORGO_API_KEY may be left out of KEYS_FILE when Hermes' own .env already has one.
 # DRY_RUN=1 prints every step and changes nothing: no unpack, no install, no .env, no restart.
 #
-# It never restarts Hermes and never touches its config: adding the app's tools to the main agent is a
-# separate, printed step (see the end of the output).
+# The app runs its own primary agent (with the app's tools already wired) and imports the main agent's
+# model keys, config, persona, memories and skills from HERMES_IMPORT_FROM (/root/.hermes) once at its
+# first boot. It never restarts that Hermes and never writes its home.
 set -euo pipefail
 tgz="${1:?usage: install-on-computer.sh <hq-app.tgz>}"
 APP=/opt/hq/app; DATA=/opt/hq/data; NODE_DIR=/opt/hq/node; NODE_V=v22.21.1
-PORT="${PORT:-8787}"; HERMES_HOME_DIR="${HERMES_HOME_PRIMARY:-/root/.hermes}"
+PORT="${PORT:-8787}"; HERMES_HOME_DIR="${HERMES_IMPORT_FROM:-/root/.hermes}"
 DRY="${DRY_RUN:-0}"
 dry() { [ "$DRY" = "1" ]; }
 umask 077
@@ -75,9 +76,7 @@ elif [ ! -f "$APP/.env" ]; then
     echo "DB_PATH=$DATA/hq.db"
     echo "ENGINES_DIR=$DATA/engines"
     echo "HERMES_BIN=$(command -v hermes || echo /usr/local/bin/hermes)"
-    echo "HERMES_URL=http://127.0.0.1:8642"
-    echo "HERMES_HOME_PRIMARY=$HERMES_HOME_DIR"
-    echo "HERMES_KEY=$(key API_SERVER_KEY "$HERMES_HOME_DIR/.env")"
+    echo "HERMES_IMPORT_FROM=$HERMES_HOME_DIR"
     echo "HQ_LOCAL=1"
     echo "ORGO_COMPUTER_ID=$ORGO_COMPUTER_ID"
     echo "PRIMARY_CDP_URL=${PRIMARY_CDP_URL:-}"
@@ -121,21 +120,3 @@ for _ in $(seq 1 30); do curl -fsS "http://127.0.0.1:$PORT/api/health" >/dev/nul
 curl -fsS "http://127.0.0.1:$PORT/api/health" && echo
 fi
 
-# 5. What to add to the main agent's Hermes config so it gets the app's tools (never done here).
-if dry; then
-  echo "(dry run) would write $DATA/hermes-mcp-hq.yaml (the main agent's MCP entry)"
-else
-secret="$(grep -E '^SESSION_SECRET=' "$APP/.env" | cut -d= -f2-)"
-tok="$(printf 'mcp:primary' | openssl dgst -sha256 -hmac "$secret" -r | cut -d' ' -f1)"
-umask 077
-cat > "$DATA/hermes-mcp-hq.yaml" <<EOF
-# Add under mcp_servers: in $HERMES_HOME_DIR/config.yaml (Hermes picks it up without a restart).
-  hq:
-    url: http://127.0.0.1:$PORT/mcp/primary
-    headers:
-      Authorization: Bearer $tok
-    timeout: 1800
-    connect_timeout: 30
-EOF
-echo "installed. main agent's MCP entry: $DATA/hermes-mcp-hq.yaml"
-fi
