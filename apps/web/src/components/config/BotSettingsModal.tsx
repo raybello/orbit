@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
-import type { AvatarColor, AvatarShape, Bot, Memory, Routine, Skill } from '@orbit/contracts';
+import type { AvatarColor, AvatarShape, Bot, LibrarySkill, Memory, Routine } from '@orbit/contracts';
 import { BotAvatar, BotAvatarFor, PICKER_SHAPES } from '../../avatar/BotAvatar';
 import { COLOR_ORDER, botVars, palette } from '../../lib/colors';
 import { configApi, type BotSettingsBundle } from '../../lib/configApi';
@@ -300,72 +300,50 @@ function LookPicker({ shape, color, onShape, onColor }: { shape: AvatarShape; co
   );
 }
 
-function SkillsTab({ bot, skills, onChange }: { bot: Bot; skills: Skill[] | undefined; onChange: () => void }) {
-  const [editing, setEditing] = useState<string | 'new' | null>(null);
+/**
+ * The skills this Bot has, from the shared library. Writing, installing and editing skills happens
+ * on the Skills page; here a skill can only be turned off for this Bot.
+ */
+function SkillsTab({ bot, skills, onChange }: { bot: Bot; skills: LibrarySkill[] | undefined; onChange: () => void }) {
+  const [error, setError] = useState<string | null>(null);
+  const openLibrary = () => {
+    const ui = useConfigUI.getState();
+    ui.closeBotSettings();
+    ui.setNavSection('skills');
+  };
   return (
     <div className="cfg-page">
       <div className="cfg-page__head">
         <div>
           <div className="cfg-page__title">Skills</div>
-          <div className="cfg-page__sub">Step-by-step how-tos {bot.name} follows for specific jobs. Ask for one by name in chat.</div>
+          <div className="cfg-page__sub">Skills from the shared library that {bot.name} can use. Type /name in a message to use one.</div>
         </div>
-        {editing !== 'new' && <button type="button" className="cfg-btn cfg-btn--primary" onClick={() => setEditing('new')}><Icon name="plus" size={12} /> New skill</button>}
+        <button type="button" className="cfg-btn cfg-btn--secondary" onClick={openLibrary}>Open skill library</button>
       </div>
-      {editing === 'new' && <SkillEditor botId={bot.id} onDone={() => { setEditing(null); onChange(); }} />}
-      {!skills ? <div className="cfg-empty">Loading…</div> : skills.length === 0 && editing !== 'new' ? (
-        <div className="cfg-empty">
-          No skills yet. Write down how you like something done, like “Prep for a sales call”, and {bot.name} will follow it every time.
-        </div>
+      {!skills ? <div className="cfg-empty">Loading…</div> : skills.length === 0 ? (
+        <div className="cfg-empty">{bot.name} has no skills yet. Add one in the skill library, and every Bot can use it.</div>
       ) : (
         <div className="cfg-list">
-          {skills.map((s) => editing === s.id ? (
-            <SkillEditor key={s.id} botId={bot.id} skill={s} onDone={() => { setEditing(null); onChange(); }} />
-          ) : (
+          {skills.map((s) => (
             <div key={s.id} className="cfg-item">
               <span className="cfg-item__icon"><Glyph name="spark" size={14} /></span>
               <div className="cfg-item__text">
-                <div className="cfg-item__title">{s.name}</div>
-                <div className="cfg-item__sub">{s.description || s.body.split('\n')[0]}</div>
+                <div className="cfg-item__title">/{s.name}</div>
+                <div className="cfg-item__sub">{s.description}</div>
               </div>
               <div className="cfg-item__actions">
-                <button type="button" className="cfg-icon-btn" onClick={() => setEditing(s.id)} aria-label={`Edit ${s.name}`} title="Edit"><Icon name="edit" size={14} /></button>
-                <ConfirmButton className="cfg-icon-btn" title="Delete" onConfirm={async () => { await configApi.deleteSkill(s.id); onChange(); }}><Glyph name="trash" size={14} /></ConfirmButton>
+                <ConfirmButton className="cfg-btn cfg-btn--secondary" confirmLabel="Turn off" title={`Turn /${s.name} off for ${bot.name}`}
+                  onConfirm={async () => {
+                    setError(null);
+                    try { await configApi.setSkillAccess(s.id, bot.id, false); onChange(); } catch (e) { setError((e as Error).message); }
+                  }}>Turn off</ConfirmButton>
               </div>
             </div>
           ))}
         </div>
       )}
-    </div>
-  );
-}
-
-function SkillEditor({ botId, skill, onDone }: { botId: string; skill?: Skill; onDone: () => void }) {
-  const [name, setName] = useState(skill?.name ?? '');
-  const [description, setDescription] = useState(skill?.description ?? '');
-  const [body, setBody] = useState(skill?.body ?? '');
-  const [busy, setBusy] = useState(false);
-  const [error, setError] = useState<string | null>(null);
-  const can = name.trim() && body.trim() && !busy;
-  const save = async () => {
-    if (!can) return;
-    setBusy(true); setError(null);
-    try {
-      if (skill) await configApi.updateSkill(skill.id, { name, description, body });
-      else await configApi.createSkill(botId, { name, description, body });
-      onDone();
-    } catch (e) { setError((e as Error).message); setBusy(false); }
-  };
-  return (
-    <form className="cfg-editor" onSubmit={(e) => { e.preventDefault(); save(); }}>
-      <input className="text-input" placeholder="Skill name, e.g. Weekly report" value={name} maxLength={80} onChange={(e) => setName(e.target.value)} autoFocus aria-label="Skill name" />
-      <input className="text-input" placeholder="When to use it (optional)" value={description} maxLength={300} onChange={(e) => setDescription(e.target.value)} aria-label="Skill description" />
-      <textarea className="text-input cfg-textarea cfg-textarea--tall" rows={8} placeholder={'Write the steps to follow:\n1. …\n2. …'} value={body} onChange={(e) => setBody(e.target.value)} aria-label="Skill steps" />
       {error && <div className="cfg-error">{error}</div>}
-      <div className="cfg-editor__actions">
-        <button type="button" className="cfg-btn cfg-btn--secondary" onClick={onDone}>Cancel</button>
-        <button type="submit" className="cfg-btn cfg-btn--primary" disabled={!can}>{busy ? 'Saving…' : skill ? 'Save skill' : 'Add skill'}</button>
-      </div>
-    </form>
+    </div>
   );
 }
 

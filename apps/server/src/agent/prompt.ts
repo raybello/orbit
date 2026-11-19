@@ -2,6 +2,7 @@ import { db } from '../db.js';
 import { getBotRow, listRoutines } from '../store.js';
 import { connectedToolkits } from '../composio.js';
 import { revokedApps } from '../core/app-access.js';
+import { skillsForBot } from '../core/skill-library.js';
 import { LIBRARY_ROOT } from './tools/index.js';
 import { appSheets } from './app-sheets.js';
 
@@ -25,7 +26,7 @@ export async function instructionsFor(userId: string, botId: string): Promise<st
     .map((b) => `- ${b.name}${b.label ? ` (${b.label})` : ''}${b.is_primary ? ' [main point of contact]' : ''}`)
     .join('\n');
   const groups = (db.prepare("SELECT name FROM bots WHERE user_id=? AND kind='room' AND members LIKE ? ORDER BY created_at").all(userId, `%${botId}%`) as { name: string }[]).map((g) => g.name).join(', ');
-  const skills = (db.prepare('SELECT name, body FROM skills WHERE bot_id=? ORDER BY created_at').all(botId) as { name: string; body: string }[]).map((s) => `### ${s.name}\n${s.body}`).join('\n\n');
+  const skills = skillsForBot(botId).map((s) => `- ${s.name}: ${s.description}`).join('\n');
   const routines = listRoutines(botId).map((r) => `- ${r.name} (${r.id}): ${r.enabled ? r.description : 'paused'}; ${r.prompt.slice(0, 120)}`).join('\n');
   let apps = '';
   let appList: string[] = [];
@@ -55,7 +56,8 @@ These are your core capabilities in ${owner}'s team app. The app's tools come fr
 4. Use ${owner}'s connected apps through Composio: COMPOSIO_MULTI_EXECUTE_TOOL with tools=[{"tool_slug": "...", "arguments": {...}}], several at once when they are independent. Find a slug you do not know with COMPOSIO_SEARCH_TOOLS. Never use the browser for an app that is connected. If one is not connected, call request_app_connection and stop.
 5. Keep time. calendar_list reads ${owner}'s calendar: their Google events and the team's routines. create_routine schedules work ${owner} can see and control in the app (a 5-field cron; never a private cron job); create_event_routine runs work whenever something happens in an app; list_routines, update_routine, delete_routine manage yours.${bot.is_primary ? ' set_checkins turns your check-ins on or off.' : ''}
 6. Deliver files. save_file puts a finished deliverable in your Library, where ${owner} opens and downloads it; anything you write under ${LIBRARY_ROOT}/${botId}/ appears there too. show_file shows an image or file from a URL in your reply.
-7. Track work. create_task and update_task show ${owner} what you are doing for them.
+7. Track work. create_task and update_task show ${owner} what you are doing for them. Unsure whether you can do something? list_tools lists every tool, app and MCP server you have.
+8. Follow skills. A skill is a repeatable way of doing something, kept in ${owner}'s library for the whole team. list_skills lists yours and read_skill reads one; when a message holds one inline as <skill name="...">...</skill> (someone wrote /<name>), follow it for that request. create_skill adds a skill every Bot can use.
 
 ## Approvals
 - Reads run at once. So do writing an email draft and creating a new sheet or doc, because nothing leaves ${owner}'s account until they act on it.
@@ -73,5 +75,5 @@ ${google ? `\n## Connected Google apps\n${google}\n` : ''}
 - ${tz ? `${owner}'s timezone: ${tz}. Give and take times in it unless they say otherwise.` : `${owner}'s timezone is not known; ask before scheduling anything at a clock time.`}
 - Connected apps: ${apps || 'none yet'}${off.length ? `\n- Apps ${owner} turned off for you (do not use them or ask to connect them): ${off.join(', ')}` : ''}
 ${team ? `- Other agents on the team:\n${team}` : '- You are the only agent on the team so far.'}${groups ? `\n- Group chats you are in: ${groups}` : ''}
-${routines ? `\n## Your routines in the app\n${routines}\n` : ''}${skills ? `\n## Skills ${owner} gave you\n${skills}\n` : ''}${bot.instructions ? `\n## Instructions from ${owner}\n${bot.instructions}\n` : ''}`;
+${routines ? `\n## Your routines in the app\n${routines}\n` : ''}${skills ? `\n## Skills\n${skills}\n` : ''}${bot.instructions ? `\n## Instructions from ${owner}\n${bot.instructions}\n` : ''}`;
 }

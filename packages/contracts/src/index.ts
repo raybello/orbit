@@ -271,7 +271,43 @@ export interface Task { id: string; botId: string; title: string; state: 'workin
 
 export interface Memory { id: string; botId: string; text: string; createdAt: number; source?: 'chat' | 'learned' }
 
-export interface Skill { id: string; botId: string; name: string; description: string; body: string; createdAt: number; updatedAt: number }
+/** Where a library skill came from: written in the app (or by a Bot), or installed from a GitHub repository. */
+export type SkillSource =
+  | { type: 'manual' }
+  | { type: 'github'; repo: string; ref: string; commit: string; path: string; url: string };
+
+/** Who added a skill to the library. */
+export interface SkillAuthor { kind: 'user' | 'bot'; id: string; name: string }
+
+/**
+ * One skill in the shared library: a SKILL.md every Bot may use unless it is turned off for that Bot.
+ * `availability: 'selected'` means only the Bots marked allowed have it (new Bots do not).
+ * A Bot uses it by writing `/<name>`, or by reading it with its read_skill tool.
+ */
+export interface LibrarySkill {
+  id: string;
+  name: string;
+  description: string;
+  /** The full SKILL.md, frontmatter included. */
+  content: string;
+  availability: 'all' | 'selected';
+  source: SkillSource;
+  createdBy: SkillAuthor;
+  /** Supporting files installed with the skill (scripts, references), by path inside the skill folder. */
+  files: { path: string; size: number }[];
+  createdAt: number;
+  updatedAt: number;
+  bots: { botId: string; botName: string; allowed: boolean }[];
+}
+
+/** GET /api/skill-library */
+export interface SkillLibraryResponse { skills: LibrarySkill[] }
+
+/** One skill a GitHub repository offers, as an install would read it. */
+export interface GithubSkillCandidate { path: string; name: string; description: string; files: number }
+
+/** POST /api/skill-library/github/inspect: what installing this source would add. */
+export interface GithubSkillInspect { repo: string; ref: string; commit: string; candidates: GithubSkillCandidate[] }
 
 export interface LibraryFile { name: string; size: number; modifiedAt: number; isDir: boolean }
 
@@ -358,6 +394,8 @@ export type ServerEvent =
   | { type: 'tasks'; botId: string }
   | { type: 'memories'; botId: string }
   | { type: 'connections' }
+  /** The skill library changed: a skill was added, edited, removed or turned on or off for a Bot. */
+  | { type: 'skills' }
   | { type: 'activity'; item: ActivityItem }
   | { type: 'computer-status'; status: BotComputerStatus }
   | { type: 'files-updated'; botId: string }

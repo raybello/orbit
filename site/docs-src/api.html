@@ -103,10 +103,13 @@ POST|/api/checkins/now|Fires a check-in immediately.
 <h2 id="config">Bot settings, engine and skills</h2>
 <!--endpoints
 GET|/api/bots/:id/settings|Everything the bot settings modal shows.
-GET|/api/bots/:id/skills|The bot's custom skills.
-POST|/api/bots/:id/skills|<code>{ name, description?, body }</code>. Adds a skill.
-PATCH|/api/skills/:id|Edits a skill.
-DELETE|/api/skills/:id|Deletes a skill.
+GET|/api/skill-library|<code>{ skills: LibrarySkill[] }</code>: every skill in the library, with its source, author, files and which bots have it.
+POST|/api/skill-library|<code>{ name, content, description?, availability?, botIds? }</code>. Adds a skill written as SKILL.md. 400 names the problem; 409 when the name is taken.
+POST|/api/skill-library/github/inspect|<code>{ source }</code> → <code>{ repo, ref, commit, candidates }</code>: what a GitHub source would install. Installs nothing.
+POST|/api/skill-library/github|<code>{ source, pick? }</code>. Installs one skill from a public GitHub repository, with its files and the commit it came from. 409 when the source has several skills and no <code>pick</code>.
+PATCH|/api/skill-library/:id|<code>{ name?, content?, description?, availability? }</code>. Edits a skill; changing availability keeps who has it today.
+DELETE|/api/skill-library/:id|Deletes a skill from the library.
+PUT|/api/skill-library/:id/access/:botId|<code>{ allowed }</code>. Turns a skill on or off for one bot.
 GET|/api/skills|MCP servers per bot: <code>{ skills: SkillEntry[] }</code>.
 PUT|/api/skills/:botId/:skillName|<code>{ enabled: boolean }</code>. Turns an MCP server on or off for a bot.
 POST|/api/bots/:id/memories/consolidate|Asks the engine to consolidate memory.
@@ -193,6 +196,8 @@ POST|/mcp/primary|The same, for whichever bot the primary engine is bound to.
 <tbody>
 <tr><td>Talking to you</td><td><code>ask_user</code>, <code>stay_silent</code>, <code>show_file</code>, <code>save_file</code>, <code>request_app_connection</code></td></tr>
 <tr><td>The team</td><td><code>list_bots</code>, <code>create_bot</code>, <code>update_bot</code>, <code>delete_bot</code>, <code>set_primary_bot</code>, <code>send_to_bot</code>, <code>create_group</code>, <code>post_to_group</code></td></tr>
+<tr><td>Skills</td><td><code>list_skills</code>, <code>read_skill</code> (a skill this bot has, or one of its files), <code>create_skill</code> (adds a skill every bot can use)</td></tr>
+<tr><td>What the bot has</td><td><code>list_tools</code>: the app's own tools, the connected apps the bot may use, and the MCP servers in its config</td></tr>
 <tr><td>Routines and tasks</td><td><code>create_routine</code>, <code>update_routine</code>, <code>delete_routine</code>, <code>list_routines</code>, <code>create_event_routine</code>, <code>list_event_triggers</code>, <code>create_task</code>, <code>update_task</code>, <code>set_checkins</code></td></tr>
 <tr><td>Its computer</td><td><code>computer_screenshot</code>, <code>computer_click</code>, <code>computer_drag</code>, <code>computer_scroll</code>, <code>computer_type</code>, <code>computer_key</code>, <code>computer_windows</code>, <code>computer_shell</code></td></tr>
 <tr><td>Research</td><td><code>x_search</code> (needs <code>XAI_API_KEY</code>)</td></tr>

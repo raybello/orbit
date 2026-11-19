@@ -188,14 +188,28 @@ export const RoomMembersSchema = z.object({ botIds: z.array(z.string()).optional
  */
 export const SkillToggleSchema = z.object({ enabled: z.unknown().optional() }).loose();
 
-/**
- * POST /api/bots/:id/skills and PATCH /api/skills/:id. cleanSkill() in routes-config turns each
- * field into text (and caps it), and names the one the user has to fix ("Give the skill a name"),
- * so every field stays optional and typed only as far as "it is text".
- */
-export const SkillBodySchema = z
-  .object({ name: z.string().optional(), description: z.string().optional(), body: z.string().optional() })
-  .loose();
+/** POST /api/skill-library: a skill written in the app. The library checks the name and SKILL.md itself. */
+export const NewSkillSchema = z.object({
+  name: z.string(),
+  content: z.string(),
+  description: z.string().optional(),
+  availability: z.enum(['all', 'selected']).optional(),
+  botIds: z.array(z.string()).max(200).optional(),
+});
+
+/** PATCH /api/skill-library/:id */
+export const SkillPatchSchema = z.object({
+  name: z.string().optional(),
+  content: z.string().optional(),
+  description: z.string().optional(),
+  availability: z.enum(['all', 'selected']).optional(),
+});
+
+/** POST /api/skill-library/github and /github/inspect. `pick` is the skill folder, for a repository with several. */
+export const GithubSkillSchema = z.object({ source: z.string().min(1).max(500), pick: z.string().max(500).optional() });
+
+/** PUT /api/skill-library/:id/access/:botId */
+export const SkillAccessSchema = z.object({ allowed: z.boolean() });
 
 /**
  * POST /api/routines — the CreateRoutineRequest contract, every field optional at the boundary.

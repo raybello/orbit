@@ -1,7 +1,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { act, cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
 import type { Bot, SkillEntry } from '@orbit/contracts';
-import { SkillsView } from '../components/SkillsView';
+import { McpServersPane as SkillsView } from '../components/skills/McpServers';
 import { useStore } from '../store';
 
 vi.mock('../lib/api', () => ({
@@ -51,7 +51,7 @@ afterEach(() => {
   useStore.setState({ bots: [] });
 });
 
-describe('SkillsView', () => {
+describe('Skills → MCP servers', () => {
   it('renders every skill from the api and auto-selects the first one', async () => {
     mocked.skills.mockResolvedValue({ skills: SKILLS });
     const { container } = render(<SkillsView />);
@@ -161,7 +161,7 @@ describe('SkillsView', () => {
     mocked.skills.mockResolvedValue({ skills: [] });
     render(<SkillsView />);
 
-    expect(await screen.findByText(/No skills configured in the primary agent's config/)).toBeTruthy();
+    expect(await screen.findByText(/No MCP servers in the primary agent's config/)).toBeTruthy();
   });
 
   it('shows an error with Retry, and retrying refetches', async () => {

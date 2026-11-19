@@ -126,12 +126,34 @@ CREATE TABLE IF NOT EXISTS memories (
   text TEXT NOT NULL,
   created_at INTEGER NOT NULL
 );
-CREATE TABLE IF NOT EXISTS skills (
+-- The shared skill library (core/skill-library.ts). A skill is the person's, not one bot's: every bot
+-- may use it unless skill_access says otherwise (availability 'selected' = only the bots allowed there).
+CREATE TABLE IF NOT EXISTS skill_library (
   id TEXT PRIMARY KEY,
-  bot_id TEXT NOT NULL REFERENCES bots(id) ON DELETE CASCADE,
+  user_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
   name TEXT NOT NULL,
-  body TEXT NOT NULL,
-  created_at INTEGER NOT NULL
+  description TEXT NOT NULL DEFAULT '',
+  content TEXT NOT NULL,
+  availability TEXT NOT NULL DEFAULT 'all' CHECK (availability IN ('all', 'selected')),
+  source TEXT NOT NULL DEFAULT '{"type":"manual"}',
+  created_by_kind TEXT NOT NULL CHECK (created_by_kind IN ('user', 'bot')),
+  created_by_id TEXT NOT NULL,
+  created_by_name TEXT NOT NULL,
+  created_at INTEGER NOT NULL,
+  updated_at INTEGER NOT NULL,
+  UNIQUE (user_id, name)
+);
+CREATE TABLE IF NOT EXISTS skill_files (
+  skill_id TEXT NOT NULL REFERENCES skill_library(id) ON DELETE CASCADE,
+  path TEXT NOT NULL,
+  content BLOB NOT NULL,
+  PRIMARY KEY (skill_id, path)
+);
+CREATE TABLE IF NOT EXISTS skill_access (
+  skill_id TEXT NOT NULL REFERENCES skill_library(id) ON DELETE CASCADE,
+  bot_id TEXT NOT NULL REFERENCES bots(id) ON DELETE CASCADE,
+  allowed INTEGER NOT NULL,
+  PRIMARY KEY (skill_id, bot_id)
 );
 CREATE TABLE IF NOT EXISTS composio_sessions (
   user_id TEXT PRIMARY KEY REFERENCES users(id) ON DELETE CASCADE,

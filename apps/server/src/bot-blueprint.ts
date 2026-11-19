@@ -6,6 +6,8 @@ import { BotAdminError, createBotFor, ownedBot, updateBotFor } from './bot-admin
 import { type RoutineRow } from './store.js';
 import { ensureTriggerColumns, isEventSchedule } from './triggers.js';
 import type { BotRow } from './infra/bot-repository.js';
+import { giveSkillTo, skillsForBot } from './core/skill-library.js';
+import { skillBody } from './domain/skill-md.js';
 
 /**
  * What makes a Bot itself, minus everything it has lived through.
@@ -27,7 +29,6 @@ export interface BotBlueprint {
   routines: TemplateRoutine[];
 }
 
-interface SkillRecord { name: string; description: string | null; body: string }
 type RoutineRecord = RoutineRow & { trigger_config?: string | null };
 
 /**
@@ -49,7 +50,6 @@ function routineOf(r: RoutineRecord): TemplateRoutine | null {
 
 export function blueprintOf(bot: BotRow): BotBlueprint {
   ensureTriggerColumns();
-  const skills = db.prepare('SELECT name, description, body FROM skills WHERE bot_id=? ORDER BY created_at ASC').all(bot.id) as SkillRecord[];
   const routines = db.prepare('SELECT * FROM routines WHERE bot_id=? ORDER BY created_at ASC').all(bot.id) as RoutineRecord[];
   return {
     name: bot.name,
@@ -59,7 +59,7 @@ export function blueprintOf(bot: BotRow): BotBlueprint {
     avatarShape: bot.avatar_shape,
     avatarColor: bot.avatar_color,
     mode: bot.mode === 'teammate' ? 'teammate' : 'personal',
-    skills: skills.map((s) => ({ name: s.name, description: s.description ?? '', body: s.body })),
+    skills: skillsForBot(bot.id).map((s) => ({ name: s.name, description: s.description, body: skillBody(s.content) })),
     routines: routines.map(routineOf).filter((r): r is TemplateRoutine => r !== null),
   };
 }
@@ -94,10 +94,9 @@ export function createBotFromBlueprint(userId: string, bp: BotBlueprint, opts: {
   });
   ensureTriggerColumns();
   const at = now();
-  const addSkill = db.prepare('INSERT INTO skills(id,bot_id,name,body,description,created_at,updated_at) VALUES (?,?,?,?,?,?,?)');
   const addRoutine = db.prepare('INSERT INTO routines(id,bot_id,name,prompt,schedule,timezone,enabled,created_at,trigger_config) VALUES (?,?,?,?,?,?,0,?,?)');
   db.transaction(() => {
-    bp.skills.forEach((s, i) => addSkill.run(newId('skl'), bot.id, s.name, s.body, s.description, at + i, at + i));
+    for (const s of bp.skills) giveSkillTo(userId, bot.id, s);
     bp.routines.forEach((r, i) => {
       if (r.kind === 'event') addRoutine.run(newId('rtn'), bot.id, r.name, r.prompt, `event:${r.triggerSlug}`, 'UTC', at + i, JSON.stringify(r.config));
       else addRoutine.run(newId('rtn'), bot.id, r.name, r.prompt, r.schedule, r.timezone ?? opts.timezone ?? 'UTC', at + i, null);
