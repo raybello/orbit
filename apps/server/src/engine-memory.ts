@@ -2,7 +2,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { sha256 } from './lib/ids.js';
 import { engineHome } from './engine.js';
-import type { Memory } from './types.js';
+import type { Memory } from '@orbit/contracts';
 
 /**
  * What a bot remembers lives in its Hermes home, not in our database: `memories/MEMORY.md` (the

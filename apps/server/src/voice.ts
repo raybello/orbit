@@ -11,7 +11,7 @@ import type { AuthVars } from './lib/auth.js';
 import { appendRow, emitBot, getBotRow, getLive, listRoutines, listTasks, updateRow } from './store.js';
 import { enqueue } from './agent/loop.js';
 import { computerState } from './computer.js';
-import type { ActivityKind, EventBody, MessageBody, RowBody, VoiceCallRecord, VoiceOption } from './types.js';
+import type { ActivityKind, EventBody, MessageBody, RowBody, VoiceCallRecord, VoiceOption } from '@orbit/contracts';
 import { listMemories } from './engine-memory.js';
 import { localVoiceApi } from './voice-local.js';
 import { audiocppVoiceApi } from './voice-audiocpp-endpoints.js';
