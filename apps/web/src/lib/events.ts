@@ -2,34 +2,48 @@ import type { ServerEvent } from '@orbit/contracts';
 import { useStore } from '../store';
 
 /**
- * One EventSource for the whole app. EventSource retries on its own, but a server restart
- * can leave it CLOSED, so we also reconnect manually with backoff and resync on reconnect.
+ * The hub's event cursor, kept for the life of the page load.
+ *
+ * Only `hello.seq` is authoritative — it is the server's view of how far it has emitted.
+ * A reconnect resumes from that position so the server can replay anything buffered since
+ * the disconnect. The store's row dedupe absorbs any frame that arrives twice.
  */
+let hubCursor: number | null = null;
+
+/** Forget the cursor when the session ends so another user does not resume from this position. */
+export function resetSseCursor(): void {
+  hubCursor = null;
+}
+
+/** Build the SSE endpoint URL, appending `?since=<cursor>` when a position is known. */
+export function eventsUrl(cursor: number | null): string {
+  return cursor !== null && cursor > 0 ? `/api/events?since=${cursor}` : '/api/events';
+}
+
+/** Extract the hub cursor from a server event (only `hello` carries one). */
+export function hubCursorOf(ev: ServerEvent): number | null {
+  return ev.type === 'hello' && typeof ev.seq === 'number' ? ev.seq : null;
+}
+
 export function startEvents(): () => void {
   let es: EventSource | null = null;
   let stopped = false;
   let retry = 1000;
   let timer: ReturnType<typeof setTimeout> | undefined;
-  let everConnected = false;
-
-  const resync = () => {
-    const st = useStore.getState();
-    st.loadBots().catch(() => {});
-    st.loadComputer().catch(() => {});
-    if (st.selectedBotId) { st.loadRows(st.selectedBotId).catch(() => {}); st.loadRoutines(st.selectedBotId).catch(() => {}); }
-  };
 
   const open = () => {
     if (stopped) return;
-    es = new EventSource('/api/events', { withCredentials: true });
+    es = new EventSource(eventsUrl(hubCursor), { withCredentials: true });
     es.onopen = () => {
       retry = 1000;
       useStore.getState().set({ sseConnected: true });
-      if (everConnected) resync();
-      everConnected = true;
     };
     es.onmessage = (m) => {
-      try { useStore.getState().handleEvent(JSON.parse(m.data) as ServerEvent); } catch (e) { console.warn('bad event', e); }
+      let ev: ServerEvent;
+      try { ev = JSON.parse(m.data) as ServerEvent; } catch (e) { console.warn('bad event', e); return; }
+      const cursor = hubCursorOf(ev);
+      if (cursor !== null) hubCursor = cursor;
+      useStore.getState().handleEvent(ev);
     };
     es.onerror = () => {
       useStore.getState().set({ sseConnected: false });

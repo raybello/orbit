@@ -21,8 +21,6 @@ apps/mobile
 docs
 design
 tests
-assets
 *.tgz
 hq-app.tgz
-orbit-implementation-plan.md
 AGENT_REPORT.md

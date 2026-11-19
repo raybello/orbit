@@ -4,7 +4,7 @@ import { getCookie, setCookie, deleteCookie } from 'hono/cookie';
 import { env } from '../env.js';
 import { db, now } from '../db.js';
 import { token } from './ids.js';
-import type { User } from '../types.js';
+import type { User } from '@orbit/contracts';
 
 const COOKIE = 'grokbot_session';
 const TTL_MS = 30 * 24 * 3600 * 1000;
