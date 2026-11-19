@@ -68,6 +68,7 @@ export function createBotFor(userId: string, input: Omit<BotCreationInput, 'user
     maxBots: env.maxBots,
     newBotId: () => newId('bot'),
     pickAvatar: (id, shape, color) => pickAvatar(id, shape, color),
+    defaultModel: { provider: env.defaultBotProvider, model: env.defaultBotModel },
   });
   insertBot({
     id: plan.botId,
@@ -82,6 +83,8 @@ export function createBotFor(userId: string, input: Omit<BotCreationInput, 'user
     isPrimary: plan.isPrimary,
     voiceProvider: plan.voiceProvider,
     voiceModel: plan.voiceModel,
+    provider: plan.modelChoice.provider,
+    model: plan.modelChoice.model,
     createdAt: now(),
     updatedAt: now(),
   });

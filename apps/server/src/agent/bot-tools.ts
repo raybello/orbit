@@ -1,6 +1,9 @@
 import { db } from '../db.js';
 import { BotAdminError, createBotFor, deleteBotFor, setBotPrimary, teamFor, updateBotFor } from '../bot-admin.js';
 import { TeamFullError } from '../core/bot-service.js';
+import { availableModels } from '../engine.js';
+import { env } from '../env.js';
+import { parseModelChoice } from '../api/schemas.js';
 import type { ToolCtx, ToolResult } from './tools/index.js';
 import type { ActivityKind } from '@orbit/contracts';
 
@@ -75,14 +78,30 @@ export const BOT_TOOLS: ToolDef[] = [
     },
   },
   {
+    name: 'list_models',
+    description: 'List the model providers you are signed in to and the models each offers, plus the default a new Bot gets. Call it before create_bot when the user wants a Bot on a particular model.',
+    parameters: obj({}),
+    activity: 'working',
+    label: 'Reading the models',
+    impl: async (_a, ctx) => {
+      const providers = await availableModels(ctx.userId);
+      const fallback = `Default for a new Bot: provider ${env.defaultBotProvider}, model ${env.defaultBotModel}.`;
+      if (!providers.length) return { output: `No connected providers could be read right now. ${fallback}`, summary: 'No providers' };
+      const lines = providers.map((p) => `- ${p.id} (${p.name}): ${p.models.length ? p.models.join(', ') : 'its own default model'}`);
+      return { output: `${fallback}\nConnected providers (provider id, then model ids):\n${lines.join('\n')}`, summary: `${providers.length} provider(s)` };
+    },
+  },
+  {
     name: 'create_bot',
     description:
-      'Add a new Bot to the team. Primary Bots only. The new Bot gets its own desktop and browser and can be messaged with send_to_bot as soon as it exists. Capacity, avatars and engine wiring are handled for you.',
+      'Add a new Bot to the team. Primary Bots only. The new Bot gets its own desktop and browser and can be messaged with send_to_bot as soon as it exists. Capacity, avatars and engine wiring are handled for you. It runs the default model unless you pass provider and model together; call list_models first to pick real ids.',
     parameters: obj({
       name: { type: 'string', description: 'The Bot\'s name, e.g. "Scout"' },
       label: { type: 'string', description: 'Its job, e.g. "Research analyst"' },
       description: { type: 'string', description: 'One line about what it is for' },
       instructions: { type: 'string', description: 'Standing instructions it should follow' },
+      provider: { type: 'string', description: 'Provider id from list_models, e.g. "anthropic". Pass with model, or leave both out for the default.' },
+      model: { type: 'string', description: 'Model id from list_models, e.g. "claude-sonnet-4-5". Pass with provider.' },
     }, ['name']),
     activity: 'working',
     label: 'Adding a Bot',
@@ -91,14 +110,20 @@ export const BOT_TOOLS: ToolDef[] = [
       if (!gate.ok) return gate.result;
       const name = str(a.name, 60);
       if (!name) return { output: 'A name is required.' };
+      const modelChoice = a.provider === undefined && a.model === undefined ? undefined : parseModelChoice(a.provider, a.model);
+      if (typeof modelChoice === 'string') return { output: `${modelChoice}. Call list_models for the ids, or leave both out for the default.` };
       try {
         const bot = createBotFor(ctx.userId, {
           name,
           label: str(a.label, 120),
           description: str(a.description, 600),
           instructions: str(a.instructions, 8000),
+          modelChoice,
         });
-        return { output: JSON.stringify({ ok: true, bot: { id: bot.id, name: bot.name, label: bot.label } }), summary: `Created ${bot.name}` };
+        return {
+          output: JSON.stringify({ ok: true, bot: { id: bot.id, name: bot.name, label: bot.label, provider: bot.provider, model: bot.model } }),
+          summary: `Created ${bot.name}`,
+        };
       } catch (e) {
         if (e instanceof TeamFullError) return { output: e.message };
         if (e instanceof BotAdminError) return { output: e.message };

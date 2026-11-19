@@ -1,7 +1,7 @@
 import type { Context } from 'hono';
 import { HTTPException } from 'hono/http-exception';
 import { z } from 'zod';
-import { AUDIOCPP_VOICES, INITIATIVE_LEVELS } from '@orbit/contracts';
+import { AUDIOCPP_VOICES, INITIATIVE_LEVELS, type ModelChoice } from '@orbit/contracts';
 
 /**
  * The JSON bodies routes.ts accepts, as zod schemas, and the two helpers that read them.
@@ -53,8 +53,36 @@ export const CreateBotSchema = z
     isPrimary: z.boolean().optional(),
     voiceProvider: z.string().optional(),
     voiceModel: z.string().optional(),
+    provider: z.string().optional(),
+    model: z.string().optional(),
   })
-  .loose();
+  .loose()
+  .transform(({ provider, model, ...rest }, ctx) => {
+    if (provider === undefined && model === undefined) return rest;
+    const choice = parseModelChoice(provider, model);
+    if (typeof choice !== 'string') return { ...rest, modelChoice: choice };
+    ctx.addIssue({ code: 'custom', path: ['model'], message: choice });
+    return z.NEVER;
+  });
+
+/**
+ * A model id or provider slug as a person or an agent names it: "anthropic", "claude-sonnet-4-5",
+ * "deepseek/deepseek-flash", "qwen3:32b". Not checked against the live list, which may be unreachable.
+ */
+const ModelIdSchema = z.string().trim().min(1).max(120).regex(/^\S+$/, 'no spaces');
+
+/**
+ * A Bot's model choice from two loose values, or the reason it is not one. Shared by POST /api/bots
+ * and the create_bot tool, so a person and an agent are held to the same rule.
+ */
+export function parseModelChoice(provider: unknown, model: unknown): ModelChoice | string {
+  if (provider === undefined || model === undefined) return 'provider and model go together: name both';
+  const p = ModelIdSchema.safeParse(provider);
+  const m = ModelIdSchema.safeParse(model);
+  if (!p.success) return `provider: ${p.error.issues[0]?.message ?? 'not a provider id'}`;
+  if (!m.success) return `model: ${m.error.issues[0]?.message ?? 'not a model id'}`;
+  return { provider: p.data, model: m.data };
+}
 
 /**
  * PATCH /api/bots/:id. Loose, because the route walks its own allow-list and ignores every other

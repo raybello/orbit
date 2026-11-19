@@ -22,6 +22,7 @@ import { clearMirror } from './calendar/mirror.js';
 import { computerState, ensureComputer, refreshComputer, suspendComputer } from './computer.js';
 import { computerKindFor, providerFor } from './computer-provider-registry.js';
 import { deleteMemory, listMemories, memoryBot } from './engine-memory.js';
+import { availableModels } from './engine.js';
 import { orgo } from './orgo.js';
 import { catalog, composioEnabled, connectedToolkits, connectionHealthOf, deleteConnection, disconnect, googleProfile, startConnect, startGoogleLogin, toolkitInfo } from './composio.js';
 import { connectionWatch } from './core/connection-watch.js';
@@ -32,7 +33,7 @@ import { deleteEventTrigger } from './triggers.js';
 import { dispatchRoomMessage } from './agent/rooms.js';
 import { voiceApi } from './voice.js';
 import { templatesApi } from './routes-templates.js';
-import type { Toolkit } from '@orbit/contracts';
+import type { ModelsResponse, Toolkit } from '@orbit/contracts';
 import { TeamFullError } from './core/bot-service.js';
 import { createBotFor, deleteBotFor, setBotPrimary, updateBotFor } from './bot-admin.js';
 import { decideCard } from './core/card-service.js';
@@ -324,6 +325,15 @@ const ownBot = (userId: string, id: string): BotRow | null => {
 };
 
 api.get('/bots', (c) => c.json({ bots: listBots(c.get('user').id), live: allLive(c.get('user').id) }));
+
+/** What the Create Bot dialog offers: the primary agent's connected providers, and the default. */
+api.get('/models', async (c) => {
+  const body: ModelsResponse = {
+    providers: await availableModels(c.get('user').id),
+    default: { provider: env.defaultBotProvider, model: env.defaultBotModel },
+  };
+  return c.json(body);
+});
 
 api.post('/bots', async (c) => {
   const body = await requireBody(c, CreateBotSchema);

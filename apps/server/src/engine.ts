@@ -12,10 +12,10 @@ import { randomUUID } from 'node:crypto';
 import { db } from './db.js';
 import { env } from './env.js';
 import { DEFAULT_PATH, defaultHermesLookup, hermesBin, resolveHermesBin } from './hermes-bin.js';
-import { SHARED_CONFIG, SHARED_ENV, asBlock, modelKeyNames, dotenvText, readDotenv, readYaml, writePrivate, type HermesConfig } from './hermes-files.js';
+import { SHARED_CONFIG, SHARED_ENV, applyModelChoice, asBlock, modelKeyNames, dotenvText, readDotenv, readYaml, writePrivate, type HermesConfig } from './hermes-files.js';
 import { importHostHermes } from './hermes-import.js';
 import type { BotRow } from './infra/bot-repository.js';
-import type { EngineInfo, EngineProvider } from '@orbit/contracts';
+import type { EngineInfo, EngineProvider, ModelChoice, ModelsResponse } from '@orbit/contracts';
 
 /**
  * Every bot is run by a Hermes agent this server starts: a Hermes home of our own with its own
@@ -389,6 +389,17 @@ export function adaptLocalEndpoints<T>(cfg: T): T {
   return cfg;
 }
 
+/** The provider and model a bot's row names, when it names both (`Default` is an old placeholder). */
+function storedChoice(b: BotRow): ModelChoice | null {
+  const real = (v: string | null | undefined) => {
+    const t = (v ?? '').trim();
+    return t && t.toLowerCase() !== 'default' ? t : null;
+  };
+  const provider = real(b.provider);
+  const model = real(b.model);
+  return provider && model ? { provider, model } : null;
+}
+
 /**
  * Create or refresh an agent's home. config.yaml is created once; after that only the keys we own
  * are patched. A managed home also inherits the primary's credentials; the primary has its own.
@@ -442,6 +453,10 @@ async function writeHome(rec: EngineRecord): Promise<{ key: string; display: str
     cfg.agent = { reasoning_effort: 'medium' };
   }
   adaptLocalEndpoints(cfg);
+  // The bot's model lives on its row; the config follows it, so the choice survives a restart and
+  // a hand edit of `model` cannot quietly drift from what the app shows.
+  const choice = storedChoice(b);
+  if (choice) applyModelChoice(cfg, choice.provider, choice.model);
   cfg.platform_toolsets = { ...asBlock(cfg.platform_toolsets), api_server: ['hermes-api-server', ...(display ? ['computer_use'] : [])] };
   cfg.terminal = { ...asBlock(cfg.terminal), cwd };
   cfg.compression = { ...asBlock(cfg.compression), threshold_tokens: env.contextCompactionThreshold };
@@ -1003,3 +1018,20 @@ export async function engineInfo(botId: string): Promise<EngineInfo> {
 
 /** After a sign-in the provider list changes; drop what we remembered. */
 export function forgetEngineOptions(botId: string) { optionsCache.delete(botId); }
+
+/**
+ * The models a new Bot can run: the providers the owner's primary agent is signed in to, with their
+ * suggested models. Empty while that agent is not up, which callers treat as "only the default".
+ */
+export async function availableModels(userId: string): Promise<ModelsResponse['providers']> {
+  const primary = db
+    .prepare("SELECT id FROM bots WHERE user_id=? AND is_primary=1 AND engine IN ('primary','managed') ORDER BY CASE WHEN engine='primary' THEN 0 ELSE 1 END, created_at LIMIT 1")
+    .get(userId) as { id: string } | undefined;
+  if (!primary) return [];
+  try {
+    const info = await engineInfo(primary.id);
+    return info.providers.filter((p) => p.connected).map(({ id, name, models }) => ({ id, name, models }));
+  } catch {
+    return [];
+  }
+}

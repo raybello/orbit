@@ -78,6 +78,8 @@ export interface NewBotValues {
   isPrimary: boolean;
   voiceProvider: VoiceProvider;
   voiceModel: string;
+  provider: string;
+  model: string;
   createdAt: number;
   updatedAt: number;
 }
@@ -88,10 +90,10 @@ export interface NewBotValues {
  */
 export function insertBot(v: NewBotValues): void {
   db.prepare(
-    'INSERT INTO bots(id,user_id,name,label,description,instructions,avatar_shape,avatar_color,mode,is_primary,voice_provider,voice_model,created_at,updated_at) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?)',
+    'INSERT INTO bots(id,user_id,name,label,description,instructions,avatar_shape,avatar_color,mode,is_primary,voice_provider,voice_model,provider,model,created_at,updated_at) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)',
   ).run(
     v.id, v.userId, v.name, v.label, v.description, v.instructions, v.avatarShape, v.avatarColor,
-    v.mode, v.isPrimary ? 1 : 0, v.voiceProvider, v.voiceModel,
+    v.mode, v.isPrimary ? 1 : 0, v.voiceProvider, v.voiceModel, v.provider, v.model,
     v.createdAt, v.updatedAt,
   );
 }

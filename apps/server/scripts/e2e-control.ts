@@ -122,7 +122,7 @@ if (login.status !== 200) { bad('sign in', String(login.status)); process.exit(1
 
 const { bot } = await (await call('/api/bots', { method: 'POST', body: JSON.stringify({ name: 'Control Test', avatarColor: 'magenta' }) })).json();
 const engine = (await (await call(`/api/bots/${bot.id}/engine`)).json()).engine;
-if (engine?.model === 'deepseek-flash' && engine?.provider === 'deepseek') ok('default model', `${engine.provider}/${engine.model}`);
+if (engine?.model === 'claude-sonnet-4-5' && engine?.provider === 'anthropic') ok('default model', `${engine.provider}/${engine.model}`);
 else bad('default model', JSON.stringify({ model: engine?.model, provider: engine?.provider }));
 
 const watch = process.env.NOWATCH === '1' ? null : await Rfb.open(bot.id, 'watch');

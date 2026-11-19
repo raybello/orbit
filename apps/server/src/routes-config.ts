@@ -18,7 +18,7 @@ import { getComputer } from './computer-store.js';
 import { orgo } from './orgo.js';
 import { openTerminal } from './desk.js';
 import { engineHome, engineInfo, engineKind, forgetEngineOptions, restartEngine, stopOwnScreen, syncAllManagedAuth } from './engine.js';
-import { asBlock, readDotenv, readYaml, writePrivate, SHARED_ENV } from './hermes-files.js';
+import { applyModelChoice, asBlock, readDotenv, readYaml, writePrivate, SHARED_ENV } from './hermes-files.js';
 import { listMemories } from './engine-memory.js';
 import { idleConfig, viewerCount } from './idle.js';
 import { optionalBody, SkillBodySchema, EngineChoiceSchema, EngineLoginSchema, FileDownloadSchema } from './api/schemas.js';
@@ -274,15 +274,15 @@ configApi.put('/config/engine-auth/:botId', async (c) => {
   // model id no provider knows and quietly stop the bot answering. It means "no choice".
   const model = p.model === undefined ? undefined : (String(p.model ?? '').trim().toLowerCase() === 'default' ? null : engineField(p.model));
 
-  // The bot's own Hermes reads its model from its config.yaml, so patch those two fields there.
-  // The rest of the file (providers, base_url, toolsets, mcp_servers) is its own and is left alone.
+  // The bot's own Hermes reads its model from its config.yaml. A field left out keeps its current
+  // value; applyModelChoice then brings the provider's own endpoint, so a switch away from a custom
+  // server does not leave its base_url behind.
   if (provider !== undefined || model !== undefined) {
     const cfgFile = path.join(home, 'config.yaml');
     const cfg = readYaml(cfgFile);
-    const m = { ...asBlock(cfg.model) };
-    if (provider !== undefined) { if (provider) m.provider = provider; else delete m.provider; }
-    if (model !== undefined) { if (model) m.default = model; else delete m.default; }
-    cfg.model = m;
+    const current = asBlock(cfg.model);
+    const text = (v: unknown) => (typeof v === 'string' && v.trim() ? v.trim() : null);
+    applyModelChoice(cfg, provider !== undefined ? provider : text(current.provider), model !== undefined ? model : text(current.default));
     writePrivate(cfgFile, YAML.stringify(cfg));
   }
 
