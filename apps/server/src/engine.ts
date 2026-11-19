@@ -920,18 +920,15 @@ export function initEngines() {
   else console.warn(`[engine] ${resolution.message}`);
   const bots = db.prepare("SELECT id, is_primary FROM bots WHERE engine IS NULL AND COALESCE(kind,'agent') <> 'room' AND COALESCE(hidden,0)=0 ORDER BY is_primary DESC, created_at ASC").all() as { id: string }[];
   for (const b of bots) assignEngine(b.id);
-  const primaryBot = db.prepare("SELECT id FROM bots WHERE engine='primary' LIMIT 1").get() as { id: string } | undefined;
-  if (primaryBot) {
-    if (acquireHqLease()) {
-      const changed = syncPrimaryHqConfig(primaryBot.id);
-      if (changed) {
-        const signaled = signalPrimaryGateway();
-        console.log(`[engine] primary hq config written${signaled ? '; gateway signaled to reload' : '; gateway not running yet'}`);
-      }
-    } else {
-      const other = readHqLease();
-      console.log(`[engine] primary hq config: another Orbit server (pid ${other?.pid}, port ${other?.port}) holds the lease`);
+  if (acquireHqLease()) {
+    const changed = syncPrimaryHqConfig();
+    if (changed) {
+      const signaled = signalPrimaryGateway();
+      console.log(`[engine] primary hq config written${signaled ? '; gateway signaled to reload' : '; gateway not running yet'}`);
     }
+  } else {
+    const other = readHqLease();
+    console.log(`[engine] primary hq config: another Orbit server (pid ${other?.pid}, port ${other?.port}) holds the lease`);
   }
   for (const b of db.prepare("SELECT id FROM bots WHERE engine='managed'").all() as { id: string }[]) provisionEngine(b.id);
 }

@@ -101,35 +101,47 @@ test('acquireHqLease takes over when the previous owner is dead', () => {
 
 test('syncPrimaryHqConfig writes the hq entry and returns true on first write', () => {
   resetBots();
-  const botId = addPrimaryBot('bot_hqwrite');
+  addPrimaryBot('bot_hqwrite');
   writePrimaryConfig({});
-  const changed = syncPrimaryHqConfig(botId);
+  const changed = syncPrimaryHqConfig();
   assert.ok(changed);
   const cfg = YAML.parse(fs.readFileSync(path.join(primaryHome, 'config.yaml'), 'utf8')) as Record<string, unknown>;
   const hq = (cfg.mcp_servers as Record<string, unknown>).hq as Record<string, unknown>;
-  assert.ok(String(hq.url).includes(`/mcp/${botId}`));
-  assert.ok(String((hq.headers as Record<string, string>).Authorization).includes(mcpToken(botId)));
+  assert.ok(String(hq.url).includes(`/mcp/primary`));
+  assert.ok(String((hq.headers as Record<string, string>).Authorization).includes(mcpToken('primary')));
 });
 
 test('syncPrimaryHqConfig returns false and does not rewrite when URL and token are already correct', () => {
   resetBots();
-  const botId = addPrimaryBot('bot_hqnoop');
+  addPrimaryBot('bot_hqnoop');
   writePrimaryConfig({});
   // Write once to get the correct entry on disk.
-  assert.ok(syncPrimaryHqConfig(botId));
+  assert.ok(syncPrimaryHqConfig());
   const before = fs.statSync(path.join(primaryHome, 'config.yaml')).mtimeMs;
   // Second call: nothing changed — must not touch the file.
-  assert.equal(syncPrimaryHqConfig(botId), false);
+  assert.equal(syncPrimaryHqConfig(), false);
   const after = fs.statSync(path.join(primaryHome, 'config.yaml')).mtimeMs;
   assert.equal(before, after);
 });
 
+test('a new primary bot (a reset database) leaves a written hq entry alone', () => {
+  resetBots();
+  addPrimaryBot('bot_hqbefore');
+  writePrimaryConfig({});
+  assert.ok(syncPrimaryHqConfig());
+  const before = fs.readFileSync(path.join(primaryHome, 'config.yaml'), 'utf8');
+  resetBots();
+  addPrimaryBot('bot_hqafter');
+  assert.equal(syncPrimaryHqConfig(), false, 'the running gateway keeps a working entry, so it needs no reload');
+  assert.equal(fs.readFileSync(path.join(primaryHome, 'config.yaml'), 'utf8'), before);
+});
+
 test('syncPrimaryHqConfig is not called by a non-owner (integration: lease + sync)', () => {
   resetBots();
-  const botId = addPrimaryBot('bot_hqlease');
+  addPrimaryBot('bot_hqlease');
   writePrimaryConfig({});
   // First, write the correct entry as "us".
-  assert.ok(syncPrimaryHqConfig(botId));
+  assert.ok(syncPrimaryHqConfig());
   const cfgBefore = fs.readFileSync(path.join(primaryHome, 'config.yaml'), 'utf8');
   const mtBefore = fs.statSync(path.join(primaryHome, 'config.yaml')).mtimeMs;
 
