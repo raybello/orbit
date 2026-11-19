@@ -17,7 +17,7 @@ describe('Transcript timeline', () => {
       row({ type: 'tool-call', callId: 'c1', name: 'GMAIL_SEND_EMAIL', label: 'Sending email', status: 'done' }),
       row({ type: 'card', card: 'connect', toolkit: 'slack', toolkitName: 'Slack', reason: 'Post the digest', status: 'pending' }),
       row({ type: 'notice', text: "You're at 80% of your weekly usage limit.", tone: 'warn' }),
-      row({ type: 'event', text: 'Routine created' }),
+      row({ type: 'event', event: 'routine-created', text: 'Routine created' }),
       row({ type: 'message', role: 'assistant', text: 'Sent.' }),
     ];
     const { container } = render(<Transcript bot={bot} rows={rows} live={undefined} loaded />);
