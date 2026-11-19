@@ -37,7 +37,7 @@ import {
 } from './local-stack-networking';
 import { sessionSecretFromEnvFile } from './desktop-session';
 import { hermesHome } from './hermes-setup';
-import { applyGpuVoice, detectNvidiaGpu, gpuProfileArgs, gpuVoiceEnabled, gpuVoiceSupport, type RunFile } from './gpu-voice';
+import { applyGpuVoice, detectNvidiaGpu, gpuProfileArgs, gpuPullError, gpuVoiceEnabled, gpuVoiceSupport, type RunFile } from './gpu-voice';
 import type { DockerStack } from './stack-controller';
 import type { DesktopLocalStackState, DockerFailureKind, StackPhase } from './shared/api';
 
@@ -714,7 +714,7 @@ export class LocalStackController implements DockerStack {
         const pull = await this.compose(binary, ['pull', '--quiet', 'audiocpp'], { timeoutMs: 3_600_000 });
         if (pull.code !== 0 && !(await this.imagesPresent(binary))) {
           this.writeEnv(applyGpuVoice(this.envText(), false, this.platform));
-          this.gpu = { phase: 'error', error: summarizeDockerFailure(pull) };
+          this.gpu = { phase: 'error', error: gpuPullError(failureText(pull), this.imageTag(), summarizeDockerFailure(pull)) };
           return this.gpuVoiceStatus();
         }
       }

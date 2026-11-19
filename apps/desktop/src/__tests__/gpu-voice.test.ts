@@ -6,6 +6,7 @@ import {
   applyGpuVoice,
   detectNvidiaGpu,
   gpuProfileArgs,
+  gpuPullError,
   gpuVoiceEnabled,
   gpuVoiceSupport,
 } from '../gpu-voice';
@@ -52,4 +53,11 @@ test('detectNvidiaGpu reads nvidia-smi, and a missing driver is null', async () 
   );
   assert.equal(await detectNvidiaGpu(async () => ({ code: 1, stdout: '' })), null);
   assert.equal(await detectNvidiaGpu(async () => { throw new Error('ENOENT'); }), null);
+});
+
+test("a GPU voice image this release has not published yet says so, instead of Docker's error", () => {
+  // What `docker compose pull audiocpp` printed for a released app whose image did not exist.
+  const missing = 'Error response from daemon: manifest unknown';
+  assert.equal(gpuPullError(missing, 'v0.2.0', 'raw'), 'GPU voice for Orbit v0.2.0 is not published yet. It is built with each release and takes a few hours after the installers appear; try again later.');
+  assert.equal(gpuPullError('Error response from daemon: Get "https://ghcr.io/v2/": net/http: TLS handshake timeout', 'v0.2.0', 'raw'), 'raw', 'any other failure keeps its own message');
 });

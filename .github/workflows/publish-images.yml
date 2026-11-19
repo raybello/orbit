@@ -134,8 +134,11 @@ jobs:
     # Only build on releases: CUDA kernel compilation takes ~300 min on a hosted runner and there
     # is no value in an :edge tag for a GPU sidecar that ships as an optional user install.
     if: startsWith(github.ref, 'refs/tags/v') || github.event_name == 'workflow_dispatch'
-    # Compiling audio.cpp's CUDA kernels for six GPU generations takes a while on a hosted runner.
-    timeout-minutes: 300
+    # Compiling audio.cpp's CUDA kernels for six GPU generations takes hours on a hosted runner.
+    # A packaged app pulls audiocpp:v<its version>, so this job failing leaves that release with
+    # no GPU voice: give it all of a hosted job's 360 minutes but a margin. Re-run it for a tag
+    # with workflow_dispatch on that tag (the semver tags come from the ref).
+    timeout-minutes: 355
     steps:
       - uses: actions/checkout@v4
 
