@@ -11,6 +11,7 @@ import { computerKindFor } from '../computer-provider-registry.js';
 import { dockerProvider } from '../docker-provider.js';
 import { engineFor } from '../engine.js';
 import { instructionsFor } from './prompt.js';
+import { expandForBot } from '../core/skill-library.js';
 import { activityFor, appToolName, humanizeSlug, LIBRARY_ROOT } from './tools/index.js';
 import { policyFor, rememberAlwaysAllow } from '../core/policy-service.js';
 import { checkReviewEdits } from '../review/index.js';
@@ -491,7 +492,8 @@ async function runTurn(botId: string, trigger: Trigger, signal: AbortSignal) {
     const engine = await engineFor(botId);
     if (signal.aborted) throw new Error('interrupted');
 
-    let input = triggerText(trigger);
+    // `/<skill-name>` in what the bot is sent becomes that skill's instructions (only skills it has).
+    let input = expandForBot(botId, triggerText(trigger)).text;
     if (bot.handback_at) {
       input = `[Note: the user took control of your screen for a while and has just handed it back. Look at the screen before you rely on what was there.]\n\n${input}`;
       db.prepare('UPDATE bots SET handback_at=NULL WHERE id=?').run(botId);

@@ -94,7 +94,30 @@
 <p>In a bot's <strong>Engine</strong> panel, pick a provider and model, or leave both on the agent's default. <strong>Sign in to a subscription</strong> opens a terminal on the bot's own screen running Hermes' sign-in for that provider (for example Claude Pro/Max); finish it in the viewer and the bot uses that subscription from then on. Check your provider's terms before running an agent on a consumer subscription. Codex subscriptions always need their own sign-in.</p>
 
 <h2 id="skills">Skills</h2>
-<p>The <strong>Skills</strong> section lists the MCP servers available to each bot and lets you turn them on or off per bot. In a bot's settings you can also write custom skills: a name, a description and a body of instructions.</p>
+<p>A skill is a repeatable way of doing something, written as a <code>SKILL.md</code> (the Agent Skills format: frontmatter with a <code>description</code>, then the instructions in Markdown). Skills live in one library shared by all your bots. The <strong>Skills</strong> section has two tabs: <strong>Library</strong> for skills, and <strong>MCP servers</strong> for the tool servers in the primary agent's config, turned on or off per bot.</p>
+<h3>Using a skill</h3>
+<p>Type <code>/</code> in the composer to see the skills the open bot has, and pick one, or type <code>/name</code> anywhere in a message. When the message reaches the bot, each <code>/name</code> is replaced by that skill's instructions, so the bot follows them for that request. It works the same in messages between bots and in routine prompts. A bot also sees its skills listed in its instructions and can read one, with any files that came with it, using its <code>read_skill</code> tool; <code>list_skills</code> lists them and <code>list_tools</code> lists every tool, app and MCP server it has.</p>
+<div class="shots">
+  <figure><img src="docs/screenshots/skills/composer-suggest.png" alt="Typing / in the composer lists /meeting-notes, /pdf and /weekly-report with their descriptions." loading="lazy"><figcaption>Type / to pick a skill</figcaption></figure>
+  <figure><img src="docs/screenshots/skills/chat-skill-used.png" alt="Quill answers /weekly-report with three bullets and /meeting-notes with Decisions, Action items and Open questions." loading="lazy"><figcaption>Each answer follows its skill</figcaption></figure>
+</div>
+<h3>Adding a skill</h3>
+<ul>
+  <li><strong>Write SKILL.md:</strong> choose <strong>Add skill</strong>, give it a name (lowercase letters, digits and hyphens, like <code>weekly-report</code>) and write the SKILL.md. The frontmatter needs a <code>description</code>, which is what bots read to decide when to use it.</li>
+  <li><strong>From GitHub:</strong> paste <code>owner/repo</code>, <code>owner/repo/path/to/skill</code> or a github.com link to a public repository. Orbit checks the repository, the branch or tag and each SKILL.md before installing anything, and lists the skills it found when there are several. The skill records the repository, the exact commit and who installed it, and brings the files in its folder (up to 50 files, 256 KB each). A repository that does not exist, a ref it does not have, or a SKILL.md without a valid name and description is refused with the reason.</li>
+  <li><strong>By a bot:</strong> a bot that works out a repeatable way to do something can add it with its <code>create_skill</code> tool. The library shows it as written by that bot.</li>
+</ul>
+<div class="shots">
+  <figure><img src="docs/screenshots/skills/add-write.png" alt="The Add a skill form: a name, a SKILL.md editor and who has it." loading="lazy"><figcaption>Write a skill</figcaption></figure>
+  <figure><img src="docs/screenshots/skills/add-github.png" alt="Adding from GitHub: 20 skills found in anthropics/skills at main, one to pick." loading="lazy"><figcaption>Install one from GitHub</figcaption></figure>
+</div>
+<h3>Which bots have it</h3>
+<p>A new skill is available to every bot, including bots you create later. Turn it off for any bot that should not have it, or choose <strong>Only the Bots I pick</strong> so that only the bots you turn on have it (new bots then do not). A bot without a skill gets <code>/name</code> as plain text, cannot read it, and does not see it in its list. A bot's own settings show the skills it has, each with a <strong>Turn off</strong> button.</p>
+<div class="shots">
+  <figure><img src="docs/screenshots/skills/library-github-skill.png" alt="The /pdf skill: its source on GitHub, the commit, who added it, and a switch per bot." loading="lazy"><figcaption>Where a skill came from, and who has it</figcaption></figure>
+  <figure><img src="docs/screenshots/skills/library-only-some-bots.png" alt="The /weekly-report skill set to only the bots picked: Quill on, Atlas off." loading="lazy"><figcaption>A skill only some bots have</figcaption></figure>
+</div>
+<p>Skills written in a bot's settings before the library existed were moved into it, each available only to the bot that had it.</p>
 
 <h2 id="mobile">On your phone</h2>
 <p>The Expo app for iOS and Android has tabs for chats, activity, calendar, files, computers and settings, a thread view per bot, and a live VNC viewer. Review cards and the Google Calendar features above work on the phone too. On first launch, point it at your Orbit server's URL (or bake <code>EXPO_PUBLIC_API_URL</code> into the build) and sign in. Push notifications are registered with <code>POST /api/push/register</code>.</p>

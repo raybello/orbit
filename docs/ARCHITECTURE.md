@@ -73,7 +73,7 @@ Not covered: what a Bot does through its browser or shell, and Hermes' own promp
 
 ## Data
 
-SQLite (`DB_PATH`, WAL): users and sessions, Bots, rows, approvals and policies (and per-bot policies), routines, tasks, skills, screen leases, per-Bot computers and their screens, Composio session ids, and the Google Calendar mirror. Each managed Bot's Hermes home is under `ENGINES_DIR`. On the computer: Chrome profiles in `/root/grokbot/profiles/<botId>`, Library files in `/root/grokbot/files/<botId>`. Deleting a Bot removes its gateway, home, profile, files and screen.
+SQLite (`DB_PATH`, WAL): users and sessions, Bots, rows, approvals and policies (and per-bot policies), routines, tasks, the shared skill library, screen leases, per-Bot computers and their screens, Composio session ids, and the Google Calendar mirror. Each managed Bot's Hermes home is under `ENGINES_DIR`. On the computer: Chrome profiles in `/root/grokbot/profiles/<botId>`, Library files in `/root/grokbot/files/<botId>`. Deleting a Bot removes its gateway, home, profile, files and screen.
 
 The Google Calendar mirror (`gcal_calendars`, `gcal_events`) and the snapshot an Orbit event keeps of the Google event it was made from (`routines.parent_sealed`) are encrypted with `DB_ENCRYPTION_KEY` (AES-256-GCM, bound to their row); rows are found by HMAC keys, so only times and flags are stored readable. Without the key the mirror is off.
 

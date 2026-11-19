@@ -32,6 +32,8 @@ interface State {
   rosterVersion: number;
   /** Bumped on every `connections` event so open views can refetch. */
   connectionsVersion: number;
+  /** Bumped on every `skills` event; the Skills panel reloads the library when it changes. */
+  skillsVersion: number;
   /** Bumped when the Google Calendar mirror changes, so the calendar reloads. */
   calendarVersion: number;
   sseConnected: boolean;
@@ -85,6 +87,7 @@ export const useStore = create<State>((set, get) => ({
   recentActivity: [],
   activitySeen: {},
   connectionsVersion: 0,
+  skillsVersion: 0,
   calendarVersion: 0,
   rosterVersion: 0,
   sseConnected: false,
@@ -279,6 +282,9 @@ export const useStore = create<State>((set, get) => ({
         return;
       case 'calendar':
         set((st) => ({ calendarVersion: st.calendarVersion + 1 }));
+        return;
+      case 'skills':
+        set((st) => ({ skillsVersion: st.skillsVersion + 1 }));
         return;
     }
   },

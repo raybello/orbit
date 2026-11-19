@@ -1,4 +1,5 @@
 import { db } from './db.js';
+import { skillMdFor, slugifySkillName } from './domain/skill-md.js';
 
 /**
  * Schema additions for bot settings, memory over time and hibernation.
@@ -14,8 +15,39 @@ function addColumn(table: string, col: string, ddl: string) {
   if (!hasColumn(table, col)) db.exec(`ALTER TABLE ${table} ADD COLUMN ${col} ${ddl}`);
 }
 
-addColumn('skills', 'description', "TEXT NOT NULL DEFAULT ''");
-addColumn('skills', 'updated_at', 'INTEGER');
+/**
+ * Skills used to belong to one bot (`skills`). Each one moves into the shared library as a skill
+ * only that bot has, under a library-safe name, and the old table goes. Runs once: afterwards
+ * there is no `skills` table to read.
+ */
+export function migrateBotSkills() {
+  if (!db.prepare("SELECT 1 FROM sqlite_master WHERE type='table' AND name='skills'").get()) return;
+  const rows = db.prepare(
+    `SELECT s.*, b.user_id, b.name AS bot_name FROM skills s JOIN bots b ON b.id=s.bot_id ORDER BY s.created_at`,
+  ).all() as { id: string; bot_id: string; name: string; body: string; description?: string; created_at: number; updated_at?: number | null; user_id: string; bot_name: string }[];
+  const taken = db.prepare('SELECT 1 FROM skill_library WHERE user_id=? AND name=?');
+  const insert = db.prepare(
+    `INSERT INTO skill_library(id,user_id,name,description,content,availability,source,created_by_kind,created_by_id,created_by_name,created_at,updated_at)
+     VALUES (?,?,?,?,?,'selected','{"type":"manual"}','user',?,?,?,?)`,
+  );
+  const owner = db.prepare('SELECT name FROM users WHERE id=?');
+  const grant = db.prepare('INSERT INTO skill_access(skill_id,bot_id,allowed) VALUES (?,?,1)');
+  db.transaction(() => {
+    for (const r of rows) {
+      const base = slugifySkillName(r.name);
+      let name = base;
+      for (let n = 2; taken.get(r.user_id, name); n++) name = `${base.slice(0, 60)}-${n}`;
+      const description = (r.description ?? '').trim() || r.name;
+      const who = (owner.get(r.user_id) as { name: string } | undefined)?.name ?? 'You';
+      insert.run(r.id, r.user_id, name, description, skillMdFor(name, description, r.body), r.user_id, who, r.created_at, r.updated_at ?? r.created_at);
+      grant.run(r.id, r.bot_id);
+    }
+    db.exec('DROP TABLE skills');
+  })();
+  if (rows.length) console.log(`[skills] moved ${rows.length} bot skill(s) into the shared library`);
+}
+
+migrateBotSkills();
 /** 'chat' = saved by the bot's remember tool, 'learned' = extracted by consolidation. */
 addColumn('memories', 'source', "TEXT NOT NULL DEFAULT 'chat'");
 

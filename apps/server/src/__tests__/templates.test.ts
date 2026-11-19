@@ -100,7 +100,7 @@ test('bot duplication and templates over HTTP', async (t) => {
   await t.test('duplicate copies the setup, pauses routines and leaves history behind', async () => {
     const { bot } = await ok(await send('POST', '/api/bots', { name: 'Scout', label: 'Research', instructions: 'Cite sources.', avatarShape: 'gem', avatarColor: 'violet' }, ada.cookie));
     scoutId = bot.id;
-    await ok(await send('POST', `/api/bots/${scoutId}/skills`, { name: 'Citations', body: 'Always link the source.' }, ada.cookie));
+    await ok(await send('POST', '/api/skill-library', { name: 'citations', description: 'Citing sources', content: 'Always link the source.', availability: 'selected', botIds: [scoutId] }, ada.cookie));
     addRoutine(scoutId, { name: 'daily', schedule: '0 9 * * *', timezone: 'America/New_York' });
     addRoutine(scoutId, { name: 'mail', schedule: 'event:GMAIL_NEW_GMAIL_MESSAGE', triggerId: 'trg_live', config: '{"labelIds":"INBOX"}' });
     addRoutine(scoutId, { name: 'once', schedule: '0 9 1 1 *', eventType: 'one_time' });
@@ -117,7 +117,8 @@ test('bot duplication and templates over HTTP', async (t) => {
     assert.equal(copy.avatarColor, 'violet');
 
     const settings = await ok(await send('GET', `/api/bots/${copy.id}/settings`, undefined, ada.cookie));
-    assert.deepEqual(settings.skills.map((s: Json) => [s.name, s.body]), [['Citations', 'Always link the source.']]);
+    assert.deepEqual(settings.skills.map((s: Json) => s.name), ['citations'], 'the copy has the skill its source had');
+    assert.match(settings.skills[0].content, /Always link the source\./);
     assert.deepEqual(settings.memories, [], 'memories stay with the source');
 
     assert.deepEqual(routinesOf(copy.id), [
@@ -187,7 +188,7 @@ test('bot duplication and templates over HTTP', async (t) => {
     assert.equal(bot.name, 'Inbox Manager');
     assert.deepEqual(routinesOf(bot.id).map((r) => [r.schedule, r.enabled, r.trigger_id]), [['event:GMAIL_NEW_GMAIL_MESSAGE', 0, null]]);
     const settings = await ok(await send('GET', `/api/bots/${bot.id}/settings`, undefined, bea.cookie));
-    assert.deepEqual(settings.skills.map((s: Json) => s.name), ['Triage rules']);
+    assert.deepEqual(settings.skills.map((s: Json) => s.name), ['triage-rules'], "a template's skill lands in the installer's library, for that Bot");
   });
 
   await t.test('only the owner can stop sharing, and the link then stops working', async () => {

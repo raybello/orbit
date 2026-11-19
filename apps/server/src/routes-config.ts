@@ -21,9 +21,10 @@ import { engineHome, engineInfo, engineKind, forgetEngineOptions, restartEngine,
 import { applyModelChoice, asBlock, readDotenv, readYaml, writePrivate, SHARED_ENV } from './hermes-files.js';
 import { listMemories } from './engine-memory.js';
 import { idleConfig, viewerCount } from './idle.js';
-import { optionalBody, requireBody, SharedSettingsSchema, SkillBodySchema, EngineChoiceSchema, EngineLoginSchema, FileDownloadSchema } from './api/schemas.js';
+import { optionalBody, requireBody, SharedSettingsSchema, EngineChoiceSchema, EngineLoginSchema, FileDownloadSchema } from './api/schemas.js';
+import { listLibrary } from './core/skill-library.js';
 import { checkSettings, readSharedSettings, saveSharedSettings } from './hermes-settings.js';
-import type { BotEngineAuthRow, LibraryFile, Skill } from '@orbit/contracts';
+import type { BotEngineAuthRow, LibraryFile } from '@orbit/contracts';
 import type { BotRow } from './infra/bot-repository.js';
 import YAML from 'yaml';
 
@@ -46,81 +47,17 @@ const messageOf = (e: unknown): string => String((e as { message?: unknown } | n
 /** A provider/model value from a settings request: trimmed and capped, or null for "the agent's default". */
 const engineField = (v: unknown): string | null => (typeof v === 'string' && v.trim() ? v.trim().slice(0, 120) : null);
 
-/** A `skills` row: the table's first three columns, plus the ones db.ts adds later. */
-interface SkillRow {
-  id: string;
-  bot_id: string;
-  name: string;
-  description: string | null;
-  body: string;
-  created_at: number;
-  updated_at: number | null;
-}
-
-const toSkill = (s: SkillRow): Skill => ({ id: s.id, botId: s.bot_id, name: s.name, description: s.description ?? '', body: s.body, createdAt: s.created_at, updatedAt: s.updated_at ?? s.created_at });
-const listSkills = (botId: string) => (db.prepare('SELECT * FROM skills WHERE bot_id=? ORDER BY created_at ASC').all(botId) as SkillRow[]).map(toSkill);
-
 configApi.get('/bots/:id/settings', (c) => {
   const b = ownBot(c.get('user').id, c.req.param('id'));
   if (!b) return c.json({ error: 'not found' }, 404);
   return c.json({
     memories: listMemories(b.id),
-    skills: listSkills(b.id),
+    skills: listLibrary(b.user_id).filter((sk) => sk.bots.some((x) => x.botId === b.id && x.allowed)),
     routines: listRoutines(b.id),
     tasks: listTasks(b.id),
     // The agent keeps its own memory and trims its own context; there is nothing for the app to maintain.
     memory: { lastConsolidatedAt: null, historyChars: 0, compactAtChars: 0, lastCompaction: null },
   });
-});
-
-function cleanSkill(p: Record<string, unknown>, partial = false): { name?: string; description?: string; body?: string } | string {
-  const out: { name?: string; description?: string; body?: string } = {};
-  if (p.name !== undefined || !partial) {
-    const name = String(p.name ?? '').trim();
-    if (!name) return 'Give the skill a name';
-    out.name = name.slice(0, 80);
-  }
-  if (p.body !== undefined || !partial) {
-    const body = String(p.body ?? '').trim();
-    if (!body) return 'Write the steps for this skill';
-    out.body = body.slice(0, 20_000);
-  }
-  if (p.description !== undefined) out.description = String(p.description).trim().slice(0, 300);
-  return out;
-}
-
-configApi.get('/bots/:id/skills', (c) => {
-  const b = ownBot(c.get('user').id, c.req.param('id'));
-  return b ? c.json({ skills: listSkills(b.id) }) : c.json({ error: 'not found' }, 404);
-});
-
-configApi.post('/bots/:id/skills', async (c) => {
-  const b = ownBot(c.get('user').id, c.req.param('id'));
-  if (!b) return c.json({ error: 'not found' }, 404);
-  const s = cleanSkill(await optionalBody(c, SkillBodySchema, {}));
-  if (typeof s === 'string') return c.json({ error: s }, 400);
-  const id = newId('skl');
-  db.prepare('INSERT INTO skills(id,bot_id,name,body,description,created_at,updated_at) VALUES (?,?,?,?,?,?,?)').run(id, b.id, s.name, s.body, s.description ?? '', now(), now());
-  return c.json({ skill: toSkill(db.prepare('SELECT * FROM skills WHERE id=?').get(id) as SkillRow) });
-});
-
-const ownSkill = (userId: string, id: string) =>
-  db.prepare('SELECT s.* FROM skills s JOIN bots b ON b.id=s.bot_id WHERE s.id=? AND b.user_id=?').get(id, userId) as SkillRow | undefined;
-
-configApi.patch('/skills/:id', async (c) => {
-  const cur = ownSkill(c.get('user').id, c.req.param('id'));
-  if (!cur) return c.json({ error: 'not found' }, 404);
-  const s = cleanSkill(await optionalBody(c, SkillBodySchema, {}), true);
-  if (typeof s === 'string') return c.json({ error: s }, 400);
-  db.prepare('UPDATE skills SET name=?, body=?, description=?, updated_at=? WHERE id=?').run(s.name ?? cur.name, s.body ?? cur.body, s.description ?? cur.description ?? '', now(), cur.id);
-  return c.json({ skill: toSkill(db.prepare('SELECT * FROM skills WHERE id=?').get(cur.id) as SkillRow) });
-});
-
-configApi.delete('/skills/:id', (c) => {
-  const cur = ownSkill(c.get('user').id, c.req.param('id'));
-  if (!cur) return c.json({ error: 'not found' }, 404);
-  db.prepare('DELETE FROM skills WHERE id=?').run(cur.id);
-  return c.json({ ok: true });
 });
 
 // ---------- memory maintenance (now the agent's own job; kept so older clients get an answer) ----------

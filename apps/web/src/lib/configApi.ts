@@ -1,4 +1,4 @@
-import type { Bot, BotEngineAuthRow, ComputerState, EngineAuthResponse, EngineInfo, InitiativeSettings, InitiativeSettingsPatch, LibraryFile, Memory, Routine, Skill, Task, Toolkit } from '@orbit/contracts';
+import type { Bot, BotEngineAuthRow, ComputerState, EngineAuthResponse, EngineInfo, InitiativeSettings, InitiativeSettingsPatch, GithubSkillInspect, LibraryFile, LibrarySkill, Memory, Routine, SkillLibraryResponse, Task, Toolkit } from '@orbit/contracts';
 import { ApiError } from './api';
 
 async function req<T>(method: string, path: string, body?: unknown): Promise<T> {
@@ -19,7 +19,8 @@ async function req<T>(method: string, path: string, body?: unknown): Promise<T> 
 
 export interface BotSettingsBundle {
   memories: Memory[];
-  skills: Skill[];
+  /** The library skills this Bot has. */
+  skills: LibrarySkill[];
   routines: Routine[];
   tasks: Task[];
   memory: { lastConsolidatedAt: number | null; historyChars: number; compactAtChars: number; lastCompaction: { method: string; created_at: number } | null };
@@ -32,6 +33,8 @@ export interface ComputerDetails {
   screens: { botId: string; screenId: string; lastUsedAt: number }[];
   hibernation: { idleMinutes: number; viewers: number; dryRun: boolean };
 }
+
+export interface NewLibrarySkill { name: string; content: string; description?: string; availability?: 'all' | 'selected'; botIds?: string[] }
 
 export interface HermesSettings { env: string; config: string }
 export type HermesSettingsFile = keyof HermesSettings;
@@ -54,9 +57,16 @@ export const configApi = {
 
   deleteMemory: (id: string) => req<{ ok: true }>('DELETE', `/memories/${id}`),
 
-  createSkill: (botId: string, s: Pick<Skill, 'name' | 'description' | 'body'>) => req<{ skill: Skill }>('POST', `/bots/${botId}/skills`, s),
-  updateSkill: (id: string, s: Partial<Pick<Skill, 'name' | 'description' | 'body'>>) => req<{ skill: Skill }>('PATCH', `/skills/${id}`, s),
-  deleteSkill: (id: string) => req<{ ok: true }>('DELETE', `/skills/${id}`),
+
+  /** The shared skill library: every skill, and which Bots have it. */
+  skillLibrary: () => req<SkillLibraryResponse>('GET', '/skill-library'),
+  createSkill: (s: NewLibrarySkill) => req<{ skill: LibrarySkill }>('POST', '/skill-library', s),
+  updateSkill: (id: string, p: Partial<Pick<LibrarySkill, 'name' | 'description' | 'content' | 'availability'>>) => req<{ skill: LibrarySkill }>('PATCH', `/skill-library/${id}`, p),
+  deleteSkill: (id: string) => req<{ ok: true }>('DELETE', `/skill-library/${id}`),
+  setSkillAccess: (id: string, botId: string, allowed: boolean) => req<{ skill: LibrarySkill }>('PUT', `/skill-library/${id}/access/${encodeURIComponent(botId)}`, { allowed }),
+  /** What a GitHub source would install, checked but not installed. */
+  inspectGithubSkill: (source: string) => req<GithubSkillInspect>('POST', '/skill-library/github/inspect', { source }),
+  installGithubSkill: (source: string, pick?: string) => req<{ skill: LibrarySkill }>('POST', '/skill-library/github', { source, ...(pick !== undefined ? { pick } : {}) }),
 
   setRoutine: (id: string, enabled: boolean) => req<{ routine: Routine }>('PATCH', `/routines/${id}`, { enabled }),
   runRoutine: (id: string) => req<{ ok: true }>('POST', `/routines/${id}/run`),

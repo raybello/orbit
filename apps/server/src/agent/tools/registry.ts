@@ -1,3 +1,4 @@
+import path from 'node:path';
 import { db, now } from '../../db.js';
 import { newId } from '../../lib/ids.js';
 import { hub } from '../../lib/hub.js';
@@ -7,7 +8,9 @@ import { safetyIdentifier } from '../../lib/xai.js';
 import { appendRow, listRoutines, toRoutine, describeCron, type RoutineRow } from '../../store.js';
 import type { Trigger } from '../../core/turn-queue.js';
 import { connectedToolkits, toolkitInfo } from '../../composio.js';
-import { appAllowed } from '../../core/app-access.js';
+import { appAllowed, revokedApps } from '../../core/app-access.js';
+import { engineHome } from '../../engine.js';
+import { asBlock, readYaml } from '../../hermes-files.js';
 import { appOffNotice } from '../../domain/app-access.js';
 import { type ReviewCard } from '../../domain/google-actions.js';
 import { scheduleRoutine, unscheduleRoutine } from '../../routines.js';
@@ -20,6 +23,7 @@ import { COMPUTER_TOOLS } from '../../computer-tools.js';
 import { RESEARCH_TOOLS } from '../../computer-research.js';
 import { BOT_TOOLS } from '../bot-tools.js';
 import { VAULT_TOOLS } from '../../vault-tools.js';
+import { SKILL_TOOLS } from '../skill-tools.js';
 import { listCalendars, listMirror, mirrorState, syncCalendar } from '../../calendar/mirror.js';
 import { buildCalendar, type CalendarRoutineRow } from '../../domain/calendar-view.js';
 
@@ -443,6 +447,35 @@ export const TOOLS: ToolDef[] = [
 
   // Saved logins: filled in on the Bot's screen, or asked for in a secure form. See vault-tools.ts.
   ...(VAULT_TOOLS as unknown as ToolDef[]),
+
+  // The shared skill library: add a skill for the team, read one this Bot has. See skill-tools.ts.
+  ...(SKILL_TOOLS as unknown as ToolDef[]),
+
+  {
+    name: 'list_tools',
+    description: "List everything you can use: the team app's own tools (with what each does), the user's connected apps you may use through Composio, and the MCP servers in your own agent config. Use it when you are unsure whether you can do something.",
+    parameters: obj({}),
+    activity: 'working',
+    label: 'Checking tools',
+    impl: async (_a, ctx) => {
+      const own = TOOLS.map((t) => ({ name: t.name, does: t.description.split(/(?<=\.)\s/)[0].slice(0, 200) }));
+      const off = revokedApps(ctx.botId);
+      let apps: string[] | string;
+      try { apps = [...(await connectedToolkits(ctx.userId))].filter((t) => !off.includes(t)).sort(); } catch { apps = '(could not check right now)'; }
+      const home = engineHome(ctx.botId);
+      const mcp = home ? Object.keys(asBlock(readYaml(path.join(home, 'config.yaml')).mcp_servers)).filter((n) => n !== 'hq').sort() : [];
+      return {
+        output: JSON.stringify({
+          app_tools: own,
+          connected_apps: apps,
+          ...(off.length ? { apps_turned_off_for_you: off } : {}),
+          composio: 'Use a connected app through COMPOSIO_MULTI_EXECUTE_TOOL; find an action slug with COMPOSIO_SEARCH_TOOLS.',
+          mcp_servers: mcp,
+        }),
+        summary: `${own.length} app tools, ${Array.isArray(apps) ? apps.length : 0} apps`,
+      };
+    },
+  },
 ];
 
 export const toolMap = new Map(TOOLS.map((t) => [t.name, t]));

@@ -6,6 +6,7 @@ import { displayName } from '../domain/transcript-utils';
 import { useConfigUI } from '../configStore';
 import { Icon } from './Icon';
 import { Menu } from './Menu';
+import { useSkillSuggest } from './SkillSuggest';
 import { endCall, isCallActive, startCall, useVoice } from '../voice/call';
 import { useDictation } from '../voice/dictation';
 import { draftFor, onDraftPrefill, saveDraft } from '../lib/composer-drafts';
@@ -23,6 +24,7 @@ export function Composer({ bot, running }: { bot: Bot; running: boolean }) {
   const ref = useRef<HTMLTextAreaElement>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const setModal = useStore((s) => s.setModal);
+  const suggest = useSkillSuggest(bot.id, text, setText, ref);
 
   useEffect(() => { setText(draftFor(bot.id)); setError(null); setPendingFiles([]); ref.current?.focus(); }, [bot.id]);
   useEffect(() => { saveDraft(bot.id, text); }, [bot.id, text]);
@@ -171,14 +173,17 @@ export function Composer({ bot, running }: { bot: Bot; running: boolean }) {
           </button>
         </div>
         <div className="composer__main">
+          {suggest.popover}
           <textarea
             ref={ref}
             className="composer__input"
             rows={1}
             value={text}
             placeholder="Type a new message"
-            onChange={(e) => setText(e.target.value)}
+            onChange={(e) => { setText(e.target.value); suggest.track(e.target); }}
+            onSelect={(e) => suggest.track(e.currentTarget)}
             onKeyDown={(e) => {
+              if (suggest.onKeyDown(e)) return;
               if (e.key === 'Enter' && !e.shiftKey && !e.nativeEvent.isComposing) { e.preventDefault(); send(); }
             }}
             aria-label={`Message ${displayName(bot)}`}
