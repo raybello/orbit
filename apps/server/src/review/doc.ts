@@ -2,6 +2,7 @@ import { z } from 'zod';
 import type { DocReview, ReviewPayload } from '@orbit/contracts';
 import { runAction } from '../composio.js';
 import { ReviewEditError, type Applied, type ReviewAdapter } from './types.js';
+import { rec, str } from '../lib/coerce.js';
 
 /**
  * The Doc card: changes to an existing Google Doc. The card reads the document's text
@@ -12,8 +13,6 @@ import { ReviewEditError, type Applied, type ReviewAdapter } from './types.js';
  * Anything else (deleting ranges, tabs, headers…) is described in a sentence.
  */
 
-const str = (v: unknown) => (typeof v === 'string' ? v : '');
-const rec = (v: unknown): Record<string, unknown> => (v && typeof v === 'object' && !Array.isArray(v) ? (v as Record<string, unknown>) : {});
 const MAX_DIFF = 200;
 
 const documentIdOf = (args: Record<string, unknown>) => str(args.document_id) || str(args.id) || str(args.documentId);
@@ -52,11 +51,6 @@ const count = (text: string, find: string, matchCase: boolean) => {
 
 export const docReview: ReviewAdapter = {
   kind: 'doc',
-  slugs: [
-    'GOOGLEDOCS_INSERT_TEXT_ACTION', 'GOOGLEDOCS_REPLACE_ALL_TEXT', 'GOOGLEDOCS_UPDATE_DOCUMENT_MARKDOWN', 'GOOGLEDOCS_UPDATE_DOCUMENT_SECTION_MARKDOWN',
-    'GOOGLEDOCS_UPDATE_DOCUMENT_BATCH', 'GOOGLEDOCS_UPDATE_EXISTING_DOCUMENT', 'GOOGLEDOCS_DELETE_CONTENT_RANGE', 'GOOGLEDOCS_DELETE_TAB',
-    'GOOGLEDOCS_DELETE_HEADER', 'GOOGLEDOCS_DELETE_FOOTER',
-  ],
 
   async build(userId, slug, args): Promise<ReviewPayload> {
     const documentId = documentIdOf(args);

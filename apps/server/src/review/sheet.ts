@@ -2,6 +2,7 @@ import { z } from 'zod';
 import type { CellChange, ReviewPayload, SheetReview } from '@orbit/contracts';
 import { runAction } from '../composio.js';
 import { ReviewEditError, type Applied, type ReviewAdapter } from './types.js';
+import { rec, str } from '../lib/coerce.js';
 
 /**
  * The Sheet card: writes to an existing Google Sheet.
@@ -16,8 +17,6 @@ import { ReviewEditError, type Applied, type ReviewAdapter } from './types.js';
  * Composio's own dry run, which reports the operation and how many rows it touches.
  */
 
-const str = (v: unknown) => (typeof v === 'string' ? v : '');
-const rec = (v: unknown): Record<string, unknown> => (v && typeof v === 'object' && !Array.isArray(v) ? (v as Record<string, unknown>) : {});
 const MAX_CELLS = 200;
 
 export const colName = (i: number): string => (i < 26 ? String.fromCharCode(65 + i) : colName(Math.floor(i / 26) - 1) + String.fromCharCode(65 + (i % 26)));
@@ -91,12 +90,6 @@ function describeStructure(slug: string, args: Record<string, unknown>): string 
 
 export const sheetReview: ReviewAdapter = {
   kind: 'sheet',
-  slugs: [
-    ...VALUE_SLUGS, 'GOOGLESHEETS_EXECUTE_SQL', 'GOOGLESHEETS_ADD_SHEET', 'GOOGLESHEETS_DELETE_SHEET', 'GOOGLESHEETS_INSERT_DIMENSION',
-    'GOOGLESHEETS_DELETE_DIMENSION', 'GOOGLESHEETS_APPEND_DIMENSION', 'GOOGLESHEETS_CLEAR_VALUES', 'GOOGLESHEETS_SPREADSHEETS_VALUES_BATCH_CLEAR',
-    'GOOGLESHEETS_UPSERT_ROWS', 'GOOGLESHEETS_CREATE_SPREADSHEET_ROW', 'GOOGLESHEETS_CREATE_SPREADSHEET_COLUMN', 'GOOGLESHEETS_FIND_REPLACE',
-    'GOOGLESHEETS_SORT_RANGE', 'GOOGLESHEETS_UPDATE_SHEET_PROPERTIES', 'GOOGLESHEETS_BATCH_CLEAR_VALUES_BY_DATA_FILTER', 'GOOGLESHEETS_BATCH_UPDATE_VALUES_BY_DATA_FILTER',
-  ],
 
   async build(userId, slug, args): Promise<ReviewPayload> {
     const spreadsheetId = spreadsheetIdOf(args);

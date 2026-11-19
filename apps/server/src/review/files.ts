@@ -1,8 +1,8 @@
 import type { WorkspaceFile } from '@orbit/contracts';
-import { innerToolCalls, runAction } from '../composio.js';
+import { innerAnswers, innerToolCalls, runAction } from '../composio.js';
 import { appendRow } from '../store.js';
-import { sheetReview } from './sheet.js';
-import { docReview } from './doc.js';
+import { reviewSlugs } from './slug-index.js';
+import { rec, str } from '../lib/coerce.js';
 
 /**
  * After a bot creates a Google Sheet or Doc, or a change to one runs, the chat shows the file: its
@@ -11,13 +11,11 @@ import { docReview } from './doc.js';
  * read of the file.
  */
 
-const str = (v: unknown) => (typeof v === 'string' ? v : '');
-const rec = (v: unknown): Record<string, unknown> => (v && typeof v === 'object' && !Array.isArray(v) ? (v as Record<string, unknown>) : {});
 const PREVIEW_ROWS = 5;
 const PREVIEW_COLS = 6;
 
 const CREATES = new Set(['GOOGLESHEETS_CREATE_GOOGLE_SHEET1', 'GOOGLESHEETS_SHEET_FROM_JSON', 'GOOGLEDOCS_CREATE_DOCUMENT', 'GOOGLEDOCS_CREATE_DOCUMENT2', 'GOOGLEDOCS_CREATE_DOCUMENT_MARKDOWN', 'GOOGLEDOCS_COPY_DOCUMENT']);
-const WRITES = new Set([...sheetReview.slugs, ...docReview.slugs]);
+const WRITES = new Set([...reviewSlugs('sheet'), ...reviewSlugs('doc')]);
 
 const sheetUrl = (id: string) => `https://docs.google.com/spreadsheets/d/${encodeURIComponent(id)}/edit`;
 const docUrl = (id: string) => `https://docs.google.com/document/d/${encodeURIComponent(id)}/edit`;
@@ -55,14 +53,11 @@ async function fileFor(userId: string, slug: string, args: Record<string, unknow
 /** Post a file notice for each sheet or doc this successful call created or changed. */
 export async function showFiles(userId: string, botId: string, name: string, args: Record<string, unknown>, data: unknown): Promise<number> {
   const calls = innerToolCalls(name, args);
-  const answers: { slug: string; data: Record<string, unknown>; ok: boolean; args: Record<string, unknown> }[] = name === 'COMPOSIO_MULTI_EXECUTE_TOOL'
-    ? (Array.isArray(rec(data).results) ? (rec(data).results as unknown[]) : []).map((x, i) => {
-      const item = rec(x);
-      const response = rec(item.response);
-      const slug = str(item.tool_slug).toUpperCase();
-      return { slug, data: rec(response.data), ok: response.successful !== false, args: (calls[Number(item.index ?? i)] ?? calls[i])?.args ?? {} };
-    })
-    : [{ slug: name.toUpperCase(), data: rec(data), ok: true, args }];
+  const answers = innerAnswers(name, data).map((a, i) => ({
+    ...a,
+    data: rec(a.data),
+    args: name === 'COMPOSIO_MULTI_EXECUTE_TOOL' ? (calls[a.index] ?? calls[i])?.args ?? {} : args,
+  }));
   let shown = 0;
   for (const a of answers) {
     if (!a.ok || !(CREATES.has(a.slug) || WRITES.has(a.slug))) continue;

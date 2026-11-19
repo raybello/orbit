@@ -5,6 +5,7 @@ import { env } from './env.js';
 import type { Toolkit } from '@orbit/contracts';
 import { connectionHealth, type ConnectionAccount, type ConnectionHealth } from './domain/connections.js';
 import { GOOGLE_TOOLKIT_VERSION } from './domain/google-actions.js';
+import { rec, str } from './lib/coerce.js';
 
 /**
  * Constructed on first use: an empty COMPOSIO_API_KEY must not stop the server booting —
@@ -221,9 +222,6 @@ export const runAction = (userId: string, slug: string, args: Record<string, unk
 /** One app action inside a Composio call: its slug and the arguments it will run with. */
 export interface InnerCall { slug: string; args: Record<string, unknown> }
 
-const asObject = (v: unknown): Record<string, unknown> =>
-  v && typeof v === 'object' && !Array.isArray(v) ? (v as Record<string, unknown>) : {};
-
 /**
  * Which app actions a Composio call would run, with their arguments (for approval checks).
  * COMPOSIO_MULTI_EXECUTE_TOOL documents `tools: [{ tool_slug, arguments }]`; the router also accepts
@@ -231,16 +229,33 @@ const asObject = (v: unknown): Record<string, unknown> =>
  */
 export function innerToolCalls(name: string, args: unknown): InnerCall[] {
   if (name === 'COMPOSIO_MULTI_EXECUTE_TOOL') {
-    const a = asObject(args);
+    const a = rec(args);
     const list = a.tools ?? a.tool_calls ?? a.actions ?? [];
     return (Array.isArray(list) ? list : []).flatMap((t) => {
-      const o = asObject(t);
+      const o = rec(t);
       const slug = String(o.tool_slug ?? o.slug ?? o.name ?? o.tool ?? '');
-      return slug ? [{ slug, args: asObject(o.arguments ?? o.tool_params ?? o.args) }] : [];
+      return slug ? [{ slug, args: rec(o.arguments ?? o.tool_params ?? o.args) }] : [];
     });
   }
   if (name.startsWith('COMPOSIO_')) return [];
-  return [{ slug: name, args: asObject(args) }];
+  return [{ slug: name, args: rec(args) }];
+}
+
+/** One action's answer inside a Composio call's result. `index` is its position in the call's `tools`. */
+export interface InnerAnswer { slug: string; data: unknown; ok: boolean; index: number }
+
+/**
+ * Each action's answer from a successful Composio call. A batch answers per action in `results[]`
+ * (`{ tool_slug, index, response: { successful, data } }`); a direct call answers with the action's data.
+ */
+export function innerAnswers(name: string, data: unknown): InnerAnswer[] {
+  if (name !== 'COMPOSIO_MULTI_EXECUTE_TOOL') return [{ slug: name.toUpperCase(), data, ok: true, index: 0 }];
+  const results = rec(data).results;
+  return (Array.isArray(results) ? results : []).map((x, i) => {
+    const item = rec(x);
+    const response = rec(item.response);
+    return { slug: str(item.tool_slug).toUpperCase(), data: response.data, ok: response.successful !== false, index: Number(item.index ?? i) };
+  });
 }
 
 /** Which inner tool slugs a Composio meta-tool call would run (for approval checks). */

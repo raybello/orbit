@@ -1,9 +1,10 @@
 import type { CardBody, EmailReview } from '@orbit/contracts';
 import { db } from '../db.js';
-import { innerToolCalls, runAction } from '../composio.js';
+import { innerAnswers, innerToolCalls, runAction } from '../composio.js';
 import { appendRow, getRow, updateRow } from '../store.js';
 import { applyEmail, readDraft } from './email.js';
 import { ReviewEditError } from './types.js';
+import { list, rec, str } from '../lib/coerce.js';
 
 /**
  * Draft-first email. A bot writes email as a real Gmail draft (GMAIL_CREATE_EMAIL_DRAFT runs without
@@ -16,27 +17,16 @@ import { ReviewEditError } from './types.js';
 type DraftCard = Extract<CardBody, { card: 'draft' }>;
 const DRAFT_SLUGS = new Set(['GMAIL_CREATE_EMAIL_DRAFT', 'GMAIL_UPDATE_DRAFT']);
 
-const str = (v: unknown) => (typeof v === 'string' ? v : '');
-const rec = (v: unknown): Record<string, unknown> => (v && typeof v === 'object' && !Array.isArray(v) ? (v as Record<string, unknown>) : {});
-const list = (v: unknown): string[] => (Array.isArray(v) ? v.map((x) => String(x).trim()).filter(Boolean) : typeof v === 'string' && v.trim() ? v.split(',').map((x) => x.trim()).filter(Boolean) : []);
 
 /** A draft the bot just wrote: which action, the arguments it ran with and the draft's id. */
 export interface WrittenDraft { slug: string; args: Record<string, unknown>; draftId: string; threadId?: string }
 
 /**
- * The drafts a successful Composio call wrote. A batch answers per action in `results[]`
- * (`{ tool_slug, response: { successful, data } }`); a direct call answers with the action's data.
- * The draft id is the draft resource's `id` (GMAIL_CREATE_EMAIL_DRAFT returns `{ id, message }`).
+ * The drafts a successful Composio call wrote. The draft id is the draft resource's `id` (GMAIL_CREATE_EMAIL_DRAFT returns `{ id, message }`).
  */
 export function draftsWritten(name: string, args: Record<string, unknown>, data: unknown): WrittenDraft[] {
   const calls = innerToolCalls(name, args);
-  const answers: { slug: string; data: unknown; ok: boolean }[] = name === 'COMPOSIO_MULTI_EXECUTE_TOOL'
-    ? (Array.isArray(rec(data).results) ? (rec(data).results as unknown[]) : []).map((x) => {
-      const item = rec(x);
-      const response = rec(item.response);
-      return { slug: str(item.tool_slug).toUpperCase(), data: response.data, ok: response.successful !== false };
-    })
-    : [{ slug: name.toUpperCase(), data, ok: true }];
+  const answers = innerAnswers(name, data);
   const out: WrittenDraft[] = [];
   answers.forEach((a, i) => {
     if (!a.ok || !DRAFT_SLUGS.has(a.slug)) return;

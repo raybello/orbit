@@ -22,13 +22,13 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { createRequire } from 'node:module';
 import { fileURLToPath, pathToFileURL } from 'node:url';
+import { GOOGLE_TOOLKIT_VERSION } from './lib/toolkit-version.mjs';
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const OUT = path.join(root, 'apps/server/src/__tests__/fixtures/composio');
 const USER = process.env.EVAL_COMPOSIO_USER || 'orbit-eval-test';
 const TOOLKITS = ['gmail', 'googlecalendar', 'googlesheets', 'googledocs'];
-/** The toolkit version the app pins (apps/server/src/domain/google-actions.ts GOOGLE_TOOLKIT_VERSION). */
-const PINNED = process.env.COMPOSIO_TOOLKIT_VERSION || '20261116_00';
+const PINNED = process.env.COMPOSIO_TOOLKIT_VERSION || GOOGLE_TOOLKIT_VERSION;
 const REST = 'https://backend.composio.dev/api/v3.1';
 
 function readEnvKey() {

@@ -2,6 +2,7 @@ import { z } from 'zod';
 import type { EventFields, EventReview, ReviewPayload } from '@orbit/contracts';
 import { runAction } from '../composio.js';
 import { ReviewEditError, type Applied, type PreStep, type ReviewAdapter } from './types.js';
+import { rec, str } from '../lib/coerce.js';
 
 /**
  * The Event card: creating, changing, deleting and quick-adding Google Calendar events.
@@ -20,8 +21,6 @@ import { ReviewEditError, type Applied, type PreStep, type ReviewAdapter } from 
  * an all-day event's `end` is its last day (inclusive), as people read it.
  */
 
-const str = (v: unknown) => (typeof v === 'string' ? v : '');
-const rec = (v: unknown): Record<string, unknown> => (v && typeof v === 'object' && !Array.isArray(v) ? (v as Record<string, unknown>) : {});
 
 /** The event inside any calendar response: `response_data`, `event`, `items[0]` or the data itself. */
 export function readEvent(data: unknown): Record<string, unknown> {
@@ -153,7 +152,6 @@ const notifyOf = (args: Record<string, unknown>) => str(args.send_updates) !== '
 
 export const eventReview: ReviewAdapter = {
   kind: 'event',
-  slugs: Object.keys(ACTIONS),
   alwaysApply: true,
 
   async build(userId, slug, args) {
