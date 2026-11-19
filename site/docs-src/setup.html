@@ -8,7 +8,7 @@
 <tr><td><strong>Node.js 22+</strong></td><td>Everything built from source (the repo's <code>engines</code> field).</td></tr>
 <tr><td><strong>pnpm 12</strong></td><td>The workspace (pinned in <code>packageManager</code>).</td></tr>
 <tr><td><strong>Docker</strong></td><td>The default per-bot desktops, and the compose stacks.</td></tr>
-<tr><td><strong>Hermes Agent</strong></td><td>The agent engine. The <code>hermes</code> CLI starts one gateway per extra bot; the first bot talks to an already-running gateway at <code>HERMES_URL</code>.</td></tr>
+<tr><td><strong>Hermes Agent</strong></td><td>The agent engine. The server runs one <code>hermes gateway run</code> per bot, the first bot included.</td></tr>
 <tr><td>A model provider</td><td>Whatever the primary Hermes agent uses: a subscription (for example Claude Pro/Max, which Hermes picks up from your Claude Code sign-in), an API key such as <code>ANTHROPIC_API_KEY</code> or <code>DEEPSEEK_API_KEY</code>, or a local model server such as LM Studio. See <a href="#model">Choosing the agent's model</a>.</td></tr>
 <tr><td>Optional: an NVIDIA GPU</td><td><a href="#gpu-voice">GPU voice</a> on Windows and Linux: 8 GB of VRAM or more with a cloud model (in testing the three voice models plus the Windows desktop used 8.4 GB; Turing / RTX 20-series or newer), Docker with the NVIDIA Container Toolkit, and about 9 GB of downloads.</td></tr>
 <tr><td>Optional: <code>COMPOSIO_API_KEY</code>, <code>XAI_API_KEY</code></td><td>Connected apps; cloud voice and <code>x_search</code>. Both clients are lazy, so a first run boots without them.</td></tr>
@@ -131,9 +131,9 @@ KEYS_FILE=/root/keys.txt PRIMARY_CDP_URL=http://127.0.0.1:9333 \
 
 <h2 id="hermes">Wiring up Hermes</h2>
 <ul>
-  <li>The first bot is the Hermes agent already running on the machine. Point <code>HERMES_URL</code> at its API server and <code>HERMES_HOME_PRIMARY</code> at its home (default <code>~/.hermes</code>); the API key is read from <code>&lt;home&gt;/.env</code> or <code>HERMES_KEY</code>.</li>
+  <li>The first bot is the primary agent. Its home is <code>ENGINES_DIR/primary</code> and its API server asks for <code>PRIMARY_ENGINE_PORT</code> (8642) first. On first boot the server imports the model keys, model config, persona, memories and skills of your own Hermes (<code>HERMES_IMPORT_FROM</code>, default <code>~/.hermes</code>) into it once; sign-ins and messaging tokens are never copied.</li>
   <li>Every other bot gets a managed home under <code>ENGINES_DIR/&lt;botId&gt;</code> (keep it outside <code>~/.hermes</code>) and a gateway on a port from <code>ENGINE_PORT_BASE</code> (8650) upward.</li>
-  <li>Engines reach the app's tools at <code>MCP_BASE_URL/mcp/&lt;botId&gt;</code>; the host-run primary uses <code>PRIMARY_MCP_BASE_URL</code> when the server runs in a container. On startup the server makes sure the primary's config has its <code>hq</code> MCP entry.</li>
+  <li>Every engine reaches the app's tools over loopback at <code>/mcp/&lt;botId&gt;</code>; the primary's is <code>/mcp/primary</code>. The server writes that <code>hq</code> entry into each home itself.</li>
   <li>Hermes' home is <code>~/.hermes</code> on macOS and Linux and <code>%LOCALAPPDATA%\hermes</code> on Windows. The gateway's API server listens on <code>:8642</code>.</li>
 </ul>
 
@@ -248,9 +248,9 @@ KEYS_FILE=/root/keys.txt PRIMARY_CDP_URL=http://127.0.0.1:9333 \
 <tr><td><code>DEV_LOGIN</code></td><td>off</td><td><code>1</code> enables the email-only sign-in. Local only.</td></tr>
 <tr><td><code>ALLOWED_EMAILS</code></td><td>empty</td><td>Comma-separated allow-list; empty lets anyone who can reach the app sign in.</td></tr>
 <tr><td><code>DB_PATH</code></td><td>data/grokbot.db</td><td>SQLite database file.</td></tr>
-<tr><td><code>HERMES_BIN</code>, <code>HERMES_URL</code>, <code>HERMES_KEY</code>, <code>HERMES_HOME_PRIMARY</code></td><td>hermes, http://127.0.0.1:8642</td><td>The Hermes CLI and the primary agent's API.</td></tr>
+<tr><td><code>HERMES_BIN</code>, <code>PRIMARY_ENGINE_PORT</code>, <code>HERMES_IMPORT_FROM</code></td><td>hermes, 8642, ~/.hermes</td><td>The Hermes CLI, the primary agent's first-choice port, and the Hermes home imported into it once.</td></tr>
 <tr><td><code>ENGINES_DIR</code>, <code>ENGINE_PORT_BASE</code></td><td>data/engines, 8650</td><td>Managed engine homes and ports.</td></tr>
-<tr><td><code>MCP_BASE_URL</code>, <code>PRIMARY_MCP_BASE_URL</code>, <code>EXTRA_MCP_SERVERS</code></td><td></td><td>How engines reach <code>/mcp</code>; extra MCP servers every bot gets (JSON).</td></tr>
+<tr><td><code>EXTRA_MCP_SERVERS</code></td><td></td><td>Extra MCP servers every bot gets (JSON).</td></tr>
 <tr><td><code>PRIMARY_BOT_NAME</code>, <code>PRIMARY_BOT_LABEL</code></td><td>Atlas, Chief of Staff</td><td>The first bot's name and label.</td></tr>
 <tr><td><code>MAX_BOTS</code></td><td>10</td><td>Bot ceiling (4 with <code>COMPUTER_KIND=orgo</code>).</td></tr>
 <tr><td><code>COMPUTER_KIND</code></td><td>auto</td><td><code>docker</code>, <code>orgo</code>, or <code>auto</code> (Docker for every bot but the primary).</td></tr>
