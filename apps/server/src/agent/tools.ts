@@ -19,7 +19,7 @@ import { RESEARCH_TOOLS } from '../computer-research.js';
 import { BOT_TOOLS } from './bot-tools.js';
 import { VAULT_TOOLS } from '../vault-tools.js';
 import { listCalendars, listMirror, mirrorState, syncCalendar } from '../calendar/mirror.js';
-import { buildCalendar, type CalendarRoutineRow } from '../routes-calendar.js';
+import { buildCalendar, type CalendarRoutineRow } from '../domain/calendar-view.js';
 
 /** Tool arguments as the model sent them: a JSON object, read field by field. */
 type ToolArgs = Record<string, unknown>;
