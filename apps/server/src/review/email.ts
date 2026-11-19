@@ -2,6 +2,7 @@ import { z } from 'zod';
 import type { EmailReview, ReviewPayload } from '@orbit/contracts';
 import { runAction } from '../composio.js';
 import { ReviewEditError, type Applied, type ReviewAdapter } from './types.js';
+import { list, rec, str } from '../lib/coerce.js';
 
 /**
  * The Email card: GMAIL_SEND_EMAIL, GMAIL_REPLY_TO_THREAD, GMAIL_SEND_DRAFT and GMAIL_FORWARD_MESSAGE.
@@ -12,9 +13,6 @@ import { ReviewEditError, type Applied, type ReviewAdapter } from './types.js';
  * edits to it are written with GMAIL_UPDATE_DRAFT before the send.
  */
 
-const str = (v: unknown) => (typeof v === 'string' ? v : '');
-const list = (v: unknown): string[] => (Array.isArray(v) ? v.map((x) => String(x).trim()).filter(Boolean) : typeof v === 'string' && v.trim() ? v.split(',').map((x) => x.trim()).filter(Boolean) : []);
-const rec = (v: unknown): Record<string, unknown> => (v && typeof v === 'object' && !Array.isArray(v) ? (v as Record<string, unknown>) : {});
 
 /** "Ada <ada@x.test>, bob@y.test" → ["Ada <ada@x.test>", "bob@y.test"]. */
 const addresses = (header: string) => header.split(/,(?=(?:[^"]*"[^"]*")*[^"]*$)/).map((s) => s.trim()).filter(Boolean);
@@ -85,7 +83,6 @@ function describeChanges(before: EmailReview, after: EmailReview): string[] {
 
 export const emailReview: ReviewAdapter = {
   kind: 'email',
-  slugs: Object.keys(ACTIONS),
 
   async build(userId, slug, args) {
     const review = fromArgs(slug, args);

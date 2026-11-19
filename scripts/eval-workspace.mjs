@@ -24,12 +24,13 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { createRequire } from 'node:module';
 import { fileURLToPath, pathToFileURL } from 'node:url';
+import { GOOGLE_TOOLKIT_VERSION } from './lib/toolkit-version.mjs';
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const BASE = (process.env.ORBIT_URL || 'http://localhost:8787').replace(/\/$/, '');
 const STEP_MS = Number(process.env.STEP_TIMEOUT_MS || 4 * 60_000);
 const BOT_NAMES = (process.env.ORBIT_EVAL_BOTS || '').split(',').map((s) => s.trim()).filter(Boolean);
-const PINNED = process.env.COMPOSIO_TOOLKIT_VERSION || '20261116_00';
+const PINNED = process.env.COMPOSIO_TOOLKIT_VERSION || GOOGLE_TOOLKIT_VERSION;
 const stamp = new Date().toISOString().slice(5, 16).replace(/[-:T]/g, '');
 
 const envKey = () => process.env.COMPOSIO_API_KEY || (fs.readFileSync(path.join(root, '.env'), 'utf8').split('\n').find((l) => l.startsWith('COMPOSIO_API_KEY=')) ?? '').slice(17).replace(/"/g, '').trim();

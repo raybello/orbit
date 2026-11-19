@@ -4,6 +4,7 @@ import { eventReview } from './event.js';
 import { sheetReview } from './sheet.js';
 import { docReview } from './doc.js';
 import { ReviewEditError, type Applied, type ReviewAdapter } from './types.js';
+import { reviewKindOf } from './slug-index.js';
 
 export { ReviewEditError, type Applied, type PreStep, type ReviewAdapter } from './types.js';
 
@@ -22,8 +23,8 @@ export { ReviewEditError, type Applied, type PreStep, type ReviewAdapter } from 
 const ADAPTERS: ReviewAdapter[] = [emailReview, eventReview, sheetReview, docReview];
 
 export const adapterFor = (slug: string): ReviewAdapter | undefined => {
-  const s = slug.toUpperCase();
-  return ADAPTERS.find((a) => a.slugs.includes(s));
+  const kind = reviewKindOf(slug);
+  return kind && ADAPTERS.find((a) => a.kind === kind);
 };
 
 /** The card payload for this call, or undefined when it has no custom card or cannot be read. */

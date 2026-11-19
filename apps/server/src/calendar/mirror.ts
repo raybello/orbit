@@ -4,6 +4,7 @@ import { env } from '../env.js';
 import { hub } from '../lib/hub.js';
 import { parseSecretKey, Secret, secretBox, SecretBoxUnavailableError, type SecretBox } from '../lib/secret-box.js';
 import { connectedToolkits, runAction } from '../composio.js';
+import { rec, str } from '../lib/coerce.js';
 
 /**
  * The Google Calendar mirror: the person's chosen Google calendars, kept in Orbit's database so the
@@ -86,8 +87,6 @@ const evCtx = (userId: string, eventKey: string) => `gcal-ev:${userId}:${eventKe
 
 // ---------- reading Google's answers ----------
 
-const str = (v: unknown) => (typeof v === 'string' ? v : '');
-const rec = (v: unknown): Record<string, unknown> => (v && typeof v === 'object' && !Array.isArray(v) ? (v as Record<string, unknown>) : {});
 
 /** A Google event as the mirror keeps it, or null for one it cannot place in time. */
 export function toMirrorEvent(e: Record<string, unknown>, calendarId: string, calendarKey: string, key: string): MirrorEvent | null {

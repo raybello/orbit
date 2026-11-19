@@ -18,7 +18,6 @@ export interface Applied {
 
 export interface ReviewAdapter {
   kind: ReviewKind;
-  slugs: readonly string[];
   /** Apply even when the person made no edits (the adapter rewrites some calls on its own). */
   alwaysApply?: boolean;
   build(userId: string, slug: string, args: Record<string, unknown>): Promise<ReviewPayload>;
