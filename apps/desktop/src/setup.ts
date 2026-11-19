@@ -1,13 +1,13 @@
 /**
  * The setup window's renderer.
  *
- * Two screens: choose a server, then (only if Hermes is missing) get Hermes installed.
+ * One screen: choose a server.
  * Everything that touches the network or the disk goes through the preload bridge, so this
  * file stays a DOM script with no Node access and no CORS problems.
  */
 
 import { normalizeServerUrl } from './server-url';
-import type { DesktopSetup, HermesStatus, OrbitDesktopAPI, ServerProbe } from './shared/api';
+import type { DesktopSetup, OrbitDesktopAPI, ServerProbe } from './shared/api';
 
 declare global {
   interface Window {
@@ -23,8 +23,6 @@ const $ = <T extends HTMLElement>(id: string): T => {
   return el as T;
 };
 
-const screenServer = $('screen-server');
-const screenHermes = $('screen-hermes');
 const form = $<HTMLFormElement>('server-form');
 const urlRow = $('url-row');
 const urlInput = $<HTMLInputElement>('server-url');
@@ -32,12 +30,6 @@ const checkButton = $<HTMLButtonElement>('check-server');
 const statusLine = $('status');
 const hint = $('hint');
 const continueButton = $<HTMLButtonElement>('continue');
-
-const installButton = $<HTMLButtonElement>('install-hermes');
-const manualButton = $<HTMLButtonElement>('manual-hermes');
-const hermesLog = $<HTMLPreElement>('hermes-log');
-const hermesHint = $('hermes-hint');
-const hermesContinue = $<HTMLButtonElement>('hermes-continue');
 
 type Mode = 'new' | 'existing';
 
@@ -118,65 +110,10 @@ async function probe(): Promise<void> {
   }
 }
 
-function showScreen(which: 'server' | 'hermes'): void {
-  screenServer.hidden = which !== 'server';
-  screenHermes.hidden = which !== 'hermes';
-}
-
-function logLine(line: string): void {
-  hermesLog.hidden = false;
-  // Keep the pane bounded; the install prints tens of lines, not thousands.
-  const lines = `${hermesLog.textContent ?? ''}${line}\n`.split('\n');
-  hermesLog.textContent = lines.slice(-200).join('\n');
-  hermesLog.scrollTop = hermesLog.scrollHeight;
-}
-
-function applyHermesStatus(status: HermesStatus): void {
-  if (status.found) {
-    hermesHint.textContent = `Hermes ${status.version ?? ''} at ${status.home ?? '~/.hermes'}`.trim();
-    hermesContinue.hidden = false;
-    installButton.disabled = true;
-    return;
-  }
-  hermesHint.textContent = 'You can also install Hermes later; Orbit will not start bots until it is there.';
-  hermesContinue.hidden = false;
-}
-
-async function installHermes(): Promise<void> {
-  installButton.disabled = true;
-  manualButton.disabled = true;
-  hermesLog.hidden = false;
-  hermesLog.textContent = '';
-  hermesHint.textContent = 'Installing…';
-  try {
-    const status = await api.installHermes(logLine);
-    applyHermesStatus(status);
-    if (status.found) {
-      hermesHint.textContent = `Hermes ${status.version ?? ''} installed.`;
-      setupDone();
-    }
-  } catch (err) {
-    logLine(`Install failed: ${err instanceof Error ? err.message : String(err)}`);
-    hermesHint.textContent = 'Install failed. Try again, or install Hermes yourself and restart Orbit.';
-    installButton.disabled = false;
-    manualButton.disabled = false;
-  }
-}
-
 /** Write setup.json and let main take over (it closes this window). */
 async function persistAndFinish(setup: DesktopSetup): Promise<void> {
   await api.saveSetup(setup);
   api.finishSetup();
-}
-
-function setupDone(): void {
-  const setup: DesktopSetup =
-    mode === 'existing' && verifiedUrl
-      ? { mode: 'existing', serverUrl: verifiedUrl }
-      : { mode: 'new' };
-  void persistAndFinish(setup).catch((err) => {
-    setStatus(err instanceof Error ? err.message : String(err), 'error');
-  });
 }
 
 async function onContinue(): Promise<void> {
@@ -186,26 +123,7 @@ async function onContinue(): Promise<void> {
     await persistAndFinish({ mode: 'existing', serverUrl: verifiedUrl });
     return;
   }
-  continueButton.disabled = true;
-  continueButton.textContent = 'Checking…';
-  setStatus('Looking for Hermes…', 'busy');
-  try {
-    const status = await api.getHermesStatus();
-    if (!status.found) {
-      showScreen('hermes');
-      applyHermesStatus(status);
-      return;
-    }
-    await persistAndFinish({ mode: 'new' });
-  } catch (err) {
-    // A failed detection is not a reason to block setup: the app can start and the
-    // missing Hermes can be fixed later.
-    logLine(`Could not check for Hermes: ${err instanceof Error ? err.message : String(err)}`);
-    await persistAndFinish({ mode: 'new' });
-  } finally {
-    continueButton.disabled = false;
-    continueButton.textContent = 'Continue →';
-  }
+  await persistAndFinish({ mode: 'new' });
 }
 
 function wire(): void {
@@ -229,13 +147,6 @@ function wire(): void {
   form.addEventListener('submit', (event) => event.preventDefault());
   checkButton.addEventListener('click', () => void probe());
   continueButton.addEventListener('click', () => void onContinue());
-  installButton.addEventListener('click', () => void installHermes());
-  manualButton.addEventListener('click', () => {
-    void api.openExternal('https://github.com/NousResearch/hermes-agent#install');
-    hermesHint.textContent = 'Install Hermes, then press Continue.';
-    hermesContinue.hidden = false;
-  });
-  hermesContinue.addEventListener('click', () => setupDone());
 
   // Pre-fill from a previous setup (Change Orbit Server… reopens this window).
   void api

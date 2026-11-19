@@ -383,7 +383,8 @@ describe('NativeStackController', () => {
     assert.match(env.SESSION_SECRET!, /^[0-9a-f]{64}$/);
     assert.match(env.STACK_TOKEN!, /^[0-9a-f]{64}$/);
     assert.notEqual(env.SESSION_SECRET, env.STACK_TOKEN);
-    assert.ok(env.HERMES_HOME);
+    assert.ok(env.HERMES_IMPORT_FROM);
+    assert.equal(env.HERMES_KEY, undefined);
 
     // 3. Ports and secrets are persisted for the next launch.
     const ports = readNativePorts(nativePortsFile(path.join(h.userDataDir, 'stack')));

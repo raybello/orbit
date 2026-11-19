@@ -11,7 +11,7 @@ const EXAMPLE = [
   'SANDBOX_SUPERVISOR_TOKEN=',
   '',
   '# ---- the agents ----',
-  'HERMES_HOME_HOST=',
+  'COMPUTER_HOME_DIR=',
   '',
 ];
 
@@ -28,8 +28,8 @@ for (const [eol, name] of [['\n', 'LF'], ['\r\n', 'CRLF']] as const) {
   });
 
   test(`${name}: setEnvValue replaces in place and appends with the file's line ending`, () => {
-    let text = setEnvValue(EXAMPLE.join(eol), 'HERMES_HOME_HOST', 'C:\\Users\\me\\AppData\\Local\\hermes');
-    assert.equal(envValue(text, 'HERMES_HOME_HOST'), 'C:\\Users\\me\\AppData\\Local\\hermes');
+    let text = setEnvValue(EXAMPLE.join(eol), 'COMPUTER_HOME_DIR', 'C:\\Users\\me\\AppData\\Local\\orbit');
+    assert.equal(envValue(text, 'COMPUTER_HOME_DIR'), 'C:\\Users\\me\\AppData\\Local\\orbit');
     assert.ok(text.split(eol).includes('# ---- the agents ----'));
     text = setEnvValue(text, 'ORBIT_GPU_VOICE', '1');
     assert.ok(text.endsWith(`ORBIT_GPU_VOICE=1${eol}`));

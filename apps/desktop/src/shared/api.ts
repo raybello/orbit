@@ -80,8 +80,6 @@ export interface HermesStatus {
   version?: string;
   /** HERMES_HOME, or `~/.hermes`. */
   home?: string;
-  /** True when `~/.hermes/.env` already carries API_SERVER_KEY. */
-  hasApiKey?: boolean;
   /** The binary we resolved, when found. */
   binaryPath?: string;
 }
@@ -108,10 +106,6 @@ export interface OrbitDesktopAPI {
   probeServer(url: string): Promise<ServerProbe>;
   /** Tells main the setup window is done; it closes us and continues startup. */
   finishSetup(): void;
-  // Hermes
-  getHermesStatus(): Promise<HermesStatus>;
-  installHermes(onProgress: (line: string) => void): Promise<HermesStatus>;
-  wireHermesMcp(token: string): Promise<void>;
   // Updates
   checkForUpdates(): Promise<void>;
   onUpdateReady(cb: () => void): () => void;
@@ -148,10 +142,6 @@ export const IPC = {
   setupClear: 'orbit:setup:clear',
   setupProbe: 'orbit:setup:probe',
   setupComplete: 'setup-complete',
-  hermesStatus: 'orbit:hermes:status',
-  hermesInstall: 'orbit:hermes:install',
-  hermesInstallProgress: 'orbit:hermes:install-progress',
-  hermesWireMcp: 'orbit:hermes:wire-mcp',
   updateCheck: 'orbit:update:check',
   updateReady: 'orbit:update:ready',
   updateInstall: 'orbit:update:install',

@@ -1,19 +1,18 @@
 /**
- * Finding, installing and wiring Hermes — the agent harness every Orbit bot runs on.
+ * Finding and installing Hermes, the agent harness every Orbit bot runs on. Only the native stack
+ * needs it on this machine: it starts every bot's gateway here. The Docker stack ships its own.
  *
  * Every side effect is an argument (defaulting to the real one): this runs behind the setup
  * window's progress log, so it must be testable without a network, and a failure must be a
  * readable line rather than a stack trace.
  */
 
-import { createHash, randomBytes } from 'node:crypto';
+import { createHash } from 'node:crypto';
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import { execFile as nodeExecFile } from 'node:child_process';
-import { parseDocument } from 'yaml';
 import type { HermesStatus } from './shared/api';
-import { envValue, normalizeEol, setEnvValue } from './env-file';
 
 export const HERMES_RELEASES_URL = 'https://api.github.com/repos/NousResearch/hermes-agent/releases/latest';
 export const HERMES_DOCS_URL = 'https://github.com/NousResearch/hermes-agent#install';
@@ -145,7 +144,6 @@ export async function detectHermes(
 ): Promise<HermesStatus> {
   const resolved = resolveDeps({ ...deps, env });
   const home = hermesHome(env, deps);
-  const apiKey = readHermesApiKey(env, deps);
 
   for (const candidate of hermesCandidates(env, deps)) {
     if (!resolved.exists(candidate)) continue;
@@ -159,23 +157,11 @@ export async function detectHermes(
       found: true,
       version: version ?? undefined,
       home,
-      hasApiKey: !!apiKey,
       binaryPath: candidate,
     };
   }
 
-  return { found: false, home, hasApiKey: !!apiKey };
-}
-
-function readHermesApiKey(env: NodeJS.ProcessEnv = process.env, deps: HermesDeps = {}): string | null {
-  const resolved = resolveDeps({ ...deps, env });
-  const envPath = path.join(hermesHome(env, deps), '.env');
-  try {
-    if (!resolved.exists(envPath)) return null;
-    return envValue(resolved.readFile(envPath), 'API_SERVER_KEY');
-  } catch {
-    return null;
-  }
+  return { found: false, home };
 }
 
 export function pickSha256(shaFileText: string): string | null {
@@ -464,99 +450,4 @@ function updateShellProfile(home: string, deps: ResolvedDeps): void {
       // A missing ~/Documents/PowerShell directory is normal on a fresh Windows profile.
     }
   }
-}
-
-// ------------------------------------------------------------------ MCP wiring
-
-export interface WireMcpOptions {
-  /** Defaults to `http://127.0.0.1:8787`, i.e. the local stack. */
-  serverUrl?: string;
-  /** Defaults to `/mcp`, which is where routes.ts mounts the agent-facing server. */
-  mcpPath?: string;
-  configPath?: string;
-}
-
-/**
- * Remove the stale `mcp_servers.orbit` entry from `~/.hermes/config.yaml` if present.
- *
- * Older desktop versions wrote an `orbit` entry pointing at `/mcp` (no bot slug) with the
- * stack token — both wrong. The server's `syncPrimaryHqConfig` now owns the correct `hq`
- * entry; this function only cleans up the leftover so Hermes stops trying to connect to a
- * dead endpoint.
- *
- * Read-modify-write with the `yaml` document API so comments and ordering are preserved.
- */
-export function wireHermesMcp(
-  _token: string,
-  deps: HermesDeps = {},
-  options: WireMcpOptions = {},
-): { configPath: string } {
-  const resolved = resolveDeps(deps);
-  const configPath = options.configPath ?? path.join(hermesHome(resolved.env, deps), 'config.yaml');
-
-  const existing = resolved.exists(configPath) ? resolved.readFile(configPath) : '';
-  const doc = parseDocument(existing || '{}');
-  if (doc.errors.length > 0) {
-    throw new Error(
-      `~/.hermes/config.yaml is not valid YAML (${doc.errors[0].message}). ` +
-        `Fix it by hand or move it aside; Orbit will not rewrite a file it cannot parse.`,
-    );
-  }
-
-  // Only write if there is actually something to remove.
-  if (doc.getIn(['mcp_servers', 'orbit']) !== undefined) {
-    doc.deleteIn(['mcp_servers', 'orbit']);
-    const text = doc.toString({ lineWidth: 0 });
-    resolved.writeFile(configPath, text, 0o600);
-    resolved.log('removed stale mcp_servers.orbit entry');
-  }
-
-  return { configPath };
-}
-
-// ------------------------------------------------------------------ API key
-
-export interface EnsureApiKeyOptions {
-  /** The stack's `.env`; HERMES_KEY is mirrored there for the server to read. */
-  stackEnvPath?: string;
-  generate?: () => string;
-}
-
-/**
- * Guarantee `~/.hermes/.env` carries API_SERVER_KEY, and mirror it as HERMES_KEY in the
- * stack `.env` so the server can reach the agent's API.
- */
-export function ensureHermesApiKey(
-  deps: HermesDeps = {},
-  options: EnsureApiKeyOptions = {},
-): { key: string; generated: boolean; envPath: string } {
-  const resolved = resolveDeps(deps);
-  const envPath = path.join(hermesHome(resolved.env, deps), '.env');
-  const generate = options.generate ?? (() => randomBytes(32).toString('hex'));
-
-  const existingText = resolved.exists(envPath) ? resolved.readFile(envPath) : '';
-  const current = envValue(existingText, 'API_SERVER_KEY');
-  const key = current ?? generate();
-  if (!current) {
-    resolved.writeFile(envPath, setEnvValue(existingText, 'API_SERVER_KEY', key), 0o600);
-    resolved.log('generated API_SERVER_KEY in ~/.hermes/.env');
-  }
-
-  if (options.stackEnvPath) {
-    try {
-      const stackText = normalizeEol(resolved.exists(options.stackEnvPath) ? resolved.readFile(options.stackEnvPath) : '');
-      if (envValue(stackText, 'HERMES_KEY') !== key) {
-        fs.mkdirSync(path.dirname(options.stackEnvPath), { recursive: true, mode: 0o700 });
-        fs.writeFileSync(options.stackEnvPath, setEnvValue(stackText, 'HERMES_KEY', key), {
-          encoding: 'utf8',
-          mode: 0o600,
-        });
-      }
-    } catch (err) {
-      // The stack may not exist yet; the server falls back to ~/.hermes/.env.
-      resolved.log(`could not mirror HERMES_KEY into the stack env: ${(err as Error).message}`);
-    }
-  }
-
-  return { key, generated: !current, envPath };
 }

@@ -1,9 +1,10 @@
 /**
- * The native stack's bot engines: the Hermes gateways its server starts for every extra Bot.
+ * The native stack's bot engines: the Hermes gateways its server starts for every Bot, the primary
+ * included.
  *
  * The server spawns each gateway detached, as the leader of its own process group, so that a server
  * restart can reuse it. Stopping the server therefore leaves them running from launchd, still
- * writing into `<userData>/engines/bot_*` — quitting Orbit left processes behind, and deleting the
+ * writing into `<userData>/engines/{primary,bot_*}` — quitting Orbit left processes behind, and deleting the
  * engines folder brought it straight back. The controller calls this after the server is down.
  *
  * Each gateway records itself in `<home>/gateway.pid` (a pid, or JSON with `pid` and `hermes_home`).
@@ -58,7 +59,7 @@ export function parseGatewayPid(raw: string, home: string): number | null {
   return Number.isInteger(pid) && pid > 1 ? pid : null;
 }
 
-/** Live gateways under `enginesDir`, one per `bot_*` home that has one. */
+/** Live gateways under `enginesDir`, one per `primary` or `bot_*` home that has one. */
 export function findBotEngines(enginesDir: string, deps: BotEngineDeps = {}): BotEngine[] {
   const readDir = deps.readDir ?? ((dir: string) => fs.readdirSync(dir));
   const readFile = deps.readFile ?? ((file: string) => fs.readFileSync(file, 'utf8'));
@@ -71,7 +72,7 @@ export function findBotEngines(enginesDir: string, deps: BotEngineDeps = {}): Bo
   }
   const found: BotEngine[] = [];
   for (const name of names) {
-    if (!name.startsWith('bot_')) continue;
+    if (name !== 'primary' && !name.startsWith('bot_')) continue;
     const home = path.join(enginesDir, name);
     let raw: string;
     try {

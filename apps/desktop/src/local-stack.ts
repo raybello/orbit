@@ -55,6 +55,15 @@ export interface DockerRunOptions {
   cwd?: string;
 }
 
+/**
+ * `docker compose run` arguments for the one-shot import of a Hermes home into the primary
+ * agent's (apps/server/src/import-hermes.ts). `compose run` rather than `docker run`: it uses the
+ * api service's image, user and the project's own data volume, whatever compose names it.
+ */
+export function hostHermesImportArgs(source: string): string[] {
+  return ['run', '--rm', '--no-deps', '-T', '-v', `${source}:/import:ro`, 'api', 'node', 'dist/import-hermes.js', '/import', '/data/engines/primary'];
+}
+
 // ------------------------------------------------------------------ controller
 
 export interface LocalStackOptions {
@@ -327,18 +336,15 @@ export class LocalStackController implements DockerStack {
   }
 
   /**
-   * Create `stack/.env` from the bundled example if it is missing, and return its path.
-   *
-   * `HERMES_KEY` has to be in that file *before* `compose up` (the container reads its
-   * environment once, at start), so main asks for this file ahead of `start()` rather than
-   * letting the first `prepareEnv` create it later.
+   * Create `stack/.env` from the bundled example if it is missing, and return its path, for a
+   * caller that edits the file outside `start()` (the GPU voice switch).
    */
   prepareEnvFile(): string | null {
     const envPath = path.join(this.stackDir, '.env');
     if (fs.existsSync(envPath)) {
       // Fill any secrets missing from an older install — e.g. SANDBOX_SUPERVISOR_TOKEN added
       // after the user's first run. start() calls prepareEnv() too, but doing it here means
-      // mirrorHermesKey() sees a complete file before compose ever runs.
+      // a caller sees a complete file before compose ever runs.
       try {
         const raw = fs.readFileSync(envPath, 'utf8');
         const existing = normalizeEol(raw);
@@ -401,11 +407,6 @@ export class LocalStackController implements DockerStack {
     // describe the port we actually bound rather than the example file's 8787.
     text = setEnvValue(text, 'APP_URL', webUrl);
     text = setEnvValue(text, 'SERVER_URL', webUrl);
-    // Compose mounts this into the api container as the primary agent's home, so a new bot can copy
-    // its model credentials from the .env the desktop setup wrote. Nothing else can supply it: the
-    // container has no way to know where the host keeps ~/.hermes, and with the value missing the
-    // mount falls back to /tmp and every new agent starts with no API key.
-    text = setEnvValue(text, 'HERMES_HOME_HOST', hermesHome());
     // GPU voice follows the person's choice (and is always off on macOS).
     text = applyGpuVoice(text, gpuVoiceEnabled(text, this.platform), this.platform);
     fs.writeFileSync(envPath, text, { encoding: 'utf8', mode: 0o600 });
@@ -420,6 +421,22 @@ export class LocalStackController implements DockerStack {
     writeStackToken(this.stackDir, token);
     writeStackWebUrl(this.stackDir, webUrl);
     return { token, webUrl };
+  }
+
+  /**
+   * Seed the primary agent's home from this computer's own Hermes before the stack starts. The
+   * stack mounts nothing from the host, so the import runs in a throwaway container of the api
+   * service with the Hermes home mounted read-only for that run alone. It is idempotent (a marker
+   * in the primary's home on the data volume), so after the first start it only costs a container
+   * start. A failure is logged and the stack starts anyway: the agents simply have no keys yet.
+   */
+  private async importHostHermes(binary: string, signal: AbortSignal): Promise<void> {
+    const source = hermesHome(this.env);
+    if (!fs.existsSync(source)) return;
+    this.set({ phase: 'starting', detail: 'Importing your Hermes settings', progress: 0.4 });
+    const result = await this.compose(binary, hostHermesImportArgs(source), { timeoutMs: 120_000, signal });
+    if (result.code === 0) log.info(`hermes import: ${result.stdout.trim().split('\n').pop() ?? ''}`);
+    else log.warn(`importing ${source} into the primary agent failed; starting without it`, failureText(result));
   }
 
   private async daemonUp(binary: string, signal?: AbortSignal): Promise<{ up: boolean; text: string }> {
@@ -579,6 +596,9 @@ export class LocalStackController implements DockerStack {
           log.warn(`compose pull failed (${kind}); continuing`);
         }
       }
+
+      await this.importHostHermes(binary, signal);
+      if (signal.aborted) return this.set({ phase: 'idle', detail: 'Stopped' });
 
       this.set({ phase: 'starting', detail: 'Starting the stack', progress: 0.5 });
       let up = await this.compose(binary, ['up', '-d', '--remove-orphans'], { timeoutMs: 300_000, signal });

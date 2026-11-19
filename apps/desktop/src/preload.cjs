@@ -19,10 +19,6 @@ const IPC = {
   setupClear: 'orbit:setup:clear',
   setupProbe: 'orbit:setup:probe',
   setupComplete: 'setup-complete',
-  hermesStatus: 'orbit:hermes:status',
-  hermesInstall: 'orbit:hermes:install',
-  hermesInstallProgress: 'orbit:hermes:install-progress',
-  hermesWireMcp: 'orbit:hermes:wire-mcp',
   updateCheck: 'orbit:update:check',
   updateReady: 'orbit:update:ready',
   updateInstall: 'orbit:update:install',
@@ -62,13 +58,6 @@ contextBridge.exposeInMainWorld('orbitDesktop', {
   clearSetup: () => ipcRenderer.invoke(IPC.setupClear),
   probeServer: (url) => ipcRenderer.invoke(IPC.setupProbe, url),
   finishSetup: () => ipcRenderer.send(IPC.setupComplete),
-  // Hermes
-  getHermesStatus: () => ipcRenderer.invoke(IPC.hermesStatus),
-  installHermes: (onProgress) => {
-    const off = typeof onProgress === 'function' ? subscribe(IPC.hermesInstallProgress, onProgress) : () => {};
-    return ipcRenderer.invoke(IPC.hermesInstall).finally(off);
-  },
-  wireHermesMcp: (token) => ipcRenderer.invoke(IPC.hermesWireMcp, token),
   // Updates
   checkForUpdates: () => ipcRenderer.invoke(IPC.updateCheck),
   onUpdateReady: (cb) => subscribe(IPC.updateReady, cb),

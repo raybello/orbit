@@ -34,11 +34,6 @@ export interface StackBase {
 export interface DockerStack extends StackBase {
   readonly kind: 'docker';
   /**
-   * Create the stack's `.env` ahead of `start()`, so `HERMES_KEY` can be mirrored into it
-   * before `compose up` reads the container's environment. Returns the file, or null.
-   */
-  prepareEnvFile(): string | null;
-  /**
    * The SESSION_SECRET this stack signs sessions with, for the owner-key sign-in
    * (`desktop-session.ts`). Null before the stack has generated its secrets.
    */
@@ -55,12 +50,6 @@ export interface NativeStack extends StackBase {
   readonly kind: 'native';
   /** As above, once `start()` has generated `secrets.json`. */
   sessionSecret(): string | null;
-  /**
-   * The file `HERMES_KEY` is mirrored into before the API process is spawned: the same
-   * `stack/.env` that `start()` reads the key back from (`hermesKey()`). Returns the path, or
-   * null when the folder cannot be made.
-   */
-  prepareEnvFile(): string | null;
   /** Kill children immediately; native stacks need this on quit. */
   dispose(): void;
 }
