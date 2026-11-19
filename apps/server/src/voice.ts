@@ -9,7 +9,7 @@ import { env } from './env.js';
 import { newId } from './lib/ids.js';
 import type { AuthVars } from './lib/auth.js';
 import { appendRow, emitBot, getBotRow, getLive, listRoutines, listTasks, updateRow } from './store.js';
-import { enqueue } from './agent/loop.js';
+import { enqueue } from './core/turn-queue.js';
 import { computerState } from './computer.js';
 import type { ActivityKind, EventBody, MessageBody, RowBody, VoiceCallRecord, VoiceOption } from '@orbit/contracts';
 import { listMemories } from './engine-memory.js';

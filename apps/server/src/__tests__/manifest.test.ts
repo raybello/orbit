@@ -19,7 +19,7 @@ initRooms();
 const { composioIO } = await import('../composio.js');
 const { instructionsFor } = await import('../agent/prompt.js');
 const { appSheets, MCP_INSTRUCTIONS, SHEET_EXAMPLES } = await import('../agent/app-sheets.js');
-const { toolMap } = await import('../agent/tools.js');
+const { toolMap } = await import('../agent/tools/index.js');
 
 after(() => cleanupTmpEnv());
 

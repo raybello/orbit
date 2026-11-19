@@ -1,28 +1,28 @@
-import { db, now } from '../db.js';
-import { newId } from '../lib/ids.js';
-import { hub } from '../lib/hub.js';
-import { box } from '../box.js';
-import { env } from '../env.js';
-import { safetyIdentifier } from '../lib/xai.js';
-import { appendRow, getBotRow, listRoutines, toRoutine, describeCron, type RoutineRow } from '../store.js';
-import type { Trigger } from './loop.js';
-import { connectedToolkits, executeComposio, toolkitInfo } from '../composio.js';
-import { type ReviewCard } from '../domain/google-actions.js';
-import { scheduleRoutine, unscheduleRoutine } from '../routines.js';
-import { createEventRoutine, deleteEventTrigger, describeEvent, listTriggerTypes } from '../triggers.js';
-import { setCheckins } from '../proactive.js';
-import { createRoom, postToRoom } from './rooms.js';
+import { db, now } from '../../db.js';
+import { newId } from '../../lib/ids.js';
+import { hub } from '../../lib/hub.js';
+import { box } from '../../box.js';
+import { env } from '../../env.js';
+import { safetyIdentifier } from '../../lib/xai.js';
+import { appendRow, listRoutines, toRoutine, describeCron, type RoutineRow } from '../../store.js';
+import type { Trigger } from '../../core/turn-queue.js';
+import { connectedToolkits, toolkitInfo } from '../../composio.js';
+import { type ReviewCard } from '../../domain/google-actions.js';
+import { scheduleRoutine, unscheduleRoutine } from '../../routines.js';
+import { createEventRoutine, deleteEventTrigger, describeEvent, listTriggerTypes } from '../../triggers.js';
+import { setCheckins } from '../../proactive.js';
+import { createRoom, postToRoom } from '../rooms.js';
 import type { ActivityKind } from '@orbit/contracts';
 import { Cron } from 'croner';
-import { COMPUTER_TOOLS } from '../computer-tools.js';
-import { RESEARCH_TOOLS } from '../computer-research.js';
-import { BOT_TOOLS } from './bot-tools.js';
-import { VAULT_TOOLS } from '../vault-tools.js';
-import { listCalendars, listMirror, mirrorState, syncCalendar } from '../calendar/mirror.js';
-import { buildCalendar, type CalendarRoutineRow } from '../domain/calendar-view.js';
+import { COMPUTER_TOOLS } from '../../computer-tools.js';
+import { RESEARCH_TOOLS } from '../../computer-research.js';
+import { BOT_TOOLS } from '../bot-tools.js';
+import { VAULT_TOOLS } from '../../vault-tools.js';
+import { listCalendars, listMirror, mirrorState, syncCalendar } from '../../calendar/mirror.js';
+import { buildCalendar, type CalendarRoutineRow } from '../../domain/calendar-view.js';
 
 /** Tool arguments as the model sent them: a JSON object, read field by field. */
-type ToolArgs = Record<string, unknown>;
+export type ToolArgs = Record<string, unknown>;
 
 /** A JSON object from a third party, or null for anything else. */
 const asRecord = (v: unknown): Record<string, unknown> | null =>
@@ -458,82 +458,4 @@ export interface PolicyVerdict {
   alwaysFor?: { botId: string; botName: string };
   /** The custom card for the action that asks, when it has one (phase 3 renders these). */
   card?: ReviewCard;
-}
-
-export function humanizeSlug(slug: string) {
-  const parts = slug.split('_');
-  const app = parts.shift() ?? '';
-  return `${app.charAt(0) + app.slice(1).toLowerCase()}: ${parts.join(' ').toLowerCase()}`;
-}
-
-/**
- * How a batch call went inside: Composio reports the outer call as completed even when actions in it
- * failed (`data.results[i].response.successful`), so those are counted here.
- */
-export function innerOutcome(data: unknown): { total: number; failed: number } {
-  const results = (data as { results?: unknown } | null)?.results;
-  if (!Array.isArray(results)) return { total: 0, failed: 0 };
-  const failed = results.filter((x) => (x as { response?: { successful?: unknown } } | null)?.response?.successful === false).length;
-  return { total: results.length, failed };
-}
-
-/** Run a Composio call. `summary` is 'done', 'partial' (some actions in a batch failed) or 'failed'. */
-export async function runComposioTool(ctx: ToolCtx, name: string, args: ToolArgs): Promise<ToolResult> {
-  const r = await executeComposio(ctx.userId, name, args);
-  const ok = r.resultType ? r.resultType === 'completed' : !r.error;
-  const inner = ok ? innerOutcome(r.data) : { total: 0, failed: 0 };
-  const payload = ok ? r.data : { error: r.error, logId: r.logId };
-  let out = JSON.stringify(payload ?? null);
-  if (out.length > 60000) out = out.slice(0, 60000) + '…(truncated)';
-  const summary = !ok || (inner.total > 0 && inner.failed === inner.total) ? 'failed' : inner.failed > 0 ? 'partial' : 'done';
-  return { output: out, summary, data: ok ? r.data : undefined };
-}
-
-/** A Hermes tool name as the app knows it: tools served by this app's MCP server lose their `mcp_hq_` prefix. */
-export function appToolName(raw: string): { name: string; ours: boolean; server?: string } {
-  const hq = /^mcp_+hq_+(.+)$/.exec(raw);
-  if (hq) {
-    // Hermes may fold names to lower case; ours are matched case-insensitively.
-    const hit = [...toolMap.keys()].find((k) => k.toLowerCase() === hq[1].toLowerCase());
-    return { name: hit ?? (/^composio_/i.test(hq[1]) ? hq[1].toUpperCase() : hq[1]), ours: true };
-  }
-  const other = /^mcp_+([a-zA-Z0-9-]+?)_+(.+)$/.exec(raw);
-  if (other) return { name: other[2], ours: false, server: other[1] };
-  return { name: raw, ours: false };
-}
-
-const words = (s: string) => s.replace(/[_-]+/g, ' ').trim();
-const sentence = (s: string) => s.charAt(0).toUpperCase() + s.slice(1);
-
-/** What to show while a tool runs. `raw` is the name Hermes reports. */
-export function activityFor(raw: string): { kind: ActivityKind; label: string; detail?: string } {
-  const { name, ours, server } = appToolName(raw);
-  if (ours) {
-    const t = toolMap.get(name);
-    if (t) return { kind: t.activity, label: t.label, ...(name === 'x_search' ? { detail: 'X' } : {}) };
-    return { kind: 'connecting_service', label: 'Using a connected app' };
-  }
-  if (server) return { kind: 'connecting_service', label: `Using ${words(server)}`, detail: sentence(words(server)) };
-  if (name === 'terminal' || name === 'process' || name === 'execute_code') return { kind: 'running_commands', label: 'Running commands' };
-  if (name === 'write_file' || name === 'patch') return { kind: 'drafting_file', label: 'Writing a file' };
-  if (name === 'read_file' || name === 'search_files') return { kind: 'working', label: 'Reading files' };
-  if (name === 'web_search') return { kind: 'searching_web', label: 'Searching the web' };
-  if (name === 'web_extract') return { kind: 'reading_web', label: 'Reading a page' };
-  if (name === 'x_search') return { kind: 'searching_web', label: 'Searching X', detail: 'X' };
-  if (name.startsWith('browser_')) return { kind: 'browsing_web', label: 'Browsing a site' };
-  if (name === 'computer_use') return { kind: 'on_its_computer', label: 'Using its computer' };
-  if (name === 'vision_analyze') return { kind: 'working', label: 'Looking at an image' };
-  if (name === 'memory') return { kind: 'remembering', label: 'Saving notes' };
-  if (name === 'session_search') return { kind: 'remembering', label: 'Searching memory' };
-  if (name === 'todo') return { kind: 'working', label: 'Planning' };
-  if (name === 'delegate_task') return { kind: 'working', label: 'Handing off work' };
-  if (name === 'send_message') return { kind: 'messaging_named', label: 'Sending a message' };
-  if (name.startsWith('skill')) return { kind: 'working', label: 'Using a skill' };
-  if (name === 'clarify') return { kind: 'waiting_for_you', label: 'Waiting on you' };
-  if (name === 'cronjob') return { kind: 'working', label: 'Scheduling' };
-  return { kind: 'working', label: sentence(words(name)) || 'Working' };
-}
-
-export function getBotName(botId: string) {
-  return getBotRow(botId)?.name ?? 'Bot';
 }

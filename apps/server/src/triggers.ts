@@ -2,7 +2,7 @@ import { db, now } from './db.js';
 import { composio } from './composio.js';
 import { appendRow } from './store.js';
 import { hub } from './lib/hub.js';
-import type { Trigger } from './agent/loop.js';
+import type { Trigger } from './core/turn-queue.js';
 
 /**
  * Event routines: Composio triggers (e.g. GMAIL_NEW_GMAIL_MESSAGE, SLACK_RECEIVE_MESSAGE,

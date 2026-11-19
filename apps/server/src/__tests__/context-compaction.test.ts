@@ -28,7 +28,8 @@ await new Promise<void>((resolve) => hermes.listen(0, '127.0.0.1', resolve));
 process.env.HERMES_URL = `http://127.0.0.1:${(hermes.address() as AddressInfo).port}`;
 process.env.CONTEXT_COMPACTION_THRESHOLD = '200000';
 
-const { enqueue, runInBotQueue } = await import('../agent/loop.js');
+await import('../agent/loop.js');
+const { enqueue, runInBotQueue } = await import('../core/turn-queue.js');
 const { engineFor, managedHome } = await import('../engine.js');
 const { db } = await import('../db.js');
 await import('../db-config.js'); // bot_computers, which a turn and a gateway start both read

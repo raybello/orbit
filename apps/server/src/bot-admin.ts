@@ -4,7 +4,7 @@ import { env } from './env.js';
 import { newId } from './lib/ids.js';
 import { hub } from './lib/hub.js';
 import { emitBot, getBot, listBots, listRoutines } from './store.js';
-import { interrupt } from './agent/loop.js';
+import { interrupt } from './core/turn-queue.js';
 import { forgetBotFiles, releaseScreen } from './computer.js';
 import { computerKindFor, providerFor, registerBotComputer, releaseBotComputer } from './computer-provider-registry.js';
 import { assignEngine, provisionEngine, removeEngine, syncPersona } from './engine.js';
