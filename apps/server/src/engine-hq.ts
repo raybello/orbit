@@ -2,7 +2,6 @@ import crypto from 'node:crypto';
 import fs from 'node:fs';
 import path from 'node:path';
 import YAML from 'yaml';
-import { db } from './db.js';
 import { env } from './env.js';
 
 // ─── private helpers (copies of engine.ts utilities; kept here to avoid a circular import) ────
@@ -102,15 +101,20 @@ export function acquireHqLease(): boolean {
  * MCP_BASE_URL: a config pointing at host.docker.internal:8787 leaves the primary agent without a
  * single app tool, and it then tells the user it cannot message other Bots.
  *
+ * It names /mcp/primary, not the bot's id: the entry then depends only on this server's address and
+ * session secret, so a new primary bot (a fresh database, a reset stack) needs no rewrite. That
+ * matters because the gateway only re-reads its config on restart, and a server in Docker cannot
+ * signal a gateway on the host.
+ *
  * Returns true when the config was changed on disk (URL or authorization token differed), so callers
  * know whether to signal the primary gateway to reload.
  */
-export function syncPrimaryHqConfig(botId: string): boolean {
+export function syncPrimaryHqConfig(): boolean {
   const cfgFile = path.join(env.hermesHome, 'config.yaml');
   if (!fs.existsSync(cfgFile)) return false;
   const cfg = readYaml(cfgFile);
-  const hqUrl = `${env.primaryMcpBaseUrl}/mcp/${botId}`;
-  const expectedAuth = `Bearer ${mcpToken(botId)}`;
+  const hqUrl = `${env.primaryMcpBaseUrl}/mcp/primary`;
+  const expectedAuth = `Bearer ${mcpToken('primary')}`;
   const current = asBlock(asBlock(cfg.mcp_servers).hq);
   const currentAuth = String(asBlock(current.headers).Authorization ?? '');
   const servers = asBlock(cfg.mcp_servers);
@@ -167,8 +171,6 @@ export function startPrimaryHqSync(intervalMs = 2 * 60_000): NodeJS.Timeout {
   let loggedConflict = false;
 
   const run = () => {
-    const primaryBot = db.prepare("SELECT id FROM bots WHERE engine='primary' LIMIT 1").get() as { id: string } | undefined;
-    if (!primaryBot) return;
     if (!acquireHqLease()) {
       if (!loggedConflict) {
         const other = readHqLease();
@@ -179,7 +181,7 @@ export function startPrimaryHqSync(intervalMs = 2 * 60_000): NodeJS.Timeout {
     }
     loggedConflict = false;
     try {
-      const changed = syncPrimaryHqConfig(primaryBot.id);
+      const changed = syncPrimaryHqConfig();
       if (!changed) return;
       const signaled = signalPrimaryGateway();
       console.log(`[engine] primary hq config refreshed (url/token updated)${signaled ? '; gateway signaled to reload' : '; gateway not running yet'}`);
