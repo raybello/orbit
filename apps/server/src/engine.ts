@@ -984,11 +984,15 @@ export function syncPrimaryHqConfig(botId: string): boolean {
   // A URL-only check misses token staleness: when the session secret rotates the URL stays the same
   // but the token is wrong, so the primary agent gets Unauthorized on every MCP call and loses all
   // team tools. Check both so a rotated secret is caught without needing force=true.
-  if (current.url === hqUrl && currentAuth === expectedAuth) return false;
+  const servers = asBlock(cfg.mcp_servers);
+  const hasStaleOrbit = 'orbit' in servers;
+  if (current.url === hqUrl && currentAuth === expectedAuth && !hasStaleOrbit) return false;
   const headers = asBlock(current.headers);
   const keep = Object.fromEntries(Object.entries(headers).filter(([k]) => k.toLowerCase() !== 'authorization'));
+  // Drop the stale 'orbit' entry written by older desktop builds (wrong path, wrong token).
+  const { orbit: _orbit, ...otherServers } = servers;
   cfg.mcp_servers = {
-    ...asBlock(cfg.mcp_servers),
+    ...otherServers,
     hq: { ...current, url: hqUrl, headers: { ...keep, Authorization: expectedAuth }, timeout: 1800, connect_timeout: 30 },
   };
   fs.writeFileSync(cfgFile, YAML.stringify(cfg), 'utf8');
