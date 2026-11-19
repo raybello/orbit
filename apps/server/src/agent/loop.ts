@@ -9,7 +9,8 @@ import { toolkitInfo } from '../composio.js';
 import { screenForWork } from '../computer.js';
 import { computerKindFor } from '../computer-provider-registry.js';
 import { dockerProvider } from '../docker-provider.js';
-import { engineFor } from '../engine.js';
+import crypto from 'node:crypto';
+import { discardLostTurns, engineFor, noteEngineSession, restartEngine, syncManagedAuth } from '../engine.js';
 import { instructionsFor } from './prompt.js';
 import { expandForBot } from '../core/skill-library.js';
 import { activityFor, appToolName, humanizeSlug, LIBRARY_ROOT } from './tools/index.js';
@@ -18,7 +19,11 @@ import { checkReviewEdits } from '../review/index.js';
 import { MIME_BY_EXTENSION } from '../lib/mime.js';
 import { sendPushNotification } from '../push.js';
 import { recordRoutineOutcome } from '../initiative-store.js';
-import { enqueue, registerTurnRunner, type Trigger } from '../core/turn-queue.js';
+import { enqueue, registerTurnRunner, supervisorTiming, triggerText, type Trigger } from '../core/turn-queue.js';
+import { STALL_MS } from '../domain/supervisor-policy.js';
+import { checkLoop, toolResultText, type LoopTrip, type ToolEvent } from '../domain/tool-loop.js';
+import { classifyFailure, errorText, type TurnFailure } from '../domain/turn-failure.js';
+import type { AttemptOutcome } from '../domain/supervisor-policy.js';
 
 /**
  * A turn: one message handed to the bot's Hermes engine and streamed back into the conversation.
@@ -64,14 +69,6 @@ export function enqueueBotMessage(fromBotId: string, toBotId: string, text: stri
   enqueue(toBotId, { type: 'bot', fromBotId, fromName: from.name, text, depth });
 }
 
-function triggerText(t: Trigger): string {
-  switch (t.type) {
-    case 'user': return t.text;
-    case 'routine': return `[Routine "${t.name}" is running now. Do this:]\n${t.prompt}`;
-    case 'bot': return `[Message from ${t.fromName}, another Bot on the team. Reply to them with send_to_bot if they asked you something.]\n${t.text}`;
-    case 'system': return `[System notice] ${t.text}`;
-  }
-}
 
 interface ToolRef { seq: number; callId: string; name: string; claimed: boolean; done: boolean }
 interface Outcome { status?: ToolCallBody['status']; summary?: string }
@@ -327,13 +324,16 @@ async function failureText(res: Response): Promise<string> {
 function readOutcome(raw: unknown): Outcome {
   const item = asRecord(raw);
   const output = item?.output;
-  const text = Array.isArray(output) ? output.map((p) => String(asRecord(p)?.text ?? '')).join('') : String(output ?? '');
+  const text = toolResultText(Array.isArray(output) ? output.map((p) => String(asRecord(p)?.text ?? '')).join('') : String(output ?? ''));
   try {
     const parsed = JSON.parse(text) as unknown;
     const j = parsed && typeof parsed === 'object' ? (parsed as Record<string, unknown>) : null;
     if (j) {
       if (j.error) return { status: 'error', summary: String(typeof j.error === 'string' ? j.error : JSON.stringify(j.error)).slice(0, 200) };
-      if (typeof j.exit_code === 'number' && j.exit_code !== 0) return { status: 'error', summary: `Exit code ${j.exit_code}` };
+      if (typeof j.exit_code === 'number' && j.exit_code !== 0) {
+        const said = typeof j.output === 'string' ? j.output.trim().split('\n').pop() ?? '' : '';
+        return { status: 'error', summary: `Exit code ${j.exit_code}${said ? `: ${said}` : ''}`.slice(0, 200) };
+      }
       if (j.success === false) return { status: 'error', summary: String(j.message ?? 'Failed').slice(0, 200) };
     }
   } catch { /* not JSON */ }
@@ -361,9 +361,9 @@ function realModel(value: string | null | undefined): string | null {
   return !text || text.toLowerCase() === 'default' ? null : text;
 }
 
-async function runTurn(botId: string, trigger: Trigger, signal: AbortSignal) {
+async function runTurn(botId: string, trigger: Trigger, signal: AbortSignal): Promise<AttemptOutcome> {
   const bot = getBotRow(botId);
-  if (!bot || bot.kind === 'room') return;
+  if (!bot || bot.kind === 'room') return { ok: true };
   const userId: string = bot.user_id;
   const turn: Turn = {
     botId,
@@ -463,6 +463,29 @@ async function runTurn(botId: string, trigger: Trigger, signal: AbortSignal) {
   const outputsSeen = new Set<string>();
   let steps = 0;
   let failed = false;
+  // Every finished tool call, for the loop rules (domain/tool-loop.ts). A trip aborts the request
+  // and the supervisor sends the bot to reassess.
+  const events: ToolEvent[] = [];
+  const argsByCall = new Map<string, string>();
+  let trip: LoopTrip | null = null;
+  let failure: TurnFailure | null = null;
+  const request = new AbortController();
+  const onAbort = () => request.abort();
+  // A turn whose agent sends nothing for STALL_MS is wedged (a tool that never returns): it is
+  // aborted and handled as an agent that stopped responding. Waiting on the person is not a stall.
+  let stalled = false;
+  let idle: NodeJS.Timeout | undefined;
+  const touch = () => {
+    clearTimeout(idle);
+    idle = setTimeout(() => {
+      if (pendingApprovals(botId).length) { touch(); return; }
+      stalled = true;
+      console.warn(`[supervisor] ${botId}: no word from its agent for ${STALL_MS / 60_000} min; stopping the turn`);
+      request.abort();
+    }, STALL_MS * supervisorTiming.scale);
+    idle.unref?.();
+  };
+  signal.addEventListener('abort', onAbort, { once: true });
 
   try {
     // The screen first: the engine's browser and computer tools point at it. Waited for only so long:
@@ -499,9 +522,10 @@ async function runTurn(botId: string, trigger: Trigger, signal: AbortSignal) {
       db.prepare('UPDATE bots SET handback_at=NULL WHERE id=?').run(botId);
     }
 
+    touch();
     const res = await fetch(`${engine.url}/v1/responses`, {
       method: 'POST',
-      signal,
+      signal: request.signal,
       headers: { 'content-type': 'application/json', accept: 'text/event-stream', ...(engine.key ? { authorization: `Bearer ${engine.key}` } : {}) },
       body: JSON.stringify({
         // A stored `Default` is the settings panel's placeholder, not a model id. A Bot with no model of
@@ -518,9 +542,11 @@ async function runTurn(botId: string, trigger: Trigger, signal: AbortSignal) {
         model_options: { reasoning_effort: trigger.type === 'user' && trigger.voice ? 'low' : (bot.effort ?? 'medium') },
       }),
     });
-    if (!res.ok || !res.body) throw new Error(await failureText(res));
+    noteEngineSession(botId, res.headers.get('x-hermes-session-id'));
+    if (!res.ok || !res.body) throw new AttemptError(await failureText(res), res.status);
 
     for await (const ev of sseEvents(res.body)) {
+      touch();
       const d = asRecord(ev.data);
       switch (ev.type) {
         case 'response.output_text.delta': {
@@ -577,6 +603,7 @@ async function runTurn(botId: string, trigger: Trigger, signal: AbortSignal) {
             let args: unknown;
             try { args = typeof item.arguments === 'string' ? JSON.parse(item.arguments) : item.arguments; } catch { args = undefined; }
             const row = appendRow(botId, 'tool-call', { type: 'tool-call', callId: String(item.call_id ?? item.id ?? ''), name, label: act.label, status: 'running', args } satisfies ToolCallBody);
+            argsByCall.set(String(item.call_id ?? item.id ?? ''), canonicalJson(args));
             turn.tools.push({ seq: row.seq, callId: String(item.call_id ?? item.id ?? ''), name, claimed: false, done: false });
             steps++;
             const kind: ActivityKind = name === 'send_to_bot' ? 'messaging_named' : act.kind;
@@ -613,7 +640,8 @@ async function runTurn(botId: string, trigger: Trigger, signal: AbortSignal) {
         case 'error': {
           const nested = asRecord(asRecord(d?.response)?.error);
           const message = nested?.message ?? asRecord(d?.error)?.message ?? d?.message ?? 'the agent run failed';
-          throw new Error(String(message));
+          const code = Number(nested?.status ?? nested?.status_code ?? asRecord(d?.error)?.status ?? NaN);
+          throw new AttemptError(String(message), Number.isFinite(code) ? code : undefined);
         }
       }
 
@@ -627,7 +655,15 @@ async function runTurn(botId: string, trigger: Trigger, signal: AbortSignal) {
           ref.done = true;
           const told = turn.outcomes.get(ref.seq);
           const guess = readOutcome(resultItem);
-          patchToolRow(botId, ref.seq, told?.status && told.status !== 'running' ? told : { status: guess.status, summary: told?.summary ?? guess.summary });
+          const final = told?.status && told.status !== 'running' ? told : { status: guess.status, summary: told?.summary ?? guess.summary };
+          patchToolRow(botId, ref.seq, final);
+          const bad = final.status === 'error' || final.status === 'denied';
+          events.push({ name: ref.name, args: argsByCall.get(callId) ?? '', ok: !bad, output: outputHash(resultItem), ...(bad && final.summary ? { error: final.summary } : {}) });
+          trip = checkLoop(events);
+          if (trip) {
+            console.warn(`[supervisor] ${botId} tripped ${trip.rule} on ${trip.tool} (${trip.count})`);
+            request.abort();
+          }
           if (!getLive(botId).awaiting) setLive(botId, { activity: { kind: 'thinking', since: now() } });
 
           // Auto-attach images saved to the library via terminal (e.g. curl -o <path>).
@@ -658,19 +694,24 @@ async function runTurn(botId: string, trigger: Trigger, signal: AbortSignal) {
     }
   } catch (e) {
     failed = true;
-    const stopped = signal.aborted;
     closeMessage(true);
-    appendRow(botId, 'notice', { type: 'notice', text: stopped ? 'Stopped.' : `Something went wrong: ${messageOf(e)}`, tone: stopped ? 'info' : 'error' });
-    if (!stopped) console.error('[agent]', botId, e);
+    if (signal.aborted) appendRow(botId, 'notice', { type: 'notice', text: 'Stopped.', tone: 'info' });
+    else if (stalled) failure = { kind: 'gateway', message: `no word from the agent for ${STALL_MS / 60_000} min` };
+    else if (!trip) {
+      // What to do about it is the supervisor's call (core/turn-queue.ts); it tells the person.
+      failure = classifyFailure(errorText(e), e instanceof AttemptError ? e.status : undefined);
+      console.error('[agent]', botId, failure.kind, e);
+    }
   } finally {
+    clearTimeout(idle);
+    signal.removeEventListener('abort', onAbort);
     closeMessage(true);
     for (const ref of turn.tools) {
       if (ref.done) continue;
       const row = getRow(botId, ref.seq);
       if (row?.body.type !== 'tool-call' || (row.body.status !== 'running' && row.body.status !== 'awaiting-approval')) continue;
-      patchToolRow(botId, ref.seq, failed ? { status: 'error', summary: signal.aborted ? 'Stopped' : 'Did not finish' } : { status: 'done' });
+      patchToolRow(botId, ref.seq, failed ? { status: 'error', summary: signal.aborted ? 'Stopped' : trip ? 'Stopped: stuck' : stalled ? 'Never returned' : 'Did not finish' } : { status: 'done' });
     }
-    if (trigger.type === 'routine') recordRoutineOutcome(trigger.routineId, !failed ? 'ok' : signal.aborted ? 'stopped' : 'failed');
     if (turns.get(botId) === turn) turns.delete(botId);
     // An approval asked for outside this turn may still be waiting; leave its state alone.
     if (!pendingApprovals(botId).length) setLive(botId, { isRunning: false, activity: null, awaiting: null, startedAt: null, caption: null });
@@ -683,6 +724,43 @@ async function runTurn(botId: string, trigger: Trigger, signal: AbortSignal) {
       void sendPushNotification(userId, { title: `${getBotRow(botId)?.name ?? 'A bot'} finished`, body: finished.slice(0, 80), data: { botId } });
     }
   }
+  if (signal.aborted) return { ok: false, stopped: true };
+  if (trip) return { ok: false, trip, events };
+  if (failure) return { ok: false, failure, events };
+  return { ok: true };
 }
 
-registerTurnRunner({ runTurn, expireApprovals });
+/** A failed attempt, with the HTTP status when the gateway gave one. */
+class AttemptError extends Error {
+  constructor(message: string, readonly status?: number) { super(message); }
+}
+
+/** Arguments as text that compares equal whatever order the model wrote the keys in. */
+function canonicalJson(v: unknown): string {
+  const sort = (x: unknown): unknown => (Array.isArray(x) ? x.map(sort) : x && typeof x === 'object' ? Object.fromEntries(Object.keys(x).sort().map((k) => [k, sort((x as Record<string, unknown>)[k])])) : x);
+  return JSON.stringify(sort(v ?? null));
+}
+
+const outputHash = (item: unknown) => {
+  const output = asRecord(item)?.output;
+  const text = Array.isArray(output) ? output.map((p) => String(asRecord(p)?.text ?? '')).join('') : String(output ?? '');
+  return crypto.createHash('sha1').update(toolResultText(text)).digest('hex');
+};
+
+registerTurnRunner({
+  runTurn,
+  expireApprovals,
+  repair: async (botId, what) => {
+    if (what === 'auth') syncManagedAuth(botId);
+    // A gateway that died mid-turn left that turn fenced: clear it once the new one is up.
+    if (what !== 'discard') await restartEngine(botId);
+    if (what !== 'auth') await discardLostTurns(botId);
+  },
+  notice: (botId, kind, text) => {
+    appendRow(botId, 'notice', { type: 'notice', kind, text, tone: kind === 'gave-up' ? 'error' : kind === 'retrying' ? 'warn' : 'info' });
+  },
+  finished: (root, status) => {
+    if (root.type === 'routine') recordRoutineOutcome(root.routineId, status);
+  },
+  botName: (botId) => getBotRow(botId)?.name ?? 'The Bot',
+});

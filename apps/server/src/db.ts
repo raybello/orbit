@@ -237,6 +237,21 @@ db.exec(`CREATE TABLE IF NOT EXISTS bot_policies (
   created_at INTEGER NOT NULL,
   PRIMARY KEY (bot_id, tool)
 )`);
+// One row per thing a bot was asked to do, across every attempt at it (core/turn-queue.ts): what
+// survives a restart, and what the supervisor decides the next attempt from.
+db.exec(`CREATE TABLE IF NOT EXISTS turn_runs (
+  id TEXT PRIMARY KEY,
+  bot_id TEXT NOT NULL REFERENCES bots(id) ON DELETE CASCADE,
+  root TEXT NOT NULL,
+  state TEXT NOT NULL CHECK (state IN ('queued', 'running', 'retry_wait', 'done', 'failed', 'stopped')),
+  run_state TEXT NOT NULL,
+  next_input TEXT,
+  next_attempt_at INTEGER,
+  last_error TEXT,
+  created_at INTEGER NOT NULL,
+  updated_at INTEGER NOT NULL
+)`);
+db.exec('CREATE INDEX IF NOT EXISTS turn_runs_open ON turn_runs(bot_id, state)');
 // Connected apps a bot may not use (every bot shares the person's connections). See core/app-access.ts.
 db.exec(`CREATE TABLE IF NOT EXISTS bot_app_revocations (
   bot_id TEXT NOT NULL REFERENCES bots(id) ON DELETE CASCADE,
@@ -252,6 +267,8 @@ addColumn('bots', 'model', 'TEXT');
 addColumn('bots', 'provider', 'TEXT');
 addColumn('bots', 'engine', 'TEXT');
 addColumn('bots', 'engine_port', 'INTEGER');
+// The Hermes session the bot's conversation runs in, as its gateway reports it: what a lost turn is discarded from.
+addColumn('bots', 'engine_session', 'TEXT');
 addColumn('bots', 'handback_at', 'INTEGER');
 addColumn('screens', 'width', 'INTEGER');
 addColumn('screens', 'height', 'INTEGER');

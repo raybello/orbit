@@ -16,7 +16,8 @@ import { connectionWatch } from './core/connection-watch.js';
 import { initSubagents } from './agent/subagents.js';
 import { initRooms } from './agent/rooms.js';
 import { expireStaleApprovals } from './agent/loop.js';
-import { enqueue } from './core/turn-queue.js';
+import { enqueue, resumeRuns } from './core/turn-queue.js';
+import { settleOrphanToolRows } from './store.js';
 import { desSelfTest } from './lib/des.js';
 import { startIdleWatcher } from './idle.js';
 import { importPrimaryHome, initEngines, startSubscriptionSync, syncAllManagedAuth } from './engine.js';
@@ -73,6 +74,13 @@ try {
   console.warn(`[engine] auth sync failed: ${messageOf(e)}`);
 }
 initEngines();
+// Work that was queued, running or waiting to retry when the server stopped carries on. Not with
+// the scheduler off: a second dev server on the same database must not run the same turns.
+if (process.env.GROKBOT_NO_SCHEDULER !== '1') {
+  settleOrphanToolRows();
+  const resumed = resumeRuns();
+  if (resumed) console.log(`[supervisor] resuming ${resumed} interrupted run(s)`);
+}
 // Subscription sign-ins are inherited as access tokens, so they have to be re-read as the primary
 // agent refreshes its own. A bot's gateway picks the new token up from auth.json without a restart.
 startSubscriptionSync();

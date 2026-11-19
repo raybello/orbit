@@ -222,7 +222,8 @@ export interface VoiceLocalStatus {
 }
 
 /** What a notice reports, so a client can style or filter it. A plain notice has none. */
-export type NoticeKind = 'context-compacted' | 'workspace-file';
+/** `retrying`, `reassessing` and `gave-up` come from the turn supervisor (server core/turn-queue.ts). */
+export type NoticeKind = 'context-compacted' | 'workspace-file' | 'retrying' | 'reassessing' | 'gave-up';
 
 /** A Google Sheet or Doc a bot created or changed: shown in the chat with a link and a short preview. */
 export interface WorkspaceFile {
