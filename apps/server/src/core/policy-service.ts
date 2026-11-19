@@ -1,7 +1,7 @@
 import { db } from '../db.js';
 import { innerToolCalls } from '../composio.js';
 import { classifyGoogleCall, isReadOnlySlug, type ReviewCard } from '../domain/google-actions.js';
-import { toolMap, humanizeSlug, type Decision, type PolicyVerdict } from '../agent/tools.js';
+import { toolMap, humanizeSlug, type Decision, type PolicyVerdict } from '../agent/tools/index.js';
 import { applyPolicy } from '../domain/approval-policy.js';
 
 type ToolArgs = Record<string, unknown>;

@@ -9,7 +9,7 @@ import test, { after } from 'node:test';
 process.env.XAI_BASE_URL = 'https://us.api.x.ai/v1/';
 process.env.XAI_API_KEY = 'xai-test-key';
 
-const { toolMap } = await import('../agent/tools.js');
+const { toolMap } = await import('../agent/tools/index.js');
 const { managedHome, readDotenv, syncManagedAuth } = await import('../engine.js');
 const { db } = await import('../db.js');
 

@@ -13,7 +13,7 @@ initRooms();
 const { createApp } = await import('../api/app.js');
 const { db } = await import('../db.js');
 const { now } = await import('../db.js');
-const { toolMap } = await import('../agent/tools.js');
+const { toolMap } = await import('../agent/tools/index.js');
 const { planPrimaryChange, MAX_PRIMARY_BOTS } = await import('../domain/primary-bots.js');
 const { deleteBotFor } = await import('../bot-admin.js');
 

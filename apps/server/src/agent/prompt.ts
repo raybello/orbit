@@ -1,7 +1,7 @@
 import { db } from '../db.js';
 import { getBotRow, listRoutines } from '../store.js';
 import { connectedToolkits } from '../composio.js';
-import { LIBRARY_ROOT } from './tools.js';
+import { LIBRARY_ROOT } from './tools/index.js';
 import { appSheets } from './app-sheets.js';
 
 /**

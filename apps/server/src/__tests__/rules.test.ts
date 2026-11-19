@@ -2,7 +2,7 @@ import assert from 'node:assert/strict';
 import { describe, test } from 'node:test';
 import { RULE_PRESETS, type BotRule, type RuleAction, type RulePattern, type RulePresetId } from '@orbit/contracts';
 import { evaluateRules, hintsFromSlug, RulePatternSchema, strictest, type ToolCall } from '../domain/rules.js';
-import type { Decision } from '../agent/tools.js';
+import type { Decision } from '../agent/tools/index.js';
 
 /**
  * The rule engine is a pure function, so every case is a row: the rules a bot has, the call it makes,

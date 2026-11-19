@@ -1,7 +1,7 @@
 import { db } from '../db.js';
 import { BotAdminError, createBotFor, deleteBotFor, setBotPrimary, teamFor, updateBotFor } from '../bot-admin.js';
 import { TeamFullError } from '../core/bot-service.js';
-import type { ToolCtx, ToolResult } from './tools.js';
+import type { ToolCtx, ToolResult } from './tools/index.js';
 import type { ActivityKind } from '@orbit/contracts';
 
 /**

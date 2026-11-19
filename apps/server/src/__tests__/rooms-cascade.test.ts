@@ -5,7 +5,7 @@ import test from 'node:test';
 // Loaded after the temp env exists, so db.ts opens the throwaway database.
 const { db, now } = await import('../db.js');
 const { initRooms, buildGroupTurn, dispatchBotMentions, dispatchRoomMessage, postToRoom, MAX_BOT_CHAIN_DEPTH } = await import('../agent/rooms.js');
-const { toolMap } = await import('../agent/tools.js');
+const { toolMap } = await import('../agent/tools/index.js');
 const { appendRow } = await import('../store.js');
 const { cleanupTmpEnv } = await import('./helpers/tmp-env.js');
 

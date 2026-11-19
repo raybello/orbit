@@ -1,7 +1,7 @@
 import type { BotRule, RuleOutcome } from '@orbit/contracts';
 import { now } from '../db.js';
 import { composio, composioEnabled, innerToolSlugs } from '../composio.js';
-import { humanizeSlug } from '../agent/tools.js';
+import { humanizeSlug } from '../agent/tools/index.js';
 import { evaluateRules, hintsFromSlug, type RuleVerdict, type ToolCall } from '../domain/rules.js';
 import { appendRuleLog, rulesForBot } from '../infra/rule-repository.js';
 
