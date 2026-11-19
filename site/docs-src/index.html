@@ -38,6 +38,6 @@ Mobile app (Expo) ─────┤
              Docker API ──► bot desktop (Xvfb · Chrome · VNC)
              Composio   ──► connected apps
              sherpa-onnx / xAI ──► voice</code></pre>
-<p>The server owns the transcript: chat rows, cards, routines and screens live in SQLite, and every change fans out to connected clients over Server-Sent Events. Hermes owns the agent loop, model calls and history; it reaches the app's own tools (tasks, routines, files, the computer, other bots) over MCP.</p>
+<p>The server owns the transcript: chat rows, cards, routines and screens live in SQLite, and every change fans out to connected clients over Server-Sent Events. Hermes owns the agent loop, model calls and history; it reaches the app's own tools (tasks, routines, files, the computer, other bots) over MCP. The server supervises each request a bot works on: it retries provider outages for up to 20 minutes, repairs a refused sign-in or a stopped agent, sends a bot that is stuck in a loop back to reassess, and picks up unfinished work after a restart.</p>
 
 <div class="callout callout--warn"><p><strong>Experimental.</strong> Orbit has had no security audit. Bots share a Docker host, and only Composio write actions are gated by approval cards; what a bot does in its own browser or shell is not.</p></div>

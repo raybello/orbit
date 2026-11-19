@@ -912,6 +912,33 @@ export function stopOwnScreen(botId: string): Promise<void> {
   });
 }
 
+/** Remember the Hermes session a bot's conversation runs in, as its gateway reports it (X-Hermes-Session-Id). */
+export function noteEngineSession(botId: string, sessionId: string | null) {
+  if (sessionId) db.prepare('UPDATE bots SET engine_session=? WHERE id=? AND COALESCE(engine_session,\'\')<>?').run(sessionId, botId, sessionId);
+}
+
+/**
+ * Acknowledge the turn a gateway lost when it died mid-turn, so the bot's conversation takes input
+ * again. Hermes fences such a turn "unknown" and answers every later request on that conversation
+ * with a 409 unknown_execution until it is discarded. The lost input is not replayed: the turn
+ * supervisor's retry tells the bot what already ran instead.
+ */
+export async function discardLostTurns(botId: string): Promise<void> {
+  const session = (db.prepare('SELECT engine_session FROM bots WHERE id=?').get(botId) as { engine_session: string | null } | undefined)?.engine_session;
+  const home = engineHome(botId);
+  if (!session || !home) return;
+  await engineFor(botId);
+  const bin = hermesBin(defaultHermesLookup({ configured: env.hermesBinConfigured }));
+  await new Promise<void>((resolve) => {
+    execFile(bin, ['sessions', 'discard', session, '--yes'], { env: { ...process.env, HERMES_HOME: home }, timeout: 60_000 }, (err, stdout, stderr) => {
+      const said = `${stdout || ''}${stderr || ''}`.trim().split('\n').pop() ?? '';
+      if (err) console.warn(`[engine] ${botId}: could not discard lost turns: ${said || err.message}`);
+      else console.log(`[engine] ${botId}: ${said || 'lost turns discarded'}`);
+      resolve();
+    });
+  });
+}
+
 /** Start the gateway in the background (after creating a bot, or on server start). */
 export function provisionEngine(botId: string) {
   if (engineKind(botId)) ensureEngine(botId).catch(() => {});

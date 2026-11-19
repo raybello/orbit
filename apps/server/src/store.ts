@@ -141,6 +141,19 @@ export function updateRow(botId: string, seq: number, body: RowBody): Row | null
   return res.row;
 }
 
+/**
+ * Close the tool rows a crash left running: the turn that would have closed them died with the
+ * process. Called at boot, before interrupted runs resume. Returns how many were closed.
+ */
+export function settleOrphanToolRows(): number {
+  const rows = db.prepare(`SELECT bot_id, seq, body FROM rows WHERE kind='tool-call' AND body LIKE '%"status":"running"%'`).all() as { bot_id: string; seq: number; body: string }[];
+  for (const r of rows) {
+    const body = JSON.parse(r.body) as RowBody;
+    if (body.type === 'tool-call' && body.status === 'running') updateRow(r.bot_id, r.seq, { ...body, status: 'error', summary: 'Interrupted by a restart' });
+  }
+  return rows.length;
+}
+
 export function getRow(botId: string, seq: number): Row | null {
   const b = getBotRow(botId);
   const r = db.prepare('SELECT * FROM rows WHERE bot_id=? AND generation=? AND seq=?').get(botId, b.generation, seq) as RowRecord | undefined;

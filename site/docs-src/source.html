@@ -95,6 +95,7 @@
 <tr><td><code>llm_items</code>, <code>pending_turns</code></td><td>Engine conversation items and the per-bot turn queue.</td></tr>
 <tr><td><code>approvals</code>, <code>policies</code></td><td>Pending approvals and saved "always" decisions.</td></tr>
 <tr><td><code>routines</code>, <code>tasks</code>, <code>memories</code></td><td>Per-bot schedules, task list, remembered facts.</td></tr>
+<tr><td><code>turn_runs</code></td><td>One row per thing a bot was asked to do, across every attempt at it: its root trigger, state (queued, running, retry_wait, done, failed, stopped), the supervisor's counters and the next continuation. The turn supervisor is in <code>core/turn-queue.ts</code>; its rules are pure, in <code>domain/turn-failure.ts</code>, <code>domain/tool-loop.ts</code> and <code>domain/supervisor-policy.ts</code>.</td></tr>
 <tr><td><code>skill_library</code>, <code>skill_files</code>, <code>skill_access</code></td><td>The shared skill library (<code>core/skill-library.ts</code>): one SKILL.md per skill with its source and author, the files a GitHub install brought, and which bots have each one when that differs from its availability. GitHub installs are in <code>core/github-skills.ts</code>; SKILL.md parsing and <code>/name</code> expansion in <code>domain/skill-md.ts</code>.</td></tr>
 <tr><td><code>computers</code>, <code>screens</code></td><td>Computers and the screen allocation.</td></tr>
 <tr><td><code>composio_sessions</code></td><td>App connections.</td></tr>
