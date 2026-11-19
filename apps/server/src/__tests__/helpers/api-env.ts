@@ -1,7 +1,7 @@
 /**
  * The isolation an app-level HTTP suite needs on top of tmp-env.ts.
  *
- * tmp-env.ts must still run first: it points DB_PATH, ENGINES_DIR and HERMES_HOME_PRIMARY at a fresh
+ * tmp-env.ts must still run first: it points DB_PATH and ENGINES_DIR at a fresh
  * mkdtemp before env.ts snapshots process.env. This module imports it for that side effect, then adds
  * only the values a suite that boots createApp() wants, leaving every other suite's defaults alone:
  *
@@ -14,9 +14,9 @@
  *    second sign-in a 403 team-full, so three is the minimum that covers the ownership cases.
  *  - GROKBOT_NO_SCHEDULER=1: index.ts is never imported here, but a suite must not let any future
  *    import start routines or triggers against its database.
- *  - HERMES_URL points at a closed loopback port: answering a card queues a real agent turn in the
- *    background, and the primary bot's turn would otherwise call whatever Hermes the developer has
- *    running on 8642. The turn fails fast and locally instead of talking to a live stack.
+ *  - PRIMARY_ENGINE_PORT names a closed loopback port: answering a card queues a real agent turn in
+ *    the background, and the primary bot's turn would otherwise find whatever Hermes the developer
+ *    has running on 8642. The start fails fast and locally (HERMES_BIN is `true`) instead.
  *  - COMPUTER_KIND=orgo with no ORGO_COMPUTER_ID: the same background turn asks for the bot's screen
  *    first. On the default 'auto' setting that bot owns a container, so the suite would reach for the
  *    Docker socket (and, on a developer machine where Docker is running, could start a real one).
@@ -37,7 +37,7 @@ process.env.MAX_BOTS = '3';
 process.env.GROKBOT_NO_SCHEDULER = '1';
 // Keep the engine's loopback "is a gateway already there?" probe away from a dev stack's 8650+ ports.
 process.env.ENGINE_PORT_BASE = '18650';
-process.env.HERMES_URL = 'http://127.0.0.1:18660';
+process.env.PRIMARY_ENGINE_PORT = '18660';
 process.env.COMPUTER_KIND = 'orgo';
 process.env.BOT_DATA_DIR = path.join(tmpRoot, 'bot-data');
 process.env.COMPUTER_HOME_DIR = path.join(tmpRoot, 'computers');

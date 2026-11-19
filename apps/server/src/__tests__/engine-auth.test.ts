@@ -7,7 +7,8 @@ import test, { after } from 'node:test';
 import YAML from 'yaml';
 
 // Loaded dynamically so env.ts (and the db it names) read the temp paths above.
-const { SHARED_ENV, inheritSubscriptions, managedHome, mcpToken, primarySubscriptions, readDotenv, readYaml, subscriptionEnv, syncAllManagedAuth, syncManagedAuth, syncPrimaryHqConfig, writePrivate } = await import('../engine.js');
+const { inheritSubscriptions, managedHome, primarySubscriptions, subscriptionEnv, syncAllManagedAuth, syncManagedAuth } = await import('../engine.js');
+const { SHARED_ENV, readDotenv, readYaml, writePrivate } = await import('../hermes-files.js');
 const { db } = await import('../db.js');
 
 /**
@@ -336,70 +337,6 @@ test("a bot's own sign-in is never overwritten by the primary's", () => {
   const rows = botAuth(bot).credential_pool.anthropic;
   assert.equal(rows.length, 1);
   assert.equal(rows[0].label, 'my-own-key', "a bot's own credential must survive a sync");
-});
-
-// --- syncPrimaryHqConfig ---
-
-const PRIMARY_MCP_BASE = 'http://127.0.0.1:8787'; // whatever primaryMcpBaseUrl resolves to in test
-
-test('syncPrimaryHqConfig writes the hq entry when the config has none', () => {
-  resetBots();
-  const botId = addBot('bot_hq_new', 'primary');
-  primaryFiles({}, {});
-  const changed = syncPrimaryHqConfig(botId);
-  assert.ok(changed, 'should report a change when hq is new');
-  const cfg = readYaml(path.join(primaryHome, 'config.yaml'));
-  const hq = (cfg as any).mcp_servers?.hq;
-  assert.ok(hq, 'hq entry should exist');
-  assert.ok(String(hq.url).endsWith(`/mcp/${botId}`), 'URL should include the bot id');
-  assert.match(String(hq.headers?.Authorization ?? ''), /^Bearer [0-9a-f]{64}$/, 'Authorization should be a bearer token');
-});
-
-test('syncPrimaryHqConfig is a no-op when URL and token already match', async () => {
-  resetBots();
-  const botId = addBot('bot_hq_noop', 'primary');
-  const { env } = await import('../env.js');
-  const hqUrl = `${env.primaryMcpBaseUrl}/mcp/${botId}`;
-  primaryFiles({}, { mcp_servers: { hq: { url: hqUrl, headers: { Authorization: `Bearer ${mcpToken(botId)}` }, timeout: 1800, connect_timeout: 30 } } });
-  const changed = syncPrimaryHqConfig(botId);
-  assert.ok(!changed, 'should not report a change when already up-to-date');
-});
-
-test('syncPrimaryHqConfig updates when only the token is stale (session secret rotation)', async () => {
-  resetBots();
-  const botId = addBot('bot_hq_token', 'primary');
-  const { env } = await import('../env.js');
-  const hqUrl = `${env.primaryMcpBaseUrl}/mcp/${botId}`;
-  const staleToken = 'Bearer deadbeefdeadbeefdeadbeefdeadbeefdeadbeefdeadbeefdeadbeefdeadbeef';
-  primaryFiles({}, { mcp_servers: { hq: { url: hqUrl, headers: { Authorization: staleToken }, timeout: 1800, connect_timeout: 30 } } });
-  const changed = syncPrimaryHqConfig(botId);
-  assert.ok(changed, 'should update when the token is stale even if the URL matches');
-  const cfg = readYaml(path.join(primaryHome, 'config.yaml'));
-  const hq = (cfg as any).mcp_servers?.hq;
-  assert.notEqual(hq.headers?.Authorization, staleToken, 'stale token should be replaced');
-  assert.equal(hq.headers?.Authorization, `Bearer ${mcpToken(botId)}`, 'new token should match current session secret');
-});
-
-test('syncPrimaryHqConfig updates when the URL changed (port or bot id)', async () => {
-  resetBots();
-  const botId = addBot('bot_hq_url', 'primary');
-  const staleUrl = 'http://127.0.0.1:8787/mcp/bot_old_id';
-  primaryFiles({}, { mcp_servers: { hq: { url: staleUrl, headers: { Authorization: `Bearer ${mcpToken(botId)}` }, timeout: 1800, connect_timeout: 30 } } });
-  const changed = syncPrimaryHqConfig(botId);
-  assert.ok(changed, 'should update when the URL changed');
-  const cfg = readYaml(path.join(primaryHome, 'config.yaml'));
-  const hq = (cfg as any).mcp_servers?.hq;
-  assert.ok(String(hq.url).endsWith(`/mcp/${botId}`), 'URL should be updated to current bot id');
-});
-
-test('syncPrimaryHqConfig preserves other mcp_servers entries', () => {
-  resetBots();
-  const botId = addBot('bot_hq_preserve', 'primary');
-  primaryFiles({}, { mcp_servers: { other_server: { url: 'http://example.com/mcp', headers: {} } } });
-  syncPrimaryHqConfig(botId);
-  const cfg = readYaml(path.join(primaryHome, 'config.yaml'));
-  assert.ok((cfg as any).mcp_servers?.other_server, 'other MCP server entries should be preserved');
-  assert.ok((cfg as any).mcp_servers?.hq, 'hq entry should be added');
 });
 
 after(() => {

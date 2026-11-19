@@ -10,7 +10,8 @@ process.env.XAI_BASE_URL = 'https://us.api.x.ai/v1/';
 process.env.XAI_API_KEY = 'xai-test-key';
 
 const { toolMap } = await import('../agent/tools/index.js');
-const { managedHome, readDotenv, syncManagedAuth } = await import('../engine.js');
+const { managedHome, syncManagedAuth } = await import('../engine.js');
+const { readDotenv } = await import('../hermes-files.js');
 const { db } = await import('../db.js');
 
 const USER = 'usr_xaiwiring';

@@ -38,7 +38,7 @@ const dbPath = path.join(tmpDir, 'smoke.db');
 /** A managed bot's Hermes home, the Library/workspace roots and the primary's home: all throwaway. */
 const enginesDir = path.join(tmpDir, 'engines');
 const botDataDir = path.join(tmpDir, 'bot-data');
-const primaryHome = path.join(tmpDir, 'hermes-primary');
+const primaryHome = path.join(enginesDir, 'primary');
 for (const dir of [enginesDir, botDataDir, primaryHome]) fs.mkdirSync(dir, { recursive: true });
 
 const MANAGED_BOT = 'bot_smoke_managed';
@@ -158,12 +158,13 @@ const child = spawn(process.execPath, [entry], {
     DEV_LOGIN: '1',
     GROKBOT_NO_SCHEDULER: '1',
     STACK_TOKEN: stackToken,
-    MCP_BASE_URL: base,
-    // Keep every file the server writes inside the temp dir, and give it a primary Hermes home we
-    // control: Engine Auth and Skills read that home, so the checks below are deterministic.
+    // Keep every file the server writes inside the temp dir, the primary's home included: Engine
+    // Auth and Skills read that home, so the checks below are deterministic. Nothing is imported
+    // from the developer's own Hermes, and the primary asks for a port no real gateway holds.
     ENGINES_DIR: enginesDir,
     BOT_DATA_DIR: botDataDir,
-    HERMES_HOME_PRIMARY: primaryHome,
+    HERMES_IMPORT_FROM: path.join(tmpDir, 'no-hermes-home'),
+    PRIMARY_ENGINE_PORT: String(port + 43),
     // A smoke run must never start a real agent: provisioning the fixture bot would spawn
     // `hermes gateway run` for up to 90 seconds. A binary that exits at once fails the start
     // cleanly, which is what a stack with no gateway should do anyway.

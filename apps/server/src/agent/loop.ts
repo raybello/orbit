@@ -502,10 +502,10 @@ async function runTurn(botId: string, trigger: Trigger, signal: AbortSignal) {
       signal,
       headers: { 'content-type': 'application/json', accept: 'text/event-stream', ...(engine.key ? { authorization: `Bearer ${engine.key}` } : {}) },
       body: JSON.stringify({
-        // A stored `Default` is the settings panel's placeholder, not a model id. A managed Bot with no
-        // model of its own sends neither field, so its gateway answers with the model in its own config —
-        // the primary agent's — instead of a default this app invented.
-        ...(realModel(bot.model) ? { model: realModel(bot.model) } : engine.kind === 'managed' ? {} : { model: 'hermes-agent' }),
+        // A stored `Default` is the settings panel's placeholder, not a model id. A Bot with no model of
+        // its own sends neither field, so its gateway answers with the model in its own config instead
+        // of a default this app invented.
+        ...(realModel(bot.model) ? { model: realModel(bot.model) } : {}),
         ...(realModel(bot.provider) ? { provider: realModel(bot.provider) } : {}),
         input,
         instructions: await instructionsFor(userId, botId),

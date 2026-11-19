@@ -4,7 +4,8 @@ import YAML from 'yaml';
 import type { SkillEntry } from '@orbit/contracts';
 import { db } from './db.js';
 import { env } from './env.js';
-import { engineKind, managedHome, readYaml, writePrivate } from './engine.js';
+import { engineKind, managedHome } from './engine.js';
+import { readYaml, writePrivate } from './hermes-files.js';
 
 /**
  * Skills are Hermes `mcp_servers` entries. The primary agent's config.yaml is the source of truth:
@@ -33,9 +34,9 @@ export function mcpServerType(entry: unknown): 'http' | 'stdio' | 'unknown' {
   return 'unknown';
 }
 
-const primaryConfigPath = () => path.join(env.hermesHome, 'config.yaml');
+const primaryConfigPath = () => path.join(env.primaryHome, 'config.yaml');
 
-/** Where this bot keeps its Hermes config. The primary agent's home belongs to someone else: we only read it. */
+/** Where this bot keeps its Hermes config. The primary's is the catalog every skill comes from. */
 function botConfigPath(botId: string): string | null {
   const kind = engineKind(botId);
   if (kind === 'primary') return primaryConfigPath();
@@ -98,7 +99,7 @@ export function setMcpServerEnabled(botId: string, serverName: string, enabled: 
 
   const kind = engineKind(botId);
   if (!kind) throw new Error('This bot has no agent, so it has no skills.');
-  if (kind === 'primary') throw new Error("The primary agent's skills are read-only. They come from its own Hermes config.");
+  if (kind === 'primary') throw new Error("The primary agent's skills are read-only: they are the list every Bot picks from.");
 
   const file = path.join(managedHome(botId), 'config.yaml');
   if (!fs.existsSync(file)) throw new Error(`This bot has no Hermes config yet (${file}). Start it once, then try again.`);

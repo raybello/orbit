@@ -1,4 +1,4 @@
-import './helpers/tmp-env.js'; // must be first: points DB_PATH/HERMES_HOME_PRIMARY at a temp dir
+import './helpers/tmp-env.js'; // must be first: points DB_PATH/ENGINES_DIR at a temp dir
 import assert from 'node:assert/strict';
 import test from 'node:test';
 

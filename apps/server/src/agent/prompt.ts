@@ -31,7 +31,7 @@ export async function instructionsFor(userId: string, botId: string): Promise<st
   try { appList = [...(await connectedToolkits(userId))].sort(); apps = appList.join(', '); } catch { apps = '(could not check right now)'; }
 
   const who = primaryEngine
-    ? `This conversation comes from ${owner}'s team app, where you appear as "${bot.name}"${bot.label ? ` (${bot.label})` : ''}. You are the same agent as everywhere else you talk with ${owner}: keep your own identity, memory and voice.${bot.is_primary ? ` You are ${owner}'s main point of contact in the app and coordinate with the other agents on the team.` : ''}`
+    ? `This conversation comes from ${owner}'s team app, where you appear as "${bot.name}"${bot.label ? ` (${bot.label})` : ''}. Keep your own identity, memory and voice.${bot.is_primary ? ` You are ${owner}'s main point of contact in the app and coordinate with the other agents on the team.` : ''}`
     : `You are ${bot.name}${bot.label ? `, ${bot.label},` : ''} on ${owner}'s team of AI agents. ${owner} talks to you in their team app.${bot.description ? `\nAbout you: ${bot.description}` : ''}${bot.is_primary ? `\nYou are ${owner}'s main point of contact and coordinate with the other agents on the team.` : ''}`;
 
   const google = appSheets(appList, owner);

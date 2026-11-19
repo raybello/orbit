@@ -1,5 +1,6 @@
 // api-env must be the FIRST import: it isolates env.ts, the DB and the Hermes homes.
 import { cleanupTmpEnv } from './helpers/api-env.js';
+import { primaryHome } from './helpers/tmp-env.js';
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import http from 'node:http';
@@ -10,9 +11,13 @@ import YAML from 'yaml';
 
 const sse = (event: string, data: unknown) => `event: ${event}\ndata: ${JSON.stringify(data)}\n\n`;
 
-/** A stand-in primary Hermes: mid-turn it reports an unrelated status, then a compaction, then answers. */
+/** A stand-in primary gateway, already running: mid-turn it reports an unrelated status, then a compaction, then answers. */
 const hermes = http.createServer((req, res) => {
   req.resume();
+  if (req.url === '/health') {
+    res.writeHead(200, { 'content-type': 'application/json' }).end('{"status":"ok"}');
+    return;
+  }
   if (req.method !== 'POST' || req.url !== '/v1/responses') {
     res.writeHead(404).end();
     return;
@@ -25,7 +30,8 @@ const hermes = http.createServer((req, res) => {
   res.end(sse('response.completed', { type: 'response.completed' }));
 });
 await new Promise<void>((resolve) => hermes.listen(0, '127.0.0.1', resolve));
-process.env.HERMES_URL = `http://127.0.0.1:${(hermes.address() as AddressInfo).port}`;
+const hermesPort = (hermes.address() as AddressInfo).port;
+fs.writeFileSync(path.join(primaryHome, '.env'), 'API_SERVER_KEY=stand-in\n');
 process.env.CONTEXT_COMPACTION_THRESHOLD = '200000';
 
 await import('../agent/loop.js');
@@ -62,7 +68,7 @@ after(() => {
 });
 
 test('a compaction reported mid-turn shows in the conversation as a context-compacted notice', async () => {
-  const bot = addBot('bot_compacting', 'primary');
+  const bot = addBot('bot_compacting', 'primary', hermesPort);
 
   enqueue(bot, { type: 'user', text: 'Keep going with the report.' });
   await runInBotQueue(bot, async () => {});

@@ -87,7 +87,7 @@ export function createBotFor(userId: string, input: Omit<BotCreationInput, 'user
   });
   const engineKind = assignEngine(plan.botId);
   const state = beginProvisioning(plan.state, engineKind);
-  if (state.status === 'provisioning' && engineKind === 'managed') provisionEngine(plan.botId);
+  if (state.status === 'provisioning') provisionEngine(plan.botId);
   registerBotComputer(plan.botId);
   hub.emit(userId, { type: 'roster' });
   return getBot(plan.botId)!;
