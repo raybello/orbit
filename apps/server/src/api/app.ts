@@ -21,6 +21,7 @@ import { webhooksApi } from '../routes-webhooks.js';
 import { vaultApi } from '../routes-vault.js';
 import { teamsApi } from '../routes-teams.js';
 import { mcpApi } from '../mcp.js';
+import { userFailure } from './errors.js';
 
 /**
  * The HTTP app, assembled and handed back.
@@ -38,11 +39,14 @@ export function createApp(): Hono {
 
   /**
    * Errors become JSON, because every client parses `{ error }`. An HTTPException keeps its own
-   * status (the body schemas use 400); anything else is a bug and stays the 500 it has always been,
-   * logged and answered as plain text so no client sees a new shape for an internal failure.
+   * status (the body schemas use 400), and the domain errors written for the person map to theirs
+   * (api/errors.ts). Anything else is a bug and stays the 500 it has always been, logged and
+   * answered as plain text so no client sees a new shape for an internal failure.
    */
   app.onError((err, c) => {
     if (err instanceof HTTPException) return c.json({ error: err.message }, err.status);
+    const known = userFailure(err);
+    if (known) return c.json({ error: known.message }, known.status);
     console.error('[grokbot] unhandled error', err);
     return c.text('Internal Server Error', 500);
   });

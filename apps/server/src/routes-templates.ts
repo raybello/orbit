@@ -3,8 +3,6 @@ import { z } from 'zod';
 import type { DuplicateBotResponse, InstallTemplateResponse, ShareTemplateResponse, TemplateResponse, TemplatesResponse } from '@orbit/contracts';
 import { requireUser, type AuthVars } from './lib/auth.js';
 import { optionalBody, requireBody } from './api/schemas.js';
-import { BotAdminError } from './bot-admin.js';
-import { TeamFullError } from './core/bot-service.js';
 import { duplicateBotFor } from './bot-blueprint.js';
 import { deleteTemplateFor, getTemplate, installTemplate, listPublicTemplates, shareBotAsTemplate, shareUrlFor } from './templates.js';
 
@@ -20,29 +18,15 @@ export const templatesApi = new Hono<AuthVars>();
 const ShareTemplateSchema = z.object({ visibility: z.enum(['link', 'public']).optional() }).loose();
 const InstallTemplateSchema = z.object({ name: z.string().optional(), timezone: z.string().optional() }).loose();
 
-function failure(c: { json: (body: { error: string }, status: 400 | 404 | 409) => Response }, e: unknown) {
-  if (e instanceof BotAdminError) return c.json({ error: e.message }, e.status);
-  if (e instanceof TeamFullError) return c.json({ error: e.message }, 409);
-  throw e;
-}
-
 templatesApi.post('/bots/:id/duplicate', requireUser, (c) => {
-  try {
-    return c.json({ bot: duplicateBotFor(c.get('user').id, c.req.param('id')) } satisfies DuplicateBotResponse);
-  } catch (e) {
-    return failure(c, e);
-  }
+  return c.json({ bot: duplicateBotFor(c.get('user').id, c.req.param('id')) } satisfies DuplicateBotResponse);
 });
 
 // requireBody, not optionalBody: an unknown visibility must be refused, not quietly kept as it was.
 templatesApi.post('/bots/:id/template', requireUser, async (c) => {
   const body = await requireBody(c, ShareTemplateSchema);
-  try {
-    const template = shareBotAsTemplate(c.get('user').id, c.req.param('id'), { visibility: body.visibility });
-    return c.json({ template, shareUrl: shareUrlFor(template.id) } satisfies ShareTemplateResponse);
-  } catch (e) {
-    return failure(c, e);
-  }
+  const template = shareBotAsTemplate(c.get('user').id, c.req.param('id'), { visibility: body.visibility });
+  return c.json({ template, shareUrl: shareUrlFor(template.id) } satisfies ShareTemplateResponse);
 });
 
 templatesApi.get('/templates', (c) => {
@@ -58,18 +42,10 @@ templatesApi.get('/templates/:id', (c) => {
 
 templatesApi.post('/templates/:id/install', requireUser, async (c) => {
   const body = await optionalBody(c, InstallTemplateSchema, {});
-  try {
-    return c.json({ bot: installTemplate(c.req.param('id'), c.get('user').id, body) } satisfies InstallTemplateResponse);
-  } catch (e) {
-    return failure(c, e);
-  }
+  return c.json({ bot: installTemplate(c.req.param('id'), c.get('user').id, body) } satisfies InstallTemplateResponse);
 });
 
 templatesApi.delete('/templates/:id', requireUser, (c) => {
-  try {
-    deleteTemplateFor(c.get('user').id, c.req.param('id'));
-    return c.json({ ok: true });
-  } catch (e) {
-    return failure(c, e);
-  }
+  deleteTemplateFor(c.get('user').id, c.req.param('id'));
+  return c.json({ ok: true });
 });

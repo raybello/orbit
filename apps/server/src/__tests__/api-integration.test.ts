@@ -271,6 +271,55 @@ test('the Orbit API over real HTTP and a real database', async (t) => {
     assert.equal(r.status, 200, 'a body-less DELETE must not be a parse error');
     assert.deepEqual(await jsonBody(r), { ok: true });
   });
+
+  await t.test('14. a draft action on a card that is not a draft is 404 with the draft error', async () => {
+    const seq = insertCard(primaryBotId, { type: 'card', card: 'question', question: 'Which day?', options: ['Mon'], status: 'pending' });
+    const r = await send('POST', `/api/bots/${primaryBotId}/cards/${seq}/draft`, { action: 'discard' }, userOne);
+    assert.equal(r.status, 404);
+    assert.deepEqual(await jsonBody(r), { error: 'Not a Gmail draft card.' });
+  });
+
+  await t.test('15. calendar action failures answer with the calendar error’s own status', async () => {
+    const gone = await call('/api/calendar/google/events/no-such-key', { method: 'DELETE' }, userOne);
+    assert.equal(gone.status, 404);
+    assert.deepEqual(await jsonBody(gone), { error: 'That event is no longer in your calendar.' });
+    const noCal = await send('POST', '/api/calendar/google/events', { fields: { summary: 'Standup', description: '', location: '', start: '2026-12-01T09:00', end: '2026-12-01T09:30', allDay: false, timezone: 'UTC', attendees: [], meet: false } }, userOne);
+    assert.equal(noCal.status, 404);
+    assert.deepEqual(await jsonBody(noCal), { error: 'That calendar is not connected.' });
+  });
+
+  await t.test('16. the error boundary maps each domain error once and hides unknown ones', async () => {
+    const { ReviewEditError } = await import('../review/types.js');
+    const { IllegalCardMoveError } = await import('../core/card-service.js');
+    const { BotAdminError } = await import('../bot-admin.js');
+    const { TeamFullError } = await import('../core/bot-service.js');
+    const probe = createApp();
+    const throwers: Record<string, () => never> = {
+      review: () => { throw new ReviewEditError('An event needs a title.'); },
+      card: () => { throw new IllegalCardMoveError('approval', 'pending', 'dismiss'); },
+      admin: () => { throw new BotAdminError(404, 'No such bot.'); },
+      full: () => { throw new TeamFullError(4); },
+      bug: () => { throw new Error('secret internals'); },
+    };
+    probe.post('/__boom/:kind', (c) => throwers[c.req.param('kind')]());
+    const hit = (kind: string) => probe.request(`/__boom/${kind}`, { method: 'POST' });
+
+    const review = await hit('review');
+    assert.equal(review.status, 400);
+    assert.deepEqual(await jsonBody(review), { error: 'An event needs a title.' });
+    const card = await hit('card');
+    assert.equal(card.status, 400);
+    assert.match(String((await jsonBody(card)).error), /does not allow 'dismiss'/);
+    const admin = await hit('admin');
+    assert.equal(admin.status, 404);
+    assert.deepEqual(await jsonBody(admin), { error: 'No such bot.' });
+    const full = await hit('full');
+    assert.equal(full.status, 409);
+    assert.match(String((await jsonBody(full)).error), /team is full/);
+    const bug = await hit('bug');
+    assert.equal(bug.status, 500);
+    assert.equal(await bug.text(), 'Internal Server Error', 'an unknown failure keeps its message hidden');
+  });
 });
 
 after(() => {
