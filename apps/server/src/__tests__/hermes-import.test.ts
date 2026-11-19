@@ -88,3 +88,15 @@ test('no Hermes home to import from leaves the primary untouched and the import 
   assert.equal(importHostHermes(path.join(root, 'missing'), dest), 'no-source');
   assert.ok(!fs.existsSync(dest));
 });
+
+test('the import copies the key a custom provider names in key_env, and no other custom key', () => {
+  const src = fs.mkdtempSync(path.join(root, 'host-custom-'));
+  fs.writeFileSync(path.join(src, '.env'), 'HERMES_CUSTOM_STRATA_API_KEY=strata-key\nHERMES_CUSTOM_OTHER=unused\n');
+  fs.writeFileSync(path.join(src, 'config.yaml'), YAML.stringify({
+    model: { provider: 'strata', default: 'qwen' },
+    providers: { strata: { base_url: 'http://10.0.0.92:8080/v1', key_env: 'HERMES_CUSTOM_STRATA_API_KEY' } },
+  }));
+  const dest = path.join(root, 'primary-custom');
+  assert.equal(importHostHermes(src, dest), 'imported');
+  assert.deepEqual(readDotenv(path.join(dest, '.env')), { HERMES_CUSTOM_STRATA_API_KEY: 'strata-key' });
+});

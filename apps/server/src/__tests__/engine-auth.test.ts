@@ -89,6 +89,19 @@ test('a populated primary key is written into the managed .env, mode 0600', () =
   assert.deepEqual(synced.sort(), ['ANTHROPIC_API_KEY', 'DEEPSEEK_API_KEY']);
 });
 
+test('a managed bot inherits the key a custom provider of the primary names in key_env', () => {
+  resetBots();
+  const bot = addBot('bot_custom_key', 'managed');
+  primaryFiles(
+    { HERMES_CUSTOM_STRATA_API_KEY: 'strata-key' },
+    { providers: { strata: { base_url: 'http://10.0.0.92:8080/v1', key_env: 'HERMES_CUSTOM_STRATA_API_KEY' } } },
+  );
+  managedFiles(bot, { API_SERVER_KEY: 'k' }, {});
+
+  assert.ok(syncManagedAuth(bot).includes('HERMES_CUSTOM_STRATA_API_KEY'));
+  assert.equal(readDotenv(path.join(managedHome(bot), '.env')).HERMES_CUSTOM_STRATA_API_KEY, 'strata-key');
+});
+
 test('a rotated env key is overwritten while the config the bot chose is preserved', () => {
   resetBots();
   const bot = addBot('bot_keep_config', 'managed');

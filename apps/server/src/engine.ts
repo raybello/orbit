@@ -12,7 +12,7 @@ import { randomUUID } from 'node:crypto';
 import { db } from './db.js';
 import { env } from './env.js';
 import { DEFAULT_PATH, defaultHermesLookup, hermesBin, resolveHermesBin } from './hermes-bin.js';
-import { SHARED_CONFIG, SHARED_ENV, asBlock, dotenvText, readDotenv, readYaml, writePrivate, type HermesConfig } from './hermes-files.js';
+import { SHARED_CONFIG, SHARED_ENV, asBlock, modelKeyNames, dotenvText, readDotenv, readYaml, writePrivate, type HermesConfig } from './hermes-files.js';
 import { importHostHermes } from './hermes-import.js';
 import type { BotRow } from './infra/bot-repository.js';
 import type { EngineInfo, EngineProvider } from '@orbit/contracts';
@@ -467,7 +467,7 @@ async function writeHome(rec: EngineRecord): Promise<{ key: string; display: str
   // rotated there must reach every bot. The primary keeps its own and fills gaps from the stack's env.
   const source = managed ? readDotenv(path.join(env.primaryHome, '.env')) : mine;
   const vars: Record<string, string> = { ...mine };
-  for (const k of SHARED_ENV) {
+  for (const k of modelKeyNames(readYaml(path.join(env.primaryHome, 'config.yaml')))) {
     const v = source[k] ?? process.env[k];
     if (v) vars[k] = v;
   }
@@ -514,7 +514,7 @@ export function syncManagedAuth(botId: string): string[] {
   const envFile = path.join(home, '.env');
   const vars = readDotenv(envFile);
   const envSynced: string[] = [];
-  for (const k of SHARED_ENV) {
+  for (const k of modelKeyNames(readYaml(path.join(env.primaryHome, 'config.yaml')))) {
     // The stack's own environment counts too: it is where a containerized server keeps its .env.
     const v = (primaryEnv[k] ?? process.env[k] ?? '').trim();
     if (!v) continue; // nothing to share: keep whatever this bot has

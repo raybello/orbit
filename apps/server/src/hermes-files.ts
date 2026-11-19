@@ -28,6 +28,24 @@ export const SHARED_ENV = [
 /** Parts of the primary agent's config a managed agent starts from, so it reaches the same models. */
 export const SHARED_CONFIG = ['model', 'providers', 'custom_providers', 'auxiliary', 'fallback_model', 'fallback_providers', 'mcp_servers'];
 
+/**
+ * The env vars that carry model credentials for this config: SHARED_ENV plus every variable a
+ * provider block names in `key_env` (a custom provider's key, such as HERMES_CUSTOM_STRATA_API_KEY).
+ */
+export function modelKeyNames(cfg: HermesConfig): string[] {
+  const named = new Set<string>(SHARED_ENV);
+  const walk = (v: unknown) => {
+    if (Array.isArray(v)) { v.forEach(walk); return; }
+    if (!v || typeof v !== 'object') return;
+    for (const [k, x] of Object.entries(v)) {
+      if (k === 'key_env' && typeof x === 'string' && /^[A-Za-z_][A-Za-z0-9_]*$/.test(x)) named.add(x);
+      else walk(x);
+    }
+  };
+  for (const k of SHARED_CONFIG) if (k !== 'mcp_servers') walk(cfg[k]);
+  return [...named];
+}
+
 /** KEY=value lines of a dotenv file (quotes stripped). Missing file = {}. */
 export function readDotenv(file: string): Record<string, string> {
   const out: Record<string, string> = {};
