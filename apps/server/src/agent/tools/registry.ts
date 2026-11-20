@@ -24,6 +24,7 @@ import { RESEARCH_TOOLS } from '../../computer-research.js';
 import { BOT_TOOLS } from '../bot-tools.js';
 import { VAULT_TOOLS } from '../../vault-tools.js';
 import { SKILL_TOOLS } from '../skill-tools.js';
+import { ARTIFACT_TOOLS } from '../artifact-tool.js';
 import { listCalendars, listMirror, mirrorState, syncCalendar } from '../../calendar/mirror.js';
 import { buildCalendar, type CalendarRoutineRow } from '../../domain/calendar-view.js';
 
@@ -56,6 +57,8 @@ export interface ToolResult {
   summary?: string;
   /** End the turn after this tool (e.g. a question was asked). */
   endTurn?: boolean;
+  /** Replaces the tool-call row's args, for a tool that settles values the model did not send (a minted id). */
+  rowArgs?: unknown;
 }
 
 type Impl = (args: ToolArgs, ctx: ToolCtx) => Promise<ToolResult>;
@@ -450,6 +453,9 @@ export const TOOLS: ToolDef[] = [
 
   // The shared skill library: add a skill for the team, read one this Bot has. See skill-tools.ts.
   ...(SKILL_TOOLS as unknown as ToolDef[]),
+
+  // Pages and interactive tools shown beside the chat. See artifact-tool.ts.
+  ...(ARTIFACT_TOOLS as unknown as ToolDef[]),
 
   {
     name: 'list_tools',

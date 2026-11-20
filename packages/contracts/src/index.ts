@@ -9,6 +9,7 @@ export * from './rules.js';
 export * from './review.js';
 // Voice model management (F, on-device default).
 export * from './voice.js';
+export * from './artifact.js';
 import type { VoiceModelItem } from './voice.js';
 
 export type AvatarShape =

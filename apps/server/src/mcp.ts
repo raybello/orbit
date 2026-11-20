@@ -210,7 +210,7 @@ async function callTool(botId: string | null, rawName: string, rawArgs: Record<s
     if (own) {
       const r = await own.impl(args, ctx);
       if (r.endTurn) markSilent(botId);
-      noteToolOutcome(botId, rowSeq, { status: 'done', summary: r.summary });
+      noteToolOutcome(botId, rowSeq, { status: 'done', summary: r.summary, ...(r.rowArgs !== undefined ? { args: r.rowArgs } : {}) });
       if (/\[hq-file:/.test(r.output)) {
         const matches = [...r.output.matchAll(/\[hq-file:([^|\]]+)\|([^|\]]+)\|([^\]]+)\]/g)];
         const files = matches.map(([, path, filename, mediaType]) => ({ path: path.trim(), filename: filename.trim(), mediaType: mediaType.trim() }));

@@ -71,7 +71,7 @@ export function enqueueBotMessage(fromBotId: string, toBotId: string, text: stri
 
 
 interface ToolRef { seq: number; callId: string; name: string; claimed: boolean; done: boolean }
-interface Outcome { status?: ToolCallBody['status']; summary?: string }
+type Outcome = Partial<Pick<ToolCallBody, 'status' | 'summary' | 'args'>>;
 
 interface Turn {
   botId: string;

@@ -1,0 +1,15 @@
+Hermes Responses SSE event types seen across two artifact turns (create, then revise), counted.
+Captured 2026-11-19 on a local dev stack with the hermes binary from ~/.local/bin.
+
+  20 response.reasoning_summary_text.delta
+   4 response.output_text.delta
+   4 response.output_item.done
+   4 response.output_item.added
+   1 response.reasoning_summary_text.done
+   1 response.reasoning_summary_part.done
+   1 response.reasoning_summary_part.added
+   1 response.output_text.done
+   1 response.created
+   1 response.completed
+
+Finding: no response.function_call_arguments.delta. A function call arrives whole in output_item.added/done, so A4 (live streaming of artifact HTML) is not buildable on this Hermes.

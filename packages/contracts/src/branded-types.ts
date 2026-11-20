@@ -14,6 +14,7 @@ export type BotId = string & { readonly __brand: 'BotId' };
 export type UserId = string & { readonly __brand: 'UserId' };
 export type CardId = string & { readonly __brand: 'CardId' };
 export type ScreenId = string & { readonly __brand: 'ScreenId' };
+export type ArtifactId = string & { readonly __brand: 'ArtifactId' };
 
 /**
  * Unchecked cast. Valid only where the value came from the database (a row already scoped to a bot)
@@ -30,3 +31,6 @@ export const asCardId = (value: string): CardId => value as CardId;
 
 /** Unchecked cast; see {@link asBotId}. Use for ids read from a `screens` / `computer_screens` row. */
 export const asScreenId = (value: string): ScreenId => value as ScreenId;
+
+/** Unchecked cast; see {@link asBotId}. Use for an id the artifact tool minted or a row's args already hold. */
+export const asArtifactId = (value: string): ArtifactId => value as ArtifactId;

@@ -1,0 +1,6 @@
+Lane 5, driven through POST /mcp/<botId> tools/call (the path Hermes uses), not by a live model turn.
+Oversized (601 KiB):
+{"isError":true,"text":"Tool error: html is 601 KiB, over the 512 KiB limit. Load large data from a URL or trim it, then call artifact again."}
+Small, right after:
+{"text":"Showing \"small\" to the user as artifact_id art_6xLTZHgFrOaE. Pass that artifact_id to revise it."}
+Not observed: a live model recovering after the refusal.
