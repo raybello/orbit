@@ -1,12 +1,12 @@
 # Architecture
 
-A web app (`apps/web/`) and a Node server (`apps/server/`) sit in front of Hermes agents, wrapped by an Electron desktop app (`apps/desktop/`) and an Expo mobile app (`apps/mobile/`). Hermes owns each Bot's agent loop, history, memory and model. The server adds the things Hermes does not have: the chat interface, a computer for each Bot (a Docker container of its own, or a screen on the shared Orgo computer), connected apps with approvals, routines, the Library, and voice.
+A web app (`apps/web/`) and a Node server (`apps/server/`) sit in front of Hermes agents, wrapped by an Electron desktop app (`apps/desktop/`) and an Expo mobile app (`apps/mobile/`). Hermes owns each Bot's agent loop, history, memory and model. The server adds the things Hermes does not have: the chat interface, a computer for each Bot (a Docker container of its own), connected apps with approvals, routines, the Library, and voice.
 
 ```text
 browser ── HTTP + SSE ──► server ── POST /v1/responses ──► Hermes gateway (one per Bot)
    │                        ▲                                   │
    └── WebSocket (VNC) ─────┤◄──────── MCP: POST /mcp/<bot> ────┘
-                            └── Bot computers: a container per Bot, or a screen on Orgo
+                            └── Bot computers: a container per Bot
 ```
 
 ## Components
@@ -18,9 +18,9 @@ browser ── HTTP + SSE ──► server ── POST /v1/responses ──► H
 | Engines | `server/src/engine.ts` | Which Hermes runs which Bot. The **primary** engine is the gateway that already runs on the computer; the app only calls its API. A **managed** engine is a Hermes home under `ENGINES_DIR/<botId>` with its own `hermes gateway run`, its own port (from 8650), credentials, model and browser helper (`BH_HOME`). Also: model and provider settings, and opening Hermes' subscription sign-in in a terminal on the Bot's screen |
 | App tools | `server/src/mcp.ts`, `agent/tools.ts` | An MCP endpoint per Bot (`POST /mcp/<botId>`, `POST /mcp/primary`; bearer token derived from `SESSION_SECRET`). Tools: `x_search`, `save_file`, routines, tasks, check-ins, `calendar_list`, `send_to_bot`, group chats, `ask_user`, `request_app_connection`, plus the user's Composio tools. `agent/prompt.ts` states each Bot's core capabilities and, per connected Google app, a short action sheet (`agent/app-sheets.ts`) checked against Composio's schemas |
 | Memory | `server/src/engine-memory.ts` | Memory lives in each Bot's Hermes home (`memories/MEMORY.md`, `USER.md`). The app shows the entries and lets the user remove one |
-| Computers | `server/src/computer-provider.ts`, `computer-provider-registry.ts`, `computer.ts`, `docker-provider.ts`, `docker/*` | `ComputerProvider` is the only way the rest of the server reaches a Bot's computer. `OrgoComputerProvider` (`computer.ts`) keeps the shared Orgo computer: the primary Bot uses the default screen, every other Bot leases an Orgo screen. `DockerComputerProvider` gives a managed Bot its own container (Xvfb + x11vnc + Chrome, `/home/bot` bind-mounted from `COMPUTER_HOME_DIR/homes/<botId>`), and suspends it after an idle timeout. Which one a Bot uses is fixed in `bot_computers` when the Bot is created; see `docs/per-bot-computers.md` |
-| Screens | `server/src/desk.ts`, `box.ts`, `server/box/*` | `desk.ts` installs the scripts in `server/box/` under `/opt/hq` and calls them through a `Box` to dress a screen: wallpaper, dock, light theme, a Chrome with its own profile and DevTools port (9200 + display number), and a home screen as the new tab page. `box.ts` runs commands locally (`HQ_LOCAL=1`), through Orgo's API, or inside a container |
-| Viewer | `server/src/vnc.ts` | WebSocket relay between the browser (noVNC) and the screen's VNC server, over Orgo's websockify or a container's x11vnc port. The server does the VNC auth, so the computer's password never reaches the browser. In *watch* mode, keyboard, pointer and clipboard messages are dropped on the server; a control viewer may type |
+| Computers | `server/src/computer-provider.ts`, `computer-provider-registry.ts`, `computer.ts`, `docker-provider.ts`, `docker/*` | `ComputerProvider` is the only way the rest of the server reaches a Bot's computer. `DockerComputerProvider` gives every Bot its own container (Xvfb + x11vnc + Chrome, `/home/bot` bind-mounted from `COMPUTER_HOME_DIR/homes/<botId>`), and suspends it after an idle timeout. `computer.ts` reports the computers' state to the app; see `docs/per-bot-computers.md` |
+| Screens | `server/src/desk.ts`, `box.ts`, `server/box/*` | `desk.ts` installs the scripts in `server/box/` under `/opt/hq` and calls them through a `Box` to dress a screen: wallpaper, dock, light theme, a Chrome with its own profile and DevTools port (9200 + display number), and a home screen as the new tab page. `box.ts` runs the server's own commands, and `docker/docker-box.ts` runs a Bot's inside its container |
+| Viewer | `server/src/vnc.ts` | WebSocket relay between the browser (noVNC) and the screen's VNC server, over a container's x11vnc port. The server does the VNC auth, so the computer's password never reaches the browser. In *watch* mode, keyboard, pointer and clipboard messages are dropped on the server; a control viewer may type |
 | Apps | `server/src/composio.ts`, `triggers.ts` | Catalog, per-user sessions, connect links, tool execution, and triggers for event routines. Sign-in uses a Composio-managed Google connection. The server's own Google calls (`runAction`) are pinned to one toolkit version |
 | Review cards | `server/src/review/*`, `domain/google-actions.ts` | What each Gmail, Calendar, Sheets and Docs action is (read, runs at once, or reviewed), and for reviewed ones how the approval card shows it and applies the person's edits. Drafts (`review/drafts.ts`) and created or changed files (`review/files.ts`) appear in the chat |
 | Calendar | `server/src/calendar/*`, `routes-calendar.ts` | The encrypted Google Calendar mirror and its sync, the person's own Google event changes from Orbit, and Orbit events made from Google events (`calendar/links.ts`) |
@@ -32,16 +32,15 @@ browser ── HTTP + SSE ──► server ── POST /v1/responses ──► H
 
 The first Bot is bound to a Hermes gateway the app did not start. The rules:
 
-- The app never restarts it, stops it, or writes its `config.yaml`. Giving it the app's tools is a separate, explicit step (`scripts/add-hq-to-hermes.py`), which adds one `mcp_servers.hq` entry and keeps a copy of the file. Hermes loads the change without a restart.
-- If that agent already has its own Chrome (`PRIMARY_CDP_URL`), the app never starts, stops or reconfigures it. The home screen still arrives there, through a Chrome policy that installs the home-screen extension.
+- The app never restarts it, stops it, or writes its `config.yaml`.
 - Its other sessions (iMessage, Telegram, cron) see the same tools. When one of those sessions calls a tool that needs approval, the card shows up in the app.
 
 ## Screens and browsers
 
-Each managed Bot's Chrome is started by the app on that Bot's screen and its Hermes config points at that Chrome's DevTools port, so browsing is visible in the viewer. Two details matter:
+Each Bot's Chrome is started by the app on that Bot's screen and its Hermes config points at that Chrome's DevTools port, so browsing is visible in the viewer. Two details matter:
 
 - Hermes' browser tool finds its helper process under `BH_HOME`. Every managed gateway gets its own, otherwise all agents on the computer would drive one browser.
-- A screen is dressed before the Bot's first turn (`screenForWork`), so the agent never finds an empty screen and starts a stray browser.
+- A screen is dressed before the Bot's first turn (`dockerProvider.readyScreen`), so the agent never finds an empty screen and starts a stray browser.
 
 Hermes can also run a private "Bot Desktop" for an agent. While it is on, that agent's desktop work happens there and not on the screen the app shows; the engine panel reports this and offers a button to switch it off.
 
@@ -84,7 +83,6 @@ Secrets live in `.env` on the server and in each Hermes home.
 | Service | Used for |
 |---|---|
 | Hermes Agent | The agent loop, tools, memory and model access for every Bot (API keys or subscription sign-ins) |
-| Orgo | The computer, its screens, VNC, and a public URL for the app |
 | Composio | Sign-in, connectors, triggers |
 | xAI | Research on X (`x_search`), realtime voice, TTS, dictation |
 

@@ -1,12 +1,13 @@
 import { asUserId } from '@orbit/contracts';
+import { dockerProvider } from './docker-provider.js';
 import { db, now } from './db.js';
 import { env } from './env.js';
 import { newId } from './lib/ids.js';
 import { hub } from './lib/hub.js';
 import { emitBot, getBot, listBots, listRoutines } from './store.js';
 import { interrupt } from './core/turn-queue.js';
-import { forgetBotFiles, releaseScreen } from './computer.js';
-import { computerKindFor, providerFor, registerBotComputer, releaseBotComputer } from './computer-provider-registry.js';
+import { forgetBotFiles } from './computer.js';
+import { registerBotComputer, releaseBotComputer } from './computer-provider-registry.js';
 import { assignEngine, provisionEngine, removeEngine, syncPersona } from './engine.js';
 import { pickAvatar } from './core/avatar.js';
 import { beginProvisioning, planBotCreation, type BotCreationInput } from './core/bot-service.js';
@@ -136,11 +137,8 @@ export function updateBotFor(userId: string, botId: string, patch: Record<string
     // Its desktop carries its name and colour: dress the screen again, if it has one.
     const looks = ['name', 'label', 'avatarShape', 'avatarColor'].some((k) => patch[k] !== undefined);
     if (looks) {
-      const provider = providerFor(b.id);
-      const hasComputer = computerKindFor(b.id) === 'docker'
-        ? Boolean(db.prepare('SELECT 1 FROM computer_screens WHERE bot_id=?').get(b.id))
-        : Boolean(db.prepare('SELECT 1 FROM screens WHERE bot_id=?').get(b.id));
-      if (hasComputer) provider.readyScreen(b.user_id, b.id, { redress: true }).catch((e) => console.warn('[computer] redress failed', e?.message ?? e));
+      const hasComputer = Boolean(db.prepare('SELECT 1 FROM computer_screens WHERE bot_id=?').get(b.id));
+      if (hasComputer) dockerProvider.readyScreen(b.user_id, b.id, { redress: true }).catch((e) => console.warn('[computer] redress failed', e?.message ?? e));
     }
   }
   emitBot(b.id);
@@ -169,13 +167,8 @@ export async function deleteBotFor(userId: string, botId: string): Promise<{ pro
     await deleteEventTrigger(r.id).catch(() => {});
   }
   await removeEngine(b.id).catch((e) => console.warn('[engine] remove failed', e?.message ?? e));
-  if (computerKindFor(b.id) === 'docker') {
-    await releaseBotComputer(b.id).catch((e) => console.warn('[computer] container cleanup failed', e?.message ?? e));
-  } else {
-    await releaseScreen(b.id).catch((e) => console.warn('[computer] release failed', e?.message ?? e));
-    await forgetBotFiles(b.id).catch((e) => console.warn('[computer] cleanup failed', e?.message ?? e));
-  }
-  db.prepare('DELETE FROM screens WHERE bot_id=?').run(b.id);
+  await releaseBotComputer(b.id).catch((e) => console.warn('[computer] container cleanup failed', e?.message ?? e));
+  await forgetBotFiles(b.id).catch((e) => console.warn('[computer] cleanup failed', e?.message ?? e));
   db.prepare('DELETE FROM bots WHERE id=?').run(b.id);
 
   let promoted: string | null = null;
@@ -226,6 +219,5 @@ export function teamFor(userId: string) {
       primary: b.isPrimary,
       model: b.model,
       provider: b.provider,
-      computer: computerKindFor(b.id),
     }));
 }

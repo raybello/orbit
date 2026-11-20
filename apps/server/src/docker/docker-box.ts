@@ -25,7 +25,6 @@ function screenEnv(screenId?: string | null): Record<string, string> {
 
 export function dockerBox(containerId: string): Box {
   return {
-    local: false,
     async bash(command: string, timeoutSec = 60, screenId?: string | null): Promise<BashResult> {
       const r = await execInContainer(containerId, ['bash', '-c', command], screenEnv(screenId), timeoutSec * 1000);
       return { output: `${r.stdout}${r.stderr}`, exit_code: r.code };

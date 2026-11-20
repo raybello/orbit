@@ -68,11 +68,11 @@ CREATE TABLE IF NOT EXISTS compactions (
   chars_after INTEGER NOT NULL,
   created_at INTEGER NOT NULL
 );
--- One computer per bot. The 'computers' table above is the legacy per-user shared computer; this one
--- records where each bot's own desktop lives ('orgo' = the shared computer, 'docker' = a container).
+-- One computer per bot: its own container. The 'computers' and 'screens' tables are left over from
+-- the shared Orgo computer and are no longer read.
 CREATE TABLE IF NOT EXISTS bot_computers (
   bot_id       TEXT PRIMARY KEY,
-  kind         TEXT NOT NULL DEFAULT 'orgo',
+  kind         TEXT NOT NULL DEFAULT 'docker',
   state        TEXT NOT NULL DEFAULT 'stopped',
   container_id TEXT,
   home_path    TEXT,
@@ -96,5 +96,11 @@ CREATE INDEX IF NOT EXISTS computer_screens_display ON computer_screens(display_
 -- One screen per container: a bot's screen row is unique per bot, so it can be replaced in place.
 CREATE UNIQUE INDEX IF NOT EXISTS computer_screens_bot ON computer_screens(bot_id);
 `);
+
+/** A bot that lived on the shared Orgo computer gets a container like every other bot. Idempotent. */
+export function migrateSharedComputerBots(): void {
+  db.exec("UPDATE bot_computers SET kind='docker' WHERE kind<>'docker'");
+}
+migrateSharedComputerBots();
 
 export const configSchemaReady = true;

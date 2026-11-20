@@ -46,7 +46,7 @@ const SECTION_META: Record<AppSection, SectionMeta> = {
   appearance: { id: 'appearance', label: 'Appearance', icon: 'palette', sub: 'Light or dark, a colour theme, and the accent every control uses.' },
   'engine-auth': { id: 'engine-auth', label: 'Engine Auth', icon: 'key', sub: 'Which provider and model runs each Bot, and whether it has the credentials to reach them.' },
   'api-keys': { id: 'api-keys', label: 'API keys', icon: 'edit', sub: 'The Hermes settings every Bot shares: API keys in .env and the rest in config.yaml. Saving reaches every Bot.' },
-  computer: { id: 'computer', label: 'Computer', icon: 'monitor', sub: 'Your Bots share one cloud computer. Each Bot works on its own screen.' },
+  computer: { id: 'computer', label: 'Computer', icon: 'monitor', sub: 'Each Bot has a computer of its own. It sleeps when idle and wakes when there is work.' },
   devices: { id: 'devices', label: 'Devices & permissions', icon: 'mic', sub: 'What Orbit may use on this computer, and which device it should use. Nothing is captured unless a call is open.' },
   permissions: { id: 'permissions', label: 'Permissions', icon: 'shield', sub: 'Actions your Bots can take without asking first. Remove one and they’ll ask again next time.' },
   apps: { id: 'apps', label: 'Connected apps', icon: 'apps', sub: 'Apps your Bots can use for you, like email, calendar and docs.' },

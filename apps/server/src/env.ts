@@ -67,7 +67,6 @@ export const env = {
   composioKey: process.env.COMPOSIO_API_KEY ?? '',
   /** Signing secret of the Composio project webhook. Empty where this server has no public URL to receive one. */
   composioWebhookSecret: process.env.COMPOSIO_WEBHOOK_SECRET ?? '',
-  orgoKey: process.env.ORGO_API_KEY ?? (process.env.ORGO_API_KEY_FILE ? fs.readFileSync(process.env.ORGO_API_KEY_FILE, 'utf8').trim() : ''),
   sessionSecret: req('SESSION_SECRET'),
   devLogin: process.env.DEV_LOGIN === '1',
   dbPath: process.env.DB_PATH ?? fileURLToPath(new URL('../../../data/grokbot.db', import.meta.url)),
@@ -130,23 +129,16 @@ export const env = {
   primaryBotName: process.env.PRIMARY_BOT_NAME ?? 'Atlas',
   primaryBotLabel: process.env.PRIMARY_BOT_LABEL ?? 'Chief of Staff',
 
-  // ---- the one shared computer ----
-  /** The Orgo computer every bot works on (one screen each). Empty = legacy one-box-per-user mode is not supported. */
-  orgoComputerId: process.env.ORGO_COMPUTER_ID ?? '',
-  /** This server runs on that computer, so shell commands run locally instead of through Orgo's API. */
+  /**
+   * The server runs on the person's own machine, not in a container, so it can open a terminal
+   * there and the agents' working folder is the Library itself.
+   */
   localBox: process.env.HQ_LOCAL === '1',
   /**
-   * DevTools URL of a Chrome that already runs on the default screen and belongs to the primary bot
-   * (e.g. http://127.0.0.1:9333). When set, we never start or stop that screen's Chrome ourselves.
-   */
-  primaryCdpUrl: process.env.PRIMARY_CDP_URL ?? '',
-  /** Bots that can each have a screen (Orgo allows four screens on one Linux computer). */
-  /**
    * Bot ceiling. Ten fits a 16 GB machine when every bot has its own container with the default
-   * limits below (see docs/per-bot-computers.md, "Sizing"). Bots placed on the shared Orgo computer
-   * only get its four screens, so that setup keeps four.
+   * limits below (see docs/per-bot-computers.md, "Sizing").
    */
-  maxBots: Number(process.env.MAX_BOTS?.trim() || ((process.env.COMPUTER_KIND ?? '').trim().toLowerCase() === 'orgo' ? 4 : 10)),
+  maxBots: Number(process.env.MAX_BOTS?.trim() || 10),
 
   // ---- desktop app / local stack ----
   /**
@@ -163,12 +155,6 @@ export const env = {
   allowedEmails: (process.env.ALLOWED_EMAILS ?? '').split(',').map((s) => s.trim().toLowerCase()).filter(Boolean),
 
   // ---- per-bot Docker computers ----
-  /**
-   * Where a bot's computer runs: 'orgo' (the one shared computer), 'docker' (a container per bot)
-   * or 'auto' (docker for managed bots, orgo for the primary bot). The primary bot always stays on
-   * the Orgo/local path: it is somebody's live desktop.
-   */
-  computerKind: (process.env.COMPUTER_KIND ?? 'auto').trim().toLowerCase() as 'orgo' | 'docker' | 'auto',
   /** Image for bot containers. Unqualified names are built locally from server/docker/computer.
    *  An empty value (common in a copied .env) means the default, not the empty string. */
   computerImage: (process.env.COMPUTER_IMAGE ?? '').trim() || 'orbit/computer:local',

@@ -19,7 +19,6 @@ import { expireStaleApprovals } from './agent/loop.js';
 import { enqueue, resumeRuns } from './core/turn-queue.js';
 import { settleOrphanToolRows } from './store.js';
 import { desSelfTest } from './lib/des.js';
-import { startIdleWatcher } from './idle.js';
 import { importPrimaryHome, initEngines, startSubscriptionSync, syncAllManagedAuth } from './engine.js';
 import { recoverComputers, suspendComputers } from './computer-provider-registry.js';
 import { startDockerIdleSuspender } from './docker-provider.js';
@@ -59,7 +58,6 @@ initProactive(enqueue);
   // The Google Calendar mirror, every five minutes (only with DB_ENCRYPTION_KEY set).
   if (composioEnabled()) startCalendarSync();
 } else console.log('[grokbot] scheduler disabled (GROKBOT_NO_SCHEDULER=1)');
-startIdleWatcher();
 // The direct Google OAuth integration is gone; revoke and drop anything an older version stored.
 void retireGoogleOAuth().catch((e) => console.warn('[google-oauth] retire failed', (e as Error).message));
 // The primary's home is where every agent's credentials come from, so it is seeded first.

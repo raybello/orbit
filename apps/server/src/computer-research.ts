@@ -1,7 +1,7 @@
 import fs from 'node:fs/promises';
+import { dockerProvider } from './docker-provider.js';
 import path from 'node:path';
 import { env } from './env.js';
-import { providerFor } from './computer-provider-registry.js';
 import { CdpSession, cdpAlive, listTabs, openTab, closeTab, type CdpTab } from './lib/cdp.js';
 import { BING_IMAGE_READY, IMAGE_READY, RESULTS_READY, SEARCH_ENGINES, VIDEO_READY, bingImageScript, bingImageUrl, extractScript, imageScript, pageTextScript, searchUrl, videoScript, type SearchEngine } from './computer-research-scripts.js';
 import type { ToolCtx, ToolResult } from './agent/tools/index.js';
@@ -43,7 +43,7 @@ const LIBRARY = () => `${env.botDataDir}/files`;
  * container's Chrome, whether this server runs on the host or in the stack.
  */
 async function browserFor(ctx: ToolCtx): Promise<{ cdp: string }> {
-  const provider = providerFor(ctx.botId);
+  const provider = dockerProvider;
   const { screenId } = await provider.screenFor(ctx.userId, ctx.botId);
   let cdp = await provider.cdpUrl(ctx.botId, screenId);
   if (!(await cdpAlive(cdp))) {

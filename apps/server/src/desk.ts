@@ -9,8 +9,8 @@ import { box as defaultBox, displayFor, type Box } from './box.js';
  * home screen (the bot's avatar, a clock, the computer's apps) as Chrome's new tab page.
  *
  * The work on the computer is done by the scripts in server/box/, which this file installs under
- * /opt/hq and then calls with one short command per action. Only `box.*` is used to reach the
- * computer, so it works the same through Orgo's API and with HQ_LOCAL=1.
+ * /opt/hq and then calls with one short command per action. Only a `Box` is used to reach the
+ * computer, so the scripts do not care where it runs.
  */
 
 export interface DeskBot { id: string; name: string; label: string; avatarShape: string; avatarColor: string }
@@ -362,7 +362,7 @@ export function resetScreen(bot: DeskBot, screenId: string, b: Box = defaultBox,
   return inTurn(screenId, () => dress(bot, screenId, opts?.manageChrome !== false, 'x', `resetting screen ${screenId}`, b));
 }
 
-/** The bot is gone: stop its Chrome, dock and anything else we started for that screen (do not delete the Orgo screen itself, and leave the profile dir). */
+/** The bot is gone: stop its Chrome, dock and anything else we started for that screen (leave the profile dir). */
 export function undressScreen(botId: string, screenId: string, b: Box = defaultBox): Promise<void> {
   return inTurn(screenId, async () => {
     if (botId && !/^[\w.-]+$/.test(botId)) throw new Error(`bot id ${JSON.stringify(botId)} cannot be used as a folder name`);
@@ -371,13 +371,4 @@ export function undressScreen(botId: string, screenId: string, b: Box = defaultB
     if (reply.kind === 'NOBASE' && !reply.raw.includes('Traceback')) return;
     if (reply.kind !== 'DONE') throw new Error(`undressing screen ${screenId} failed: ${reply.raw.trim().slice(-300)}`);
   });
-}
-
-/** Open a visible terminal window on that screen running `command` (window stays open after it exits, titled `title`). Used for sign-in flows the user completes by taking control of the screen. */
-export async function openTerminal(screenId: string, command: string, title?: string, b: Box = defaultBox): Promise<void> {
-  await ensureDeskBase(b);
-  const b64 = (s: string) => Buffer.from(s, 'utf8').toString('base64');
-  const reply = await script(b, ['terminal', String(displayNumber(screenId)), b64(command), title ? b64(title) : '-'], screenId);
-  if (reply.kind !== 'DONE') throw new Error(`could not open a terminal on screen ${screenId}: ${reply.raw.trim().slice(-300)}`);
-  await finish(b, reply, `opening a terminal on screen ${screenId}`, 30);
 }

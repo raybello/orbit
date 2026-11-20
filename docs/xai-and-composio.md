@@ -234,7 +234,7 @@ Citations come back automatically: as `source` parts in the AI SDK, and in annot
 
 **Recommended pattern [R][I]:** use function tools for actions and send screenshots back as image input.
 
-1. Define small, typed function tools that map one-to-one to Orgo primitives: `computer_screenshot`, `computer_click{x,y,button,double}`, `computer_type{text}`, `computer_key{keys}`, `computer_scroll{x,y,dx,dy}`, `computer_drag`, `computer_wait{ms}`, plus `shell{cmd}`. Give each action a `screenshot_after` default so the model sees the result.
+1. Define small, typed function tools that map one-to-one to the Bot's computer primitives: `computer_screenshot`, `computer_click{x,y,button,double}`, `computer_type{text}`, `computer_key{keys}`, `computer_scroll{x,y,dx,dy}`, `computer_drag`, `computer_wait{ms}`, plus `shell{cmd}`. Give each action a `screenshot_after` default so the model sees the result.
 2. `function_call_output.output` is a **string** in every documented example. To show the screen, return a short text result (`"clicked (512,300); screenshot attached"`). Then append a user message with an `input_image` data URL **after** all of that turn's `function_call_output` items. **[I]** The docs do not show images inside `function_call_output`, so test whether array output is accepted.
 3. Use `store: false` and keep history yourself, or use WebSocket mode with `store:false`. The docs warn that image requests with server-side storage "may fail". Use `include: ['reasoning.encrypted_content']` and a stable `prompt_cache_key`.
 4. Control cost: a 500k context fills quickly with screenshots. Keep the last N (for example 3) screenshots inline and replace older ones with a text caption. Expect each replacement to break the cache prefix from that point, so do it in batches every K steps rather than every step. Alternatively call `client.responses.compact()` every N turns [D] https://docs.x.ai/developers/advanced-api-usage/context-compaction.md.
@@ -348,8 +348,8 @@ ws.onopen = () => ws.send(JSON.stringify({ type: 'session.update', session: {
 
 1. **Agent loop:** each bot turn runs the A.3 loop on `grok-4.7` through the `openai` package. the app owns history in SQLite (`store:false`, encrypted reasoning kept as-is). `prompt_cache_key = bot_id:conversation_id`, `safety_identifier = sha256(user_id)`. Run compaction when context passes a budget we set (this project uses the token count of the previous call).
 2. **Effort policy:** `low` for computer-use step loops and routine tool calls, `medium` for chat, `high` for planning or "deep work" routines. Expose `xhigh` as an advanced bot setting.
-3. **Tools per turn:** our own functions (Orgo computer actions, shell, memory, `send_to_user`, `request_approval`, `send_to_bot`) plus the Composio tools from B.5. Add server-side `web_search` and `x_search` (cheap, citations included). Avoid xAI remote `mcp` for user apps, because xAI cannot apply our approvals (see B.5).
-4. **Computer use:** follow the A.5 pattern on the user's Orgo VM, one screen per bot.
+3. **Tools per turn:** our own functions (computer actions, shell, memory, `send_to_user`, `request_approval`, `send_to_bot`) plus the Composio tools from B.5. Add server-side `web_search` and `x_search` (cheap, citations included). Avoid xAI remote `mcp` for user apps, because xAI cannot apply our approvals (see B.5).
+4. **Computer use:** follow the A.5 pattern on each bot's own container.
 5. **Voice:** a browser or mobile client gets a 5-minute secret from our server and connects to `grok-voice-latest`. The voice agent gets a small relay toolset (`send_task`, `recall_messages`, `switch_bot`, `end_call`) that hands work to the text agent loop, the same split Grok Bot uses.
 6. **Background routines:** use the Batch API (20% off) only for non-interactive digest jobs. Everything else goes through the normal or WebSocket path.
 
@@ -538,7 +538,7 @@ const session = await composio.create(user.id, {
   toolkits: bot.enabledToolkits,                       // e.g. ['gmail','googlecalendar','github']
   tags: { requireApproval: ['createHint', 'updateHint', 'destructiveHint'] },  // experimental
   manageConnections: false,                            // our marketplace UI handles connecting
-  sandbox: { enable: false },                          // we have our own Orgo computer
+  sandbox: { enable: false },                          // each bot has its own computer
 });
 const composioTools = await session.tools();           // meta tools by default (search/execute)
 
@@ -672,7 +672,7 @@ Sessions are free to create. Triggers are billed per **delivered** event, and po
 3. **Branding:** start on managed OAuth. Before launch, register Grokbot OAuth apps for Google, Slack and GitHub as custom auth configs, and set Connect Link branding.
 4. **Per-bot tool scope:** each bot stores `enabledToolkits` plus optional per-tool allow and deny lists, and gets one long-lived Composio session (`sessionId` on the bot). `session.update()` runs when the user changes the bot's apps. Broad bots use meta tools, and narrow role bots use the direct-tools preset.
 5. **Approvals:** set Composio `requireApproval` on `createHint`/`updateHint`/`destructiveHint`, plus explicit tool lists for sends and posts. `ComposioToolInputRequiredError` becomes a Grokbot approval card. The answer resumes the call with `inputResponses` and `requestState`. Computer and shell actions use Grokbot's own approval policy. Keep the Composio sandbox off.
-6. **Agent loop:** Composio tools are passed to `grok-4.7` as plain function tools alongside the Orgo computer tools. Every Composio call runs through `session.execute()`. xAI remote MCP is not used for user apps.
+6. **Agent loop:** Composio tools are passed to `grok-4.7` as plain function tools alongside the computer tools. Every Composio call runs through `session.execute()`. xAI remote MCP is not used for user apps.
 7. **Routines:** the routine editor offers trigger types from `triggers.listTypes({ toolkits })` with a form generated from `getType().config`. Saving runs `triggers.create(user.id, slug, { connectedAccountId, triggerConfig })`. The single webhook verifies the signature, looks up the routine by `metadata.trigger_id`, and starts a bot run with the event as input. `composio.connected_account.expired` produces a "reconnect" card for the user.
 8. **Raw API gaps:** use `session.proxyExecute` / `tools.proxyExecute` for endpoints no tool covers (for example the "connected as" profile check).
 

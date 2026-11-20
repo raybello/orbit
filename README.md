@@ -161,7 +161,7 @@ flowchart LR
 ```
 
 - **One bot, one Hermes home.** The first bot is the Hermes agent already running on the machine. Each further bot gets `ENGINES_DIR/<botId>` and its own `hermes gateway run`.
-- **One bot, one desktop.** With `COMPUTER_KIND=docker` (the default) each bot gets a Linux container running Xvfb, fluxbox, Chrome and `x0vncserver`. The server relays VNC over a WebSocket, so the browser and the phone see the same screen. `COMPUTER_KIND=orgo` uses Orgo screens instead.
+- **One bot, one desktop.** Each bot gets a Linux container running Xvfb, fluxbox, Chrome and `x0vncserver`. The server relays VNC over a WebSocket, so the browser and the phone see the same screen.
 - **The app's tools reach Hermes over MCP.** The server exposes `/mcp/<bot>`. Each agent gets connected apps, tasks, routines, the Library, computer tools and messages to other bots.
 - **Groups are rooms, not agents.** A room row has `kind='room'` and a member list. The server dispatches turns; the bots reply with `post_to_group`, and an @mention triggers the next hop.
 - **The server owns the transcript.** Chat rows, cards, routines and screens live in SQLite. SSE fans changes out to every connected client, desktop and mobile.
@@ -295,7 +295,6 @@ Keys:
 | Nothing, `ANTHROPIC_API_KEY`, or another provider key | The model. Set in the primary Hermes home, not here; managed bots inherit it. A Claude subscription needs no key (see [Models and subscriptions](#models-and-subscriptions)) |
 | `COMPOSIO_API_KEY` | Connected apps |
 | `XAI_API_KEY` | Cloud voice and `x_search` (optional when local voice models are installed) |
-| `ORGO_API_KEY`, `ORGO_COMPUTER_ID` | Orgo screens when `COMPUTER_KIND=orgo` |
 
 A first run without `COMPOSIO_API_KEY` or `XAI_API_KEY` boots: both clients are lazy. Those features answer "not configured" until keys are present.
 
@@ -354,7 +353,7 @@ docker compose -f docker-compose.images.yml --env-file .env up -d
 
 The build context for the server image is the repository root, not `apps/server`: the image installs the pnpm workspace. `docker build -f apps/server/Dockerfile -t ghcr.io/raybello/orbit/app:edge .` from the root builds the same thing.
 
-Per-bot Docker computers need the host folder in `COMPUTER_HOME_DIR` to exist at the same absolute path inside the `api` container (the bot home is a host bind mount). Set `ORBIT_HOST_DATA` and mount it at the same path, or use `COMPUTER_KIND=orgo`.
+Per-bot Docker computers need the host folder in `COMPUTER_HOME_DIR` to exist at the same absolute path inside the `api` container (the bot home is a host bind mount). Set `ORBIT_HOST_DATA` and mount it at the same path.
 
 To add GPU voice to the image stack, set `ORBIT_GPU_VOICE=1` and `AUDIOCPP_URL=http://audiocpp:8080` in its `.env` and add `--profile gpu` to the `up` command. The desktop app's **Install** button does exactly that.
 
@@ -379,24 +378,6 @@ AUDIOCPP_TLS_HOSTS="localhost 127.0.0.1 192.168.1.20" AUDIOCPP_HTTPS_BIND=0.0.0.
 ```
 
 Open `https://192.168.1.20:8444` (your LAN address) and accept the certificate warning once. More in the [setup guide](https://raybello.github.io/orbit/docs/setup.html#gpu-voice) and [docs/voice-audiocpp.md](docs/voice-audiocpp.md).
-
-## Install on a remote computer
-
-The app can run on the same computer as Hermes.
-
-1. On your machine: `pnpm install && pnpm build` and package the server bundle, or use the release bundle. Copy the archive and `scripts/install-on-computer.sh` to the computer.
-2. In Orgo, create a public URL for port `8787` on that computer.
-3. On the computer, as root:
-
-   ```bash
-   PUBLIC_URL=https://<name>.orgo.dev ORGO_COMPUTER_ID=<uuid> ALLOWED_EMAILS=you@example.com \
-   KEYS_FILE=/root/keys.txt PRIMARY_CDP_URL=http://127.0.0.1:9333 \
-     bash install-on-computer.sh hq-app.tgz
-   ```
-
-   `KEYS_FILE` holds `XAI_API_KEY=` and `COMPOSIO_API_KEY=` lines (and `ORGO_API_KEY=` if Hermes' own `.env` has none); it is deleted after the first install. The script installs to `/opt/hq`, adds one supervisor program (`hq-app`), and leaves Hermes alone. Running it again with a newer archive upgrades the app and keeps its settings and data.
-4. Give the main agent the app's tools: `python3 /opt/hq/app/scripts/add-hq-to-hermes.py`. It adds one `mcp_servers.hq` entry to Hermes' `config.yaml`, keeps a dated copy of the file, and Hermes picks the change up without a restart. `--remove` takes it out again.
-5. Open the public URL and sign in with Google. If Google sign-in is not set up yet, `bash /opt/hq/app/scripts/sign-in-link.sh you@example.com` on the computer prints a one-time sign-in link.
 
 ## Models and subscriptions
 
@@ -436,7 +417,7 @@ The voice screenshot is a real local call: a 16 kHz WAV prompt was fed through t
 
 - Experimental, no security audit. Bots share a Docker host and can reach each other's files through their containers.
 - Approval cards cover Composio write actions. What a bot does through its browser or shell is not gated, and Hermes' own "risky command" prompts are not shown in the app yet.
-- The default ceiling is ten bots (`MAX_BOTS=10`), sized for a 16 GB machine giving Docker 10 GB: a working bot's desktop and browser take about 0.3 to 0.75 GB, and idle bots are frozen, then stopped. See [docs/per-bot-computers.md](docs/per-bot-computers.md#sizing-ten-bots-on-a-16-gb-machine). With `COMPUTER_KIND=orgo` the ceiling stays at four (one Orgo computer has four screens).
+- The default ceiling is ten bots (`MAX_BOTS=10`), sized for a 16 GB machine giving Docker 10 GB: a working bot's desktop and browser take about 0.3 to 0.75 GB, and idle bots are frozen, then stopped. See [docs/per-bot-computers.md](docs/per-bot-computers.md#sizing-ten-bots-on-a-16-gb-machine).
 - A bot cannot use a Claude or ChatGPT subscription that the primary agent signed in to unless the provider allows token inheritance; Codex subscriptions always need their own sign-in.
 - GPU voice needs an NVIDIA GPU on Windows or Linux. There is no Apple-silicon build of the sidecar yet, so Macs use on-device voice. The sidecar image is amd64 only.
 - The desktop installers are not code-signed or notarized yet.
@@ -446,4 +427,4 @@ The voice screenshot is a real local call: a 16 kHz WAV prompt was fed through t
 
 Project code is available under the [MIT license](LICENSE). The bot artwork and some icons come from Grok Bot's design and remain the property of their owners, as do third-party app logos; the MIT license does not cover them. See [third-party notices](THIRD_PARTY_NOTICES.md).
 
-Built with [Hermes Agent](https://github.com/NousResearch/hermes-agent), [Composio](https://composio.dev), and optional [Orgo](https://orgo.ai) screens and [xAI](https://x.ai) voice. This is an independent project, unaffiliated with xAI, Cursor/Anysphere or Nous Research.
+Built with [Hermes Agent](https://github.com/NousResearch/hermes-agent), [Composio](https://composio.dev), and optional [xAI](https://x.ai) voice. This is an independent project, unaffiliated with xAI, Cursor/Anysphere or Nous Research.

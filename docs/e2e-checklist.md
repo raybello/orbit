@@ -26,8 +26,8 @@ Shared preconditions for all six flows:
    Bot settings → Engine.
 3. **A managed bot exists** (a second bot; see flow 1). Managed bots run their own Hermes gateway on
    its own port, which needs the `hermes` CLI on `PATH` (or `HERMES_BIN` set).
-4. Docker is running if your install puts each bot on its own computer (`COMPUTER_KIND=docker` or
-   `auto`). Without it every bot's computer reads `Unknown` and flow 6 cannot be completed.
+4. Docker is running: each bot's computer is a container. Without it every bot's computer reads
+   `Unknown` and flow 6 cannot be completed.
 
 ## Flow 1 — Create a managed bot, and it has credentials immediately
 
@@ -206,7 +206,7 @@ error, rooms skipped, `vncAvailable` only with a screen), `ComputersView.test.ts
 badge labels, Working chip, Open opens the viewer, No screen disables it, 15s polling),
 `smoke-server.mjs` (`GET /api/computers` rows and the awake/screen mapping).
 
-**Preconditions:** Docker running (or an Orgo computer configured), at least one bot with a screen,
+**Preconditions:** Docker running, at least one bot with a screen,
 and at least one bot awake — open each bot's chat once, or send it a message, which starts its
 computer.
 

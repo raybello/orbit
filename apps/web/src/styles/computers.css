@@ -70,13 +70,6 @@
 
 .computers__retry:hover { background: var(--color-danger-hover); }
 
-.computers__muted {
-  margin: 0;
-  font-size: var(--text-xs);
-  line-height: 16px;
-  color: var(--color-text-quaternary);
-}
-
 /* ---------- card ---------- */
 
 .computer-card {

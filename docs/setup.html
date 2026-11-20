@@ -38,7 +38,7 @@
       <ul><li><a href="index.html">Overview</a></li><li><a href="guide.html">Using Orbit</a></li><li><a href="setup.html" aria-current="page">Setup</a></li><li><a href="api.html">API reference</a></li><li><a href="source.html">Source code</a></li></ul>
       <div class="toc-block">
         <h4>On this page</h4>
-        <ul class="toc"><li><a href="#requirements">Requirements</a></li><li><a href="#platforms">Platform notes</a></li><li><a href="#docker">Run the Docker stack</a></li><li><a href="#source">Build from source</a></li><li><a href="#desktop">Desktop app</a></li><li><a href="#mobile">Mobile app (iOS and Android)</a></li><li><a href="#remote">Install on a remote computer (Orgo)</a></li><li><a href="#hermes">Wiring up Hermes</a></li><li><a href="#composio">Connecting apps with Composio</a></li><li><a href="#gpu-voice">GPU voice (audio.cpp)</a></li><li><a href="#env">Environment reference</a></li><li><a href="#troubleshooting">Troubleshooting</a></li></ul>
+        <ul class="toc"><li><a href="#requirements">Requirements</a></li><li><a href="#platforms">Platform notes</a></li><li><a href="#docker">Run the Docker stack</a></li><li><a href="#source">Build from source</a></li><li><a href="#desktop">Desktop app</a></li><li><a href="#mobile">Mobile app (iOS and Android)</a></li><li><a href="#hermes">Wiring up Hermes</a></li><li><a href="#composio">Connecting apps with Composio</a></li><li><a href="#gpu-voice">GPU voice (audio.cpp)</a></li><li><a href="#env">Environment reference</a></li><li><a href="#troubleshooting">Troubleshooting</a></li></ul>
       </div>
     </aside>
     <main class="doc" id="top">
@@ -111,7 +111,7 @@ cp .env.images.example .env    # SESSION_SECRET: openssl rand -hex 32
 docker compose -f docker-compose.images.yml --env-file .env up -d</code></pre>
 <p><code>ghcr.io/raybello/orbit/app:edge</code> tracks <code>main</code>; tagged releases publish versioned tags. The server image's build context is the repository root, because it installs the whole pnpm workspace:</p>
 <pre><code>docker build -f apps/server/Dockerfile -t ghcr.io/raybello/orbit/app:edge .</code></pre>
-<div class="callout"><p>Per-bot Docker computers bind-mount each bot's home from the host, so the folder in <code>COMPUTER_HOME_DIR</code> must exist at the same absolute path inside the <code>api</code> container. Set <code>ORBIT_HOST_DATA</code> and mount it at the same path, or use <code>COMPUTER_KIND=orgo</code>.</p></div>
+<div class="callout"><p>Per-bot Docker computers bind-mount each bot's home from the host, so the folder in <code>COMPUTER_HOME_DIR</code> must exist at the same absolute path inside the <code>api</code> container. Set <code>ORBIT_HOST_DATA</code> and mount it at the same path.</p></div>
 
 <h2 id="source">Build from source</h2>
 <pre><code>pnpm install
@@ -159,19 +159,6 @@ pnpm --filter @orbit/mobile start   # Metro for the Expo client</code></pre>
 cd apps/mobile &amp;&amp; npx expo run:ios         # or: npx expo run:android
 eas build --profile production --platform all</code></pre>
 <p>The API base comes from <code>EXPO_PUBLIC_API_URL</code> (baked into <code>extra.apiUrl</code> at build time) and can be changed at runtime on the server screen. The sign-in token is kept in <code>expo-secure-store</code>. A release build must use <code>https</code>: the config throws rather than ship a cleartext public URL. A simulator reaches a server on the same Mac at <code>localhost</code>.</p>
-
-<h2 id="remote">Install on a remote computer (Orgo)</h2>
-<ol>
-  <li>On your machine, build and package the server bundle (or use a release bundle), then copy it and <code>scripts/install-on-computer.sh</code> to the computer.</li>
-  <li>In Orgo, create a public URL for port 8787 on that computer.</li>
-  <li>On the computer, as root:
-<pre><code>PUBLIC_URL=https://&lt;name&gt;.orgo.dev ORGO_COMPUTER_ID=&lt;uuid&gt; ALLOWED_EMAILS=you@example.com \
-KEYS_FILE=/root/keys.txt PRIMARY_CDP_URL=http://127.0.0.1:9333 \
-  bash install-on-computer.sh hq-app.tgz</code></pre>
-  The script installs to <code>/opt/hq</code>, adds one supervisor program, and leaves Hermes alone. Running it again with a newer archive upgrades in place.</li>
-  <li>Give the main agent the app's tools: <code>python3 /opt/hq/app/scripts/add-hq-to-hermes.py</code> adds an <code>mcp_servers.hq</code> entry to Hermes' <code>config.yaml</code> (<code>--remove</code> takes it out).</li>
-  <li>Open the public URL and sign in.</li>
-</ol>
 
 <h2 id="hermes">Wiring up Hermes</h2>
 <ul>
@@ -296,13 +283,12 @@ KEYS_FILE=/root/keys.txt PRIMARY_CDP_URL=http://127.0.0.1:9333 \
 <tr><td><code>ENGINES_DIR</code>, <code>ENGINE_PORT_BASE</code></td><td>data/engines, 8650</td><td>Managed engine homes and ports.</td></tr>
 <tr><td><code>EXTRA_MCP_SERVERS</code></td><td></td><td>Extra MCP servers every bot gets (JSON).</td></tr>
 <tr><td><code>PRIMARY_BOT_NAME</code>, <code>PRIMARY_BOT_LABEL</code></td><td>Atlas, Chief of Staff</td><td>The first bot's name and label.</td></tr>
-<tr><td><code>MAX_BOTS</code></td><td>10</td><td>Bot ceiling (4 with <code>COMPUTER_KIND=orgo</code>).</td></tr>
-<tr><td><code>COMPUTER_KIND</code></td><td>auto</td><td><code>docker</code>, <code>orgo</code>, or <code>auto</code> (Docker for every bot but the primary).</td></tr>
+<tr><td><code>MAX_BOTS</code></td><td>10</td><td>Bot ceiling.</td></tr>
 <tr><td><code>COMPUTER_IMAGE</code></td><td>orbit/computer:local</td><td>Bot desktop image, built from <code>apps/server/docker/computer</code> when unqualified.</td></tr>
 <tr><td><code>COMPUTER_HOME_DIR</code></td><td>data/computers</td><td>Each bot's home folder and workspace checkpoints.</td></tr>
 <tr><td><code>COMPUTER_PAUSE_AFTER_MIN</code>, <code>COMPUTER_IDLE_TIMEOUT_MIN</code>, <code>COMPUTER_CPU_LIMIT</code>, <code>COMPUTER_MEMORY_LIMIT</code>, <code>COMPUTER_MEMORY_RESERVATION</code>, <code>COMPUTER_NETWORK</code></td><td>5, 30, 1, 900m, 600m, bridge</td><td>Container limits, idle pause and suspension.</td></tr>
 <tr><td><code>DOCKER_SOCKET</code></td><td>Docker default</td><td>Docker API socket.</td></tr>
-<tr><td><code>ORGO_API_KEY</code>, <code>ORGO_COMPUTER_ID</code>, <code>HQ_LOCAL</code>, <code>PRIMARY_CDP_URL</code></td><td></td><td>Orgo screens and the remote install.</td></tr>
+<tr><td><code>HQ_LOCAL</code></td><td>0</td><td>1 when the server runs on your own machine, not in a container.</td></tr>
 <tr><td><code>DEFAULT_BOT_MODEL</code>, <code>DEFAULT_BOT_PROVIDER</code></td><td>claude-sonnet-4-6, anthropic</td><td>The model every new Bot runs, the primary included, unless one is picked when it is created.</td></tr>
 <tr><td><code>COMPOSIO_API_KEY</code></td><td></td><td>Connected apps (<a href="#composio">Connecting apps with Composio</a>).</td></tr>
 <tr><td><code>COMPOSIO_WEBHOOK_SECRET</code></td><td></td><td>Signing secret of the Composio webhook at <code>/webhooks/composio</code>; optional.</td></tr>

@@ -2,8 +2,7 @@ import { execInContainer, runScript } from './exec.js';
 
 /**
  * A bot's screen inside its container: an Xvfb display, a window manager, and x11vnc on a host
- * port. `desk.ts` then dresses that display (wallpaper, dock, the bot's Chrome), exactly as it does
- * on the shared Orgo computer.
+ * port. `desk.ts` then dresses that display (wallpaper, dock, the bot's Chrome).
  *
  * One screen per container is what the provider creates: each bot has its own container, and the
  * display index (unique across all bots) fixes the VNC and DevTools ports.

@@ -1,16 +1,15 @@
 import type { IncomingMessage, Server } from 'node:http';
+import { dockerProvider } from './docker-provider.js';
 import { WebSocket, WebSocketServer } from 'ws';
 import { db } from './db.js';
 import { userFromCookieHeader, userFromToken } from './lib/auth.js';
 import { vncAuthResponse } from './lib/des.js';
-import { providerFor } from './computer-provider-registry.js';
 import { viewerClosed, viewerOpened, botViewerClosed, botViewerOpened } from './idle.js';
-import type { VncStream } from './computer-provider.js';
+import type { ComputerProvider, VncStream } from './computer-provider.js';
 
 /**
  * VNC relay: browser <-> our server <-> the bot's computer.
- * The upstream is a WebSocket to Orgo's websockify for the shared computer, or a plain TCP socket
- * to a container's x11vnc for a managed bot; both arrive here as VncStreams. The server performs
+ * The upstream is a TCP socket to the bot container's x11vnc, as a VncStream. The server performs
  * the RFB handshake upstream with the computer's VNC password (which is root-equivalent and never
  * reaches the browser), then offers the browser an unauthenticated RFB session. In "watch" mode,
  * client input messages (KeyEvent, PointerEvent, ClientCutText) are dropped server-side; a control
@@ -185,7 +184,7 @@ async function relay(client: WebSocket, userId: string, botId: string, mode: 'wa
   let currentScreenId = '';
   const filter = new WatchFilter();
   const splitter = new KeySplitter();
-  const provider = providerFor(botId);
+  const provider: ComputerProvider = dockerProvider;
   const translateKeys = Boolean(provider.translateKeys && provider.pressKey);
   const closeAll = (code = 1000, reason = '') => {
     try { client.close(code, reason.slice(0, 120)); } catch { /* */ }

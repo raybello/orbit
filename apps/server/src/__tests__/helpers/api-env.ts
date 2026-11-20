@@ -17,10 +17,9 @@
  *  - PRIMARY_ENGINE_PORT names a closed loopback port: answering a card queues a real agent turn in
  *    the background, and the primary bot's turn would otherwise find whatever Hermes the developer
  *    has running on 8642. The start fails fast and locally (HERMES_BIN is `true`) instead.
- *  - COMPUTER_KIND=orgo with no ORGO_COMPUTER_ID: the same background turn asks for the bot's screen
- *    first. On the default 'auto' setting that bot owns a container, so the suite would reach for the
- *    Docker socket (and, on a developer machine where Docker is running, could start a real one).
- *    With the shared-computer setting and no computer configured, the screen step is a no-op.
+ *  - DOCKER_SOCKET names a socket that does not exist: the same background turn asks for the bot's
+ *    screen first, and every bot owns a container, so the suite would otherwise reach the developer's
+ *    Docker and could start a real one. Here the request fails at once and the turn goes on.
  *
  * The disk paths these routes can reach (a bot's library, its container home) are moved under the
  * temp root too, so a run leaves nothing behind in the repository.
@@ -38,7 +37,7 @@ process.env.GROKBOT_NO_SCHEDULER = '1';
 // Keep the engine's loopback "is a gateway already there?" probe away from a dev stack's 8650+ ports.
 process.env.ENGINE_PORT_BASE = '18650';
 process.env.PRIMARY_ENGINE_PORT = '18660';
-process.env.COMPUTER_KIND = 'orgo';
+process.env.DOCKER_SOCKET = path.join(tmpRoot, 'no-docker.sock');
 process.env.BOT_DATA_DIR = path.join(tmpRoot, 'bot-data');
 process.env.COMPUTER_HOME_DIR = path.join(tmpRoot, 'computers');
 

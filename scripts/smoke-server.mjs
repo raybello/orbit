@@ -165,6 +165,10 @@ const child = spawn(process.execPath, [entry], {
     BOT_DATA_DIR: botDataDir,
     HERMES_IMPORT_FROM: path.join(tmpDir, 'no-hermes-home'),
     PRIMARY_ENGINE_PORT: String(port + 43),
+    // Nor a real computer: POST /api/computer/ensure starts each bot's container. A socket that
+    // does not exist makes that fail at once, and any home folder stays in the temp dir.
+    DOCKER_SOCKET: path.join(tmpDir, 'no-docker.sock'),
+    COMPUTER_HOME_DIR: path.join(tmpDir, 'computers'),
     // A smoke run must never start a real agent: provisioning the fixture bot would spawn
     // `hermes gateway run` for up to 90 seconds. A binary that exits at once fails the start
     // cleanly, which is what a stack with no gateway should do anyway.
@@ -352,11 +356,10 @@ try {
   const hello = frames.split('\n').find((l) => l.startsWith('data: ') && l.includes('"hello"'));
   check('SSE sends a hello frame with a seq', Boolean(hello && /"seq":\d+/.test(hello)), hello ?? '(no frame)');
 
-  // The screen's Retry button calls this. In a stack with no Orgo computer it used to 500,
-  // because the handler went straight to Orgo instead of the bot's own Docker computer.
+  // The screen's Retry button calls this: it starts each bot's own computer and answers at once.
   const ensureComputer = await request('/api/computer/ensure', { method: 'POST', headers: bearer });
   check(
-    'POST /api/computer/ensure answers without an Orgo computer',
+    'POST /api/computer/ensure answers at once',
     ensureComputer.status === 200 && ensureComputer.body?.computer?.status === 'running',
     `${ensureComputer.status} ${JSON.stringify(ensureComputer.body?.computer?.status)}`,
   );
@@ -543,7 +546,7 @@ try {
   check(
     'every computer row has a bot, a kind and a status',
     compRows.length > 0 && compRows.every((r) => typeof r.botId === 'string' && typeof r.botName === 'string' &&
-      ['docker', 'orgo', 'none'].includes(r.kind) && ['awake', 'sleeping', 'starting', 'unknown'].includes(r.status)),
+      r.kind === 'docker' && ['awake', 'sleeping', 'starting', 'unknown'].includes(r.status)),
     short(computers.text),
   );
   const mine = compRows.find((r) => r.botId === MANAGED_BOT);

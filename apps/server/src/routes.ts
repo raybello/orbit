@@ -1,4 +1,5 @@
 import crypto from 'node:crypto';
+import { dockerProvider } from './docker-provider.js';
 import fs from 'node:fs';
 import path from 'node:path';
 import { Hono } from 'hono';
@@ -19,11 +20,9 @@ import { ReviewEditError } from './review/index.js';
 import { actOnDraft } from './review/drafts.js';
 import { ApiError } from './api/errors.js';
 import { clearMirror } from './calendar/mirror.js';
-import { computerState, ensureComputer, refreshComputer, suspendComputer } from './computer.js';
-import { computerKindFor, providerFor } from './computer-provider-registry.js';
+import { computerState, suspendUserComputers } from './computer.js';
 import { deleteMemory, listMemories, memoryBot } from './engine-memory.js';
 import { availableModels } from './engine.js';
-import { orgo } from './orgo.js';
 import { revocationsFor, setAppAccess } from './core/app-access.js';
 import { catalog, composioEnabled, connectedToolkits, connectionHealthOf, deleteConnection, disconnect, googleProfile, startConnect, startGoogleLogin, toolkitInfo } from './composio.js';
 import { connectionWatch } from './core/connection-watch.js';
@@ -566,34 +565,26 @@ api.delete('/memories/:id', (c) => {
   return c.json({ ok: true });
 });
 
-api.get('/computer', async (c) => c.json({ computer: await refreshComputer(c.get('user').id) }));
+api.get('/computer', (c) => c.json({ computer: computerState(c.get('user').id) }));
 
 api.post('/computer/ensure', async (c) => {
   const userId = c.get('user').id;
-  // Two kinds of computer behind one button. With an Orgo machine, wake it. Without one, every
-  // bot's desktop is its own container, so "wake" means create/start the containers — asking Orgo
-  // here (which has no id) is what made the viewer's Retry fail with a 500 instead of a screen.
-  if (!env.orgoComputerId && env.computerKind !== 'orgo') {
-    // Every visible bot of this user, oldest first: rooms dispatch to members and hidden subagents
-    // keep their parent's screen, so neither owns a container here.
-    const bots = botRowsForUser(userId).filter((b) => b.kind !== 'room' && !b.hidden);
-    // Booting a container (and, the first time, building the computer image) takes far longer than a
-    // request should. Answer at once with the current state; the viewer follows the computer's state
-    // over SSE and the screen opens when it is ready.
-    for (const b of bots) {
-      if (computerKindFor(b.id) !== 'docker') continue;
-      void providerFor(b.id)
-        .ensureComputer(b.id)
-        .catch((e: Error) => console.warn(`[computer] ${b.id} did not start: ${e.message}`));
-    }
-    return c.json({ computer: computerState(userId) });
+  // Every visible bot of this user, oldest first: rooms dispatch to members and hidden subagents
+  // keep their parent's screen, so neither owns a container here.
+  const bots = botRowsForUser(userId).filter((b) => b.kind !== 'room' && !b.hidden);
+  // Booting a container (and, the first time, building the computer image) takes far longer than a
+  // request should. Answer at once with the current state; the viewer follows the computer's state
+  // over SSE and the screen opens when it is ready.
+  for (const b of bots) {
+    void dockerProvider
+      .ensureComputer(b.id)
+      .catch((e: Error) => console.warn(`[computer] ${b.id} did not start: ${e.message}`));
   }
-  ensureComputer(userId).catch((e) => console.warn('[computer] ensure failed', e.message));
   return c.json({ computer: computerState(userId) });
 });
 
 api.post('/computer/suspend', async (c) => {
-  await suspendComputer(c.get('user').id);
+  await suspendUserComputers(c.get('user').id);
   return c.json({ computer: computerState(c.get('user').id) });
 });
 
@@ -601,15 +592,7 @@ api.get('/bots/:id/screenshot', async (c) => {
   const user = c.get('user');
   const b = ownBot(user.id, c.req.param('id'));
   if (!b) return c.json({ error: 'not found' }, 404);
-  const provider = providerFor(b.id);
-  const scr = db.prepare('SELECT screen_id FROM screens WHERE bot_id=?').get(b.id) as { screen_id: string } | undefined;
-  if (computerKindFor(b.id) === 'docker') {
-    const shot = await provider.screenshot(b.id, '').catch(() => null);
-    if (!shot) return c.body(null, 204);
-    return c.body(new Uint8Array(shot.data), 200, { 'Content-Type': shot.mime, 'Cache-Control': 'no-store' });
-  }
-  if (!env.orgoComputerId || computerState(user.id).status !== 'running' || !scr) return c.body(null, 204);
-  const shot = await provider.screenshot(b.id, scr.screen_id).catch(() => null);
+  const shot = await dockerProvider.screenshot(b.id, '').catch(() => null);
   if (!shot) return c.body(null, 204);
   return c.body(new Uint8Array(shot.data), 200, { 'Content-Type': shot.mime, 'Cache-Control': 'no-store' });
 });
@@ -625,7 +608,7 @@ api.post('/bots/:id/screen/control', async (c) => {
   const body = await requireBody(c, ScreenControlSchema);
   const action = body.action;
   if (action !== 'take' && action !== 'give') return c.json({ error: "action must be 'take' or 'give'" }, 400);
-  const provider = providerFor(b.id);
+  const provider = dockerProvider;
   try {
     const { screenId } = await provider.screenFor(user.id, b.id);
     if (action === 'take') await provider.takeControl(b.id, screenId);

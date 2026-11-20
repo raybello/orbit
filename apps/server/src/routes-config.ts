@@ -1,4 +1,5 @@
 import { Hono } from 'hono';
+import { dockerProvider } from './docker-provider.js';
 import { db, now } from './db.js';
 import './db-config.js';
 import { hub } from './lib/hub.js';
@@ -9,15 +10,12 @@ import { fileHeaders } from './lib/mime.js';
 import { Readable } from 'node:stream';
 import { env } from './env.js';
 import { emitBot, getBotRow, listRoutines, listTasks } from './store.js';
-import { computerState, readyScreen } from './computer.js';
-import { computerKindFor, providerFor } from './computer-provider-registry.js';
-import { box } from './box.js';
-import { openTerminal } from './desk.js';
+import { computerState } from './computer.js';
 import { engineHome, engineInfo, engineKind, forgetEngineOptions, restartEngine, stopOwnScreen, syncAllManagedAuth } from './engine.js';
 import { applyModelChoice, asBlock, readDotenv, readYaml, writePrivate, SHARED_ENV } from './hermes-files.js';
 import { listMemories } from './engine-memory.js';
-import { idleConfig, viewerCount } from './idle.js';
-import { optionalBody, requireBody, SharedSettingsSchema, EngineChoiceSchema, EngineLoginSchema } from './api/schemas.js';
+import { viewerCount } from './idle.js';
+import { optionalBody, requireBody, SharedSettingsSchema, EngineChoiceSchema } from './api/schemas.js';
 import { listLibrary } from './core/skill-library.js';
 import { isInstanceOwner } from './core/data-files.js';
 import { checkSettings, readSharedSettings, saveSharedSettings } from './hermes-settings.js';
@@ -89,34 +87,14 @@ configApi.patch('/bots/:id/engine', async (c) => {
 });
 
 /**
- * Sign in to a model provider (a Claude, ChatGPT or Grok subscription, or an API key). Hermes does
- * the sign-in itself; we open its command in a terminal on the bot's screen, where the user
- * finishes it through the live view.
+ * Sign in to a model provider through a terminal. Every Bot's agent runs with a computer of its own,
+ * where no terminal can reach the agent's files, so model sign-in happens in the model settings.
  */
 configApi.post('/bots/:id/engine/login', async (c) => {
-  const user = c.get('user');
-  const b = ownBot(user.id, c.req.param('id'));
+  const b = ownBot(c.get('user').id, c.req.param('id'));
   if (!b) return c.json({ error: 'not found' }, 404);
-  const home = engineHome(b.id);
-  if (!home) return c.json({ error: 'This bot has no agent.' }, 409);
-  // The agent's files are on the machine this server runs on; a terminal on another machine cannot reach them.
-  if (computerKindFor(b.id) === 'docker') {
-    return c.json({ error: 'Sign-in opens a terminal on the computer where the agent lives, and this Bot has a computer of its own. Use the model settings instead.' }, 409);
-  }
-  if (!box.local) return c.json({ error: 'Sign-in opens a terminal on the computer. It works once the app runs on that computer.' }, 409);
-  const { provider } = await optionalBody(c, EngineLoginSchema, {});
-  if (provider !== undefined && !/^[a-z0-9][a-z0-9._-]{0,40}$/.test(provider)) return c.json({ error: 'bad provider' }, 400);
-  const hermes = `HERMES_HOME=${box.quote(home)} ${box.quote(env.hermesBin)}`;
-  // Claude subscriptions sign in with OAuth; without the flag Hermes asks for an API key.
-  const cmd = !provider ? `${hermes} model` : `${hermes} auth add ${provider}${provider === 'anthropic' ? ' --type oauth' : ''}`;
-  try {
-    const s = await readyScreen(user.id, b.id);
-    await openTerminal(s.screenId, cmd, provider ? `Sign in: ${provider}` : 'Choose a model');
-    forgetEngineOptions(b.id);
-    return c.json({ ok: true });
-  } catch (e) {
-    return c.json({ error: messageOf(e).slice(0, 300) }, 502);
-  }
+  if (!engineHome(b.id)) return c.json({ error: 'This bot has no agent.' }, 409);
+  return c.json({ error: 'Sign-in opens a terminal on the computer where the agent lives, and this Bot has a computer of its own. Use the model settings instead.' }, 409);
 });
 
 configApi.post('/bots/:id/engine/restart', async (c) => {
@@ -314,11 +292,15 @@ configApi.get('/bots/:id/files/raw', async (c) => {
 
 configApi.get('/computer/details', (c) => {
   const userId = c.get('user').id;
-  const leases = db.prepare('SELECT bot_id, screen_id, last_used_at FROM screens WHERE user_id=? ORDER BY last_used_at DESC').all(userId) as { bot_id: string; screen_id: string; last_used_at: number }[];
+  // Each bot's screen on its own computer, most recently set up first.
+  const leases = db.prepare(
+    `SELECT cs.bot_id, cs.screen_id, COALESCE(cs.ensured_at, cs.idle_at, 0) AS last_used_at
+       FROM computer_screens cs JOIN bots b ON b.id=cs.bot_id WHERE b.user_id=? ORDER BY last_used_at DESC`,
+  ).all(userId) as { bot_id: string; screen_id: string; last_used_at: number }[];
   return c.json({
     computer: computerState(userId),
     screens: leases.map((l) => ({ botId: l.bot_id, screenId: l.screen_id, lastUsedAt: l.last_used_at })),
-    hibernation: { idleMinutes: idleConfig.idleMin, viewers: viewerCount(userId), dryRun: idleConfig.dryRun },
+    hibernation: { idleMinutes: env.computerIdleTimeoutMin, viewers: viewerCount(userId) },
   });
 });
 
@@ -328,7 +310,7 @@ configApi.post('/bots/:id/screen/reset', async (c) => {
   const b = ownBot(user.id, c.req.param('id'));
   if (!b) return c.json({ error: 'not found' }, 404);
   try {
-    await providerFor(b.id).resetScreen(user.id, b.id);
+    await dockerProvider.resetScreen(user.id, b.id);
     hub.emit(user.id, { type: 'computer', state: computerState(user.id) });
     return c.json({ ok: true });
   } catch (e) {

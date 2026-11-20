@@ -321,9 +321,8 @@ export interface DataListing { root: string; path: string; files: LibraryFile[];
 
 export interface ComputerState {
   status: 'absent' | 'creating' | 'starting' | 'running' | 'suspending' | 'suspended' | 'resuming' | 'error' | 'stopped';
-  orgoId: string | null;
   error: string | null;
-  /** One screen per bot on the shared computer. width/height are the screen's pixel size. */
+  /** One screen per bot. width/height are the screen's pixel size. */
   screens: { botId: string; screenId: string; width?: number; height?: number }[];
   /** How many bots can have their own screen at once. */
   maxScreens?: number;
@@ -542,7 +541,7 @@ export interface FilesResponse { files: FileEntry[]; total: number; page: number
 export interface BotComputerStatus {
   botId: string;
   botName: string;
-  kind: 'docker' | 'orgo' | 'none';
+  kind: 'docker';
   status: 'awake' | 'sleeping' | 'starting' | 'unknown';
   /** The agent is running a turn right now. */
   isRunning: boolean;
