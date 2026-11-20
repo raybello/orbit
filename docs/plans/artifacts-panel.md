@@ -35,7 +35,7 @@ Tests alone are not sufficient verification. A PR is verified only when its unit
 - [ ] Follow this dependency graph.
   - [ ] A1 is first and branches from `main`.
   - [ ] A2 after A1. A3 after A2.
-  - [ ] A4 after A2, and only if the A1 probe recorded `response.function_call_arguments.delta` events. Otherwise A4 is closed as not buildable and recorded in Appendix A.
+  - [x] A4 is closed. The A1 probe found no `response.function_call_arguments.delta` events. See Appendix A.
   - [ ] A5 after A2. A6 after A5.
 - [ ] Hold the file boundaries. A1 touches only `apps/server/src/**` and `packages/contracts/src/**`. A2 through A6 touch only `apps/web/src/**`, except A4, which also touches `apps/server/src/agent/loop.ts`.
 - [ ] Hold the review gate. A2, A3, A5, and A6 wait for the operator's review in chat with screenshots and a video before merge.
@@ -79,7 +79,7 @@ Each live lane runs on the operator's machine at the PR head, driven through the
 
 **Build.**
 
-- [ ] Add `ArtifactArgs` to contracts as `{ artifactId: ArtifactId; title: string; html: string }`, with `ArtifactId` branded in `branded-types.ts`. Add `isArtifactCall(body: ToolCallBody)`.
+- [x] Add `ArtifactArgs` to contracts as `{ artifactId: ArtifactId; title: string; html: string }`, with `ArtifactId` branded in `branded-types.ts`. Add `artifactArgsOf(body: ToolCallBody): ArtifactArgs | null`, which parses at the boundary instead of a boolean check. `ToolResult.rowArgs` lets the tool rewrite its own row's args, so the minted id lands in the row.
 - [ ] Define `ARTIFACT_TOOL` as a `ToolDef` named `artifact` with `artifact_id` (optional, reuse to update), `title`, and `html`. Mint an id when none is given. Reject `html` over 512 KiB with a message the model can act on. Return the id in `output` so the model can update the same artifact.
 - [ ] Register it beside `BOT_TOOLS` in `registry.ts`.
 - [ ] Add two sentences to the system prompt. Use `artifact` for a page, visualization, or interactive tool, with a complete HTML document. Pass the same `artifact_id` to revise it, and never paste artifact HTML into chat.
@@ -425,7 +425,7 @@ Each live lane runs on the operator's machine at the PR head, driven through the
 
 No prototype ran before this plan. Two questions stay unproven and are settled inside the program.
 
-- Whether Hermes emits `response.function_call_arguments.delta`. `loop.ts` handles `response.output_text.delta` today and nothing for argument deltas (`apps/server/src/agent/loop.ts:552`). A1 lane 10 settles it and gates A4.
+- Whether Hermes emits `response.function_call_arguments.delta`. Settled by A1 lane 10 on 2026-11-19. It does not. A function call arrives whole in `response.output_item.added` and `response.output_item.done` (`docs/evidence/artifacts/A1/event-types.txt`). A4 is closed as not buildable on this Hermes. The person sees "Thinking" for the 60 to 90 seconds the model spends writing the HTML. A2's card should say "Building an artifact" as soon as the row lands, and a Hermes change is the only route to live source.
 - What file-edit tool calls carry in `args`. A6's first Build box settles it and can stop A6.
 
 Settled by reading code, not by a run.

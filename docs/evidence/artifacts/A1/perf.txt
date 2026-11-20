@@ -1,0 +1,7 @@
+A1 perf, local dev stack, GET /api/bots/:id/rows from the browser (performance.now), 10 runs per side.
+Trunk (main 4d50967), real transcript with 4 small artifact rows: 29,809 bytes, median 4.8 ms (min 3.1, max 9.4).
+Head (40cb513), same transcript plus one synthetic 200 KiB artifact row: 234,975 bytes, median 4.9 ms (min 4.4, max 7.0).
+Diff-added work, parseArtifact on a 200 KiB document, 50 runs: median 0.034 ms, max 0.255 ms.
+Rule: head median within 50 ms of trunk, tool step under 20 ms. Pass.
+Caveats: the two sides ran as back-to-back blocks, not interleaved, because switching branches restarts the server. A1 does not change the rows route, so the delta measures payload size only. This is loopback; over a slow remote link a 200 KiB row costs its transfer time.
+The synthetic row was deleted after measuring.
