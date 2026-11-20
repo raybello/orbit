@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState, type KeyboardEvent as ReactKeyboardEvent } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import type { Bot, Routine } from '@orbit/contracts';
 import { BotAvatarFor } from '../avatar/BotAvatar';
 import { PrimaryStar } from './PrimaryStar';
@@ -10,6 +10,7 @@ import { artifactsOf } from '../domain/artifacts';
 import { codeEditsOf } from '../domain/code-edits';
 import { CodePanel } from './CodePanel';
 import { ArtifactPanel } from './ArtifactPanel';
+import { DetailsTabBar } from './DetailsTabBar';
 import { displayName } from '../domain/transcript-utils';
 import { Icon } from './Icon';
 import { ToolkitLogo } from './ToolkitLogo';
@@ -146,7 +147,6 @@ export function DetailsPanel() {
   const artifacts = useMemo(() => artifactsOf(rowList), [rowList]);
   const codeFiles = useMemo(() => codeEditsOf(rowList), [rowList]);
   const [hideSuggested, setHideSuggested] = useState(() => { try { return localStorage.getItem('grokbot.hideSuggested') === '1'; } catch { return false; } });
-  const barRef = useRef<HTMLDivElement>(null);
   if (!bot) return null;
 
   // Rooms are group chats: no computer, no engine and no routines of their own, so their panel is
@@ -168,21 +168,6 @@ export function DetailsPanel() {
     try { const { redirectUrl } = await api.connect('slack'); if (popup) popup.location.href = redirectUrl; } catch { popup?.close(); }
   };
 
-  const onTabKeyDown = (e: ReactKeyboardEvent<HTMLDivElement>) => {
-    const ids = tabs.map((t) => t.id);
-    const at = ids.indexOf(shown);
-    let next = -1;
-    if (e.key === 'ArrowRight') next = (at + 1) % ids.length;
-    else if (e.key === 'ArrowLeft') next = (at - 1 + ids.length) % ids.length;
-    else if (e.key === 'Home') next = 0;
-    else if (e.key === 'End') next = ids.length - 1;
-    if (next < 0) return;
-    e.preventDefault();
-    const id = ids[next];
-    setTab(id);
-    barRef.current?.querySelector<HTMLButtonElement>(`#details-tab-${id}`)?.focus();
-  };
-
   return (
     <aside
       className={`details${open ? '' : ' is-closed'}${open && shown === 'artifact' ? (expanded ? ' is-expanded' : ' is-wide') : open && shown === 'code' ? ' is-wide' : ''}`}
@@ -199,23 +184,7 @@ export function DetailsPanel() {
           <Icon name="close" opacity={0.92} />
         </button>
       </div>
-      <div className="details-tabs" role="tablist" aria-label="Conversation details sections" ref={barRef} onKeyDown={onTabKeyDown}>
-        {tabs.map((t) => (
-          <button
-            key={t.id}
-            type="button"
-            role="tab"
-            id={`details-tab-${t.id}`}
-            aria-selected={shown === t.id}
-            aria-controls="details-tabpanel"
-            tabIndex={shown === t.id ? 0 : -1}
-            className={`details-tab${shown === t.id ? ' is-active' : ''}`}
-            onClick={() => setTab(t.id)}
-          >
-            {t.label}
-          </button>
-        ))}
-      </div>
+      <DetailsTabBar tabs={tabs} shown={shown} onSelect={setTab} />
       <div className="details__scroll" id="details-tabpanel" role="tabpanel" aria-labelledby={`details-tab-${shown}`}>
         {shown === 'screen' && (
           <div className="details__hero">

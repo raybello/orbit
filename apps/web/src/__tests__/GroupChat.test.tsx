@@ -58,7 +58,7 @@ describe('group chat details', () => {
     expect(await screen.findByText('Scout')).toBeTruthy();
     expect(screen.getByRole('switch', { name: 'Mute chat' })).toBeTruthy();
     expect(screen.getByRole('button', { name: /Leave/ })).toBeTruthy();
-    expect(container.querySelectorAll('.details-tab').length).toBe(0);
+    expect(container.querySelectorAll('[role="tab"]').length).toBe(0);
     expect(screen.queryByText('Engine')).toBeNull();
   });
 
@@ -132,7 +132,7 @@ describe('group chat details', () => {
 
     expect(screen.queryByText('Leave')).toBeNull();
     expect(screen.queryByRole('switch', { name: 'Mute chat' })).toBeNull();
-    expect([...container.querySelectorAll('.details-tab')].map((t) => t.textContent)).toEqual([
+    expect([...container.querySelectorAll('[role="tab"]')].map((t) => t.textContent)).toEqual([
       'Screen', 'Activity', 'Tasks', 'Library', 'Engine',
     ]);
   });
