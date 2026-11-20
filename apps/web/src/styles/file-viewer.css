@@ -38,3 +38,14 @@
 .file-viewer__md .md table { border-collapse: collapse; }
 .file-viewer__md .md th, .file-viewer__md .md td { padding: 4px 10px; border: 1px solid var(--color-border-tertiary); text-align: left; }
 .file-viewer__md .md th { background: var(--color-bg-tertiary); font-weight: 600; }
+
+/* An HTML file renders as a page, framed like an artifact; a CSV renders as a table. */
+.file-viewer__page { flex: 1 1 auto; min-height: 0; background: #fff; }
+.file-viewer__csv { flex: 1 1 auto; min-height: 0; overflow: auto; }
+.file-viewer__csv table { border-collapse: collapse; font-size: 13px; line-height: 18px; }
+.file-viewer__csv th, .file-viewer__csv td {
+  padding: 6px 10px; border-bottom: 1px solid var(--color-border-tertiary); text-align: left;
+  white-space: nowrap; max-width: 360px; overflow: hidden; text-overflow: ellipsis; color: var(--color-text-primary);
+}
+.file-viewer__csv th { position: sticky; top: 0; background: var(--color-bg-pane); font-weight: 600; color: var(--color-ink); }
+.file-viewer__csv tbody tr:hover td { background: var(--color-bg-hover); }

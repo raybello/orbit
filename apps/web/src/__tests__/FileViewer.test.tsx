@@ -10,6 +10,7 @@ vi.mock('../lib/configApi', () => ({
 
 import { configApi } from '../lib/configApi';
 import { FileViewer } from '../components/files/FileViewer';
+import { FileParts } from '../components/FilePart';
 import { LibraryTab, resolveDataHref } from '../components/config/LibraryTab';
 
 const dataFiles = vi.mocked(configApi.dataFiles);
@@ -28,6 +29,12 @@ describe('which viewer opens a file', () => {
     for (const n of ['call.mp3', 'clip.mp4', 'paper.pdf', 'site.zip', 'orbit.db', 'model.gguf']) expect(viewerFor(n), n).toBe('other');
     for (const n of ['main.py', 'config.yaml', 'Dockerfile', 'LICENSE', 'gateway.out.log', 'data.json']) expect(viewerFor(n), n).toBe('text');
     expect(viewerFor('blob', 'image/webp')).toBe('image');
+  });
+  it('HTML renders as a page and CSV as a table', () => {
+    for (const n of ['index.html', 'REPORT.HTM']) expect(viewerFor(n), n).toBe('html');
+    for (const n of ['sales.csv', 'export.TSV']) expect(viewerFor(n), n).toBe('csv');
+    expect(viewerFor('download', 'text/html; charset=utf-8')).toBe('html');
+    expect(viewerFor('download', 'text/csv')).toBe('csv');
   });
 });
 
@@ -103,3 +110,54 @@ describe('the Library panel', () => {
     await waitFor(() => expect(dataFiles).toHaveBeenLastCalledWith({ path: 'engines/primary/workspace', botId: 'bot_atlas' }));
   });
 });
+
+describe('rendered files', () => {
+  it('shows an HTML file as a page in the artifact sandbox, with its source a click away', async () => {
+    const page = '<!doctype html><h1>Q3 report</h1><script>parent.x = 1</script>';
+    serve(bytes(page));
+    render(<FileViewer file={{ name: 'report.html', url: '/x' }} onClose={() => {}} />);
+    await waitFor(() => expect(document.querySelector('iframe')).toBeTruthy());
+    const frame = document.querySelector('iframe')!;
+    expect(frame.getAttribute('srcdoc')).toBe(page);
+    expect(frame.getAttribute('sandbox')!.split(' ')).not.toContain('allow-same-origin');
+
+    fireEvent.click(screen.getByRole('tab', { name: 'Source' }));
+    expect(document.querySelector('iframe')).toBeNull();
+  });
+
+  it('opens Markdown too long to render as its source, so the page never freezes', async () => {
+    serve(bytes(`# Big\n\n${'- item\n'.repeat(20_000)}`));
+    render(<FileViewer file={{ name: 'huge.md', url: '/x' }} onClose={() => {}} />);
+    expect(await screen.findByText('Too long to render as Markdown, so this is its source.')).toBeTruthy();
+    expect(screen.queryByRole('heading', { name: 'Big' })).toBeNull();
+    expect(screen.queryByRole('tab', { name: 'Preview' })).toBeNull();
+  });
+
+  it('shows a CSV as a table with its header row', async () => {
+    serve(bytes('city,people\n"Lagos, NG",15000000\nOslo,700000\n'));
+    render(<FileViewer file={{ name: 'cities.csv', url: '/x' }} onClose={() => {}} />);
+    expect(await screen.findByRole('columnheader', { name: 'city' })).toBeTruthy();
+    expect(screen.getByRole('cell', { name: 'Lagos, NG' })).toBeTruthy();
+    expect(screen.getAllByRole('row')).toHaveLength(3);
+  });
+});
+
+describe('a file in a chat message', () => {
+  const file = (filename: string, mediaType: string) => ({ path: `out/${filename}`, filename, mediaType });
+
+  it('opens in the viewer when it can be shown', async () => {
+    serve(bytes('# Plan\n\nShip it.'));
+    render(<FileParts files={[file('plan.md', 'text/markdown')]} botId="b1" />);
+    fireEvent.click(screen.getByRole('button', { name: 'Open plan.md' }));
+    expect(await screen.findByRole('heading', { name: 'Plan' })).toBeTruthy();
+    expect(vi.mocked(fetch)).toHaveBeenCalledWith('/api/bots/b1/files/raw?path=out%2Fplan.md', expect.anything());
+  });
+
+  it('downloads when it cannot', () => {
+    render(<FileParts files={[file('site.zip', 'application/zip')]} botId="b1" />);
+    const link = screen.getByTitle('Download site.zip');
+    expect(link.getAttribute('download')).toBe('site.zip');
+    expect(screen.queryByRole('button', { name: /Open site.zip/ })).toBeNull();
+  });
+});
+
