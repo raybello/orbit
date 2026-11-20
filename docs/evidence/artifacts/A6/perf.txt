@@ -1,0 +1,6 @@
+A6 perf, headless Chromium at 1280 x 800. Lane Seven's chat with a created 5,000-line file, a one-line patch and a full rewrite. 10 runs, interleaved with a baseline of switching to the Screen tab.
+Code tab, click to the first diff painted: median 132.9 ms, max 135.1 ms, worst frame 132.5 ms. Budget 200 ms. Pass.
+Baseline Screen tab: median 16.9 ms, max 17.7 ms.
+Before the 400-line draw cap: median 216.2 ms, max 291.9 ms, worst frame 281.8 ms. That failed the budget and drove the cap.
+lineDiff on a 5,000-line file with one changed line (unit test): under 200 ms, asserted.
+The Code tab adds no work to the transcript. codeEditsOf runs in the details panel over rows the store already holds.

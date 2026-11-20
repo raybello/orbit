@@ -7,6 +7,8 @@ import { botVars } from '../lib/colors';
 import { computerStatusText } from '../lib/computer';
 import { useSelectedBot, useStore, type DetailsTab } from '../store';
 import { artifactsOf } from '../domain/artifacts';
+import { codeEditsOf } from '../domain/code-edits';
+import { CodePanel } from './CodePanel';
 import { ArtifactPanel } from './ArtifactPanel';
 import { displayName } from '../domain/transcript-utils';
 import { Icon } from './Icon';
@@ -24,7 +26,7 @@ import { BotTasks } from './config/TasksView';
 export { computerStatusText };
 
 const TAB_LABELS: Record<DetailsTab, string> = {
-  screen: 'Screen', activity: 'Activity', tasks: 'Tasks', library: 'Library', engine: 'Engine', artifact: 'Artifact',
+  screen: 'Screen', activity: 'Activity', tasks: 'Tasks', library: 'Library', engine: 'Engine', artifact: 'Artifact', code: 'Code',
 };
 
 function Toggle({ on, onChange, label }: { on: boolean; onChange: (v: boolean) => void; label: string }) {
@@ -140,7 +142,9 @@ export function DetailsPanel() {
   const expanded = useStore((s) => s.artifactExpanded);
   const setTab = (detailsTab: DetailsTab) => set({ detailsTab });
   const bySeq = useStore((s) => (bot ? s.transcripts[bot.id]?.bySeq : undefined));
-  const artifacts = useMemo(() => artifactsOf(bySeq ? Object.values(bySeq) : []), [bySeq]);
+  const rowList = useMemo(() => (bySeq ? Object.values(bySeq) : []), [bySeq]);
+  const artifacts = useMemo(() => artifactsOf(rowList), [rowList]);
+  const codeFiles = useMemo(() => codeEditsOf(rowList), [rowList]);
   const [hideSuggested, setHideSuggested] = useState(() => { try { return localStorage.getItem('grokbot.hideSuggested') === '1'; } catch { return false; } });
   const barRef = useRef<HTMLDivElement>(null);
   if (!bot) return null;
@@ -149,7 +153,11 @@ export function DetailsPanel() {
   // the people and the group options instead of the tabs a Bot has.
   if (bot.kind === 'room') return <GroupDetails bot={bot} open={open} />;
 
-  const ids: DetailsTab[] = artifacts.size ? ['artifact', 'screen', 'activity', 'tasks', 'library', 'engine'] : ['screen', 'activity', 'tasks', 'library', 'engine'];
+  const ids: DetailsTab[] = [
+    ...(artifacts.size ? (['artifact'] as const) : []),
+    ...(codeFiles.length ? (['code'] as const) : []),
+    'screen', 'activity', 'tasks', 'library', 'engine',
+  ];
   const tabs = ids.map((id) => ({ id, label: TAB_LABELS[id] }));
   // Switching from a bot on Engine to a room (or a vanished tab) lands back on the first tab.
   const shown: DetailsTab = tabs.some((t) => t.id === tab) ? tab : 'screen';
@@ -177,7 +185,7 @@ export function DetailsPanel() {
 
   return (
     <aside
-      className={`details${open ? '' : ' is-closed'}${open && shown === 'artifact' ? (expanded ? ' is-expanded' : ' is-wide') : ''}`}
+      className={`details${open ? '' : ' is-closed'}${open && shown === 'artifact' ? (expanded ? ' is-expanded' : ' is-wide') : open && shown === 'code' ? ' is-wide' : ''}`}
       style={botVars(bot.avatarColor)}
       aria-label="Conversation details"
       aria-hidden={open ? undefined : true}
@@ -263,6 +271,7 @@ export function DetailsPanel() {
           </div>
         )}
         {shown === 'artifact' && <ArtifactPanel key={bot.id} botId={bot.id} artifacts={artifacts} />}
+        {shown === 'code' && <CodePanel key={bot.id} files={codeFiles} />}
         {shown === 'tasks' && <BotTasks bot={bot} />}
         {shown === 'library' && <LibraryTab bot={bot} />}
         {shown === 'engine' && (

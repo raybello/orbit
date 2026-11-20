@@ -1,0 +1,15 @@
+What Hermes file-edit tool calls carry in an Orbit tool-call row's args. Recorded 2026-11-19 from a live Atlas turn (rows 32 and 33) and from the schemas in ~/.hermes/hermes-agent/tools/file_tools.py.
+
+write_file   { path, content }. The whole new file.
+             Row 32: { path: "scratch/fizz.py", content: "def fizzbuzz(n): ..." }
+
+patch        Replace mode, the default and the only mode advertised outside OpenAI-family models:
+             { path, old_string, new_string, replace_all? }
+             Row 33: { path: "scratch/fizz.py", old_string: "        if i % 5 == 0:\n            out += \"Buzz\"", new_string: "...\n        if i % 7 == 0:\n            out += \"Bazz\"" }
+
+patch        V4A mode, accepted from any model:
+             { mode: "patch", patch: "*** Begin Patch\n*** Update File: <path>\n@@ ...\n-old\n+new\n*** End Patch" }
+             One patch can add, update, delete or move several files.
+
+Hermes applies replace mode with fuzzy matching (9 strategies), so an exact replay of old_string over the last known content can miss. The Code tab then shows the edit but no longer claims the full file.
+Finding: rows carry content, so A6 is buildable.
