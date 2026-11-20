@@ -8,6 +8,7 @@ import './styles/shell.css';
 import './styles/chat.css';
 import './styles/cards.css';
 import './styles/details.css';
+import './styles/artifact.css';
 import './styles/modals.css';
 import './styles/viewer.css';
 import './styles/voice.css';

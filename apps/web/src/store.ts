@@ -1,10 +1,15 @@
 import { create } from 'zustand';
-import type { ActivityItem, Bot, ComputerState, LiveState, Routine, Row, ServerEvent, User } from '@orbit/contracts';
+import type { ActivityItem, ArtifactId, Bot, ComputerState, LiveState, Routine, Row, ServerEvent, User } from '@orbit/contracts';
 import { api } from './lib/api';
 import { activityFromRow, activityPreview, botNameFor, mergeActivity, pruneSeen } from './domain/activity-feed';
 import type { Transcript } from './domain/transcript-utils';
 
 export type ModalKind = 'create' | 'search' | 'apps' | 'group' | 'team' | null;
+
+export type DetailsTab = 'screen' | 'activity' | 'tasks' | 'library' | 'engine' | 'artifact';
+
+/** The artifact a Bot's panel shows. `seq` pins one version; null follows the latest. */
+export interface OpenArtifact { artifactId: ArtifactId; seq: number | null }
 
 interface State {
   user: User | null;
@@ -39,6 +44,9 @@ interface State {
   sseConnected: boolean;
 
   detailsOpen: boolean;
+  detailsTab: DetailsTab;
+  /** Per Bot, so switching chats and back lands on the same artifact. */
+  openArtifacts: Record<string, OpenArtifact>;
   modal: ModalKind;
   viewerOpen: boolean;
   /** How the large computer view opens, and the mode it is in while open. */
@@ -61,6 +69,7 @@ interface State {
   handleEvent(ev: ServerEvent): void;
   setModal(m: ModalKind): void;
   set(p: Partial<State>): void;
+  openArtifact(botId: string, target: OpenArtifact): void;
   toggleMuteRoom(id: string): void;
 }
 
@@ -93,6 +102,8 @@ export const useStore = create<State>((set, get) => ({
   sseConnected: false,
   // Closed by default (Teams): the conversation takes the full width until asked otherwise.
   detailsOpen: lsGet(LS_DETAILS) === '1',
+  detailsTab: 'screen',
+  openArtifacts: {},
   modal: null,
   viewerOpen: false,
   viewerMode: 'watch',
@@ -328,6 +339,11 @@ export const useStore = create<State>((set, get) => ({
   set(p) {
     if (p.detailsOpen !== undefined) lsSet(LS_DETAILS, p.detailsOpen ? '1' : '0');
     set(p);
+  },
+
+  openArtifact(botId, target) {
+    lsSet(LS_DETAILS, '1');
+    set((s) => ({ detailsOpen: true, detailsTab: 'artifact', openArtifacts: { ...s.openArtifacts, [botId]: target } }));
   },
 
   toggleMuteRoom(id) {

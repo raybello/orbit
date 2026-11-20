@@ -1,5 +1,5 @@
 import { Fragment, memo, useLayoutEffect, useMemo, useRef, useState } from 'react';
-import type { Bot, LiveState, MessageBody, Row, ToolCallBody } from '@orbit/contracts';
+import { artifactArgsOf, type ArtifactArgs, type Bot, type LiveState, type MessageBody, type Row, type ToolCallBody } from '@orbit/contracts';
 import { BotAvatarFor } from '../avatar/BotAvatar';
 import { isWaitingForYou } from '../lib/phrases';
 import { clock, dividerLabel, duration } from '../lib/time';
@@ -7,6 +7,8 @@ import { useStore } from '../store';
 import { displayName } from '../domain/transcript-utils';
 import { ThinkingBlock } from './ActivityLine';
 import { CardRow } from './cards/Cards';
+import { ArtifactCard } from './cards/ArtifactCard';
+import { artifactsOf, versionOf } from '../domain/artifacts';
 import { FileParts } from './FilePart';
 import { Icon } from './Icon';
 import { Markdown } from './Markdown';
@@ -16,6 +18,7 @@ type Item =
   | { kind: 'divider'; key: string; ts: number }
   | { kind: 'group'; key: string; side: 'left' | 'right'; from?: MessageBody['from']; rows: Row[] }
   | { kind: 'steps'; key: string; rows: Row[]; /** Row timestamps just before and just after the run of steps. */ startTs: number | null; endTs: number | null }
+  | { kind: 'artifact'; key: string; row: Row; artifact: ArtifactArgs }
   | { kind: 'row'; key: string; row: Row };
 
 const DIVIDER_GAP = 60 * 60 * 1000;
@@ -30,6 +33,12 @@ function buildItems(rows: Row[]): Item[] {
     prevTs = row.createdAt;
     const last = items[items.length - 1];
     const b = row.body;
+    const artifact = b.type === 'tool-call' ? artifactArgsOf(b) : null;
+    if (artifact) {
+      if (last?.kind === 'steps' && last.endTs === null) last.endTs = row.createdAt;
+      items.push({ kind: 'artifact', key: `a${row.seq}`, row, artifact });
+      continue;
+    }
     if (b.type === 'tool-call') {
       if (last?.kind === 'steps') last.rows.push(row);
       else items.push({ kind: 'steps', key: `s${row.seq}`, rows: [row], startTs: before || null, endTs: null });
@@ -217,6 +226,7 @@ export function Transcript({ bot, rows, live, loaded }: Props) {
   const stick = useRef(true);
   const [showJump, setShowJump] = useState(false);
   const items = useMemo(() => buildItems(rows), [rows]);
+  const artifacts = useMemo(() => artifactsOf(rows), [rows]);
 
   const bots = useStore((s) => s.bots);
   const running = !!live?.isRunning;
@@ -274,6 +284,12 @@ export function Transcript({ bot, rows, live, loaded }: Props) {
               return <div key={it.key} className="divider">{dividerLabel(it.ts)}</div>;
             case 'steps':
               return <div key={it.key} className="lane"><Steps item={it} active={it.key === activeKey} open={it.key === openKey} extra={extraSteps} /></div>;
+            case 'artifact':
+              return (
+                <div key={it.key} className="lane">
+                  <ArtifactCard botId={bot.id} seq={it.row.seq} artifact={it.artifact} version={versionOf(artifacts, it.artifact.artifactId, it.row.seq)} />
+                </div>
+              );
             case 'row':
               // Events mark the timeline, like dividers; everything else a bot produces sits in its text column.
               return it.row.body.type === 'event'

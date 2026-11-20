@@ -1,0 +1,40 @@
+/* ---------- artifacts: the card in chat and the Artifact tab ---------- */
+/* Wider for a page, but never at the chat's expense: past the nav rail, chat list and a readable chat column. */
+.details.is-wide { --wide: clamp(var(--details-panel-width), calc(100vw - 780px), 680px); flex-basis: var(--wide); width: var(--wide); }
+
+.artifact-card {
+  display: flex; align-items: center; gap: 12px; max-width: 420px; margin: 4px 0;
+  padding: 10px 12px; border-radius: 12px; background: var(--color-bg-pane);
+  border: 1px solid var(--color-border-tertiary);
+  transition: border-color 140ms var(--ease-out);
+}
+.artifact-card.is-showing { border-color: var(--accent-500); }
+.artifact-card__icon {
+  display: grid; place-items: center; width: 36px; height: 36px; flex-shrink: 0;
+  border-radius: 8px; background: var(--color-bg-tertiary);
+}
+.artifact-card__text { display: flex; flex-direction: column; flex: 1 1 0; min-width: 0; }
+.artifact-card__title { font-size: 14px; font-weight: 500; line-height: 20px; color: var(--color-ink); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.artifact-card__sub { font-size: 12px; line-height: 16px; color: var(--color-text-tertiary); }
+
+.artifact-panel { display: flex; flex-direction: column; height: 100%; min-height: 0; }
+.details__scroll:has(> .artifact-panel) { overflow: hidden; display: flex; flex-direction: column; }
+.artifact-panel__head { display: flex; align-items: center; gap: 8px; padding: 10px 16px 4px; }
+.artifact-panel__title { flex: 1 1 0; min-width: 0; font-size: 15px; font-weight: 500; line-height: 22px; color: var(--color-ink); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.artifact-panel__version select {
+  height: 28px; padding: 0 8px; border-radius: 6px; font-size: 12px;
+  background: var(--color-bg-tertiary); color: var(--color-ink); border: 1px solid var(--color-border-tertiary);
+}
+.artifact-panel__bar { display: flex; align-items: center; gap: 4px; padding: 4px 12px 8px; }
+.artifact-panel__spacer { flex: 1 1 0; }
+.artifact-panel__body {
+  flex: 1 1 0; min-height: 0; margin: 0 12px 12px; overflow: hidden;
+  border-radius: 10px; border: 1px solid var(--color-border-tertiary); background: #fff;
+}
+.artifact-frame { display: block; width: 100%; height: 100%; border: 0; background: #fff; }
+.artifact-source {
+  height: 100%; margin: 0; padding: 12px; overflow: auto; white-space: pre-wrap; overflow-wrap: anywhere;
+  font-family: var(--font-mono-stack); font-size: 12px; line-height: 18px;
+  background: var(--color-bg-pane); color: var(--color-text-primary);
+}
+.artifact-empty { margin: 16px; }

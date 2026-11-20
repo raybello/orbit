@@ -1,0 +1,4 @@
+A2 perf.
+artifactsOf over 200 rows holding 3 artifacts of 200 KiB, 200 runs after 200 warm-up runs (tsx, node 22): median 0.0040 ms, p95 0.0046 ms. It collects references to the HTML strings and never copies them. Budget 1 ms. Pass.
+Click Open to the iframe load event, browser pane, alternating Dice Roller and Tip Calculator, 10 runs: median 91.9 ms, max 96.8 ms. Budget 300 ms. Pass.
+Not measured: transcript commit time against trunk with the React Profiler. The fold adds one useMemo over the rows array the Transcript already memoizes. Trunk has no fold.
