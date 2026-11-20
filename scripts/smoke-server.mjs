@@ -455,27 +455,27 @@ try {
 
   const withFile = await request('/api/files', { headers: bearer });
   checkShape('GET /api/files after an attachment lands', withFile, 200, ['files', 'total']);
-  const attachment = (withFile.body?.files ?? []).find((f) => f.type === 'attachment');
-  checkEqual('the attachment is listed with its name and size', {
-    botId: attachment?.botId,
-    botName: attachment?.botName,
-    filename: attachment?.filename,
-    type: attachment?.type,
-    size: attachment?.size,
-  }, {
+  // The attachment is a Library file (they share one folder), so All lists it once, as that file.
+  const noteRows = (withFile.body?.files ?? []).filter((f) => f.filename === NOTE);
+  checkEqual('All lists the attached file once, with its name and size', noteRows.map((f) => ({
+    botId: f.botId,
+    botName: f.botName,
+    filename: f.filename,
+    size: f.size,
+  })), [{
     botId: MANAGED_BOT,
     botName: MANAGED_NAME,
     filename: NOTE,
-    type: 'attachment',
     size: Buffer.byteLength(NOTE_TEXT),
-  });
-  check('the attachment carries a text media type', String(attachment?.mediaType).startsWith('text/plain'),
-    String(attachment?.mediaType));
+  }]);
   const attachmentsOnly = await request('/api/files?type=attachment', { headers: bearer });
   checkEqual('the Attachments filter returns just that file', {
     total: attachmentsOnly.body?.total,
     types: [...new Set((attachmentsOnly.body?.files ?? []).map((f) => f.type))],
   }, { total: 1, types: ['attachment'] });
+  const attachment = (attachmentsOnly.body?.files ?? [])[0];
+  check('the attachment carries a text media type', String(attachment?.mediaType).startsWith('text/plain'),
+    String(attachment?.mediaType));
   if (attachment?.id) {
     const download = await fetch(`${base}${attachment.downloadUrl}`, { headers: bearer });
     const text = await download.text();
