@@ -92,7 +92,7 @@ test('a stuck bot is sent to reassess twice, then the person is asked', () => {
   for (let i = 0; i < MAX_REASSESS; i++) {
     const n = nextStep(run, trip, 0, 'Quill');
     assert.equal(n.do, 'reassess');
-    assert.equal((n as { notice: string }).notice, 'Quill was stuck: terminal failed 3 times with the same arguments: No such file. Asked it to step back and try another way.');
+    assert.equal((n as { notice: string }).notice, 'Quill was stuck: terminal failed the same way 3 times with nothing changed in between: No such file. Asked it to step back and try another way.');
     run = (n as { state: RunState }).state;
   }
   const last = nextStep(run, trip, 0, 'Quill');
@@ -100,6 +100,33 @@ test('a stuck bot is sent to reassess twice, then the person is asked', () => {
   assert.match((last as { notice: string }).notice, /still stuck after trying another way 2 times/);
   assert.equal(nextStep(run, { ok: true }, 0).do, 'done');
   assert.equal(nextStep(run, { ok: false, stopped: true }, 0).do, 'stopped');
+});
+
+test('fixing a build between runs is iteration, not a loop', () => {
+  // Recorded from Atlas on the desktop stack: make ran three times, failing differently each time,
+  // with a package installed or the Makefile patched in between. The old rule tripped on the third.
+  const make = '{"command":"cd /data/engines/primary/workspace/riscv-demo && make 2>&1"}';
+  const live = [
+    ev('terminal', make, false, 'h127', 'Exit code 127: /usr/bin/bash: line 7: make: command not found'),
+    ev('terminal', '{"command":"apt-get install -y make 2>&1 | tail -3"}', true),
+    ev('terminal', '{"command":"apt-get update -q && apt-get install -y make","timeout":120}', true),
+    ev('terminal', make, false, 'h255', 'Exit code 2: make: *** [Makefile:14: main.elf] Error 255'),
+    ev('terminal', '{"command":"apt-get install -y gcc-riscv64-unknown-elf qemu-system-misc","timeout":120}', true),
+    ev('patch', '{"path":"riscv-demo/Makefile","old_string":"CC = /opt/riscv/bin/gcc","new_string":"CC = riscv64-unknown-elf-gcc"}', true),
+    ev('terminal', make, false, 'h1', 'Exit code 2: make: *** [Makefile:15: main.elf] Error 1'),
+  ];
+  for (let i = 1; i <= live.length; i++) assert.equal(checkLoop(live.slice(0, i)), null, `no trip after call ${i}`);
+
+  const sameError = (out: string) => ev('terminal', make, false, out, 'Exit code 2: make: *** [Makefile:15: main.elf] Error 1');
+  const edit = ev('patch', '{"path":"Makefile","old_string":"a","new_string":"b"}', true);
+  assert.equal(checkLoop([sameError('h1'), edit, sameError('h1'), edit, sameError('h1')]), null, 'each run after an edit tests new code');
+  assert.equal(checkLoop([sameError('h1'), sameError('h2'), sameError('h3')]), null, 'a different result is a different failure');
+  assert.deepEqual(
+    checkLoop([sameError('h1'), ev('read_file', '{"path":"Makefile"}', true), sameError('h1'), sameError('h1')]),
+    { rule: 'same-call-failed', tool: 'terminal', count: 3, error: 'Exit code 2: make: *** [Makefile:15: main.elf] Error 1' },
+    'reading a file changes nothing, so three identical failures still trip',
+  );
+  assert.deepEqual(checkLoop([sameError('h1'), edit, sameError('h1'), sameError('h1'), sameError('h1')])?.count, 3, 'the count restarts at the edit');
 });
 
 test('the continuation messages carry the request, what already ran, and the visible first line', () => {
@@ -110,7 +137,8 @@ test('the continuation messages carry the request, what already ran, and the vis
   assert.match(r, /before you repeat anything that sends, creates or changes something/);
   assert.match(r, /The request was:\nDraft the Monday email$/);
   const a = reassessInput('Read the notes', { rule: 'same-call-failed', tool: 'terminal', count: 3 }, events);
-  assert.match(a, /Do not call terminal again with those arguments/);
+  assert.match(a, /Running it again unchanged will fail the same way\. Find out why it failed first/);
+  assert.doesNotMatch(a, /Do not call/, 'the bot may run the command again once it has fixed the cause');
   assert.match(a, /"I was stuck on X, so I'm trying Y\."/);
 });
 

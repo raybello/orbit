@@ -110,7 +110,7 @@ ${request.slice(0, MAX_REQUEST)}`;
 
 /** The message a reassess attempt starts with. The bot's first line says what it was stuck on, for the person. */
 export function reassessInput(request: string, trip: LoopTrip, events: readonly ToolEvent[]): string {
-  return `You were stuck: ${describeTrip(trip)}. Do not call ${trip.tool} again with those arguments.
+  return `You were stuck: ${describeTrip(trip)}. Running it again unchanged will fail the same way. Find out why it failed first (read the full error, check the files and tools it depends on), then change something (the command, a file it uses, or your approach) before you run it again.
 Start your reply with one short line telling the user what you were stuck on and what you will try instead (for example "I was stuck on X, so I'm trying Y."), then do it. If there is no other way, ask the user with ask_user.
 
 Tool calls so far:
