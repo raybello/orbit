@@ -6,7 +6,7 @@ import type { Transcript } from './domain/transcript-utils';
 
 export type ModalKind = 'create' | 'search' | 'apps' | 'group' | 'team' | null;
 
-export type DetailsTab = 'screen' | 'activity' | 'tasks' | 'library' | 'engine' | 'artifact';
+export type DetailsTab = 'screen' | 'activity' | 'tasks' | 'library' | 'engine' | 'artifact' | 'code';
 
 /** The artifact a Bot's panel shows. `seq` pins one version; null follows the latest. */
 export interface OpenArtifact { artifactId: ArtifactId; seq: number | null }

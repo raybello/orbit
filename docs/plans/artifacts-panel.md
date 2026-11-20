@@ -426,7 +426,7 @@ Each live lane runs on the operator's machine at the PR head, driven through the
 No prototype ran before this plan. Two questions stay unproven and are settled inside the program.
 
 - Whether Hermes emits `response.function_call_arguments.delta`. Settled by A1 lane 10 on 2026-11-19. It does not. A function call arrives whole in `response.output_item.added` and `response.output_item.done` (`docs/evidence/artifacts/A1/event-types.txt`). A4 is closed as not buildable on this Hermes. The person sees "Thinking" for the 60 to 90 seconds the model spends writing the HTML. A2's card should say "Building an artifact" as soon as the row lands, and a Hermes change is the only route to live source.
-- What file-edit tool calls carry in `args`. A6's first Build box settles it and can stop A6.
+- What file-edit tool calls carry in `args`. Settled by A6 on 2026-11-19. `write_file` carries `{ path, content }`, and `patch` carries `{ path, old_string, new_string, replace_all? }` or a V4A `{ mode: "patch", patch }` (`docs/evidence/artifacts/A6/edit-tools.txt`). A6 was buildable.
 - Where file previews live. Settled by the operator on 2026-11-19, after PR #42 shipped a file viewer dialog. A5 extends that dialog (HTML in the artifact sandbox, CSV as a table, chat attachments open in it) instead of adding a Preview tab. PDF stays a download, because inline PDF needs the data route's sandboxing CSP relaxed.
 
 Settled by reading code, not by a run.
