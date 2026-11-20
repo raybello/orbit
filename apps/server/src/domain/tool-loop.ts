@@ -13,7 +13,7 @@ export type LoopRule = 'same-call-failed' | 'consecutive-failures' | 'no-progres
 export interface LoopTrip { rule: LoopRule; tool: string; count: number; error?: string }
 
 export interface LoopLimits {
-  /** The same tool with the same arguments failed this many times. */
+  /** The same tool with the same arguments failed the same way this many times, with no file edited between. */
   sameCallFailures: number;
   /** This many tool calls in a row failed, whatever they were. */
   consecutiveFailures: number;
@@ -27,6 +27,27 @@ export const DEFAULT_LIMITS: LoopLimits = { sameCallFailures: 3, consecutiveFail
 
 /** Tools that are meant to be called again with the same arguments (waiting, polling, looking). */
 const REPEATABLE = /screenshot|wait|sleep|poll|status|process|read_page|windows/i;
+
+/**
+ * Tools that change a file. Running a build or test again after one of these succeeded is the next
+ * step of fixing it, not a loop: `make` fails, the Makefile is patched, `make` runs again.
+ */
+const EDITS = new Set(['write_file', 'patch', 'save_file']);
+
+/**
+ * Failures of `last`'s exact call that came out the same as it, back to the last file edit. A
+ * different error means the world changed between runs (a package installed, a file fixed), so
+ * only identical results count as the bot repeating itself.
+ */
+function sameFailures(events: readonly ToolEvent[], last: ToolEvent): number {
+  let n = 0;
+  for (let i = events.length - 1; i >= 0; i--) {
+    const e = events[i];
+    if (e.ok && EDITS.has(e.name)) break;
+    if (!e.ok && e.name === last.name && e.args === last.args && e.output === last.output) n++;
+  }
+  return n;
+}
 
 /**
  * A tool result without the notes Hermes appends to it ("[Tool loop warning: …]", "[hermes note:
@@ -44,7 +65,7 @@ export function checkLoop(events: readonly ToolEvent[], limits: LoopLimits = DEF
   if (events.length > limits.maxToolCalls) return { rule: 'step-budget', tool: last.name, count: events.length };
 
   if (!last.ok) {
-    const same = events.filter((e) => !e.ok && e.name === last.name && e.args === last.args).length;
+    const same = sameFailures(events, last);
     if (same >= limits.sameCallFailures) return { rule: 'same-call-failed', tool: last.name, count: same, ...(last.error ? { error: last.error } : {}) };
     let run = 0;
     for (let i = events.length - 1; i >= 0 && !events[i].ok; i--) run++;
@@ -66,7 +87,7 @@ export function checkLoop(events: readonly ToolEvent[], limits: LoopLimits = DEF
 export function describeTrip(t: LoopTrip): string {
   const why = t.error ? `: ${t.error.slice(0, 200)}` : '';
   switch (t.rule) {
-    case 'same-call-failed': return `${t.tool} failed ${t.count} times with the same arguments${why}`;
+    case 'same-call-failed': return `${t.tool} failed the same way ${t.count} times with nothing changed in between${why}`;
     case 'consecutive-failures': return `${t.count} tool calls in a row failed, the last one ${t.tool}${why}`;
     case 'no-progress': return `${t.tool} returned the same result ${t.count} times in a row`;
     case 'step-budget': return `it made ${t.count} tool calls in one turn without finishing`;

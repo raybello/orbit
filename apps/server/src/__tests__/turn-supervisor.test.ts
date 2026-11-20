@@ -202,9 +202,9 @@ test('a bot looping on a failing call is stopped and sent to reassess, and says 
 
   const stuck = rows().filter((r) => r.kind === 'tool-call');
   assert.equal(stuck.length, 3, 'stopped on the third identical failure, one past Hermes\'s warning');
-  assert.match(inputs[1], /^\[System notice\] You were stuck: terminal failed 3 times with the same arguments: Exit code 1: cat: \/missing\.txt: No such file or directory\. Do not call terminal again with those arguments\./);
+  assert.match(inputs[1], /^\[System notice\] You were stuck: terminal failed the same way 3 times with nothing changed in between: Exit code 1: cat: \/missing\.txt: No such file or directory\. Running it again unchanged will fail the same way\./);
   assert.match(inputs[1], /Start your reply with one short line telling the user what you were stuck on/);
-  assert.deepEqual(notices(), ['reassessing: Quill was stuck: terminal failed 3 times with the same arguments: Exit code 1: cat: /missing.txt: No such file or directory. Asked it to step back and try another way.']);
+  assert.deepEqual(notices(), ['reassessing: Quill was stuck: terminal failed the same way 3 times with nothing changed in between: Exit code 1: cat: /missing.txt: No such file or directory. Asked it to step back and try another way.']);
   assert.deepEqual(messages(), ["I was stuck on reading /missing.txt, so I'm listing the folder instead."]);
 });
 
@@ -214,7 +214,7 @@ test('a bot still looping after two reassessments stops and leaves it to the per
   await until(() => run()?.state === 'failed', 'the run to give up', 15_000);
   assert.equal(inputs.length, 3, 'the first attempt and two reassessments');
   assert.deepEqual(notices().map((n) => n.split(':')[0]), ['reassessing', 'reassessing', 'gave-up']);
-  assert.match(notices()[2], /still stuck after trying another way 2 times: terminal failed 3 times/);
+  assert.match(notices()[2], /still stuck after trying another way 2 times: terminal failed the same way 3 times/);
 });
 
 test('Stop cancels a waiting retry, and so does a new message from the person', async () => {
