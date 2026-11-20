@@ -4,7 +4,7 @@ import { BotAvatarFor } from '../avatar/BotAvatar';
 import { PrimaryStar } from './PrimaryStar';
 import { api, openPopup } from '../lib/api';
 import { botVars } from '../lib/colors';
-import { computerStatusText } from '../lib/computer';
+import { botComputerStatus, computerStatusText } from '../lib/computer';
 import { useSelectedBot, useStore, type DetailsTab } from '../store';
 import { artifactsOf } from '../domain/artifacts';
 import { codeEditsOf } from '../domain/code-edits';
@@ -23,8 +23,6 @@ import { Glyph } from './config/glyphs';
 import { LibraryTab } from './config/LibraryTab';
 import { BotTasks } from './config/TasksView';
 
-// Other files import this from here; it lives in lib/computer so the viewer can use it too.
-export { computerStatusText };
 
 const TAB_LABELS: Record<DetailsTab, string> = {
   screen: 'Screen', activity: 'Activity', tasks: 'Tasks', library: 'Library', engine: 'Engine', artifact: 'Artifact', code: 'Code',
@@ -199,7 +197,7 @@ export function DetailsPanel() {
                   <span className="details__who-name" title={displayName(bot)}>{displayName(bot)}</span>
                   {bot.model && <span className="details__model" title={bot.provider ? `${bot.provider} · ${bot.model}` : bot.model}>{bot.model}</span>}
                 </div>
-                <div className="details__who-sub">Computer {computerStatusText(computer).toLowerCase()}</div>
+                <div className="details__who-sub">Computer {computerStatusText(botComputerStatus(computer, bot.id)).toLowerCase()}</div>
               </div>
               <button type="button" className="btn btn--sm btn--secondary details__open" onClick={() => openComputer('watch')}>Open</button>
             </div>

@@ -133,9 +133,9 @@
 }
 
 /* ---------- large computer view (dimmed stage) ---------- */
-.viewer { position: fixed; inset: 0; z-index: 200; display: flex; flex-direction: column; align-items: center; color: #FFFFFF; }
+.viewer { position: fixed; inset: 0; z-index: 200; display: flex; flex-direction: column; align-items: center; color: #FFFFFF; -webkit-app-region: no-drag; }
 .viewer__scrim { position: absolute; inset: 0; background: var(--color-bg-scrim-heavy); animation: fade 160ms ease-out; }
-.viewer__top { position: relative; display: flex; align-items: center; justify-content: space-between; width: 100%; height: 60px; padding: 0 16px; flex-shrink: 0; pointer-events: none; }
+.viewer__top { position: relative; display: flex; align-items: center; justify-content: space-between; width: 100%; height: 60px; padding: 0 16px 0 max(16px, var(--window-controls-inset)); flex-shrink: 0; pointer-events: none; }
 .viewer__top > * { pointer-events: auto; }
 .viewer__title { display: flex; align-items: center; gap: 10px; font-size: 14px; font-weight: 500; line-height: 20px; }
 .viewer__status { font-weight: 400; color: #FFFFFF99; font-size: 13px; }

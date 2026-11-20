@@ -29,7 +29,7 @@ import { presets } from '@orbit/ui-tokens';
 import { useConfigUI, type AppSection, type Preset, type Theme } from '../../configStore';
 import { useStore } from '../../store';
 import { useVoiceModels } from '../../voice/models-store';
-import { computerStatusText } from '../DetailsPanel';
+import { computerStatusText } from '../../lib/computer';
 import { formatSize } from '../voice/format';
 import { Icon, type IconName } from '../Icon';
 import { ToolkitLogo } from '../ToolkitLogo';
@@ -45,7 +45,7 @@ const SECTION_META: Record<AppSection, SectionMeta> = {
   general: { id: 'general', label: 'General', icon: 'sliders' },
   appearance: { id: 'appearance', label: 'Appearance', icon: 'palette', sub: 'Light or dark, a colour theme, and the accent every control uses.' },
   'engine-auth': { id: 'engine-auth', label: 'Engine Auth', icon: 'key', sub: 'Which provider and model runs each Bot, and whether it has the credentials to reach them.' },
-  'api-keys': { id: 'api-keys', label: 'API keys', icon: 'edit', sub: 'The Hermes settings every Bot shares: API keys in .env and the rest in config.yaml. Saving reaches every Bot.' },
+  'api-keys': { id: 'api-keys', label: 'API keys', icon: 'file', sub: 'The Hermes settings every Bot shares: API keys in .env and the rest in config.yaml. Saving reaches every Bot.' },
   computer: { id: 'computer', label: 'Computer', icon: 'monitor', sub: 'Each Bot has a computer of its own. It sleeps when idle and wakes when there is work.' },
   devices: { id: 'devices', label: 'Devices & permissions', icon: 'mic', sub: 'What Orbit may use on this computer, and which device it should use. Nothing is captured unless a call is open.' },
   permissions: { id: 'permissions', label: 'Permissions', icon: 'shield', sub: 'Actions your Bots can take without asking first. Remove one and they’ll ask again next time.' },
@@ -345,6 +345,8 @@ function ComputerSection() {
   const byId = new Map(bots.map((b) => [b.id, b]));
   // The server says how many screens the computer can hold; 4 until it does.
   const maxScreens = computer?.maxScreens ?? details?.computer.maxScreens ?? 4;
+  // Every Bot has its own computer, so say how many are up rather than one machine's state.
+  const awake = computer ? computer.screens.filter((x) => x.state === 'running').length : null;
 
   return (
     <>
@@ -353,7 +355,7 @@ function ComputerSection() {
           <div className="cfg-row">
             <span className={`computer-status-dot is-${running ? 'on' : transitioning ? 'busy' : 'off'}`} aria-hidden />
             <div className="cfg-row__text">
-              <div className="cfg-row__title">Bots’ computer · {computerStatusText(computer ?? null)}</div>
+              <div className="cfg-row__title">Bots’ computers · {awake === null ? computerStatusText(computer?.status) : `${awake} awake`}</div>
               <div className="cfg-row__sub">
                 {details ? `Goes to sleep after ${details.hibernation.idleMinutes} idle minutes when nobody is watching. Starts again on its own once a Bot has work.` : 'Checking…'}
               </div>

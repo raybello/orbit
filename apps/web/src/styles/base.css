@@ -1,4 +1,8 @@
 *, *::before, *::after { box-sizing: border-box; }
+/* In the desktop app macOS draws the window buttons over the top-left corner (traffic lights at
+   x 14-84, y 14-26). Anything that spans the window keeps clear of them through this inset. */
+:root { --window-controls-inset: 0px; }
+:root[data-native-controls] { --window-controls-inset: 84px; }
 html, body, #root { height: 100%; margin: 0; }
 body {
   font-family: var(--font-stack);

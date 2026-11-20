@@ -57,6 +57,14 @@ export function ensureComputerRow(botId: string, kind: ComputerKind, homePath?: 
   return getComputer(botId)!;
 }
 
+type StateListener = (botId: string) => void;
+const stateListeners: StateListener[] = [];
+
+/** Called after a bot's computer changes state (booting, running, suspended…), so the app can be told. */
+export function onComputerStateChange(fn: StateListener): void {
+  stateListeners.push(fn);
+}
+
 export function setComputerState(
   botId: string,
   state: ComputerRuntimeState,
@@ -72,6 +80,7 @@ export function setComputerState(
     now(),
     botId,
   );
+  if (row.state !== state) for (const fn of stateListeners) fn(botId);
 }
 
 export function deleteComputerRow(botId: string): void {

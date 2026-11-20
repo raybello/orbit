@@ -322,8 +322,8 @@ export interface DataListing { root: string; path: string; files: LibraryFile[];
 export interface ComputerState {
   status: 'absent' | 'creating' | 'starting' | 'running' | 'suspending' | 'suspended' | 'resuming' | 'error' | 'stopped';
   error: string | null;
-  /** One screen per bot. width/height are the screen's pixel size. */
-  screens: { botId: string; screenId: string; width?: number; height?: number }[];
+  /** One screen per bot. width/height are the screen's pixel size; state is that bot's own computer. */
+  screens: { botId: string; screenId: string; width?: number; height?: number; state?: ComputerState['status'] }[];
   /** How many bots can have their own screen at once. */
   maxScreens?: number;
 }

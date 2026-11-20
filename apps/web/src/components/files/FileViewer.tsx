@@ -98,14 +98,16 @@ function TextViewer({ file, kind, onClose }: { file: ViewedFile; kind: ViewerKin
     return () => { alive = false; };
   }, [file.url, file.size]);
 
+  // A file at the top of its library has a path that is just its name; saying it twice adds nothing.
+  const where = file.path && file.path !== file.name ? file.path : '';
+  const meta = [where, file.size !== undefined ? formatBytes(file.size) : ''].filter(Boolean).join(' · ');
+
   return (
     <Modal onClose={onClose} label={`Preview of ${file.name}`} className="file-viewer">
       <div className="file-viewer__head">
         <div className="file-viewer__title">
           <span className="file-viewer__name" title={file.name}>{file.name}</span>
-          {(file.path || file.size !== undefined) && (
-            <span className="file-viewer__meta" title={file.path}>{[file.path, file.size !== undefined ? formatBytes(file.size) : ''].filter(Boolean).join(' · ')}</span>
-          )}
+          {meta && <span className="file-viewer__meta" title={file.path}>{meta}</span>}
         </div>
         <div className="file-viewer__tools">
           {rendered && loaded.state === 'text' && (

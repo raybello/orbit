@@ -19,10 +19,6 @@ const STATUS_LABEL: Record<BotComputerStatus['status'], string> = {
   unknown: 'Unknown',
 };
 
-const KIND_LABEL: Record<BotComputerStatus['kind'], string> = {
-  docker: 'Docker',
-};
-
 function statusColor(status: BotComputerStatus['status'], tokens: MobileTokens): string {
   if (status === 'awake') return tokens.colors.success;
   if (status === 'starting') return tokens.colors.warn;
@@ -41,7 +37,6 @@ export function ComputerCard({ computer, bot, onOpen }: ComputerCardProps) {
   const tokens = useMobileTokens();
   const status = STATUS_LABEL[computer.status] ?? 'Unknown';
   const canOpen = computer.vncAvailable;
-  const kind = KIND_LABEL[computer.kind] ?? '';
   const avatar: Pick<Bot, 'avatarShape' | 'avatarColor' | 'name'> = bot ?? {
     avatarShape: 'blob',
     avatarColor: 'gray',
@@ -127,8 +122,7 @@ export function ComputerCard({ computer, bot, onOpen }: ComputerCardProps) {
         ) : null}
       </Pressable>
 
-      <View style={{ flexDirection: 'row', alignItems: 'center', gap: tokens.space.sm }}>
-        <Text style={{ flex: 1, color: tokens.colors.fgTertiary, fontSize: tokens.fontSizes.caption }}>{kind}</Text>
+      <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'flex-end', gap: tokens.space.sm }}>
         <Pressable
           onPress={() => onOpen(computer.botId)}
           disabled={!canOpen}

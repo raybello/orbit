@@ -32,7 +32,8 @@
 .computers__grid {
   display: grid;
   gap: 10px;
-  grid-template-columns: repeat(auto-fit, minmax(min(240px, 100%), 1fr));
+  /* auto-fill, not auto-fit: one Bot's card keeps a column's width instead of stretching across. */
+  grid-template-columns: repeat(auto-fill, minmax(min(420px, 100%), 1fr));
   /* Past two columns the screens stop reading as screens; keep the pair at a comfortable size. */
   max-width: 1120px;
 }
@@ -275,15 +276,8 @@
 .computer-card__foot {
   display: flex;
   align-items: center;
-  justify-content: space-between;
+  justify-content: flex-end;
   gap: 8px;
-}
-
-.computer-card__kind {
-  font-size: 11px;
-  letter-spacing: 0.11px;
-  color: var(--color-text-quaternary);
-  text-transform: uppercase;
 }
 
 .computer-card__open {
