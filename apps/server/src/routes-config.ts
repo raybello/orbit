@@ -11,9 +11,7 @@ import { env } from './env.js';
 import { emitBot, getBotRow, listRoutines, listTasks } from './store.js';
 import { computerState, readyScreen } from './computer.js';
 import { computerKindFor, providerFor } from './computer-provider-registry.js';
-import { box, type Box } from './box.js';
-import { dockerBox } from './docker/docker-box.js';
-import { getComputer } from './computer-store.js';
+import { box } from './box.js';
 import { openTerminal } from './desk.js';
 import { engineHome, engineInfo, engineKind, forgetEngineOptions, restartEngine, stopOwnScreen, syncAllManagedAuth } from './engine.js';
 import { applyModelChoice, asBlock, readDotenv, readYaml, writePrivate, SHARED_ENV } from './hermes-files.js';
@@ -269,33 +267,7 @@ function safeRel(p: string | undefined): string | null {
   return rel;
 }
 
-const shq = (s: string) => `'${s.replace(/'/g, `'\\''`)}'`;
 
-
-/** A Docker bot's files live on its own computer, at its home folder. */
-const CONTAINER_HOME = '/home/bot';
-
-/**
- * Where the Library tab reads a bot's filesystem from.
- *
- * A Docker bot is browsed through its own container: that is the tree the agent sees, and it is
- * there while the computer runs (the panel offers to start it). A local-box server reads the
- * Library folder from its own disk; the shared computer lists the same folder over its box.
- */
-type LibrarySource =
-  | { kind: 'docker'; box: Box }
-  | { kind: 'local'; root: string }
-  | { kind: 'missing' }
-  | { kind: 'orgo' };
-
-function librarySource(botId: string): LibrarySource {
-  if (computerKindFor(botId) === 'docker') {
-    const container = getComputer(botId)?.container_id;
-    return container ? { kind: 'docker', box: dockerBox(container) } : { kind: 'missing' };
-  }
-  if (box.local) return { kind: 'local', root: `${LIB_ROOT}/${botId}` };
-  return { kind: 'orgo' };
-}
 
 /**
  * The absolute path of `rel` under `root`, or null when it escapes the root or is not there.
@@ -317,40 +289,27 @@ function resolveUnder(root: string, rel: string): string | null {
 
 
 
+/**
+ * A chat attachment. Attachments are Library files, and the Library is this server's disk: image
+ * search writes there and the file listing reads there. A Docker bot's own computer never holds
+ * them (and may be paused).
+ */
 configApi.get('/bots/:id/files/raw', async (c) => {
   const b = ownBot(c.get('user').id, c.req.param('id'));
   if (!b) return c.json({ error: 'not found' }, 404);
   const rel = safeRel(c.req.query('path'));
   if (!rel) return c.json({ error: 'bad path' }, 400);
-  const name = rel.split('/').pop()!;
-  const source = librarySource(b.id);
-
-  if (source.kind === 'docker') {
-    // Base64 through an exec is the only way out of a container without a copied temp file, so
-    // keep it to files a browser preview can use.
-    const MAX = 32 * 1024 * 1024;
-    const target = `${CONTAINER_HOME}/${rel}`;
-    // -1 means "not a file"; 0 is a real, empty file.
-    const probe = await source.box.bash(`if [ -f ${shq(target)} ]; then stat -c %s -- ${shq(target)}; else echo -1; fi`, 15).catch(() => null);
-    const size = Number((probe?.output ?? '-1').trim());
-    if (!Number.isFinite(size) || size < 0) return c.json({ error: 'not found' }, 404);
-    if (size > MAX) return c.json({ error: 'file is too large to stream from the computer' }, 413);
-    const buf = await source.box.readFile(target).catch(() => null);
-    if (!buf) return c.json({ error: 'not found' }, 404);
-    return new Response(new Uint8Array(buf), { headers: fileHeaders(name, buf.length) });
-  }
-
-  if (source.kind !== 'local') return c.json({ error: 'not found' }, 404);
-  const file = resolveUnder(source.root, rel);
+  const file = resolveUnder(`${LIB_ROOT}/${b.id}`, rel);
   if (!file) return c.json({ error: 'not found' }, 404);
+  let size: number;
   try {
-    if (!fs.statSync(file).isFile()) return c.json({ error: 'not found' }, 404);
+    const st = fs.statSync(file);
+    if (!st.isFile()) return c.json({ error: 'not found' }, 404);
+    size = st.size;
   } catch {
     return c.json({ error: 'not found' }, 404);
   }
-  return new Response(Readable.toWeb(fs.createReadStream(file)) as ReadableStream, {
-    headers: fileHeaders(name, fs.statSync(file).size),
-  });
+  return new Response(Readable.toWeb(fs.createReadStream(file)) as ReadableStream, { headers: fileHeaders(rel.split('/').pop()!, size) });
 });
 
 configApi.get('/computer/details', (c) => {
