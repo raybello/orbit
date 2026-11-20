@@ -137,14 +137,15 @@ test('aggregateFiles with type=library leaves out attachments and workspaces', (
 test("aggregateFiles with type=all gathers all three sources for the user's bots only", () => {
   const res = aggregateFiles({ userId: 'usr_a', botId: 'bot_a' });
   const types = res.files.map((f) => f.type).sort();
-  assert.deepEqual(types, ['attachment', 'attachment', 'library', 'library', 'library', 'workspace']);
+  assert.deepEqual(types, ['attachment', 'library', 'library', 'library', 'workspace']);
+  assert.deepEqual(res.files.filter((f) => f.type === 'attachment').map((f) => f.path), ['images/deleted.png'], 'only the attachment with no Library file of its own');
   assert.ok(res.files.every((f) => f.botId === 'bot_a'));
   assert.ok(!res.files.some((f) => f.filename.includes('bob-secret')), "another user's bot stays out of the list");
 });
 
 test('aggregateFiles matches search against the filename, case-insensitively', () => {
   const res = aggregateFiles({ userId: 'usr_a', botId: 'bot_a', search: 'REPORT' });
-  assert.equal(res.total, 2, 'the library file and the message attachment that shares its name');
+  assert.equal(res.total, 1, 'the Library file once, not again as the attachment that points at it');
   assert.ok(res.files.every((f) => f.filename.toLowerCase().includes('report')));
   // A substring that matches nothing anywhere comes back empty rather than unfiltered.
   assert.equal(aggregateFiles({ userId: 'usr_a', search: 'no-such-file-anywhere' }).total, 0);
@@ -296,3 +297,20 @@ test("the primary Bot's workspace (engines/primary/workspace) is listed and open
   const resolved = resolveFileId(files[0].id);
   assert.ok(resolved?.file.endsWith(path.join('primary', 'workspace', 'US_Military_Report.md')), JSON.stringify(resolved));
 });
+
+test('under All, a file in the Library and attached in chat shows once, however many messages carry it', () => {
+  // Recorded from Atlas: show_file saved three pictures to its Library and attached them, and an
+  // earlier attempt attached the same three again, so All listed six images for three files.
+  addBot('bot_dup', 'usr_a', 'Atlas', 'managed');
+  const pics = ['1', '2', '3'].map((n) => `images/stanley-${n}.jpg`);
+  for (const [i, p] of pics.entries()) touch(write(LIB, `bot_dup/${p}`, `jpeg-${i}`), at(10 + i));
+  const files = pics.map((p) => ({ path: p, filename: p.split('/')[1], mediaType: 'image/jpeg' }));
+  addMessage('bot_dup', files, 1);
+  addMessage('bot_dup', files, 2);
+
+  const all = aggregateFiles({ userId: 'usr_a', botId: 'bot_dup' });
+  assert.deepEqual(all.files.map((f) => `${f.type}:${f.path}`), pics.map((p) => `library:${p}`).reverse());
+  assert.equal(aggregateFiles({ userId: 'usr_a', botId: 'bot_dup', type: 'library' }).total, 3);
+  assert.equal(aggregateFiles({ userId: 'usr_a', botId: 'bot_dup', type: 'attachment' }).total, 3, 'the Attachments tab lists each attached file once');
+});
+

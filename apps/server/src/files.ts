@@ -181,11 +181,13 @@ export function listWorkspaceFiles(botId: string, botName: string): FileEntry[] 
 /**
  * Files the agent attached to messages. They live in the Library, so the size and time come from
  * disk when the file is still there; an attachment whose file is gone keeps its message time and
- * a size of 0, so the row still shows up (and its download 404s).
+ * a size of 0, so the row still shows up (and its download 404s). A file attached to several
+ * messages is listed once, at its first message.
  */
 export function listAttachmentFiles(botId: string, botName: string): FileEntry[] {
   const rows = db.prepare("SELECT body, created_at FROM rows WHERE bot_id=? AND kind='message' ORDER BY seq ASC").all(botId) as { body: string; created_at: number }[];
   const out: FileEntry[] = [];
+  const seen = new Set<string>();
   for (const row of rows) {
     let body: unknown;
     try {
@@ -197,7 +199,8 @@ export function listAttachmentFiles(botId: string, botName: string): FileEntry[]
     for (const f of files) {
       const attachment = f as { path?: unknown; filename?: unknown } | null;
       const rel = safeRel(typeof attachment?.path === 'string' ? attachment.path : null);
-      if (!rel) continue;
+      if (!rel || seen.has(rel)) continue;
+      seen.add(rel);
       const file = resolveInside(libraryRoot(botId), rel);
       let size = 0;
       let createdAt = Number(row.created_at) || 0;
@@ -261,8 +264,14 @@ export function aggregateFiles(opts: AggregateFilesOptions): FilesResponse {
 
   const files: FileEntry[] = [];
   for (const bot of botsFor(opts.userId, opts.botId)) {
-    if (type === 'all' || type === 'library') files.push(...listLibraryFiles(bot.id, bot.name));
-    if (type === 'all' || type === 'attachment') files.push(...listAttachmentFiles(bot.id, bot.name));
+    const library = type === 'all' || type === 'library' ? listLibraryFiles(bot.id, bot.name) : [];
+    files.push(...library);
+    if (type === 'all' || type === 'attachment') {
+      // An attachment is a Library file (they share a root), so under All it shows once, as that
+      // file. One whose file is gone has no Library entry and still shows.
+      const inLibrary = new Set(library.map((f) => f.path));
+      files.push(...listAttachmentFiles(bot.id, bot.name).filter((f) => !inLibrary.has(f.path)));
+    }
     // Every agent has a workspace, the primary's included (engines/primary/workspace).
     if ((type === 'all' || type === 'workspace') && (bot.engine === 'managed' || bot.engine === 'primary')) files.push(...listWorkspaceFiles(bot.id, bot.name));
   }
