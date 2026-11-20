@@ -13,14 +13,13 @@ import {
 } from '../routes-computers.js';
 
 /**
- * GET /api/computers is built from one pure function so the interesting cases (no computer, a
- * provider that throws, a room) need no HTTP, no Docker and no Orgo. The defaults are exercised
+ * GET /api/computers is built from one pure function so the interesting cases (a provider that
+ * throws, a room, a bot with no screen yet) need no HTTP and no Docker. The defaults are exercised
  * against the temp database tmp-env.ts points at.
  */
 
 function deps(overrides: Partial<ComputerStatusDeps> = {}): ComputerStatusDeps {
   return {
-    kindFor: () => 'docker',
     screenIdFor: () => 'screen-2',
     stateFor: () => 'running',
     isRunning: () => false,
@@ -51,51 +50,6 @@ test('a docker bot reports its kind and the provider state as awake/sleeping', (
   assert.equal(computerStatusFor(bot(), deps({ stateFor: () => 'suspended' }))?.status, 'sleeping');
   assert.equal(computerStatusFor(bot(), deps({ stateFor: () => 'stopped' }))?.status, 'sleeping');
   assert.equal(computerStatusFor(bot(), deps({ stateFor: () => 'booting' }))?.status, 'starting');
-});
-
-test('an orgo bot reads the shared computer state, not a container', () => {
-  const seen: { botId: string; kind: string }[] = [];
-  const row = computerStatusFor(
-    bot('bot-2'),
-    deps({
-      kindFor: () => 'orgo',
-      screenIdFor: () => 'screen-0',
-      stateFor: (botId, kind) => {
-        seen.push({ botId, kind });
-        return 'resuming';
-      },
-    }),
-  );
-  assert.deepEqual(seen, [{ botId: 'bot-2', kind: 'orgo' }]);
-  assert.equal(row?.kind, 'orgo');
-  assert.equal(row?.status, 'starting');
-});
-
-test('a bot with no computer is kind none, unknown, and has nothing to view', () => {
-  let stateAsked = false;
-  const row = computerStatusFor(
-    bot('bot-3'),
-    deps({
-      kindFor: () => 'none',
-      screenIdFor: () => {
-        throw new Error('a bot without a computer has no screen');
-      },
-      stateFor: () => {
-        stateAsked = true;
-        return 'running';
-      },
-    }),
-  );
-  assert.deepEqual(row, {
-    botId: 'bot-3',
-    botName: 'Bot bot-3',
-    kind: 'none',
-    status: 'unknown',
-    isRunning: false,
-    vncAvailable: false,
-    screenId: null,
-  });
-  assert.equal(stateAsked, false, 'no provider is asked about a bot that has no computer');
 });
 
 test('a provider that throws gives unknown for that bot instead of failing the list', () => {
@@ -169,15 +123,15 @@ test('the default deps read the bot rows the server already keeps', async () => 
     { id: 'db-room', name: 'Team', kind: 'room' },
   ];
 
-  const [before] = computerStatusesFor(bots, computerStatusDeps('user-1'));
+  const [before] = computerStatusesFor(bots, computerStatusDeps());
   assert.equal(before.botId, 'db-bot');
-  assert.equal(before.kind, 'docker', 'no COMPUTER_KIND and no Orgo machine means a container per bot');
+  assert.equal(before.kind, 'docker', 'every bot has a container of its own');
   assert.equal(before.status, 'awake', 'read from bot_computers, without asking Docker');
   assert.equal(before.screenId, null);
   assert.equal(before.vncAvailable, false);
 
   db.prepare('INSERT INTO computer_screens(bot_id,screen_id,display_index) VALUES (?,?,?)').run('db-bot', 'screen-4', 4);
-  const [after] = computerStatusesFor(bots, computerStatusDeps('user-1'));
+  const [after] = computerStatusesFor(bots, computerStatusDeps());
   assert.equal(after.screenId, 'screen-4');
   assert.equal(after.vncAvailable, true);
   assert.equal(after.status, 'awake');

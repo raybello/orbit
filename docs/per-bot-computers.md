@@ -1,18 +1,16 @@
 # Per-Bot computers
 
-Every managed Bot can have its own computer. The primary Bot keeps the shared Orgo computer (or
-this machine with `HQ_LOCAL=1`), because that is somebody's live desktop.
+Every Bot, the primary included, has a computer of its own: a Docker container.
 
 ## How it fits together
 
 - `ComputerProvider` (`server/src/computer-provider.ts`) is what the rest of the server uses:
   ensure, screen, bash, files, DevTools address, VNC upstream, control, screenshot, suspend, destroy.
-- `OrgoComputerProvider` (`server/src/computer.ts`) wraps the existing Orgo behaviour unchanged.
 - `DockerComputerProvider` (`server/src/docker-provider.ts`) runs one container per Bot.
-- `computer-provider-registry.ts` picks the provider. A Bot's choice is written to `bot_computers`
-  when the Bot is created and never changes.
-- `desk.ts` dresses the screen through a `Box`, so the same wallpaper/dock/Chrome scripts run on
-  Orgo or inside a container (`docker/docker-box.ts`).
+- `computer-provider-registry.ts` records each Bot's computer in `bot_computers` when the Bot is
+  created, and starts, stops and cleans up containers.
+- `desk.ts` dresses the screen through a `Box`, so the wallpaper/dock/Chrome scripts run inside the
+  container (`docker/docker-box.ts`).
 
 ## A container
 
@@ -51,7 +49,6 @@ this machine with `HQ_LOCAL=1`), because that is somebody's live desktop.
 ## Configuration
 
 ```
-COMPUTER_KIND=docker              # 'orgo' | 'docker' | 'auto' (primary Bot always stays on Orgo)
 COMPUTER_IMAGE=orbit/computer:local
 COMPUTER_HOME_DIR=./data/computers
 COMPUTER_PAUSE_AFTER_MIN=5        # freeze an idle bot; 0 = never
@@ -59,7 +56,7 @@ COMPUTER_IDLE_TIMEOUT_MIN=30      # checkpoint and stop it
 COMPUTER_CPU_LIMIT=1
 COMPUTER_MEMORY_LIMIT=900m        # hard cap per bot
 COMPUTER_MEMORY_RESERVATION=600m  # soft limit, and what a bot counts for in the room check; 0 = off
-MAX_BOTS=10                       # 4 by default with COMPUTER_KIND=orgo
+MAX_BOTS=10
 COMPUTER_NETWORK=bridge
 COMPUTER_MAX_DISPLAYS=50
 DOCKER_SOCKET=/var/run/docker.sock   # empty = DOCKER_HOST, else Docker's default
@@ -106,8 +103,8 @@ tools of its own (`server/src/computer-tools.ts`), executed through the `Compute
 `computer_windows`, `computer_screenshot` (saved into the Library), `computer_click`,
 `computer_drag`, `computer_type`, `computer_key`, `computer_scroll`, `computer_shell`.
 
-They work the same on the shared Orgo computer and inside a container, and the Bot's browser is
-still driven over CDP (`browser.cdp_url`).
+They run inside the Bot's container, and the Bot's browser is still driven over CDP
+(`browser.cdp_url`).
 
 ## Model
 
@@ -152,6 +149,4 @@ sibling of the bot containers. Three things follow from that, and each one was a
   `orbit/computer:local`, `env.ts` treats an empty value as unset, and `docker/image.ts` refuses
   an empty reference with a clear message.
 
-`POST /api/computer/ensure` follows the same split: it wakes the Orgo machine when there is one,
-and otherwise creates/starts the bot containers. It previously asked Orgo unconditionally, which
-returned 500 in a Docker stack and left the viewer's Retry button broken.
+`POST /api/computer/ensure` creates or starts each Bot's container and answers at once.

@@ -5,11 +5,9 @@ import test, { after } from 'node:test';
 import fs from 'node:fs';
 import path from 'node:path';
 
-// The desktop stack as it really runs: the server is not on the bots' computer (HQ_LOCAL=0), there
-// is no shared Orgo computer, and every bot gets a Docker computer. The Library is this server's disk.
+// The desktop stack as it really runs: the server is in a container, not on the person's machine
+// (HQ_LOCAL=0), and every bot has a Docker computer. The Library is this server's disk.
 process.env.HQ_LOCAL = '0';
-delete process.env.ORGO_COMPUTER_ID;
-process.env.COMPUTER_KIND = 'docker';
 
 const { initSubagents } = await import('../agent/subagents.js');
 const { initRooms } = await import('../agent/rooms.js');
@@ -19,7 +17,6 @@ initRooms();
 const { createApp } = await import('../api/app.js');
 const { db } = await import('../db.js');
 const { env } = await import('../env.js');
-const { computerKindFor } = await import('../computer-provider-registry.js');
 
 const app = createApp();
 after(cleanupTmpEnv);
@@ -36,7 +33,6 @@ fs.mkdirSync(path.join(env.botDataDir, 'files', 'bot_atlas', 'images'), { recurs
 fs.writeFileSync(path.join(env.botDataDir, 'files', 'bot_atlas', rel), JPEG);
 
 test("a Docker bot's chat image is served from its Library, where image search saved it", async () => {
-  assert.equal(computerKindFor('bot_atlas'), 'docker', 'the bot really has a Docker computer, with none running');
   const res = await app.request(`/api/bots/bot_atlas/files/raw?path=${encodeURIComponent(rel)}`, { headers: { cookie } });
   assert.equal(res.status, 200);
   assert.equal(res.headers.get('content-type'), 'image/jpeg');

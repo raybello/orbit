@@ -4,8 +4,8 @@ import { db, now } from './db.js';
 /**
  * Where each bot's computer lives and what its screen is called. Two small tables:
  *
- *  - bot_computers: one row per bot — provider kind ('orgo' | 'docker'), lifecycle state, and the
- *    Docker container and host home folder behind it when it is a container.
+ *  - bot_computers: one row per bot — its lifecycle state and the Docker container and host home
+ *    folder behind it.
  *  - computer_screens: one row per bot screen — its X display index on that computer, the ports the
  *    host reaches it on, and the VNC view token plus the human-control token.
  *
@@ -13,7 +13,7 @@ import { db, now } from './db.js';
  * are unique on the host; that is what lets vnc.ts and the DevTools clients use 127.0.0.1:port.
  */
 
-export type ComputerKind = 'orgo' | 'docker';
+export type ComputerKind = 'docker';
 export type ComputerRuntimeState = 'stopped' | 'booting' | 'running' | 'suspending' | 'suspended' | 'error';
 
 export interface BotComputerRow {
@@ -162,7 +162,7 @@ export function claimScreen(botId: string, limit: number, token: () => string): 
   if (existing) return existing;
 
   const screens = displaySlots(limit);
-  const computer: ComputerStatus = { status: 'ready', orgoId: 'local', screens };
+  const computer: ComputerStatus = { status: 'ready', computerId: 'local', screens };
   if (!canAssignScreen(computer)) {
     throw new Error(`No free display left (${limit} bot screens at most). Remove a bot to free one.`);
   }

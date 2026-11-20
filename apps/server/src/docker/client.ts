@@ -4,8 +4,8 @@ import { env } from '../env.js';
 /**
  * One Docker Engine client for the whole server. The socket comes from DOCKER_SOCKET, else
  * DOCKER_HOST (unix:///path, npipe://, tcp://), else Docker's default: /var/run/docker.sock, or
- * the docker_engine named pipe on Windows. Created lazily so the server still starts (and Orgo
- * bots still work) when Docker is not installed.
+ * the docker_engine named pipe on Windows. Created lazily so the server still starts when Docker
+ * is not installed.
  */
 
 /** What dockerode rejects with: an HTTP status from the daemon, and a message. */

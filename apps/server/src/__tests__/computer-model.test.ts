@@ -14,14 +14,14 @@ import {
  * "no screen left", "computer is not ready yet", and "a released screen goes back into circulation".
  */
 
-const orgoId = 'orgo_computer_1';
+const computerId = 'host_1';
 
 function screen(screenId: string, botId: string | null = null, lastUsedAt = 0): Screen {
   return { screenId, botId, lastUsedAt };
 }
 
 function ready(screens: Screen[]): Extract<ComputerStatus, { status: 'ready' }> {
-  return { status: 'ready', orgoId, screens };
+  return { status: 'ready', computerId, screens };
 }
 
 function expectReady(computer: ComputerStatus): Extract<ComputerStatus, { status: 'ready' }> {
@@ -32,8 +32,8 @@ function expectReady(computer: ComputerStatus): Extract<ComputerStatus, { status
 /** Everything not ready, for the "refuses to touch it" table. */
 const notReady: ComputerStatus[] = [
   { status: 'absent' },
-  { status: 'provisioning', orgoId, startedAt: 10 },
-  { status: 'suspended', orgoId, suspendedAt: 20, reason: 'asleep' },
+  { status: 'provisioning', computerId, startedAt: 10 },
+  { status: 'suspended', computerId, suspendedAt: 20, reason: 'asleep' },
   { status: 'error', error: new Error('boom'), failedAt: 30 },
 ];
 
@@ -82,7 +82,7 @@ describe('assignScreen', () => {
       screen('s2', 'bot_b', 4242),
       screen('s3'),
     ]);
-    assert.equal(next.orgoId, orgoId);
+    assert.equal(next.computerId, computerId);
   });
 
   test('does not mutate the computer it is given', () => {
@@ -119,7 +119,7 @@ describe('assignScreen', () => {
 
   test('throws when every screen is taken', () => {
     const full = ready([screen('s1', 'bot_a'), screen('s2', 'bot_b')]);
-    assert.throws(() => assignScreen(full, 'bot_c'), /no free screen on computer orgo_computer_1: all 2 are assigned/);
+    assert.throws(() => assignScreen(full, 'bot_c'), /no free screen on computer host_1: all 2 are assigned/);
   });
 
   test('throws when the computer is not ready, naming the status', () => {

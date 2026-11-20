@@ -1,4 +1,4 @@
-// End-to-end smoke test (real server, real Hermes engines, real Orgo computer).
+// End-to-end smoke test (real server, real Hermes engines, real Docker computers).
 // Usage: node tests/e2e.mjs [baseUrl]   (default http://localhost:8787)
 // Signs in with dev login (E2E_EMAIL, server needs DEV_LOGIN=1) or with an existing session
 // (E2E_SESSION=<grokbot_session cookie value>). Creates a throwaway "QA" bot, which gets its own
@@ -24,6 +24,8 @@ const step = async (name, fn) => {
     try { await page.screenshot({ path: path.join(OUT, `FAIL-${name.replace(/[^a-z0-9]+/gi, '-')}.png`) }); } catch {}
     results.push({ name, ok: false, ms: Date.now() - t0, error: String(e?.message ?? e).split('\n')[0] });
     console.log(`FAIL ${name}: ${String(e?.message ?? e).split('\n')[0]}`);
+    // A step that failed with a palette, menu or dialog open must not block the steps after it.
+    try { await page.keyboard.press('Escape'); await page.keyboard.press('Escape'); } catch {}
   }
 };
 
@@ -51,6 +53,9 @@ let botId = null;
 await step('app loads with sidebar', async () => {
   await page.goto(BASE);
   await page.getByText(MAIN).first().waitFor({ timeout: 15000 });
+  // A new account is offered an on-device voice first; that dialog covers the page until skipped.
+  const skipVoice = page.getByRole('button', { name: 'Skip for now' });
+  if (await skipVoice.isVisible().catch(() => false)) await skipVoice.click();
   await shot('01-loaded');
 });
 
@@ -66,7 +71,7 @@ await step('create bot via modal', async () => {
 });
 
 const send = async (text) => {
-  const box = page.getByPlaceholder(new RegExp(`Message ${botName}`)).first();
+  const box = page.getByLabel(new RegExp(`^Message ${botName}`)).first();
   await box.fill(text);
   await box.press('Enter');
 };
@@ -114,9 +119,9 @@ await step('computer viewer: watch, take control, hand back', async () => {
 
 await step('search palette opens the main bot', async () => {
   await page.keyboard.press('Control+k');
-  await page.getByPlaceholder(/Search Bots/).fill(MAIN);
+  await page.getByPlaceholder(/Search bots/i).fill(MAIN);
   await page.keyboard.press('Enter');
-  await page.getByPlaceholder(new RegExp(`Message ${MAIN}`)).first().waitFor({ timeout: 10000 });
+  await page.getByLabel(new RegExp(`^Message ${MAIN}`)).first().waitFor({ timeout: 10000 });
   await shot('07-search');
 });
 
@@ -169,13 +174,13 @@ await step('group chat: members reply via @mention', async () => {
       await new Promise((r) => setTimeout(r, 2000));
     }
   } finally {
-    await api(`/api/bots/${created.id}`, { method: 'DELETE' });
+    await api(`/api/rooms/${created.id}`, { method: 'DELETE' });
   }
 });
 
 await step('bot settings: general, skills, memories, routines', async () => {
   await page.getByText(MAIN).first().click();
-  await page.getByLabel('Bot settings').click();
+  await page.getByRole('button', { name: 'Bot settings' }).first().click();
   const nav = page.getByLabel('Bot settings sections');
   await nav.waitFor({ timeout: 10000 });
   for (const t of ['Skills', 'Memories', 'Routines']) { await nav.getByText(t, { exact: true }).click(); await page.waitForTimeout(400); }
@@ -187,20 +192,29 @@ await step('bot settings: general, skills, memories, routines', async () => {
 });
 
 await step('details tabs: library + tasks', async () => {
-  await page.getByRole('button', { name: 'Library', exact: true }).click();
+  // A tab that does not fit the bar waits in its More menu.
+  const tab = async (name) => {
+    const t = page.getByRole('tab', { name, exact: true });
+    if (!(await t.isVisible().catch(() => false))) {
+      await page.getByRole('button', { name: 'More' }).click();
+      await page.getByRole('menuitem', { name, exact: true }).click();
+    } else await t.click();
+    await page.getByRole('tab', { name, exact: true, selected: true }).waitFor({ timeout: 5000 });
+  };
+  await tab('Library');
   await page.waitForTimeout(1500);
-  await page.getByRole('button', { name: 'Tasks', exact: true }).last().click();
+  await tab('Tasks');
   await page.waitForTimeout(500);
-  await page.getByRole('button', { name: 'Activity', exact: true }).click();
+  await tab('Activity');
 });
 
 await step('app settings: computer screens + permissions', async () => {
-  await page.locator('.account__btn').click();
-  await page.getByText('Settings', { exact: true }).first().click();
-  await page.locator('.cfg-nav__item', { hasText: 'Computer' }).click();
+  await page.getByLabel('Account menu').click();
+  await page.getByRole('menuitem', { name: /^Settings/ }).click();
+  await page.locator('.settings-nav__item', { hasText: 'Computer' }).click();
   await page.getByText(/screens in use/i).first().waitFor({ timeout: 10000 });
   await shot('10-settings-computer');
-  await page.locator('.cfg-nav__item', { hasText: 'Permissions' }).click();
+  await page.locator('.settings-nav__item', { hasText: 'Permissions' }).first().click();
   await page.waitForTimeout(500);
   await page.keyboard.press('Escape');
 });

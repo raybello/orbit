@@ -29,7 +29,7 @@ interface ScreenProps {
 }
 
 /**
- * A bot's screen on the shared computer: noVNC over our relay in a frame that keeps the screen's
+ * A bot's screen on its own computer: noVNC over our relay in a frame that keeps the screen's
  * aspect ratio. Watching is view-only; control reconnects with mode=control and adds a chin.
  */
 export function ComputerScreen({ bot, variant, initialMode = 'watch', hint, paused = false, onExpand, onModeChange }: ScreenProps) {

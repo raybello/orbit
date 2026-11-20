@@ -1,12 +1,10 @@
 import { execFile, spawn } from 'node:child_process';
+import { dockerProvider } from './docker-provider.js';
 import crypto from 'node:crypto';
 import fs from 'node:fs';
 import path from 'node:path';
 import YAML from 'yaml';
-import { displayFor } from './box.js';
-import { cdpUrlFor, screenFor } from './computer.js';
 import { claimScreen } from './computer-store.js';
-import { computerKindFor, providerFor } from './computer-provider-registry.js';
 import { screenPorts } from './docker/screen.js';
 import { randomUUID } from 'node:crypto';
 import { db } from './db.js';
@@ -432,7 +430,7 @@ function storedChoice(b: BotRow): ModelChoice | null {
  * Create or refresh an agent's home. config.yaml is created once; after that only the keys we own
  * are patched. A managed home also inherits the primary's credentials; the primary has its own.
  */
-async function writeHome(rec: EngineRecord): Promise<{ key: string; display: string | null }> {
+async function writeHome(rec: EngineRecord): Promise<{ key: string }> {
   const { botId, home } = rec;
   const managed = rec.kind === 'managed';
   const b = botRow(botId);
@@ -440,31 +438,18 @@ async function writeHome(rec: EngineRecord): Promise<{ key: string; display: str
   fs.mkdirSync(path.join(home, 'locks'), { recursive: true });
   fs.chmodSync(home, 0o700);
 
-  // Its screen decides which display and which Chrome it drives. Only meaningful on the computer itself.
-  let display: string | null = null;
+  // A container's browser answers DevTools inside the container; the display it draws on is in
+  // there too, so the agent drives the browser over CDP and gets no local DISPLAY. Ask the provider
+  // for the address, because it depends on where *this server* runs: a host server dials a published
+  // loopback port, a containerized one dials the bot's address on the shared Docker network.
   let cdp = '';
-  if (computerKindFor(botId) === 'docker') {
-    // A container's browser answers DevTools inside the container; the display it draws on is in
-    // there too, so the agent drives the browser over CDP and gets no local DISPLAY. Ask the
-    // provider for the address, because it depends on where *this server* runs: a host server dials
-    // a published loopback port, a containerized one dials the bot's address on the shared Docker
-    // network. Assuming 127.0.0.1 here is what made containerized bots' browsers unreachable.
-    try {
-      const s = claimScreen(botId, env.computerMaxDisplays, randomUUID);
-      cdp = await providerFor(botId)
-        .cdpUrl(botId, s.screen_id)
-        .catch(() => `http://127.0.0.1:${screenPorts(s.display_index).cdpPort}`);
-    } catch (e) {
-      console.warn(`[engine] no display for ${b.name} yet: ${messageOf(e)}`);
-    }
-  } else if (env.localBox) {
-    try {
-      const s = await screenFor(b.user_id, botId);
-      display = displayFor(s.screenId);
-      cdp = cdpUrlFor(botId, s.screenId);
-    } catch (e) {
-      console.warn(`[engine] no screen for ${b.name} yet: ${messageOf(e)}`);
-    }
+  try {
+    const s = claimScreen(botId, env.computerMaxDisplays, randomUUID);
+    cdp = await dockerProvider
+      .cdpUrl(botId, s.screen_id)
+      .catch(() => `http://127.0.0.1:${screenPorts(s.display_index).cdpPort}`);
+  } catch (e) {
+    console.warn(`[engine] no display for ${b.name} yet: ${messageOf(e)}`);
   }
 
   const cwd = env.localBox ? path.join(env.botDataDir, 'files', botId) : path.join(home, 'workspace');
@@ -485,7 +470,7 @@ async function writeHome(rec: EngineRecord): Promise<{ key: string; display: str
   // a hand edit of `model` cannot quietly drift from what the app shows.
   const choice = storedChoice(b);
   if (choice) applyModelChoice(cfg, choice.provider, choice.model);
-  cfg.platform_toolsets = { ...asBlock(cfg.platform_toolsets), api_server: ['hermes-api-server', ...(display ? ['computer_use'] : [])] };
+  cfg.platform_toolsets = { ...asBlock(cfg.platform_toolsets), api_server: ['hermes-api-server'] };
   cfg.terminal = { ...asBlock(cfg.terminal), cwd };
   cfg.compression = { ...asBlock(cfg.compression), threshold_tokens: env.contextCompactionThreshold };
   if (cdp) cfg.browser = { ...asBlock(cfg.browser), cdp_url: cdp };
@@ -523,7 +508,7 @@ async function writeHome(rec: EngineRecord): Promise<{ key: string; display: str
   // Credentials and config keys the home was missing (an existing home keeps its own choices).
   if (managed) syncManagedAuth(botId);
 
-  return { key, display };
+  return { key };
 }
 
 /**
@@ -765,7 +750,7 @@ async function startGateway(botId: string, attempt = 0): Promise<void> {
 
   const { home } = rec;
   const b = botRow(botId);
-  const { key, display } = await writeHome(rec);
+  const { key } = await writeHome(rec);
   keys.set(home, key);
   if (gatewayPid(home)) await stopGateway(home);
 
@@ -797,7 +782,6 @@ async function startGateway(botId: string, attempt = 0): Promise<void> {
       ...(process.env.HERMES_ALLOW_ROOT_GATEWAY
         ? { HERMES_ALLOW_ROOT_GATEWAY: process.env.HERMES_ALLOW_ROOT_GATEWAY }
         : {}),
-      ...(display ? { DISPLAY: display } : {}),
     },
   });
   fs.closeSync(log);

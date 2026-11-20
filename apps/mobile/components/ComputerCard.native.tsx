@@ -21,8 +21,6 @@ const STATUS_LABEL: Record<BotComputerStatus['status'], string> = {
 
 const KIND_LABEL: Record<BotComputerStatus['kind'], string> = {
   docker: 'Docker',
-  orgo: 'Orgo',
-  none: '',
 };
 
 function statusColor(status: BotComputerStatus['status'], tokens: MobileTokens): string {

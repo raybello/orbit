@@ -1,8 +1,8 @@
 import fs from 'node:fs/promises';
+import { dockerProvider } from './docker-provider.js';
 import path from 'node:path';
 import { hrtime } from 'node:process';
 import { env } from './env.js';
-import { providerFor } from './computer-provider-registry.js';
 import type { ToolCtx, ToolResult } from './agent/tools/index.js';
 import type { ActivityKind } from '@orbit/contracts';
 
@@ -12,8 +12,7 @@ import type { ActivityKind } from '@orbit/contracts';
  * Hermes' own `computer_use` toolset acts on the display of the process running the agent — on a
  * machine that is not the Bot's computer (and never is on macOS, where there is no X server), so a
  * container Bot could not use it. These tools go through the ComputerProvider instead: the same
- * xdotool commands run inside the Bot's container, or on the shared Orgo computer, and nothing here
- * depends on where this server runs.
+ * xdotool commands run inside the Bot's container, and nothing here depends on where this server runs.
  */
 
 interface ToolDef {
@@ -32,7 +31,7 @@ const LIBRARY = () => `${env.botDataDir}/files`;
 
 /** A screen to act on: boot the computer, make sure the display is up, and return its id. */
 async function screen(ctx: ToolCtx): Promise<{ screenId: string; display: number }> {
-  const provider = providerFor(ctx.botId);
+  const provider = dockerProvider;
   const { screenId } = await provider.screenFor(ctx.userId, ctx.botId);
   const display = Number(screenId.replace(/^screen-/, '')) || 1;
   return { screenId, display };
@@ -40,7 +39,7 @@ async function screen(ctx: ToolCtx): Promise<{ screenId: string; display: number
 
 async function run(ctx: ToolCtx, command: string, timeoutSec = 30): Promise<{ output: string; code: number; display: number }> {
   const { screenId, display } = await screen(ctx);
-  const r = await providerFor(ctx.botId).bash(ctx.botId, command, timeoutSec, screenId);
+  const r = await dockerProvider.bash(ctx.botId, command, timeoutSec, screenId);
   return { output: r.output.trim(), code: r.exit_code, display };
 }
 
@@ -90,7 +89,7 @@ export const COMPUTER_TOOLS: ToolDef[] = [
     activity: 'on_its_computer',
     label: 'Taking a screenshot',
     impl: async (_a, ctx) => {
-      const provider = providerFor(ctx.botId);
+      const provider = dockerProvider;
       const shot = await provider.screenshot(ctx.botId, await provider.screenIdFor(ctx.botId) ?? '');
       if (!shot) return { output: 'The screen did not answer, so there is no screenshot.' };
       const dir = screenshotDir(ctx.botId);
@@ -159,7 +158,7 @@ export const COMPUTER_TOOLS: ToolDef[] = [
       const b64 = Buffer.from(text, 'utf8').toString('base64');
       // Text goes over base64 so quotes, newlines and shell metacharacters survive untouched.
       const cmd = `printf %s '${b64}' | base64 -d | xdotool type --clearmodifiers --delay 12 --file -`;
-      const r = await providerFor(ctx.botId).bash(ctx.botId, cmd, 120, screenId);
+      const r = await dockerProvider.bash(ctx.botId, cmd, 120, screenId);
       if (r.exit_code !== 0) return { output: `Typing failed: ${r.output.trim().slice(-300)}` };
       return { output: `Typed ${text.length} character(s).`, summary: `Typed ${text.length} characters` };
     },

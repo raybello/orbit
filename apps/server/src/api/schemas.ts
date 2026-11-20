@@ -240,9 +240,6 @@ export const EngineChoiceSchema = z
   .object({ provider: z.string().nullish(), model: z.string().nullish() })
   .loose();
 
-/** POST /api/bots/:id/engine/login — the route checks the provider slug against its own pattern. */
-export const EngineLoginSchema = z.object({ provider: z.string().optional() }).loose();
-
 
 /** PUT /api/checkins — setCheckins() validates the times and the zone and throws with its message. */
 export const CheckinSettingsSchema = z

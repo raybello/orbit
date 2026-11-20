@@ -52,7 +52,6 @@ export function listSubagents(parentId: string) {
 export function deleteSubagent(parentId: string, subId: string) {
   const s = db.prepare('SELECT user_id FROM bots WHERE id=? AND parent_bot_id=?').get(subId, parentId) as { user_id: string } | undefined;
   if (!s) return false;
-  db.prepare('DELETE FROM screens WHERE bot_id=?').run(subId);
   db.prepare('DELETE FROM bots WHERE id=?').run(subId);
   return true;
 }

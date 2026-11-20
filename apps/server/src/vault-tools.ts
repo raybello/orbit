@@ -1,5 +1,5 @@
 import type { SecureFormField } from '@orbit/contracts';
-import { providerFor } from './computer-provider-registry.js';
+import { dockerProvider } from './docker-provider.js';
 import { CdpSession, listTabs } from './lib/cdp.js';
 import { Secret, SecretBoxTamperError } from './lib/secret-box.js';
 import { appendRow } from './store.js';
@@ -13,8 +13,8 @@ import type { ActivityKind } from '@orbit/contracts';
  * `request_credentials` asks the person for one in a secure form.
  *
  * How a secret gets onto the screen: it is typed, as key presses, into whatever has the keyboard on
- * the bot's display (ComputerProvider.typeSecret: xdotool reading its stdin inside the container, or
- * the Orgo typing endpoint). The model's side of the call carries a label going in and a sentence
+ * the bot's display (ComputerProvider.typeSecret: xdotool reading its stdin inside the container).
+ * The model's side of the call carries a label going in and a sentence
  * coming out, never the value. A login saved for a site is only typed while a page of that site
  * holds the keyboard, which the server reads from the bot's browser itself and not from what the
  * model says the page is.
@@ -43,7 +43,7 @@ const obj = (properties: Record<string, unknown>, required: string[] = []) => ({
 export const vaultComputer = {
   /** The URL of the page that holds the keyboard in the bot's browser, or null when no page does. */
   async focusedPageUrl(ctx: ToolCtx): Promise<string | null> {
-    const provider = providerFor(ctx.botId);
+    const provider = dockerProvider;
     const { screenId } = await provider.screenFor(ctx.userId, ctx.botId);
     const tabs = await listTabs(await provider.cdpUrl(ctx.botId, screenId));
     for (const tab of tabs) {
@@ -64,13 +64,13 @@ export const vaultComputer = {
   },
 
   async typeSecret(ctx: ToolCtx, secret: Secret): Promise<void> {
-    const provider = providerFor(ctx.botId);
+    const provider = dockerProvider;
     const { screenId } = await provider.screenFor(ctx.userId, ctx.botId);
     await provider.typeSecret(ctx.botId, secret, screenId);
   },
 
   async pressKey(ctx: ToolCtx, key: 'Tab' | 'Return'): Promise<void> {
-    const provider = providerFor(ctx.botId);
+    const provider = dockerProvider;
     const { screenId } = await provider.screenFor(ctx.userId, ctx.botId);
     const r = await provider.bash(ctx.botId, `xdotool key --clearmodifiers ${key}`, 20, screenId);
     if (r.exit_code !== 0) throw new Error(`could not press ${key}: ${r.output.trim().slice(-200)}`);

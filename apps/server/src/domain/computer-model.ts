@@ -1,8 +1,9 @@
 /**
- * The shared computer, modelled as the small amount of state a screen allocator actually needs.
+ * The machine the bots' displays live on, modelled as the small amount of state a screen allocator
+ * actually needs.
  *
- * Real life (computer.ts, computer-store.ts): one Orgo computer holds a handful of screens, one per
- * bot, and a bot keeps its screen across resumes. `ready.screens` is the live allocation table; a
+ * Real life (computer-store.ts): the host holds a set of display slots, one per bot, and a bot keeps
+ * its screen across resumes. `ready.screens` is the live allocation table; a
  * screen is free when `botId` is null. Screens exist only on the `ready` variant — while the computer
  * is provisioning or suspended there is no display to attach a bot to, and the real code re-claims
  * the existing row on resume.
@@ -19,9 +20,9 @@ export type Screen = {
 
 export type ComputerStatus =
   | { status: 'absent' }
-  | { status: 'provisioning'; orgoId: string; startedAt: number }
-  | { status: 'ready'; orgoId: string; screens: Screen[] }
-  | { status: 'suspended'; orgoId: string; suspendedAt: number; reason: string }
+  | { status: 'provisioning'; computerId: string; startedAt: number }
+  | { status: 'ready'; computerId: string; screens: Screen[] }
+  | { status: 'suspended'; computerId: string; suspendedAt: number; reason: string }
   | { status: 'error'; error: Error; failedAt: number };
 
 /** The screens nobody is using right now. Empty unless the computer is ready. */
@@ -49,7 +50,7 @@ export function assignScreen(computer: ComputerStatus, botId: string, now: () =>
 
   const free = computer.screens.find((s) => s.botId === null);
   if (!free) {
-    throw new Error(`no free screen on computer ${computer.orgoId}: all ${computer.screens.length} are assigned`);
+    throw new Error(`no free screen on computer ${computer.computerId}: all ${computer.screens.length} are assigned`);
   }
 
   const at = now();

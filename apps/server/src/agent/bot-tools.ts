@@ -71,7 +71,7 @@ export const BOT_TOOLS: ToolDef[] = [
       if (!team.length) return { output: 'There are no Bots on the team yet.' };
       return {
         output: JSON.stringify({
-          bots: team.map((b) => ({ name: b.name, label: b.label || null, primary: b.primary, description: b.description || null, computer: b.computer, model: b.model })),
+          bots: team.map((b) => ({ name: b.name, label: b.label || null, primary: b.primary, description: b.description || null, model: b.model })),
         }),
         summary: `${team.length} Bot(s)`,
       };

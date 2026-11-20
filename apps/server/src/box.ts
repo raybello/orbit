@@ -2,22 +2,17 @@ import { execFile, spawn } from 'node:child_process';
 import fs from 'node:fs/promises';
 import path from 'node:path';
 import { env } from './env.js';
-import { orgo } from './orgo.js';
-import { dockerBox } from './docker/docker-box.js';
 import type { Secret } from './lib/secret-box.js';
 
 /**
- * The box: where a bot's desktop commands run. The primary bot works on the one Orgo computer
- * (or on this machine when HQ_LOCAL=1); a managed bot works inside its own Docker container.
- * Everything here speaks the same small interface, so the desk scripts (desk.ts) do not care
- * which one they are talking to.
+ * The box: where shell commands run. A bot's desktop commands run inside its own Docker container
+ * (docker/docker-box.ts); the server's own work (the Library on its disk) runs here. Both speak
+ * the same small interface, so the desk scripts (desk.ts) do not care which one they talk to.
  */
 
 export interface BashResult { output: string; exit_code: number }
 
 export interface Box {
-  /** True when this box is the machine the server itself runs on. */
-  local: boolean;
   /** Run a bash command on the box. `screenId` picks which screen's DISPLAY it sees. */
   bash(command: string, timeoutSec?: number, screenId?: string | null): Promise<BashResult>;
   /** Write a file, creating its directory. `mode` is an octal string such as '0755'. */
@@ -37,13 +32,7 @@ export interface Box {
 /** xdotool typing what it reads on stdin, so the text is in no argument. */
 export const TYPE_FROM_STDIN = ['xdotool', 'type', '--clearmodifiers', '--delay', '12', '--file', '-'];
 
-/** Which computer a box talks to. */
-export type BoxTarget =
-  | { kind: 'local' }
-  | { kind: 'orgo'; computerId: string }
-  | { kind: 'docker'; containerId: string };
-
-/** Orgo screen id -> X display. The default screen is :99, "screen-100" is :100. */
+/** Screen id -> X display. The default screen is :99, "screen-100" is :100. */
 export const displayFor = (screenId?: string | null) => (!screenId || screenId === 'default' ? ':99' : `:${screenId.replace('screen-', '')}`);
 
 /** Only what a desktop command needs; none of this server's secrets. */
@@ -92,7 +81,6 @@ const q = quotePath;
 /** A box on this machine (HQ_LOCAL=1). */
 function localBox(): Box {
   return {
-    local: true,
     bash: (command, timeoutSec = 60, screenId) => localBash(command, timeoutSec, screenId),
     async writeFile(file, content, mode = '0644') {
       const buf = typeof content === 'string' ? Buffer.from(content, 'utf8') : content;
@@ -108,76 +96,8 @@ function localBox(): Box {
   };
 }
 
-export function orgoBox(computerId: string): Box {
-  const b: Box = {
-    local: false,
-    async bash(command, timeoutSec = 60, screenId) {
-      const cmd = `export DISPLAY=${displayFor(screenId)}; ${command}`;
-      const r = await orgo.bash(computerId, screenId ?? undefined, cmd, timeoutSec);
-      return { output: r.output ?? '', exit_code: r.exit_code ?? (r.success ? 0 : 1) };
-    },
-    async writeFile(file, content, mode = '0644') {
-      // Orgo drops very long commands, so the file goes over in base64 pieces.
-      const buf = typeof content === 'string' ? Buffer.from(content, 'utf8') : content;
-      const b64 = buf.toString('base64');
-      const tmp = `${file}.b64`;
-      const first = await b.bash(`mkdir -p ${q(path.dirname(file))} && : > ${q(tmp)} && echo ok`, 30);
-      if (!first.output.includes('ok')) throw new Error(`could not write ${file}: ${first.output.slice(0, 200)}`);
-      for (let i = 0; i < b64.length; i += 60000) await b.bash(`printf '%s' '${b64.slice(i, i + 60000)}' >> ${q(tmp)}`, 30);
-      const done = await b.bash(`base64 -d ${q(tmp)} > ${q(file)} && rm -f ${q(tmp)} && chmod ${mode} ${q(file)} && echo ok`, 30);
-      if (!done.output.includes('ok')) throw new Error(`could not write ${file}: ${done.output.slice(0, 200)}`);
-    },
-    async readFile(file) {
-      const r = await b.bash(`[ -f ${q(file)} ] && base64 -w0 ${q(file)} || echo __missing__`, 60);
-      const out = r.output.trim();
-      if (!out || out.endsWith('__missing__')) return null;
-      return Buffer.from(out, 'base64');
-    },
-    async typeSecret(secret, screenId) {
-      // Orgo's own typing endpoint, not `bash`: there is no stdin to an Orgo command, so a shell
-      // version would put the value in the command it runs and records.
-      try {
-        await orgo.type(computerId, screenId ?? undefined, secret.reveal());
-      } catch (e) {
-        throw new Error(secret.redact(String((e as { message?: unknown } | null)?.message ?? e)));
-      }
-    },
-    quote: q,
-  };
-  return b;
-}
-
-/** Build a box bound to a specific computer. */
-export function boxFor(target: BoxTarget): Box {
-  if (target.kind === 'docker') return dockerBox(target.containerId);
-  if (target.kind === 'orgo') return orgoBox(target.computerId);
-  return localBox();
-}
-
 /**
- * The box this server works on by default: the local shell when the server runs on the computer,
- * else the shared Orgo computer. Managed bots never use this one — they get a box of their own.
+ * The box this server works on by default: its own shell and disk, where the Library lives. Bots
+ * never use this one for their own work: each has a container with a box of its own.
  */
-export const box: Box = env.localBox
-  ? localBox()
-  : {
-      local: false,
-      async bash(command, timeoutSec = 60, screenId) {
-        // Orgo path; resolved lazily so a missing ORGO_COMPUTER_ID only fails when used.
-        if (!env.orgoComputerId) throw new Error('ORGO_COMPUTER_ID is not set');
-        return orgoBox(env.orgoComputerId).bash(command, timeoutSec, screenId);
-      },
-      async writeFile(file, content, mode = '0644') {
-        if (!env.orgoComputerId) throw new Error('ORGO_COMPUTER_ID is not set');
-        return orgoBox(env.orgoComputerId).writeFile(file, content, mode);
-      },
-      async readFile(file) {
-        if (!env.orgoComputerId) throw new Error('ORGO_COMPUTER_ID is not set');
-        return orgoBox(env.orgoComputerId).readFile(file);
-      },
-      async typeSecret(secret, screenId) {
-        if (!env.orgoComputerId) throw new Error('ORGO_COMPUTER_ID is not set');
-        return orgoBox(env.orgoComputerId).typeSecret(secret, screenId);
-      },
-      quote: q,
-    };
+export const box: Box = localBox();

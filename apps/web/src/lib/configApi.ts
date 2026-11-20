@@ -30,7 +30,7 @@ export interface BotSettingsBundle {
 export interface ComputerDetails {
   computer: ComputerState;
   screens: { botId: string; screenId: string; lastUsedAt: number }[];
-  hibernation: { idleMinutes: number; viewers: number; dryRun: boolean };
+  hibernation: { idleMinutes: number; viewers: number };
 }
 
 export interface NewLibrarySkill { name: string; content: string; description?: string; availability?: 'all' | 'selected'; botIds?: string[] }

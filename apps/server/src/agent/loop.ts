@@ -6,8 +6,6 @@ import { appendRow, emitBot, getBotRow, getLive, getRow, setLive, updateRow } fr
 import type { ActivityKind, CardBody, MessageBody, MessageFile, ToolCallBody } from '@orbit/contracts';
 import type { ReviewPayload } from '@orbit/contracts';
 import { toolkitInfo } from '../composio.js';
-import { screenForWork } from '../computer.js';
-import { computerKindFor } from '../computer-provider-registry.js';
 import { dockerProvider } from '../docker-provider.js';
 import crypto from 'node:crypto';
 import { discardLostTurns, engineFor, noteEngineSession, restartEngine, syncManagedAuth } from '../engine.js';
@@ -495,10 +493,9 @@ async function runTurn(botId: string, trigger: Trigger, signal: AbortSignal): Pr
     let screen = screensComingUp.get(botId);
     const alreadyWaited = !!screen;
     if (!screen) {
-      screen = (computerKindFor(botId) === 'docker'
-        ? dockerProvider.readyScreen(userId, botId).catch((e) => console.warn(`[docker] screen not ready for ${botId}: ${e?.message ?? e}`))
-        : screenForWork(userId, botId).catch((e) => console.warn(`[computer] screen not ready for ${botId}: ${e?.message ?? e}`))
-      ).then(() => undefined);
+      screen = dockerProvider.readyScreen(userId, botId)
+        .catch((e) => console.warn(`[docker] screen not ready for ${botId}: ${e?.message ?? e}`))
+        .then(() => undefined);
     }
     let screenTimer: ReturnType<typeof setTimeout> | undefined;
     const waited = await Promise.race([

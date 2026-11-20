@@ -66,7 +66,7 @@ describe('ComputersView', () => {
     mocked.computers.mockResolvedValue({
       computers: [
         computer('bot-scout'),
-        computer('bot-mason', { kind: 'orgo', status: 'sleeping' }),
+        computer('bot-mason', { status: 'sleeping' }),
         computer('bot-nova', { status: 'starting' }),
       ],
     });
@@ -78,20 +78,6 @@ describe('ComputersView', () => {
     expect(screen.getByText('Nova')).toBeTruthy();
     expect(document.querySelectorAll('.computer-card')).toHaveLength(3);
     expect(screen.getByText('3 computers')).toBeTruthy();
-  });
-
-  it('leaves bots without a computer out of the grid and counts them below it', async () => {
-    mocked.computers.mockResolvedValue({
-      computers: [computer('bot-scout'), computer('bot-room', { kind: 'none', vncAvailable: false, screenId: null })],
-    });
-
-    render(<ComputersView />);
-
-    expect(await screen.findByText('Scout')).toBeTruthy();
-    expect(document.querySelectorAll('.computer-card')).toHaveLength(1);
-    expect(screen.queryByText('The Room')).toBeNull();
-    expect(screen.getByText('1 Bot has no computer')).toBeTruthy();
-    expect(screen.getByText('1 computer')).toBeTruthy();
   });
 
   it('shows the empty state when no bot has a computer', async () => {

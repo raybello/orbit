@@ -16,7 +16,7 @@ export function computerStatusText(c: ComputerState | null): string {
 export const DEFAULT_SCREEN = { width: 1280, height: 960 };
 export const PRIMARY_SCREEN = { width: 1920, height: 1080 };
 
-/** Pixel size of a bot's screen on the shared computer, for the viewer's aspect ratio. Before the server reports one, assume the usual size so the frame does not change shape when the screen appears. */
+/** Pixel size of a bot's screen, for the viewer's aspect ratio. Before the server reports one, assume the usual size so the frame does not change shape when the screen appears. */
 export function screenSize(c: ComputerState | null, botId: string, primary = false): { width: number; height: number } {
   const s = c?.screens.find((x) => x.botId === botId);
   const ok = (n: unknown): n is number => typeof n === 'number' && Number.isFinite(n) && n > 0;

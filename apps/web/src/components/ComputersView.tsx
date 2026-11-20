@@ -55,8 +55,7 @@ export function ComputersView() {
     set({ viewerOpen: true, viewerMode: 'watch', viewerHint: null });
   }, [selectBot, set]);
 
-  const withComputer = (computers ?? []).filter((c) => c.kind !== 'none');
-  const without = (computers ?? []).length - withComputer.length;
+  const withComputer = computers ?? [];
   const count = withComputer.length;
 
   const refresh = (
@@ -97,12 +96,6 @@ export function ComputersView() {
             <ComputerCard key={bot.botId} bot={bot} onOpen={open} />
           ))}
         </div>
-      )}
-
-      {without > 0 && (
-        <p className="computers__muted">
-          {without} {without === 1 ? 'Bot has' : 'Bots have'} no computer
-        </p>
       )}
     </PageShell>
   );

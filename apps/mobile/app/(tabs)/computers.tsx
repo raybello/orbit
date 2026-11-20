@@ -1,4 +1,3 @@
-import { useMemo } from 'react';
 import { FlatList, Pressable, RefreshControl, Text, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { router } from 'expo-router';
@@ -21,8 +20,7 @@ export default function ComputersScreen() {
   const bots = useOrbitStore((s) => s.bots);
   const { data, isLoading, isError, error, refetch, isRefetching } = useComputersQuery();
 
-  const withComputer = useMemo(() => (data ?? []).filter((c) => c.kind !== 'none'), [data]);
-  const without = (data?.length ?? 0) - withComputer.length;
+  const withComputer = data ?? [];
 
   return (
     <View style={{ flex: 1, backgroundColor: tokens.colors.bg }}>
@@ -62,13 +60,6 @@ export default function ComputersScreen() {
                 message="A bot gets a computer when it is set up for one on the server. Once it has one, its screen shows up here."
               />
             )
-          }
-          ListFooterComponent={
-            without > 0 ? (
-              <Text style={{ color: tokens.colors.fgTertiary, fontSize: tokens.fontSizes.caption, textAlign: 'center', paddingTop: tokens.space.md }}>
-                {without} {without === 1 ? 'bot has' : 'bots have'} no computer
-              </Text>
-            ) : null
           }
           renderItem={({ item }) => (
             <ComputerCard

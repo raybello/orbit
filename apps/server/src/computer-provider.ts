@@ -1,15 +1,13 @@
 /**
- * The one interface the rest of the server uses to reach a bot's computer. Two implementations:
- * the shared Orgo computer (computer.ts) and one Docker container per bot (docker-provider.ts).
- * Nothing above this line knows which one a bot has.
+ * The interface the rest of the server uses to reach a bot's computer: one Docker container per
+ * bot (docker-provider.ts).
  */
 
 import type { Secret } from './lib/secret-box.js';
 
 /**
- * The relay's upstream: a connected, bidirectional byte stream to a VNC server. Orgo's is a
- * WebSocket (websockify); a container's x11vnc speaks raw RFB over TCP, so both are wrapped here
- * and vnc.ts only ever sees bytes.
+ * The relay's upstream: a connected, bidirectional byte stream to a VNC server (a container's
+ * x11vnc, raw RFB over TCP). vnc.ts only ever sees bytes.
  */
 export interface VncStream {
   send(data: Buffer): void;
@@ -20,20 +18,20 @@ export interface VncStream {
 }
 
 export interface ComputerRef {
-  /** Internal id: the bot id for a container, the Orgo computer id for the shared computer. */
+  /** Internal id: the bot id. */
   computerId: string;
-  kind: 'orgo' | 'docker';
+  kind: 'docker';
 }
 
 export interface ScreenRef {
   screenId: string;
   /**
-   * Docker only: the port the screen's VNC server listens on. Where that port is (a published
+   * The port the screen's VNC server listens on. Where that port is (a published
    * loopback port on the host, or the bot's address on a Docker network the server shares) is
    * resolved by docker/reach.ts, not stored here.
    */
   vncPort?: number;
-  /** Docker only: the password the relay authenticates to VNC with. */
+  /** The password the relay authenticates to VNC with. */
   viewToken?: string;
   /** Chrome DevTools port of the browser on this screen (published; NOT the port inside the container). */
   cdpPort?: number;
@@ -44,7 +42,7 @@ export interface BashResult { output: string; exit_code: number }
 export interface ScreenShot { data: Buffer; mime: string }
 
 export interface ComputerProvider {
-  readonly kind: 'orgo' | 'docker';
+  readonly kind: 'docker';
 
   /** Provision or resume the bot's computer. Idempotent. */
   ensureComputer(botId: string): Promise<ComputerRef>;
@@ -86,7 +84,7 @@ export interface ComputerProvider {
   vncPassword(botId: string, screenId: string): Promise<string>;
 
   /**
-   * Docker only: whether key events from a viewer must be applied through the computer's own
+   * Whether key events from a viewer must be applied through the computer's own
    * tools instead of being forwarded to the VNC server (whose synthetic keys never reach X here).
    */
   readonly translateKeys?: boolean;
