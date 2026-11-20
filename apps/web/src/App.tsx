@@ -55,6 +55,7 @@ function Shell() {
   const inChat = navSection === 'chat';
   // The panel stays mounted so it can slide shut; it renders its body only while open.
   const showDetails = hasBot && inChat && view === 'chat';
+  const artifactExpanded = useStore((s) => showDetails && s.artifactExpanded && s.detailsOpen && s.detailsTab === 'artifact');
   useDeepLinks();
 
   useEffect(() => {
@@ -89,7 +90,7 @@ function Shell() {
   }, []);
 
   return (
-    <div className="app">
+    <div className={`app${artifactExpanded ? ' is-artifact-expanded' : ''}`}>
       <TitleBar />
       <div className="app__body">
         <NavRail

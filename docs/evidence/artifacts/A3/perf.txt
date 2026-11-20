@@ -1,0 +1,6 @@
+A3 perf, headless Chromium at 1280 x 800, 10 runs each, interleaved with a baseline of 20 tab switches. Click to two animation frames later ("settled"), and every frame gap for 300 ms after.
+Baseline tab switch (Activity and back to Artifact): settled median 38.3 ms, max 81.7 ms, worst frame 183.3 ms, 1 frame over 2x. Coming back to Artifact remounts the iframe.
+Expand: settled median 26.2 ms, max 32.7 ms, worst frame 16.8 ms, 0 frames over 2x.
+Collapse: settled median 32.2 ms, max 33.2 ms, worst frame 33.4 ms, 0 frames over 2x.
+Rule: no expand drops more than 2 frames at 60 Hz, and none takes over 250 ms. Pass.
+First attempt in the Claude browser pane is discarded. The pane was hidden and throttled frames to about 2 per second, and the baseline tab switch read the same 698 ms and 566 ms frames as expand.

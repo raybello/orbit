@@ -12,7 +12,9 @@ vi.mock('../lib/api', () => ({
 }));
 vi.mock('../lib/configApi', () => ({ configApi: {} }));
 
+import fs from 'node:fs';
 import { DetailsPanel } from '../components/DetailsPanel';
+import { ARTIFACT_SANDBOX } from '../components/ArtifactFrame';
 import { ArtifactCard } from '../components/cards/ArtifactCard';
 import { useStore } from '../store';
 
@@ -99,5 +101,62 @@ describe('artifact tab', () => {
     act(() => useStore.getState().openArtifact('a', { artifactId: ID as never, seq: 2 }));
     act(() => useStore.getState().upsertRows('a', 1, [art(11, 'Timer', '<p>v4</p>')]));
     expect(frame().getAttribute('srcdoc')).toBe(V1);
+  });
+});
+
+describe('expanded artifact', () => {
+  beforeEach(() => useStore.getState().openArtifact('a', { artifactId: ID as never, seq: null }));
+
+  it('expands and collapses from the panel, and Escape collapses it', () => {
+    const { container } = render(<DetailsPanel />);
+    fireEvent.click(screen.getByRole('button', { name: 'Expand artifact' }));
+    expect(useStore.getState().artifactExpanded).toBe(true);
+    expect(container.querySelector('.details')!.classList.contains('is-expanded')).toBe(true);
+
+    fireEvent.click(screen.getByRole('button', { name: 'Collapse artifact' }));
+    expect(useStore.getState().artifactExpanded).toBe(false);
+
+    fireEvent.click(screen.getByRole('button', { name: 'Expand artifact' }));
+    fireEvent.keyDown(window, { key: 'Escape' });
+    expect(useStore.getState().artifactExpanded).toBe(false);
+    expect(container.querySelector('.details')!.classList.contains('is-wide')).toBe(true);
+  });
+
+  it('ends when the panel closes, the tab changes or the chat changes', () => {
+    const st = () => useStore.getState();
+    act(() => st().set({ artifactExpanded: true }));
+    act(() => st().set({ detailsOpen: false }));
+    expect(st().artifactExpanded).toBe(false);
+
+    act(() => st().openArtifact('a', { artifactId: ID as never, seq: null }));
+    act(() => st().set({ artifactExpanded: true }));
+    act(() => st().set({ detailsTab: 'screen' }));
+    expect(st().artifactExpanded).toBe(false);
+
+    act(() => st().set({ detailsTab: 'artifact', artifactExpanded: true }));
+    act(() => st().selectBot('other'));
+    expect(st().artifactExpanded).toBe(false);
+  });
+
+  it('opens a new window and sends the artifact only to that window, once it says it is ready', () => {
+    const posted: unknown[] = [];
+    const child = { postMessage: (data: unknown, origin: string) => posted.push({ data, origin }) };
+    const open = vi.spyOn(window, 'open').mockReturnValue(child as unknown as Window);
+    render(<DetailsPanel />);
+    fireEvent.click(screen.getByRole('button', { name: 'Open in new window' }));
+    expect(open).toHaveBeenCalledWith('/artifact-window.html', '_blank', expect.any(String));
+
+    window.dispatchEvent(new MessageEvent('message', { data: { type: 'artifact-window-ready' }, origin: 'https://evil.example', source: child as never }));
+    window.dispatchEvent(new MessageEvent('message', { data: { type: 'artifact-window-ready' }, origin: location.origin, source: window }));
+    expect(posted).toEqual([]);
+
+    window.dispatchEvent(new MessageEvent('message', { data: { type: 'artifact-window-ready' }, origin: location.origin, source: child as never }));
+    expect(posted).toEqual([{ data: { type: 'artifact', html: V2, title: 'Timer' }, origin: location.origin }]);
+    open.mockRestore();
+  });
+
+  it('frames the new window with the same sandbox as the app', () => {
+    const page = fs.readFileSync('public/artifact-window.js', 'utf8');
+    expect(page).toContain(`var SANDBOX = '${ARTIFACT_SANDBOX}';`);
   });
 });
