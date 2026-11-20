@@ -42,7 +42,7 @@ function withRows(rows: Row[]) {
 }
 
 const frame = () => document.querySelector('iframe.artifact-frame') as HTMLIFrameElement;
-const tabNames = (container: HTMLElement) => [...container.querySelectorAll('.details-tab')].map((t) => t.textContent);
+const tabNames = (container: HTMLElement) => [...container.querySelectorAll('[role="tab"]')].map((t) => t.textContent);
 
 beforeEach(() => withRows([art(2, 'Timer', V1), art(5, 'Timer', V2)]));
 afterEach(cleanup);

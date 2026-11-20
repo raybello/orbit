@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
+import { act, cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
 import type { Bot, Row } from '@orbit/contracts';
 
 vi.mock('../lib/api', () => ({
@@ -10,7 +10,7 @@ vi.mock('../lib/api', () => ({
     bots: vi.fn(async () => ({ bots: [], live: [] })),
   },
 }));
-vi.mock('../lib/configApi', () => ({ configApi: {} }));
+vi.mock('../lib/configApi', () => ({ configApi: new Proxy({}, { get: () => async () => ({}) }) }));
 vi.mock('../components/files/CodeView', () => ({ default: ({ text }: { text: string }) => <pre aria-label="Whole file">{text}</pre> }));
 
 import { DetailsPanel } from '../components/DetailsPanel';
@@ -31,7 +31,7 @@ const withRows = (rows: Row[]) => useStore.setState({
   ...base, bots: [SCOUT], selectedBotId: 'a', detailsOpen: true, detailsTab: 'code', openArtifacts: {},
   transcripts: { a: { generation: 1, loaded: true, bySeq: Object.fromEntries(rows.map((r) => [r.seq, r])) } },
 });
-const tabNames = (c: HTMLElement) => [...c.querySelectorAll('.details-tab')].map((t) => t.textContent);
+const tabNames = (c: HTMLElement) => [...c.querySelectorAll('[role="tab"]')].map((t) => t.textContent);
 
 beforeEach(() => withRows([
   call(1, 'write_file', { path: 'scratch/fizz.py', content: 'if i % 5 == 0:\n    out += "Buzz"\nprint(out)\n' }),
@@ -66,3 +66,48 @@ describe('code tab', () => {
     await waitFor(() => expect(screen.getByLabelText('Whole file').textContent).toBe('if i % 5 == 0:\n    out += "Buzz"\nif i % 7 == 0:\n    out += "Bazz"\nprint(out)\n'));
   });
 });
+
+describe('a crowded tab bar', () => {
+  const widthOf = (el: HTMLElement) => (el.classList.contains('details-tabs') ? 400 : (el.textContent ?? '').length * 10 + 16);
+  beforeEach(() => {
+    vi.spyOn(HTMLElement.prototype, 'offsetWidth', 'get').mockImplementation(function (this: HTMLElement) { return widthOf(this); });
+    vi.spyOn(HTMLElement.prototype, 'clientWidth', 'get').mockImplementation(function (this: HTMLElement) { return widthOf(this); });
+    withRows([
+      call(1, 'artifact', { artifactId: 'art_aaaaaaaa', title: 'Page', html: '<p>hi</p>' }),
+      call(2, 'write_file', { path: 'a.py', content: 'x' }),
+    ]);
+  });
+  const shown = () => screen.getAllByRole('tab').map((t) => t.textContent);
+
+  it('keeps full labels and moves what does not fit into More, in order', () => {
+    render(<DetailsPanel />);
+    expect(shown()).toEqual(['Artifact', 'Code', 'Screen', 'Activity']);
+    fireEvent.click(screen.getByRole('button', { name: 'More' }));
+    expect(screen.getAllByRole('menuitem').map((m) => m.textContent)).toEqual(['Tasks', 'Library', 'Engine']);
+  });
+
+  it('brings a tab chosen from More into the bar, selected', () => {
+    render(<DetailsPanel />);
+    fireEvent.click(screen.getByRole('button', { name: 'More' }));
+    fireEvent.click(screen.getByRole('menuitem', { name: 'Engine' }));
+    expect(screen.getByRole('tab', { name: 'Engine' }).getAttribute('aria-selected')).toBe('true');
+    expect(shown()).toEqual(['Artifact', 'Code', 'Screen', 'Engine']);
+    expect(useStore.getState().detailsTab).toBe('engine');
+  });
+
+  it('shows every tab and no More when the bar is wide enough', () => {
+    vi.spyOn(HTMLElement.prototype, 'clientWidth', 'get').mockImplementation(function (this: HTMLElement) { return this.classList.contains('details-tabs') ? 900 : 0; });
+    render(<DetailsPanel />);
+    expect(shown()).toHaveLength(7);
+    expect(screen.queryByRole('button', { name: 'More' })).toBeNull();
+  });
+
+  it('arrow keys walk every tab, including the ones in More', async () => {
+    act(() => useStore.setState({ detailsTab: 'activity' }));
+    render(<DetailsPanel />);
+    fireEvent.keyDown(screen.getByRole('tab', { name: 'Activity' }), { key: 'ArrowRight' });
+    expect(useStore.getState().detailsTab).toBe('tasks');
+    expect(screen.getByRole('tab', { name: 'Tasks' }).getAttribute('aria-selected')).toBe('true');
+  });
+});
+
