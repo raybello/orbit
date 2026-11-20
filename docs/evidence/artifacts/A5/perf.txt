@@ -1,0 +1,7 @@
+A5 perf, headless Chromium at 1280 x 800, the test account's Atlas chat.
+1 MB Markdown, click to first paint of the viewer, 10 runs: median 30.5 ms, max 110.9 ms, longest frame 16.8 ms. Budget 500 ms. Pass.
+Before the 100 KB render cap, the same file took a 21.0 s median, in a single 21.3 s frame.
+Trunk equivalent: trunk downloads the file. Fetching the same 1 MB took a 15.1 ms median.
+20 MB CSV: table in 160 ms, longest frame 83 ms.
+react-markdown render time by size (react-dom/server, node): 50 KB 165 ms, 100 KB 371 ms, 200 KB 986 ms, 400 KB 3,173 ms, 1 MB 17,483 ms. That curve set the cap at 100 KB.
+The browser pane was hidden and throttled animation frames, so every timing ran in headless Chromium.

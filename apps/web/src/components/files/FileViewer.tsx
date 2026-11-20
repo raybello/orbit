@@ -1,5 +1,7 @@
 import { Suspense, lazy, useEffect, useState } from 'react';
-import { viewerFor } from '@orbit/domain';
+import { viewerFor, type ViewerKind } from '@orbit/domain';
+import { parseCsv } from '../../domain/csv';
+import { ArtifactFrame } from '../ArtifactFrame';
 import { ImageViewer } from '../ImageViewer';
 import { Icon } from '../Icon';
 import { Markdown } from '../Markdown';
@@ -12,6 +14,9 @@ const CodeView = lazy(() => import('./CodeView'));
 
 /** Bigger files are not loaded into a view: they download instead. */
 export const TEXT_CAP = 2_000_000;
+
+/** Rendering Markdown blocks the page and grows faster than the file: 100 KB takes ~0.4 s, 1 MB ~17 s. Past this it opens as source. */
+export const MARKDOWN_RENDER_CAP = 100_000;
 
 export interface ViewedFile {
   name: string;
@@ -26,13 +31,39 @@ export interface ViewedFile {
 }
 
 /**
- * Open a file the way its kind wants: an image in the image viewer, Markdown rendered (with its
- * source a click away), anything else as text in the code view with syntax highlighting.
+ * Open a file the way its kind wants: an image in the image viewer; Markdown, HTML and CSV rendered
+ * (Markdown as text, HTML as a page in the artifact sandbox, CSV as a table), each with its source a
+ * click away; anything else as text in the code view with syntax highlighting.
  */
 export function FileViewer({ file, onClose }: { file: ViewedFile; onClose: () => void }) {
   const kind = viewerFor(file.name, file.mediaType);
   if (kind === 'image') return <ImageViewer url={file.url} name={file.name} onClose={onClose} />;
-  return <TextViewer file={file} markdown={kind === 'markdown'} onClose={onClose} />;
+  return <TextViewer file={file} kind={kind} onClose={onClose} />;
+}
+
+/** Kinds with a rendered view as well as their source. */
+type Rendered = Extract<ViewerKind, 'markdown' | 'html' | 'csv'>;
+const isRendered = (k: ViewerKind): k is Rendered => k === 'markdown' || k === 'html' || k === 'csv';
+
+function CsvView({ text, name }: { text: string; name: string }) {
+  const { rows, truncated } = parseCsv(text, name);
+  const [head, ...body] = rows;
+  if (!head) return <div className="file-viewer__note">This file is empty.</div>;
+  return (
+    <div className="file-viewer__csv">
+      <table>
+        <thead><tr>{head.map((h, i) => <th key={i} scope="col">{h}</th>)}</tr></thead>
+        <tbody>{body.map((r, i) => <tr key={i}>{head.map((_, j) => <td key={j}>{r[j] ?? ''}</td>)}</tr>)}</tbody>
+      </table>
+      {truncated && <div className="file-viewer__cut">Showing the first {rows.length.toLocaleString()} rows. Download the file for the rest.</div>}
+    </div>
+  );
+}
+
+function RenderedView({ kind, text, file }: { kind: Rendered; text: string; file: ViewedFile }) {
+  if (kind === 'html') return <div className="file-viewer__page"><ArtifactFrame html={text} title={`Preview of ${file.name}`} /></div>;
+  if (kind === 'csv') return <CsvView text={text} name={file.name} />;
+  return <div className="file-viewer__md"><Markdown text={text} urlTransform={file.resolve} /></div>;
 }
 
 type Loaded = { state: 'loading' } | { state: 'text'; text: string; capped: boolean } | { state: 'binary' } | { state: 'too-big' } | { state: 'error'; message: string };
@@ -40,9 +71,11 @@ type Loaded = { state: 'loading' } | { state: 'text'; text: string; capped: bool
 /** A NUL byte in the first 8 KB is how a binary file shows itself. */
 const looksBinary = (bytes: Uint8Array) => bytes.subarray(0, 8192).includes(0);
 
-function TextViewer({ file, markdown, onClose }: { file: ViewedFile; markdown: boolean; onClose: () => void }) {
+function TextViewer({ file, kind, onClose }: { file: ViewedFile; kind: ViewerKind; onClose: () => void }) {
   const [loaded, setLoaded] = useState<Loaded>({ state: 'loading' });
   const [source, setSource] = useState(false);
+  const tooLong = kind === 'markdown' && loaded.state === 'text' && loaded.text.length > MARKDOWN_RENDER_CAP;
+  const rendered = isRendered(kind) && !tooLong ? kind : null;
 
   useEffect(() => {
     if (file.size !== undefined && file.size > TEXT_CAP) { setLoaded({ state: 'too-big' }); return; }
@@ -75,7 +108,7 @@ function TextViewer({ file, markdown, onClose }: { file: ViewedFile; markdown: b
           )}
         </div>
         <div className="file-viewer__tools">
-          {markdown && loaded.state === 'text' && (
+          {rendered && loaded.state === 'text' && (
             <div className="file-viewer__seg" role="tablist" aria-label="View">
               <button type="button" role="tab" aria-selected={!source} className={!source ? 'is-on' : ''} onClick={() => setSource(false)}>Preview</button>
               <button type="button" role="tab" aria-selected={source} className={source ? 'is-on' : ''} onClick={() => setSource(true)}>Source</button>
@@ -94,8 +127,8 @@ function TextViewer({ file, markdown, onClose }: { file: ViewedFile; markdown: b
         {loaded.state === 'error' && <div className="file-viewer__note is-error" role="alert">Couldn’t open this file. {loaded.message}</div>}
         {loaded.state === 'binary' && <div className="file-viewer__note">This is a binary file, so there is nothing to show as text. Download it to open it.</div>}
         {loaded.state === 'too-big' && <div className="file-viewer__note">This file is larger than {formatBytes(TEXT_CAP)}, too big to preview. Download it to open it.</div>}
-        {loaded.state === 'text' && (markdown && !source
-          ? <div className="file-viewer__md"><Markdown text={loaded.text} urlTransform={file.resolve} /></div>
+        {loaded.state === 'text' && (rendered && !source
+          ? <RenderedView kind={rendered} text={loaded.text} file={file} />
           : (
             <Suspense fallback={<div className="file-viewer__note" role="status">Loading…</div>}>
               <CodeView text={loaded.text} filename={file.name} />
@@ -103,6 +136,7 @@ function TextViewer({ file, markdown, onClose }: { file: ViewedFile; markdown: b
           ))}
       </div>
       {loaded.state === 'text' && loaded.capped && <div className="file-viewer__cut">Showing the first {formatBytes(TEXT_CAP)}.</div>}
+      {tooLong && <div className="file-viewer__cut">Too long to render as Markdown, so this is its source.</div>}
     </Modal>
   );
 }

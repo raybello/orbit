@@ -1,7 +1,9 @@
 import { useState } from 'react';
 import type { MessageFile } from '@orbit/contracts';
+import { viewerFor } from '@orbit/domain';
 import { Icon } from './Icon';
 import { ImageViewer } from './ImageViewer';
+import { FileViewer } from './files/FileViewer';
 
 function fileUrl(botId: string, file: MessageFile): string {
   return `/api/bots/${botId}/files/raw?path=${encodeURIComponent(file.path)}`;
@@ -52,15 +54,33 @@ function ImagePreview({ file, botId }: { file: MessageFile; botId: string }) {
   );
 }
 
+/** A file the viewer can show opens in it, with Download a click away there; anything else downloads. */
 function FileChip({ file, botId }: { file: MessageFile; botId: string }) {
+  const [open, setOpen] = useState(false);
   const url = fileUrl(botId, file);
   const icon = fileIcon(file.mediaType);
-  return (
-    <a href={url} download={file.filename} className="file-part file-part--chip" title={`Download ${file.filename}`}>
+  const body = (
+    <>
       <span className="file-part__icon"><Icon name={icon} size={16} opacity={0.7} /></span>
       <span className="file-part__name">{file.filename}</span>
-      <Icon name="arrow_down" size={12} opacity={0.45} className="file-part__dl" />
-    </a>
+    </>
+  );
+  if (viewerFor(file.filename, file.mediaType) === 'other') {
+    return (
+      <a href={url} download={file.filename} className="file-part file-part--chip" title={`Download ${file.filename}`}>
+        {body}
+        <Icon name="arrow_down" size={12} opacity={0.45} className="file-part__dl" />
+      </a>
+    );
+  }
+  return (
+    <>
+      <button type="button" className="file-part file-part--chip" onClick={() => setOpen(true)} title={`Open ${file.filename}`} aria-label={`Open ${file.filename}`}>
+        {body}
+        <Icon name="eye" size={12} opacity={0.45} className="file-part__dl" />
+      </button>
+      {open && <FileViewer file={{ name: file.filename, url, path: file.path, mediaType: file.mediaType }} onClose={() => setOpen(false)} />}
+    </>
   );
 }
 
