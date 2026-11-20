@@ -3,7 +3,7 @@
 .details.is-wide { --wide: clamp(var(--details-panel-width), calc(100vw - 780px), 680px); flex-basis: var(--wide); width: var(--wide); }
 
 .artifact-card {
-  display: flex; align-items: center; gap: 12px; max-width: 420px; margin: 4px 0;
+  display: flex; align-items: center; gap: 12px; width: 100%; max-width: var(--attachment-width); margin: 4px 0;
   padding: 10px 12px; border-radius: 12px; background: var(--color-bg-pane);
   border: 1px solid var(--color-border-tertiary);
   transition: border-color 140ms var(--ease-out);

@@ -4,7 +4,7 @@ import type { Bot } from '@orbit/contracts';
 import { BotAvatarFor } from '../avatar/BotAvatar';
 import { api } from '../lib/api';
 import { botVars } from '../lib/colors';
-import { computerStatusText, screenSize, screensFull } from '../lib/computer';
+import { botComputerStatus, computerStatusText, screenSize, screensFull } from '../lib/computer';
 import { configApi } from '../lib/configApi';
 import { useSelectedBot, useStore } from '../store';
 import { Icon } from './Icon';
@@ -346,7 +346,7 @@ export function ComputerViewer() {
         <div className="viewer__title">
           <BotAvatarFor bot={bot} size={24} />
           <span>{bot.name}’s computer</span>
-          <span className="viewer__status">{computerStatusText(computer)}</span>
+          <span className="viewer__status">{computerStatusText(botComputerStatus(computer, bot.id))}</span>
         </div>
         <button type="button" className="viewer__close" onClick={close} aria-label="Close computer"><Icon name="close" color="#FFFFFF" /></button>
       </div>

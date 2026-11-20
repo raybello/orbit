@@ -10,7 +10,7 @@
   -webkit-app-region: drag;
 }
 /* macOS draws the real traffic lights over this strip; leave them their corner. */
-.titlebar.has-native-controls { padding-left: 84px; }
+.titlebar.has-native-controls { padding-left: var(--window-controls-inset); }
 .titlebar__lead { display: flex; align-items: center; min-width: 0; flex: 0 0 auto; }
 .titlebar.has-native-controls .titlebar__lead { display: none; }
 .titlebar__brand { display: inline-flex; align-items: center; gap: 8px; color: var(--accent-500); }

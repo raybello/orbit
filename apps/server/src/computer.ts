@@ -2,20 +2,33 @@ import { db } from './db.js';
 import { env } from './env.js';
 import { box } from './box.js';
 import { dockerProvider } from './docker-provider.js';
-import { dockerComputers } from './computer-store.js';
+import { dockerComputers, onComputerStateChange, type ComputerRuntimeState } from './computer-store.js';
+import { hub } from './lib/hub.js';
 import type { ComputerState } from '@orbit/contracts';
+
+const STATUS: Record<ComputerRuntimeState, ComputerState['status']> = {
+  stopped: 'stopped', booting: 'starting', running: 'running', suspending: 'suspending', suspended: 'suspended', error: 'error',
+};
 
 /**
  * The team's computers as the app shows them. Every Bot has a computer of its own (a container, see
- * docker-provider.ts) that starts on demand, so there is no shared machine to wait for: the state is
- * running, with the screens the Bots' containers have open.
+ * docker-provider.ts) that starts on demand, so there is no shared machine to wait for: the overall
+ * status is running, and each screen carries its own Bot's computer state.
  */
 export function computerState(userId: string): ComputerState {
   const screens = (db.prepare(
-    'SELECT cs.bot_id, cs.screen_id FROM computer_screens cs JOIN bots b ON b.id=cs.bot_id WHERE b.user_id=?',
-  ).all(userId) as { bot_id: string; screen_id: string }[]).map((s) => ({ botId: s.bot_id, screenId: s.screen_id }));
+    `SELECT cs.bot_id, cs.screen_id, bc.state FROM computer_screens cs JOIN bots b ON b.id=cs.bot_id
+       LEFT JOIN bot_computers bc ON bc.bot_id=cs.bot_id WHERE b.user_id=?`,
+  ).all(userId) as { bot_id: string; screen_id: string; state: ComputerRuntimeState | null }[])
+    .map((s) => ({ botId: s.bot_id, screenId: s.screen_id, state: STATUS[s.state ?? 'stopped'] ?? 'stopped' }));
   return { status: 'running', error: null, screens, maxScreens: env.maxBots };
 }
+
+// A Bot's computer waking or going to sleep changes what its owner's app shows.
+onComputerStateChange((botId) => {
+  const owner = db.prepare('SELECT user_id FROM bots WHERE id=?').get(botId) as { user_id: string } | undefined;
+  if (owner) hub.emit(owner.user_id, { type: 'computer', state: computerState(owner.user_id) });
+});
 
 /** Put this person's running Bot computers to sleep. Each starts again on its own when it has work. */
 export async function suspendUserComputers(userId: string): Promise<void> {

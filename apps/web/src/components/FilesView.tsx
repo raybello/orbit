@@ -28,7 +28,7 @@ const KIND_ICON: Record<FileKind, IconName> = {
   audio: 'mic',
   video: 'calls',
   pdf: 'file',
-  code: 'edit',
+  code: 'file',
   other: 'paperclip',
 };
 

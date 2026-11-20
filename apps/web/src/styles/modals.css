@@ -1,5 +1,7 @@
 /* ---------- modals: 50% scrim (screens 03-05) ---------- */
-.modal-root { position: fixed; inset: 0; z-index: 100; display: flex; align-items: center; justify-content: center; padding: 24px; }
+.modal-root { position: fixed; inset: 0; z-index: 100; display: flex; align-items: center; justify-content: center; padding: 24px; -webkit-app-region: no-drag; }
+/* A tall dialog in the desktop app stays below the title bar strip, as App Settings does. */
+:root[data-native-controls] .modal-root { padding-top: calc(var(--titlebar-height) + 8px); }
 .modal-scrim { position: absolute; inset: 0; background: var(--color-bg-scrim); animation: fade 160ms ease-out; }
 .modal {
   position: relative; display: flex; flex-direction: column; max-height: calc(100vh - 48px); overflow: clip;

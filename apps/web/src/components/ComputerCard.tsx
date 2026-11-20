@@ -11,10 +11,6 @@ const STATUS_LABEL: Record<BotComputerStatus['status'], string> = {
   unknown: 'Unknown',
 };
 
-const KIND_LABEL: Record<BotComputerStatus['kind'], string> = {
-  docker: 'Docker',
-};
-
 interface Props {
   bot: BotComputerStatus;
   onOpen: (botId: string) => void;
@@ -32,7 +28,6 @@ export function ComputerCard({ bot, onOpen }: Props) {
   const full = useStore((s) => s.bots.find((b) => b.id === bot.botId));
   const status = STATUS_LABEL[bot.status] ?? 'Unknown';
   const canOpen = bot.vncAvailable;
-  const kind = KIND_LABEL[bot.kind] ?? '';
   // Nothing to photograph while the computer is asleep or gone; the last frame stays on screen.
   const live = bot.status === 'awake' || bot.status === 'starting';
   const preview = useScreenPreview(bot.botId, { enabled: live });
@@ -87,7 +82,6 @@ export function ComputerCard({ bot, onOpen }: Props) {
       </button>
 
       <footer className="computer-card__foot">
-        <span className="computer-card__kind">{kind}</span>
         <button
           type="button"
           className="computer-card__open"

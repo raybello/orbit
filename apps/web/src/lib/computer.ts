@@ -1,7 +1,16 @@
 import type { ComputerState } from '@orbit/contracts';
 
-export function computerStatusText(c: ComputerState | null): string {
-  switch (c?.status) {
+/**
+ * One Bot's computer. Every Bot has its own, so this is the state on its screen; a Bot with no screen
+ * yet has never been woken.
+ */
+export function botComputerStatus(c: ComputerState | null, botId: string): ComputerState['status'] | undefined {
+  if (!c) return undefined;
+  return c.screens.find((s) => s.botId === botId)?.state ?? 'suspended';
+}
+
+export function computerStatusText(status: ComputerState['status'] | undefined): string {
+  switch (status) {
     case 'running': return 'Awake';
     case 'starting': case 'resuming': return 'Waking up…';
     case 'creating': return 'Setting up…';
