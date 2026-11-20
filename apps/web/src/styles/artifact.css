@@ -38,3 +38,13 @@
   background: var(--color-bg-pane); color: var(--color-text-primary);
 }
 .artifact-empty { margin: 16px; }
+
+/* Expanded: the artifact takes the window, the chat keeps a reading column, the chat list steps aside. */
+.app.is-artifact-expanded .section-panel { display: none; }
+.app.is-artifact-expanded .app__main { flex: 0 0 440px; }
+.details.is-expanded { flex: 1 1 0; width: auto; min-width: 0; }
+.artifact-panel__back { display: none; gap: 4px; flex-shrink: 0; }
+@media (max-width: 900px) {
+  .app.is-artifact-expanded .app__main { display: none; }
+  .artifact-panel__back { display: inline-flex; }
+}

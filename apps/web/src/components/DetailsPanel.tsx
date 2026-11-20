@@ -137,6 +137,7 @@ export function DetailsPanel() {
   const open = useStore((s) => s.detailsOpen);
   const set = useStore((s) => s.set);
   const tab = useStore((s) => s.detailsTab);
+  const expanded = useStore((s) => s.artifactExpanded);
   const setTab = (detailsTab: DetailsTab) => set({ detailsTab });
   const bySeq = useStore((s) => (bot ? s.transcripts[bot.id]?.bySeq : undefined));
   const artifacts = useMemo(() => artifactsOf(bySeq ? Object.values(bySeq) : []), [bySeq]);
@@ -176,7 +177,7 @@ export function DetailsPanel() {
 
   return (
     <aside
-      className={`details${open ? '' : ' is-closed'}${open && shown === 'artifact' ? ' is-wide' : ''}`}
+      className={`details${open ? '' : ' is-closed'}${open && shown === 'artifact' ? (expanded ? ' is-expanded' : ' is-wide') : ''}`}
       style={botVars(bot.avatarColor)}
       aria-label="Conversation details"
       aria-hidden={open ? undefined : true}

@@ -47,6 +47,8 @@ interface State {
   detailsTab: DetailsTab;
   /** Per Bot, so switching chats and back lands on the same artifact. */
   openArtifacts: Record<string, OpenArtifact>;
+  /** The artifact fills the window beside a narrow chat. Ends when the panel closes, leaves the tab or the chat changes. */
+  artifactExpanded: boolean;
   modal: ModalKind;
   viewerOpen: boolean;
   /** How the large computer view opens, and the mode it is in while open. */
@@ -104,6 +106,7 @@ export const useStore = create<State>((set, get) => ({
   detailsOpen: lsGet(LS_DETAILS) === '1',
   detailsTab: 'screen',
   openArtifacts: {},
+  artifactExpanded: false,
   modal: null,
   viewerOpen: false,
   viewerMode: 'watch',
@@ -151,7 +154,7 @@ export const useStore = create<State>((set, get) => ({
     if (prev && prev !== id) {
       set((s) => ({ navHistory: [...s.navHistory, prev].slice(-50), navFuture: [] }));
     }
-    set({ selectedBotId: id });
+    set({ selectedBotId: id, ...(prev !== id ? { artifactExpanded: false } : {}) });
     lsSet(LS_SELECTED, id);
     const t = get().transcripts[id];
     if (!t?.loaded) get().loadRows(id).catch(console.error);
@@ -338,7 +341,8 @@ export const useStore = create<State>((set, get) => ({
 
   set(p) {
     if (p.detailsOpen !== undefined) lsSet(LS_DETAILS, p.detailsOpen ? '1' : '0');
-    set(p);
+    const leaves = p.detailsOpen === false || (p.detailsTab !== undefined && p.detailsTab !== 'artifact');
+    set(leaves ? { ...p, artifactExpanded: false } : p);
   },
 
   openArtifact(botId, target) {
