@@ -1,11 +1,13 @@
-import { useEffect, useRef, useState, type KeyboardEvent as ReactKeyboardEvent } from 'react';
+import { useEffect, useMemo, useRef, useState, type KeyboardEvent as ReactKeyboardEvent } from 'react';
 import type { Bot, Routine } from '@orbit/contracts';
 import { BotAvatarFor } from '../avatar/BotAvatar';
 import { PrimaryStar } from './PrimaryStar';
 import { api, openPopup } from '../lib/api';
 import { botVars } from '../lib/colors';
 import { computerStatusText } from '../lib/computer';
-import { useSelectedBot, useStore } from '../store';
+import { useSelectedBot, useStore, type DetailsTab } from '../store';
+import { artifactsOf } from '../domain/artifacts';
+import { ArtifactPanel } from './ArtifactPanel';
 import { displayName } from '../domain/transcript-utils';
 import { Icon } from './Icon';
 import { ToolkitLogo } from './ToolkitLogo';
@@ -21,7 +23,9 @@ import { BotTasks } from './config/TasksView';
 // Other files import this from here; it lives in lib/computer so the viewer can use it too.
 export { computerStatusText };
 
-type DetailsTab = 'screen' | 'activity' | 'tasks' | 'library' | 'engine';
+const TAB_LABELS: Record<DetailsTab, string> = {
+  screen: 'Screen', activity: 'Activity', tasks: 'Tasks', library: 'Library', engine: 'Engine', artifact: 'Artifact',
+};
 
 function Toggle({ on, onChange, label }: { on: boolean; onChange: (v: boolean) => void; label: string }) {
   return (
@@ -132,7 +136,10 @@ export function DetailsPanel() {
   const viewerOpen = useStore((s) => s.viewerOpen);
   const open = useStore((s) => s.detailsOpen);
   const set = useStore((s) => s.set);
-  const [tab, setTab] = useState<DetailsTab>('screen');
+  const tab = useStore((s) => s.detailsTab);
+  const setTab = (detailsTab: DetailsTab) => set({ detailsTab });
+  const bySeq = useStore((s) => (bot ? s.transcripts[bot.id]?.bySeq : undefined));
+  const artifacts = useMemo(() => artifactsOf(bySeq ? Object.values(bySeq) : []), [bySeq]);
   const [hideSuggested, setHideSuggested] = useState(() => { try { return localStorage.getItem('grokbot.hideSuggested') === '1'; } catch { return false; } });
   const barRef = useRef<HTMLDivElement>(null);
   if (!bot) return null;
@@ -141,13 +148,8 @@ export function DetailsPanel() {
   // the people and the group options instead of the tabs a Bot has.
   if (bot.kind === 'room') return <GroupDetails bot={bot} open={open} />;
 
-  const tabs: { id: DetailsTab; label: string }[] = [
-    { id: 'screen', label: 'Screen' },
-    { id: 'activity', label: 'Activity' },
-    { id: 'tasks', label: 'Tasks' },
-    { id: 'library', label: 'Library' },
-    { id: 'engine', label: 'Engine' },
-  ];
+  const ids: DetailsTab[] = artifacts.size ? ['artifact', 'screen', 'activity', 'tasks', 'library', 'engine'] : ['screen', 'activity', 'tasks', 'library', 'engine'];
+  const tabs = ids.map((id) => ({ id, label: TAB_LABELS[id] }));
   // Switching from a bot on Engine to a room (or a vanished tab) lands back on the first tab.
   const shown: DetailsTab = tabs.some((t) => t.id === tab) ? tab : 'screen';
 
@@ -174,7 +176,7 @@ export function DetailsPanel() {
 
   return (
     <aside
-      className={`details${open ? '' : ' is-closed'}`}
+      className={`details${open ? '' : ' is-closed'}${open && shown === 'artifact' ? ' is-wide' : ''}`}
       style={botVars(bot.avatarColor)}
       aria-label="Conversation details"
       aria-hidden={open ? undefined : true}
@@ -259,6 +261,7 @@ export function DetailsPanel() {
             </section>
           </div>
         )}
+        {shown === 'artifact' && <ArtifactPanel key={bot.id} botId={bot.id} artifacts={artifacts} />}
         {shown === 'tasks' && <BotTasks bot={bot} />}
         {shown === 'library' && <LibraryTab bot={bot} />}
         {shown === 'engine' && (
