@@ -1,5 +1,5 @@
 <h1>API reference</h1>
-<p class="lede">The Orbit server is a Hono app on Node. The web, desktop and mobile clients all use the same HTTP API, one Server-Sent Events stream, and two WebSocket relays. Hermes engines reach the app's tools over MCP.</p>
+<p class="lede">The Orbit server is a Hono app on Node. The web, desktop and mobile clients all use the same HTTP API, one Server-Sent Events stream, and two WebSockets: the screen relay and the sign-in terminal. Hermes engines reach the app's tools over MCP.</p>
 
 <h2 id="conventions">Conventions</h2>
 <ul>
@@ -116,7 +116,7 @@ POST|/api/bots/:id/memories/consolidate|Asks the engine to consolidate memory.
 POST|/api/bots/:id/compact|Compacts the conversation history.
 GET|/api/bots/:id/engine|Provider and model options, and the current choice.
 PATCH|/api/bots/:id/engine|<code>{ provider, model }</code>; <code>null</code> means the agent's default.
-POST|/api/bots/:id/engine/login|<code>{ provider }</code>. Opens a subscription sign-in on the bot's screen.
+WS|/api/bots/:id/engine/terminal|Hermes' sign-in for that bot's agent, in a terminal. <code>?provider=</code> signs in to one provider; without it, Hermes' model chooser. Owner only, one at a time per bot.
 POST|/api/bots/:id/engine/restart|Restarts a managed engine.
 POST|/api/bots/:id/engine/screen/stop|Closes the sign-in terminal on the screen.
 POST|/api/bots/:id/handback|Hands the screen back to the bot after you drove it.

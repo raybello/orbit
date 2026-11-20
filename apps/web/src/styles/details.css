@@ -145,7 +145,6 @@
 .engine__actions .btn { height: 28px; padding: 4px 14px; }
 .engine__actions .btn:disabled { opacity: 0.45; cursor: default; }
 .engine__signin { border-top: 1px solid var(--color-border-tertiary); border-radius: 0 0 8px 8px; margin-top: 2px; }
-.engine__signin:disabled { opacity: 0.6; cursor: default; }
 .engine__meta { display: flex; align-items: center; justify-content: space-between; gap: 8px; min-height: 28px; padding: 4px 4px 4px 8px; border-top: 1px solid var(--color-border-tertiary); font-size: 12px; line-height: 16px; letter-spacing: 0.12px; color: var(--color-text-tertiary); }
 .engine__state { display: inline-flex; align-items: center; gap: 6px; min-width: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .engine__notice { display: flex; flex-direction: column; align-items: flex-start; gap: 4px; padding: 8px; border-top: 1px solid var(--color-border-tertiary); font-size: 12px; line-height: 16px; letter-spacing: 0.12px; color: var(--color-text-secondary); }
@@ -157,3 +156,11 @@
 .details-tabs__more { display: inline-flex; align-items: center; gap: 4px; flex: 0 0 auto; }
 .details-tabs__measure { position: absolute; top: 0; left: 0; display: flex; visibility: hidden; pointer-events: none; height: 0; overflow: hidden; }
 .details-tabs__measure > .details-tab { flex: 0 0 auto; }
+
+/* The Engine tab's sign-in terminal: Hermes running for this Bot, drawn by xterm.js. */
+.modal.signin-terminal { width: min(960px, calc(100vw - 32px)); padding: 16px; display: flex; flex-direction: column; gap: 12px; }
+.signin-terminal__head { display: flex; align-items: flex-start; justify-content: space-between; gap: 12px; }
+.signin-terminal__title { font-size: 15px; font-weight: 600; color: var(--color-ink); }
+.signin-terminal__sub { margin-top: 2px; font-size: 12px; line-height: 16px; color: var(--color-text-tertiary); }
+.signin-terminal__screen { padding: 8px; border-radius: 8px; background: #000; overflow: auto; }
+.signin-terminal__status { font-size: 12px; color: var(--color-text-tertiary); }

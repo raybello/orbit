@@ -86,17 +86,6 @@ configApi.patch('/bots/:id/engine', async (c) => {
   return c.json({ engine: await engineInfo(b.id) });
 });
 
-/**
- * Sign in to a model provider through a terminal. Every Bot's agent runs with a computer of its own,
- * where no terminal can reach the agent's files, so model sign-in happens in the model settings.
- */
-configApi.post('/bots/:id/engine/login', async (c) => {
-  const b = ownBot(c.get('user').id, c.req.param('id'));
-  if (!b) return c.json({ error: 'not found' }, 404);
-  if (!engineHome(b.id)) return c.json({ error: 'This bot has no agent.' }, 409);
-  return c.json({ error: 'Sign-in opens a terminal on the computer where the agent lives, and this Bot has a computer of its own. Use the model settings instead.' }, 409);
-});
-
 configApi.post('/bots/:id/engine/restart', async (c) => {
   const b = ownBot(c.get('user').id, c.req.param('id'));
   if (!b) return c.json({ error: 'not found' }, 404);

@@ -3,6 +3,7 @@ import type { Bot, EngineInfo, EngineProvider } from '@orbit/contracts';
 import { configApi } from '../lib/configApi';
 import { useStore } from '../store';
 import { Icon } from './Icon';
+import { SignInTerminal } from './SignInTerminal';
 
 const KIND: Record<EngineProvider['kind'], string> = { subscription: 'Subscription', api_key: 'API key' };
 const STATUS: Record<EngineInfo['status'], string> = { ready: 'ready', starting: 'starting', stopped: 'stopped', error: 'error' };
@@ -18,15 +19,14 @@ function sortProviders(list: EngineProvider[]): EngineProvider[] {
  * down, the section says so and the rest of the panel is unaffected.
  */
 export function EngineSettings({ bot }: { bot: Bot }) {
-  const viewerOpen = useStore((s) => s.viewerOpen);
-  const set = useStore((s) => s.set);
   const [engine, setEngine] = useState<EngineInfo | null>(null);
   const [phase, setPhase] = useState<'loading' | 'ok' | 'unavailable'>('loading');
   const [provider, setProvider] = useState('');
   const [model, setModel] = useState('');
-  const [busy, setBusy] = useState<'save' | 'signin' | 'restart' | 'screen' | null>(null);
+  const [busy, setBusy] = useState<'save' | 'restart' | 'screen' | null>(null);
   const [note, setNote] = useState<string | null>(null);
-  const [signingIn, setSigningIn] = useState(false);
+  /** The sign-in terminal, while it is open: a provider to sign in to, or the model chooser. */
+  const [terminal, setTerminal] = useState<{ provider?: string; name?: string } | null>(null);
   const dirty = useRef(false);
   const botId = bot.id;
 
@@ -47,7 +47,7 @@ export function EngineSettings({ bot }: { bot: Bot }) {
     return () => { alive = false; };
   }, [botId, apply]);
 
-  useEffect(() => { dirty.current = false; setEngine(null); setNote(null); setSigningIn(false); return load(); }, [load]);
+  useEffect(() => { dirty.current = false; setEngine(null); setNote(null); setTerminal(null); return load(); }, [load]);
 
   // The agent takes a moment to come up after a change or a restart.
   const starting = engine?.status === 'starting';
@@ -56,14 +56,6 @@ export function EngineSettings({ bot }: { bot: Bot }) {
     const t = setInterval(() => load(true), 3000);
     return () => clearInterval(t);
   }, [starting, load]);
-
-  // Signing in happens on the bot's computer. Check while that view is open, and once more when it closes.
-  useEffect(() => {
-    if (!signingIn) return;
-    if (!viewerOpen) { setSigningIn(false); load(true); return; }
-    const t = setInterval(() => load(true), 5000);
-    return () => clearInterval(t);
-  }, [signingIn, viewerOpen, load]);
 
   if (phase !== 'ok' || !engine) {
     return (
@@ -105,17 +97,9 @@ export function EngineSettings({ bot }: { bot: Bot }) {
     finally { setBusy(null); }
   };
 
-  const signIn = async () => {
-    if (busy) return;
-    setBusy('signin'); setNote(null);
-    try {
-      await configApi.engineLogin(botId, signInTo?.id);
-      // The sign-in runs in a terminal on the bot's screen, so take the person there with the mouse and keyboard.
-      set({ viewerOpen: true, viewerMode: 'control', viewerHint: `Finish signing in on ${bot.name}’s computer, then hand back.` });
-      setSigningIn(true);
-    } catch (e) { setNote(`Couldn’t start sign-in: ${(e as Error).message || 'the engine did not answer'}`); }
-    finally { setBusy(null); }
-  };
+  const signIn = () => { setNote(null); setTerminal({ provider: signInTo?.id, name: signInTo?.name }); };
+  // A finished sign-in changes which providers are connected.
+  const closeTerminal = () => { setTerminal(null); load(true); };
 
   const restart = async () => {
     if (busy) return;
@@ -167,9 +151,9 @@ export function EngineSettings({ bot }: { bot: Bot }) {
         {changed && <button type="button" className="link-btn link-btn--small" onClick={() => { dirty.current = false; setNote(null); setProvider(engine.provider ?? ''); setModel(engine.model ?? ''); }}>Undo</button>}
       </div>
       {(signInTo || openSubscriptions.length > 0) && (
-        <button type="button" className="panel-row panel-row--action engine__signin" onClick={signIn} disabled={busy === 'signin'}>
+        <button type="button" className="panel-row panel-row--action engine__signin" onClick={signIn}>
           <Icon name="monitor" size={14} opacity={0.56} />
-          {busy === 'signin' ? 'Opening sign-in…' : signInTo ? `Sign in to ${signInTo.name}…` : 'Sign in to a subscription…'}
+          {signInTo ? `Sign in to ${signInTo.name}…` : 'Sign in to a subscription…'}
         </button>
       )}
       {engine.ownScreen && (
@@ -189,6 +173,7 @@ export function EngineSettings({ bot }: { bot: Bot }) {
         )}
       </div>
       {engine.status === 'error' && engine.error && <div className="engine__error">{engine.error}</div>}
+      {terminal && <SignInTerminal botId={botId} botName={bot.name} provider={terminal.provider} providerName={terminal.name} onClose={closeTerminal} />}
     </div>
   );
 }

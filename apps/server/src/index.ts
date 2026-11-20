@@ -3,6 +3,7 @@ import type { Server } from 'node:http';
 import { env } from './env.js';
 import { createApp } from './api/app.js';
 import { attachVncRelay } from './vnc.js';
+import { attachEngineTerminal } from './engine-terminal.js';
 import { attachLocalCallRelay } from './voice-local-session.js';
 import { attachAudiocppCallRelay } from './voice-audiocpp-session.js';
 import { warmVoiceIfReady } from './voice-local.js';
@@ -45,6 +46,7 @@ const app = createApp();
 
 const server = serve({ fetch: app.fetch, port: env.port }, (info) => console.log(`[grokbot] server on http://localhost:${info.port}`));
 attachVncRelay(server as unknown as Server);
+attachEngineTerminal(server as unknown as Server);
 attachLocalCallRelay(server as unknown as Server);
 attachAudiocppCallRelay(server as unknown as Server);
 // On-device voice, when this host has the models: loading the engines now keeps the first call fast.
