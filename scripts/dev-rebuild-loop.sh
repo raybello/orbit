@@ -83,7 +83,7 @@ echo
 echo "▸ checking the stack serves this build"
 SERVED_CSS=$(curl -sf "http://127.0.0.1:$PORT/" | grep -o 'assets/index-[A-Za-z0-9_-]*\.css' | head -1 | xargs -n1 basename)
 IMAGE_CSS=$(docker run --rm --entrypoint sh "$APP_IMAGE" \
-  -c 'ls /app/apps/web/dist/assets/ 2>/dev/null | grep "\.css$" | head -1' 2>/dev/null | head -1 | xargs -n1 basename || true)
+  -c 'ls /app/apps/web/dist/assets/ 2>/dev/null | grep "^index-.*\.css$" | head -1' 2>/dev/null | head -1 | xargs -n1 basename || true)
 if [ -n "$IMAGE_CSS" ] && [ "$SERVED_CSS" != "$IMAGE_CSS" ]; then
   echo "✗ the stack is serving ${SERVED_CSS:-nothing} but $APP_IMAGE built $IMAGE_CSS" >&2
   echo "  the container is running an older image — recreate it: docker compose -f \"$STACK/docker-compose.yml\" --env-file \"$STACK/.env\" up -d --force-recreate" >&2
