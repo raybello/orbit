@@ -195,6 +195,8 @@ export function DetailsPanel() {
               <div className="details__who-text">
                 <div className="details__who-head">
                   <span className="details__who-name" title={displayName(bot)}>{displayName(bot)}</span>
+                </div>
+                <div className="details__who-sub">
                   {bot.model && <span className="details__model" title={bot.provider ? `${bot.provider} · ${bot.model}` : bot.model}>{bot.model}</span>}
                 </div>
                 <div className="details__who-sub">Computer {computerStatusText(botComputerStatus(computer, bot.id)).toLowerCase()}</div>
