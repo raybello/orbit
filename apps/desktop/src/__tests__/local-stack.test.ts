@@ -210,9 +210,13 @@ function harness(opts: {
   localImages?: boolean;
   /** Answer the one-shot Hermes import (`compose run`). */
   importRun?: () => DockerResult;
+  /** Whether the last launch's port can be bound again (default: yes). */
+  isPortFree?: (port: number) => Promise<boolean>;
+  /** Reuse this stack folder (a second launch of the same install). */
+  keepRoot?: boolean;
 }): Harness {
   const root = path.join(tmpRoot, opts.name);
-  fs.rmSync(root, { recursive: true, force: true });
+  if (!opts.keepRoot) fs.rmSync(root, { recursive: true, force: true });
   const resources = path.join(root, 'resources');
   const userDataDir = path.join(root, 'userData');
   fs.mkdirSync(resources, { recursive: true });
@@ -286,6 +290,7 @@ function harness(opts: {
     },
     healthTimeoutMs: opts.healthTimeoutMs ?? 200,
     healthIntervalMs: 1,
+    isPortFree: opts.isPortFree ?? (async () => true),
   } satisfies LocalStackOptions);
 
   const stackDir = path.join(userDataDir, 'stack');
@@ -644,5 +649,36 @@ describe('LocalStackController: update prefetch', () => {
     assert.equal(h.callEnvs[pullIndex]?.ORBIT_IMAGE_TAG, 'v0.2.0');
     assert.equal(h.env(), envBefore);
     assert.match(h.env(), /ORBIT_IMAGE_TAG=v0\.1\.0/);
+  });
+});
+
+describe('LocalStackController: a relaunch keeps its port', () => {
+  const launch = async (name: string, keepRoot: boolean, extra: Parameters<typeof harness>[0] extends infer O ? Partial<O> : never = {}) => {
+    const h = harness({ name, keepRoot, server: selfAwareServer(), ports: [18080, 18090], ...extra });
+    return { h, state: await h.controller.start() };
+  };
+
+  test('the second launch reuses the first launch\'s port, so the origin and the containers stay the same', async () => {
+    const first = await launch('port-reuse', false);
+    assert.equal(first.state.webUrl, 'http://127.0.0.1:18080');
+    await first.h.controller.stop();
+    const second = await launch('port-reuse', true, { ports: [19999] });
+    assert.equal(second.state.webUrl, 'http://127.0.0.1:18080');
+  });
+
+  test('a port some other program now holds is given up for a fresh one', async () => {
+    await launch('port-taken', false);
+    const second = await launch('port-taken', true, {
+      ports: [19999],
+      isPortFree: async () => false,
+      server: (url, headers) => (url.startsWith('http://127.0.0.1:18080') ? { status: 200, body: { ok: true } } : selfAwareServer()(url, headers)),
+    });
+    assert.equal(second.state.webUrl, 'http://127.0.0.1:19999');
+  });
+
+  test('a port still held by this stack (it never stopped) is kept', async () => {
+    await launch('port-ours', false);
+    const second = await launch('port-ours', true, { ports: [19999], isPortFree: async () => false });
+    assert.equal(second.state.webUrl, 'http://127.0.0.1:18080');
   });
 });

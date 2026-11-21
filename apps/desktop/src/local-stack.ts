@@ -12,7 +12,7 @@ import { spawn } from 'node:child_process';
 import { ORBIT_HEADERS, type DesktopGpuVoice } from '@orbit/contracts';
 import { createLogger } from '@orbit/logger';
 import { DEFAULT_LOCAL_WEB_URL, normalizeServerUrl } from './setup-config';
-import { allocateLoopbackPort } from './loopback-port';
+import { allocateLoopbackPort, bindLoopback } from './loopback-port';
 import {
   REQUIRED_SECRETS,
   envValue,
@@ -82,6 +82,8 @@ export interface LocalStackOptions {
   sleep?: (ms: number) => Promise<void>;
   now?: () => number;
   allocatePort?: () => Promise<number>;
+  /** Can the last launch's port be bound again? Injected in tests. */
+  isPortFree?: (port: number) => Promise<boolean>;
   launchDockerDesktop?: (platform: NodeJS.Platform, env: NodeJS.ProcessEnv) => Promise<void>;
   /** Runs `nvidia-smi` for GPU detection; injected in tests. */
   runFile?: RunFile;
@@ -259,6 +261,30 @@ export class LocalStackController implements DockerStack {
     if (!images.length) return false;
     const inspect = await this.exec(binary, ['image', 'inspect', '--format', '{{.Id}}', ...images], { timeoutMs: 30_000, signal });
     return inspect.code === 0;
+  }
+
+  /**
+   * The port the last launch used, when it can serve again: free, or still held by this stack's
+   * own server. Keeping it keeps the web origin, so the session and the page's storage survive a
+   * restart, and keeps the compose config, so `up -d` resumes the containers instead of
+   * recreating them.
+   */
+  private async reusablePort(signal?: AbortSignal): Promise<number | null> {
+    const port = Number(envValue(this.envText(), 'ORBIT_WEB_PORT'));
+    if (!Number.isInteger(port) || port < 1024 || port > 65535) return null;
+    const isFree = this.opts.isPortFree ?? (async (p: number) => {
+      try {
+        (await bindLoopback(p, '127.0.0.1')).close();
+        return true;
+      } catch {
+        return false;
+      }
+    });
+    if (await isFree(port)) return port;
+    const token = envValue(this.envText(), 'STACK_TOKEN');
+    if (token && (await this.probeHealth(`http://127.0.0.1:${port}`, token, signal))) return port;
+    log.info(`port ${port} from the last launch is taken by something else; picking another`);
+    return null;
   }
 
   /**
@@ -580,7 +606,7 @@ export class LocalStackController implements DockerStack {
         throw err;
       }
       const allocate = this.opts.allocatePort ?? (() => allocateLoopbackPort());
-      const port = await allocate();
+      const port = (await this.reusablePort(signal)) ?? (await allocate());
       let prepared = this.prepareEnv(port);
       let webUrl = prepared.webUrl;
 

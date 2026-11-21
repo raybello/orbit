@@ -367,23 +367,58 @@ async function askToSwitchToNative(): Promise<boolean> {
   return response === 1;
 }
 
-/** Copy the Docker stack's data out. Returns false (and says why) when it cannot. */
+/**
+ * Copy the Docker stack's bots and data out for the native stack. The copy runs inside the api
+ * container, so when Docker's stack is not up it is started for the copy (behind the launch
+ * window's progress) and stopped again after, its volume kept. On success the choice is native.
+ */
 async function performNativeMove(): Promise<boolean> {
-  const result = await moveAccepted({
-    userDataDir,
-    env: process.env,
-    exec: (binary, args, opts) => runDocker(binary, args, opts),
-    progress: (line) => log.info(`switch to native: ${line}`),
-  });
-  if (result.ok) return true;
-  await dialog.showMessageBox({
-    type: 'warning',
-    message: 'Could not switch to the Docker-free mode',
-    detail: `${result.error ?? 'The copy failed.'}\n\nOrbit will keep using Docker.`,
-    buttons: ['OK'],
-  });
-  return false;
+  const docker = stack.kind === 'docker' ? stack : (stack = dockerStack());
+  pushLaunchStatus();
+  let error: string | undefined;
+  const alreadyUp = docker.state().phase === 'ready';
+  const up = alreadyUp ? docker.state() : await docker.start();
+  if (up.phase === 'ready') {
+    const result = await moveAccepted({
+      userDataDir,
+      env: process.env,
+      exec: (binary, args, opts) => runDocker(binary, args, opts),
+      progress: (line) => log.info(`switch to native: ${line}`),
+    });
+    error = result.ok ? undefined : result.error ?? 'The copy failed.';
+  } else {
+    error = up.error ?? describeStackState(up);
+  }
+  // Stopped only when started here: the menu's switch runs while Docker serves the open app.
+  if (!alreadyUp) await docker.stop();
+  if (!error) return true;
+  log.warn(`switch to native: ${error}`);
+  return startFreshAfterFailedMove(error);
 }
+
+/**
+ * The person asked for native and the copy could not happen: ask, never decide for them. Starting
+ * fresh leaves the Docker volume untouched, so switching back to Docker later finds it all.
+ */
+async function startFreshAfterFailedMove(error: string): Promise<boolean> {
+  const { response } = await dialog.showMessageBox({
+    type: 'warning',
+    message: 'Your Docker data could not be copied',
+    detail:
+      `${error}\n\nYou can start fresh without Docker (your Docker data stays where it is, and switching ` +
+      'back to Docker later finds it), or keep using Docker.',
+    buttons: ['Keep using Docker', 'Start fresh without Docker'],
+    defaultId: 0,
+    cancelId: 0,
+  });
+  if (response !== 1) {
+    writeStackChoice(userDataDir, 'docker');
+    return false;
+  }
+  writeStackChoice(userDataDir, 'native');
+  return true;
+}
+
 
 /**
  * `ORBIT_FORCE_STACK=docker|native` exists for support and for CI: `docker` short-circuits
@@ -440,7 +475,9 @@ async function chooseRuntime(kind: StackKind): Promise<void> {
   stackSelected = false;
   if (kind === 'native' && nativeStackAvailable() && !fs.existsSync(path.join(userDataDir, 'orbit.db'))) {
     if (await dockerDataExists({ userDataDir, exec: (b, a, o) => runDocker(b, a, o) })) {
-      if (!(await performNativeMove())) writeStackChoice(userDataDir, 'docker');
+      launchView = 'progress';
+      openLaunchWindow();
+      await performNativeMove();
       return;
     }
   }
@@ -463,7 +500,7 @@ async function switchStack(choice: StackKind): Promise<void> {
       message: 'Switch to the Docker-free stack?',
       detail: fs.existsSync(nativeDb)
         ? 'Orbit will restart on its native stack, using the data already in this Mac’s app folder.'
-        : 'Docker must be running so Orbit can copy your bots and data out of it first.',
+        : 'Orbit will copy your bots and data out of Docker first. Docker Desktop needs to be installed.',
       buttons: ['Cancel', 'Switch to Native'],
       defaultId: 1,
       cancelId: 0,
