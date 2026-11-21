@@ -2,6 +2,9 @@ import type { NavSection } from '@orbit/contracts';
 import { ChatListView } from './ChatListView';
 import { TasksIsland } from './config/TasksView';
 import { Icon } from './Icon';
+import { PanelResizer, usePanelWidth, type PanelBounds } from './PanelResizer';
+
+const SECTION_BOUNDS: PanelBounds = { min: 220, max: 480, initial: 300 };
 
 const TITLES: Record<NavSection, string> = {
   activity: 'Activity',
@@ -50,12 +53,24 @@ function SectionBody({ section }: { section: NavSection }) {
  * collapsed sidebar that cannot be reopened is a broken one.
  */
 export function SectionPanel({ section, collapsed, onToggleCollapsed }: Props) {
+  const [width, setWidth] = usePanelWidth('orbit.sectionPanelWidth', SECTION_BOUNDS);
   return (
     <aside
       className={`section-panel${collapsed ? ' is-collapsed' : ''}`}
       data-section={section}
       aria-label={`${TITLES[section]} panel`}
+      style={collapsed ? undefined : { ['--section-panel-width' as string]: `${width}px` }}
     >
+      {!collapsed && (
+        <PanelResizer
+          edge="right"
+          width={width}
+          bounds={SECTION_BOUNDS}
+          onWidth={setWidth}
+          onCollapse={onToggleCollapsed}
+          label={`Resize the ${TITLES[section]} panel`}
+        />
+      )}
       <div className="section-panel__header">
         {!collapsed && section === 'chat' && <TasksIsland />}
         {!collapsed && section !== 'chat' && <h2 className="section-panel__title">{TITLES[section]}</h2>}

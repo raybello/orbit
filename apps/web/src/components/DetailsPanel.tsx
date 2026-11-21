@@ -10,6 +10,7 @@ import { artifactsOf } from '../domain/artifacts';
 import { codeEditsOf } from '../domain/code-edits';
 import { CodePanel } from './CodePanel';
 import { ArtifactPanel } from './ArtifactPanel';
+import { PanelResizer, usePanelWidth, type PanelBounds } from './PanelResizer';
 import { DetailsTabBar } from './DetailsTabBar';
 import { displayName } from '../domain/transcript-utils';
 import { Icon } from './Icon';
@@ -59,7 +60,30 @@ function RoutineRow({ r }: { r: Routine }) {
  * A group chat's right panel, as Teams arranges it: the group at the top, the people in it, then
  * the options that only exist inside a group. A one-to-one chat has none of these.
  */
+const DETAILS_WIDTH_KEY = 'orbit.detailsPanelWidth';
+const DETAILS_BOUNDS: PanelBounds = { min: 300, max: 640, initial: 360 };
+
+/** The details column's width, shared by the Bot and group panels, and its drag handle. */
+function useDetailsWidth(): { style: React.CSSProperties; handle: React.ReactNode } {
+  const set = useStore((s) => s.set);
+  const [width, setWidth] = usePanelWidth(DETAILS_WIDTH_KEY, DETAILS_BOUNDS);
+  return {
+    style: { ['--details-panel-width' as string]: `${width}px` },
+    handle: (
+      <PanelResizer
+        edge="left"
+        width={width}
+        bounds={DETAILS_BOUNDS}
+        onWidth={setWidth}
+        onCollapse={() => set({ detailsOpen: false })}
+        label="Resize the details panel"
+      />
+    ),
+  };
+}
+
 function GroupDetails({ bot, open }: { bot: Bot; open: boolean }) {
+  const sized = useDetailsWidth();
   const [people, setPeople] = useState<number | null>(null);
   const [leaving, setLeaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -83,8 +107,9 @@ function GroupDetails({ bot, open }: { bot: Bot; open: boolean }) {
   };
 
   return (
-    <aside className={`details details--group${open ? '' : ' is-closed'}`} style={botVars(bot.avatarColor)} aria-label="Group details" aria-hidden={open ? undefined : true}>
+    <aside className={`details details--group${open ? '' : ' is-closed'}`} style={{ ...botVars(bot.avatarColor), ...sized.style }} aria-label="Group details" aria-hidden={open ? undefined : true}>
       {open && (<>
+        {sized.handle}
         <div className="details__top">
           <button type="button" className="icon-btn icon-btn--bordered" onClick={() => set({ detailsOpen: false })} aria-label="Close details">
             <Icon name="close" opacity={0.92} />
@@ -145,6 +170,7 @@ export function DetailsPanel() {
   const artifacts = useMemo(() => artifactsOf(rowList), [rowList]);
   const codeFiles = useMemo(() => codeEditsOf(rowList), [rowList]);
   const [hideSuggested, setHideSuggested] = useState(() => { try { return localStorage.getItem('grokbot.hideSuggested') === '1'; } catch { return false; } });
+  const sized = useDetailsWidth();
   if (!bot) return null;
 
   // Rooms are group chats: no computer, no engine and no routines of their own, so their panel is
@@ -169,11 +195,12 @@ export function DetailsPanel() {
   return (
     <aside
       className={`details${open ? '' : ' is-closed'}${open && shown === 'artifact' ? (expanded ? ' is-expanded' : ' is-wide') : open && shown === 'code' ? ' is-wide' : ''}`}
-      style={botVars(bot.avatarColor)}
+      style={{ ...botVars(bot.avatarColor), ...sized.style }}
       aria-label="Conversation details"
       aria-hidden={open ? undefined : true}
     >
       {open && (<>
+      {!(shown === 'artifact' && expanded) && sized.handle}
       <div className="details__top">
         <button type="button" className="icon-btn icon-btn--bordered details__gear" onClick={() => useConfigUI.getState().openBotSettings(bot.id)} aria-label="Bot settings" title="Bot settings">
           <Glyph name="gear" size={16} opacity={0.7} />
