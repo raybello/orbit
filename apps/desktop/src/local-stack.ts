@@ -90,14 +90,6 @@ export interface LocalStackOptions {
   daemonWaitMs?: number;
 }
 
-const ACTIVE_PHASES: StackPhase[] = [
-  'checking-docker',
-  'preparing',
-  'pulling',
-  'starting',
-  'waiting-healthy',
-];
-
 /**
  * The two names the stack dir always has. A checkout holds the images pair under their own
  * names (and no `.env.example`); packaged builds get them from `extraResources/stack`.
@@ -125,6 +117,7 @@ export class LocalStackController implements DockerStack {
   private readonly env: NodeJS.ProcessEnv;
   private current: DesktopLocalStackState;
   private abortController: AbortController | null = null;
+  private inFlight: Promise<DesktopLocalStackState> | null = null;
   /** The GPU voice install/remove in progress or last failed, for the settings to show. */
   private gpu: { phase: DesktopGpuVoice['phase']; detail?: string; error?: string } | null = null;
   private gpuName: Promise<string | null> | null = null;
@@ -272,6 +265,10 @@ export class LocalStackController implements DockerStack {
    * `ORBIT_IMAGE_TAG` overrides both (support, and testing an installer before its release
    * has published images).
    */
+  private pinnedTag(): boolean {
+    return /^v\d+\.\d+\.\d+/.test(this.imageTag());
+  }
+
   private imageTag(): string {
     const forced = this.env.ORBIT_IMAGE_TAG?.trim();
     if (forced && /^[\w][\w.-]{0,127}$/.test(forced)) return forced;
@@ -501,10 +498,19 @@ export class LocalStackController implements DockerStack {
     return false;
   }
 
-  async start(): Promise<DesktopLocalStackState> {
-    if (ACTIVE_PHASES.includes(this.current.phase)) return this.current;
-    if (this.current.phase === 'ready') return this.current;
+  /**
+   * Bring the stack up, or join the start already running: a second caller (a Dock click, a
+   * retry button) waits for the same outcome instead of reading a half-done phase as the result.
+   */
+  start(): Promise<DesktopLocalStackState> {
+    if (this.current.phase === 'ready') return Promise.resolve(this.current);
+    this.inFlight ??= this.bringUp().finally(() => {
+      this.inFlight = null;
+    });
+    return this.inFlight;
+  }
 
+  private async bringUp(): Promise<DesktopLocalStackState> {
     const controller = new AbortController();
     this.abortController = controller;
     const { signal } = controller;
@@ -577,11 +583,12 @@ export class LocalStackController implements DockerStack {
       let prepared = this.prepareEnv(port);
       let webUrl = prepared.webUrl;
 
-      // ORBIT_SKIP_PULL=1 (the dev rebuild loop sets it): run the images already on this machine.
-      // Pulling there would replace the image just built from the working tree with the
-      // published one of the same tag, and the window would show the registry's code instead.
-      if (this.env.ORBIT_SKIP_PULL?.trim() === '1' && (await this.imagesPresent(binary, signal))) {
-        log.info(`ORBIT_SKIP_PULL=1: using the local ghcr.io/raybello/orbit/app:${this.imageTag()}, not pulling`);
+      // A release tag names fixed images, so once they are on this machine every later launch
+      // just starts them. `edge` moves, so development pulls unless ORBIT_SKIP_PULL=1 (the dev
+      // rebuild loop) says the local image, built from the working tree, is the one to run.
+      const reuseLocal = this.pinnedTag() || this.env.ORBIT_SKIP_PULL?.trim() === '1';
+      if (reuseLocal && (await this.imagesPresent(binary, signal))) {
+        log.info(`using the local ghcr.io/raybello/orbit/app:${this.imageTag()}, not pulling`);
       } else {
         this.set({ phase: 'pulling', detail: `Pulling ghcr.io/raybello/orbit/app:${this.imageTag()}`, progress: 0.1 });
         const pull = await this.compose(binary, ['pull', '--quiet'], { timeoutMs: 600_000, signal });
@@ -649,11 +656,12 @@ export class LocalStackController implements DockerStack {
     const binary = resolveDockerBinary(this.platform, this.env, exists);
     if (binary && this.current.phase !== 'idle') {
       try {
-        // `down`, never `down -v`: a restart must not destroy the user's data.
-        const result = await this.compose(binary, ['down', '--remove-orphans'], { timeoutMs: 120_000 });
-        if (result.code !== 0) log.warn('compose down failed', failureText(result));
+        // `stop`, not `down`: the containers, their volumes and the images stay, so the next
+        // launch resumes them with `up -d` instead of recreating anything.
+        const result = await this.compose(binary, ['stop'], { timeoutMs: 120_000 });
+        if (result.code !== 0) log.warn('compose stop failed', failureText(result));
       } catch (err) {
-        log.warn('compose down failed', err);
+        log.warn('compose stop failed', err);
       }
     }
     return this.set({ phase: 'idle', detail: 'Stopped', webUrl: undefined, progress: undefined });

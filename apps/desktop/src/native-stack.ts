@@ -417,8 +417,6 @@ export interface NativeStackOptions {
   signalEngines?: (enginesDir: string) => BotEngine[];
 }
 
-const STARTING_PHASES: StackPhase[] = ['starting', 'waiting-healthy'];
-
 export class NativeStackController implements NativeStack {
   readonly kind = 'native' as const;
   readonly stackDir: string;
@@ -429,6 +427,7 @@ export class NativeStackController implements NativeStack {
   private current: DesktopLocalStackState;
   private api: Service | null = null;
   private abortController: AbortController | null = null;
+  private inFlight: Promise<DesktopLocalStackState> | null = null;
 
   constructor(options: NativeStackOptions) {
     this.opts = options;
@@ -529,10 +528,16 @@ export class NativeStackController implements NativeStack {
 
   // ---------------------------------------------------------------- start / stop
 
-  async start(): Promise<DesktopLocalStackState> {
-    if (this.current.phase === 'running') return this.current;
-    if (STARTING_PHASES.includes(this.current.phase)) return this.current;
+  /** Start, or join the start already running, so a second caller never reads a half-done phase. */
+  start(): Promise<DesktopLocalStackState> {
+    if (this.current.phase === 'running') return Promise.resolve(this.current);
+    this.inFlight ??= this.bringUp().finally(() => {
+      this.inFlight = null;
+    });
+    return this.inFlight;
+  }
 
+  private async bringUp(): Promise<DesktopLocalStackState> {
     const controller = new AbortController();
     this.abortController = controller;
     const { signal } = controller;

@@ -419,6 +419,14 @@ describe('NativeStackController', () => {
     assert.equal(h.spawned[0].env.PORT, '42001');
   });
 
+  test('a second start while one is running joins it instead of reporting a half-done phase', async () => {
+    const h = harness();
+    const [first, second] = await Promise.all([h.controller.start(), h.controller.start()]);
+    assert.equal(first.phase, 'running');
+    assert.equal(second.phase, 'running');
+    assert.equal(h.spawned.length, 1);
+  });
+
   test('a bundle without a migrate entrypoint skips migrations', async () => {
     const h = harness({ entrypoints: { api: 'dist/index.js' } });
     const state = await h.controller.start();

@@ -313,7 +313,7 @@ function selfAwareServer(imageTag = 'edge') {
 describe('LocalStackController: pulling images', () => {
   const pulled = (h: Harness) => h.calls.some((a) => a[0] === 'compose' && a.includes('pull'));
 
-  test('pulls by default', async () => {
+  test('pulls the moving edge tag even when it is on this machine', async () => {
     const h = harness({ name: 'pull-default', server: selfAwareServer(), localImages: true });
     const state = await h.controller.start();
     assert.equal(state.phase, 'ready', state.error);
@@ -325,6 +325,20 @@ describe('LocalStackController: pulling images', () => {
     const state = await h.controller.start();
     assert.equal(state.phase, 'ready', state.error);
     assert.equal(pulled(h), false);
+  });
+
+  test('a release launch starts the images already on this machine without pulling', async () => {
+    const h = harness({ name: 'pull-release-local', packaged: true, server: selfAwareServer('v0.1.0'), localImages: true });
+    const state = await h.controller.start();
+    assert.equal(state.phase, 'ready', state.error);
+    assert.equal(pulled(h), false);
+  });
+
+  test('a release launch pulls on the first run, when its images are not here yet', async () => {
+    const h = harness({ name: 'pull-release-first', packaged: true, server: selfAwareServer('v0.1.0') });
+    const state = await h.controller.start();
+    assert.equal(state.phase, 'ready', state.error);
+    assert.equal(pulled(h), true);
   });
 
   test('ORBIT_SKIP_PULL=1 still pulls when the images are not on this machine', async () => {
@@ -592,5 +606,24 @@ describe('LocalStackController: the host Hermes import', () => {
     const h = harness({ name: 'hermes-env', server: selfAwareServer(), env: { HERMES_HOME: tmpRoot } });
     await h.controller.start();
     assert.doesNotMatch(h.env(), /HERMES_HOME_HOST|HERMES_KEY|HERMES_URL/);
+  });
+});
+
+describe('LocalStackController: lifecycle', () => {
+  test('a second start while one is running gets the same outcome, not the half-done phase', async () => {
+    const h = harness({ name: 'concurrent-start', server: selfAwareServer() });
+    const [first, second] = await Promise.all([h.controller.start(), h.controller.start()]);
+    assert.equal(first.phase, 'ready', first.error);
+    assert.equal(second.phase, 'ready');
+    assert.equal(h.calls.filter((a) => a[0] === 'compose' && a.includes('up')).length, 1);
+  });
+
+  test('stop keeps the containers: compose stop, never down', async () => {
+    const h = harness({ name: 'stop-keeps', server: selfAwareServer() });
+    await h.controller.start();
+    const state = await h.controller.stop();
+    assert.equal(state.phase, 'idle');
+    const composeVerbs = h.calls.filter((a) => a[0] === 'compose').map((a) => a.find((x) => ['stop', 'down'].includes(x))).filter(Boolean);
+    assert.deepEqual(composeVerbs, ['stop']);
   });
 });
