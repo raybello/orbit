@@ -53,6 +53,7 @@ export interface DockerRunOptions {
   timeoutMs?: number;
   signal?: AbortSignal;
   cwd?: string;
+  env?: NodeJS.ProcessEnv;
 }
 
 /**
@@ -670,6 +671,18 @@ export class LocalStackController implements DockerStack {
   abort(): void {
     this.abortController?.abort();
     this.abortController = null;
+  }
+
+  async prefetch(version: string): Promise<void> {
+    const exists = this.opts.exists ?? ((file: string) => fs.existsSync(file));
+    const binary = resolveDockerBinary(this.platform, this.env, exists);
+    if (!binary) throw new Error('Docker is not installed');
+    // The shell environment wins over --env-file when compose interpolates, so this names the
+    // new release's images without touching the running stack's .env.
+    const tag = `v${version}`;
+    const pull = await this.compose(binary, ['pull', '--quiet'], { timeoutMs: 1_800_000, env: { ...this.env, ORBIT_IMAGE_TAG: tag } });
+    if (pull.code !== 0) throw new Error(`could not pull the ${tag} images: ${summarizeDockerFailure(pull)}`);
+    log.info(`prefetched the ${tag} images`);
   }
 
   // ---------------------------------------------------------------- GPU voice

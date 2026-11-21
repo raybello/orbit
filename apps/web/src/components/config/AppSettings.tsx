@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
-import type { Toolkit } from '@orbit/contracts';
+import type { DesktopUpdateStatus, Toolkit } from '@orbit/contracts';
 import { BotAvatarFor } from '../../avatar/BotAvatar';
 import { configApi, type ComputerDetails } from '../../lib/configApi';
 import {
@@ -27,6 +27,7 @@ import {
 import { relativeShort } from '../../lib/time';
 import { presets } from '@orbit/ui-tokens';
 import { useConfigUI, type AppSection, type Preset, type Theme } from '../../configStore';
+import { useDesktopUpdates } from '../../lib/desktop';
 import { useStore } from '../../store';
 import { useVoiceModels } from '../../voice/models-store';
 import { computerStatusText } from '../../lib/computer';
@@ -243,7 +244,61 @@ function GeneralSection() {
           </button>
         </div>
       </section>
+      <UpdatesSection />
     </>
+  );
+}
+
+/** What each update phase says, and the one thing the person can do about it. */
+const UPDATE_COPY: { [P in DesktopUpdateStatus['phase']]: (s: Extract<DesktopUpdateStatus, { phase: P }>) => { title: string; sub: string; action?: { label: string; run: 'check' | 'download' | 'install' } } } = {
+  unsupported: (s) => ({ title: `Orbit ${s.current}`, sub: 'This is a development build; it does not update itself.' }),
+  idle: (s) => ({ title: `Orbit ${s.current}`, sub: 'Checks for new versions on its own every few hours.', action: { label: 'Check now', run: 'check' } }),
+  checking: (s) => ({ title: `Orbit ${s.current}`, sub: 'Checking for a new version…' }),
+  'up-to-date': (s) => ({ title: `Orbit ${s.current} is up to date`, sub: `Checked ${relativeShort(s.checkedAt) === 'now' ? 'just now' : `${relativeShort(s.checkedAt)} ago`}.`, action: { label: 'Check again', run: 'check' } }),
+  available: (s) => ({ title: `Orbit ${s.version} is available`, sub: `You have ${s.current}. Your Bots and data carry over.`, action: { label: 'Download update', run: 'download' } }),
+  downloading: (s) => ({ title: `Downloading Orbit ${s.version}`, sub: `${s.percent}% · Orbit keeps running while it downloads.` }),
+  preparing: (s) => ({ title: `Preparing Orbit ${s.version}`, sub: `${s.detail}. Orbit keeps running meanwhile.` }),
+  ready: (s) => ({ title: `Orbit ${s.version} is ready`, sub: s.note ?? 'Restarting stops your Bots for a moment, switches over and starts them again.', action: { label: 'Restart to update', run: 'install' } }),
+  error: (s) => ({ title: s.version ? `Orbit ${s.version} could not be downloaded` : 'Could not check for updates', sub: s.error, action: s.version ? { label: 'Try again', run: 'download' } : { label: 'Check again', run: 'check' } }),
+};
+
+export function UpdatesSection() {
+  const status = useDesktopUpdates();
+  const [busy, setBusy] = useState(false);
+  if (!status) return null;
+  const copy = (UPDATE_COPY[status.phase] as (s: DesktopUpdateStatus) => ReturnType<(typeof UPDATE_COPY)['idle']>)(status);
+  const run = async (action: 'check' | 'download' | 'install') => {
+    const bridge = window.orbitDesktop?.updates;
+    if (!bridge) return;
+    setBusy(true);
+    try {
+      await bridge[action]();
+    } finally {
+      setBusy(false);
+    }
+  };
+  return (
+    <section className="cfg-section">
+      <div className="cfg-section__label">Updates</div>
+      <div className="cfg-card">
+        <div className="cfg-row">
+          <div className="cfg-row__text">
+            <div className="cfg-row__title">{copy.title}</div>
+            <div className="cfg-row__sub">{copy.sub}</div>
+          </div>
+          {copy.action && (
+            <button
+              type="button"
+              className={`cfg-btn ${copy.action.run === 'check' ? 'cfg-btn--secondary' : 'cfg-btn--primary'}`}
+              disabled={busy}
+              onClick={() => void run(copy.action!.run)}
+            >
+              {copy.action.label}
+            </button>
+          )}
+        </div>
+      </div>
+    </section>
   );
 }
 

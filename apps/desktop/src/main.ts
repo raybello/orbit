@@ -29,7 +29,7 @@ import { resolveDockerBinary, runDocker } from './docker-cli';
 import type { DockerStack, NativeStack, StackController } from './stack-controller';
 import { createAppWindow, openExternalSafely, sessionForServerUrl, type AppWindow } from './app-window';
 import { buildAppMenu } from './app-menu';
-import { dismissUpdateBar, initAutoUpdate, checkForUpdates, restartAndInstall } from './auto-update';
+import { checkForUpdates, downloadUpdate, initAutoUpdate, restartAndInstall, updateStatus } from './auto-update';
 import { startBadge, type BadgeController } from './badge';
 import { detectHermes, installHermes } from './hermes-setup';
 import { DEFAULT_OWNER_EMAIL, ensureDesktopSession } from './desktop-session';
@@ -320,7 +320,13 @@ function refreshMenu(): void {
     onChangeServer: () => void showChoices(),
     onStopStack: () => void stopStack(),
     onSwitchStack: (choice) => void switchStack(choice),
-    onCheckForUpdates: () => void checkForUpdates(true),
+    onCheckForUpdates: () => {
+      void checkForUpdates();
+      if (mainWindow && !mainWindow.isDestroyed()) {
+        mainWindow.focus();
+        mainWindow.webContents.send(IPC.updateOpen);
+      }
+    },
     onOpenSettings: () => void openSettings(),
     onOpenDocs: () => void openExternalSafely('https://github.com/NousResearch/hermes-agent'),
     onShowWindow: () => mainWindow?.focus(),
@@ -512,7 +518,6 @@ function tearDown(): Promise<void> {
   teardown ??= (async () => {
     badge?.stop();
     badge = null;
-    dismissUpdateBar();
     for (const win of BrowserWindow.getAllWindows()) win.hide();
     log.info(`quit: stopping the ${stack.kind} stack`);
     const stopped = await Promise.race([
@@ -525,6 +530,38 @@ function tearDown(): Promise<void> {
     tornDown = true;
   });
   return teardown;
+}
+
+// ------------------------------------------------------------------ updates
+
+/**
+ * Fetch the new release's server while this one runs. A remote server is not ours to update, and
+ * a stack that never started here has nothing to warm.
+ */
+async function prepareUpdate(version: string): Promise<string | undefined> {
+  if (readSetup()?.mode !== 'new') return undefined;
+  await stack.prefetch(version);
+  return undefined;
+}
+
+/**
+ * The native database is a file in userData that the new version opens as it is. A copy taken
+ * after the stop (so it is consistent) is the way back if the new version's migration goes wrong.
+ * Docker's data stays in its named volume, which an update never touches.
+ */
+function backUpNativeDatabase(): void {
+  if (stack.kind !== 'native') return;
+  const db = path.join(userDataDir, 'orbit.db');
+  if (!fs.existsSync(db)) return;
+  const dir = path.join(userDataDir, 'backups');
+  try {
+    fs.mkdirSync(dir, { recursive: true, mode: 0o700 });
+    const target = path.join(dir, `orbit-${app.getVersion()}.db`);
+    fs.copyFileSync(db, target);
+    log.info(`backed up the database to ${target}`);
+  } catch (err) {
+    log.warn('could not back up the database before the update', err);
+  }
 }
 
 // ------------------------------------------------------------------ startup
@@ -836,18 +873,17 @@ function registerIpc(): void {
     }
   });
 
-  ipcMain.handle(IPC.updateCheck, (event) => {
-    assertSender(event);
-    return checkForUpdates(true);
-  });
-  ipcMain.handle(IPC.updateInstall, async (event) => {
-    assertSender(event);
+  // Not guarded: Settings may be served by a remote Orbit server, and these only ever fetch and
+  // install the signed release electron-updater verifies, which no page can choose.
+  ipcMain.handle(IPC.updateStatus, () => updateStatus());
+  ipcMain.handle(IPC.updateCheck, () => checkForUpdates());
+  ipcMain.handle(IPC.updateDownload, () => downloadUpdate());
+  ipcMain.handle(IPC.updateInstall, async () => {
+    if (updateStatus().phase !== 'ready') return;
     await tearDown();
+    backUpNativeDatabase();
     restartAndInstall();
   });
-  // Only closes the in-app update bar: harmless wherever the page came from, and the bar
-  // itself lives in the app window, so guarding it would leave it stuck open.
-  ipcMain.on(IPC.noticeDismiss, () => dismissUpdateBar());
   // Only the app window's page may take a link: the setup window and the update bar have no use for one.
   // GPU voice: read-only status for any window; installing/removing is a trusted-page action.
   ipcMain.handle(IPC.gpuVoiceStatus, (): Promise<DesktopGpuVoice> | DesktopGpuVoice =>
@@ -1089,7 +1125,10 @@ if (!app.requestSingleInstanceLock()) {
       }
       refreshMenu();
       initAutoUpdate({
-        preloadPath: path.join(here, 'preload.cjs'),
+        prepare: prepareUpdate,
+        onStatus: (status) => {
+          if (mainWindow && !mainWindow.isDestroyed()) mainWindow.webContents.send(IPC.updateStatus, status);
+        },
       });
       void bootOnce().catch((err) => {
         log.error('boot failed', err);

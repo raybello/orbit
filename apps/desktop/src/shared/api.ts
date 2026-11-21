@@ -7,7 +7,7 @@
  * literally, so a change here needs the same change there.
  */
 
-import type { DeepLink, DesktopGpuVoice } from '@orbit/contracts';
+import type { DeepLink, DesktopGpuVoice, DesktopUpdateStatus } from '@orbit/contracts';
 
 export type SetupMode = 'new' | 'existing';
 
@@ -130,12 +130,17 @@ export interface OrbitDesktopAPI {
   getSetup(): Promise<DesktopSetup | null>;
   /** Probe `/api/health` from the main process, so the launch window needs no CORS. */
   probeServer(url: string): Promise<ServerProbe>;
-  // Updates
-  checkForUpdates(): Promise<void>;
-  onUpdateReady(cb: () => void): () => void;
-  restartAndInstall(): Promise<void>;
-  /** Closes the update bar; the bar's own renderer calls it. */
-  dismissUpdateNotice(): void;
+  // Updates, driven from the web app's Settings.
+  updates: {
+    status(): Promise<DesktopUpdateStatus>;
+    check(): Promise<DesktopUpdateStatus>;
+    download(): Promise<DesktopUpdateStatus>;
+    /** Stop the stack and relaunch on the downloaded version. */
+    install(): Promise<void>;
+    onStatus(cb: (status: DesktopUpdateStatus) => void): () => void;
+    /** The app menu's Check for Updates…: Settings should come forward. */
+    onOpenRequest(cb: () => void): () => void;
+  };
   /** Opens an https URL in the system browser; other schemes are refused in main. */
   openExternal(url: string): Promise<void>;
   // Deep links
@@ -163,10 +168,11 @@ export const IPC = {
   launchAct: 'orbit:launch:act',
   setupGet: 'orbit:setup:get',
   setupProbe: 'orbit:setup:probe',
+  updateStatus: 'orbit:update:status',
   updateCheck: 'orbit:update:check',
-  updateReady: 'orbit:update:ready',
+  updateDownload: 'orbit:update:download',
   updateInstall: 'orbit:update:install',
-  noticeDismiss: 'orbit:notice:dismiss',
+  updateOpen: 'orbit:update:open',
   openExternal: 'orbit:shell:open-external',
   deepLinkReady: 'orbit:deeplink:ready',
   deepLinkTake: 'orbit:deeplink:take',

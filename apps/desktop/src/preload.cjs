@@ -16,10 +16,11 @@ const IPC = {
   launchAct: 'orbit:launch:act',
   setupGet: 'orbit:setup:get',
   setupProbe: 'orbit:setup:probe',
+  updateStatus: 'orbit:update:status',
   updateCheck: 'orbit:update:check',
-  updateReady: 'orbit:update:ready',
+  updateDownload: 'orbit:update:download',
   updateInstall: 'orbit:update:install',
-  noticeDismiss: 'orbit:notice:dismiss',
+  updateOpen: 'orbit:update:open',
   openExternal: 'orbit:shell:open-external',
   deepLinkReady: 'orbit:deeplink:ready',
   deepLinkTake: 'orbit:deeplink:take',
@@ -54,11 +55,15 @@ contextBridge.exposeInMainWorld('orbitDesktop', {
   },
   getSetup: () => ipcRenderer.invoke(IPC.setupGet),
   probeServer: (url) => ipcRenderer.invoke(IPC.setupProbe, url),
-  // Updates
-  checkForUpdates: () => ipcRenderer.invoke(IPC.updateCheck),
-  onUpdateReady: (cb) => subscribe(IPC.updateReady, cb),
-  restartAndInstall: () => ipcRenderer.invoke(IPC.updateInstall),
-  dismissUpdateNotice: () => ipcRenderer.send(IPC.noticeDismiss),
+  // Updates, driven from Settings
+  updates: {
+    status: () => ipcRenderer.invoke(IPC.updateStatus),
+    check: () => ipcRenderer.invoke(IPC.updateCheck),
+    download: () => ipcRenderer.invoke(IPC.updateDownload),
+    install: () => ipcRenderer.invoke(IPC.updateInstall),
+    onStatus: (cb) => subscribe(IPC.updateStatus, cb),
+    onOpenRequest: (cb) => subscribe(IPC.updateOpen, cb),
+  },
   // Shell
   openExternal: (url) => ipcRenderer.invoke(IPC.openExternal, url),
   // Deep links: main only says one is waiting; taking it is what hands it over, so a link that

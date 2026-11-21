@@ -31,3 +31,8 @@ export function useDeepLinks() {
     openDeepLink(link).catch((e) => console.error('[deep-link]', e));
   }), []);
 }
+
+/** The desktop menu's Check for Updates… opens Settings, where the update lives. */
+export function useDesktopUpdateRequests() {
+  useEffect(() => window.orbitDesktop?.updates?.onOpenRequest?.(() => useConfigUI.getState().openAppSettings('general')), []);
+}

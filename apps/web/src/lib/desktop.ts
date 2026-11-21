@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import type { DeepLink, DesktopGpuVoice } from '@orbit/contracts';
+import type { DeepLink, DesktopGpuVoice, DesktopUpdateStatus } from '@orbit/contracts';
 
 /**
  * The desktop preload bridge as the web app sees it: every member optional, because the same build
@@ -12,6 +12,14 @@ export interface OrbitDesktopBridge {
     status(): Promise<DesktopGpuVoice>;
     install(): Promise<DesktopGpuVoice>;
     remove(): Promise<DesktopGpuVoice>;
+  };
+  updates?: {
+    status(): Promise<DesktopUpdateStatus>;
+    check(): Promise<DesktopUpdateStatus>;
+    download(): Promise<DesktopUpdateStatus>;
+    install(): Promise<void>;
+    onStatus(cb: (status: DesktopUpdateStatus) => void): () => void;
+    onOpenRequest(cb: () => void): () => void;
   };
 }
 
@@ -54,4 +62,18 @@ export function useDesktopGpuVoice(): [DesktopGpuVoice | null, (action: 'install
     }
   };
   return [bridge ? state : null, run];
+}
+
+/** The desktop app's update status, live, or null outside the desktop app (and in older builds). */
+export function useDesktopUpdates(): DesktopUpdateStatus | null {
+  const bridge = typeof window !== 'undefined' ? window.orbitDesktop?.updates : undefined;
+  const [status, setStatus] = useState<DesktopUpdateStatus | null>(null);
+  useEffect(() => {
+    if (!bridge) return;
+    let alive = true;
+    bridge.status().then((s) => { if (alive) setStatus(s); }, () => {});
+    const off = bridge.onStatus((s) => setStatus(s));
+    return () => { alive = false; off(); };
+  }, [bridge]);
+  return bridge ? status : null;
 }

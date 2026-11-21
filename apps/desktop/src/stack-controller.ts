@@ -21,6 +21,11 @@ export interface StackBase {
   stop(): Promise<DesktopLocalStackState>;
   abort(): void;
   /**
+   * Fetch what release `version` runs (its images, or its native bundle) while this one keeps
+   * running, so the update restart only switches over. Throws when it could not.
+   */
+  prefetch(version: string): Promise<void>;
+  /**
    * Is the stack at this URL the one this controller runs? The Docker controller answers
    * asynchronously (it probes `GET /api/desktop/probe` for the image tag); the native one
    * knows from its own state and answers at once. `await` handles either, which is why the

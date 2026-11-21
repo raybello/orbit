@@ -24,7 +24,7 @@ import { TasksView } from './components/config/TasksView';
 import { useConfigUI } from './configStore';
 import { TemplatesLayer } from './components/TemplatesLayer';
 import { TeamWizard } from './components/TeamWizard';
-import { useDeepLinks } from './lib/deep-links';
+import { useDeepLinks, useDesktopUpdateRequests } from './lib/deep-links';
 
 /**
  * The main-area view for each rail section. Chat is the exception: its list lives in the 280px
@@ -57,6 +57,7 @@ function Shell() {
   const showDetails = hasBot && inChat && view === 'chat';
   const artifactExpanded = useStore((s) => showDetails && s.artifactExpanded && s.detailsOpen && s.detailsTab === 'artifact');
   useDeepLinks();
+  useDesktopUpdateRequests();
 
   useEffect(() => {
     const st = useStore.getState();

@@ -179,6 +179,8 @@ interface Harness {
   stackDir: string;
   /** Every docker argv, in order. */
   calls: string[][];
+  /** The environment each docker call ran with (undefined: inherited). */
+  callEnvs: (NodeJS.ProcessEnv | undefined)[];
   /** For each docker call, whether its cwd existed. */
   cwdState: boolean[];
   /** Every URL the controller fetched, in order. */
@@ -232,8 +234,10 @@ function harness(opts: {
   const ports = [...(opts.ports ?? [18080])];
   let upCalls = 0;
 
-  const exec = async (_binary: string, args: string[], runOpts?: { cwd?: string }): Promise<DockerResult> => {
+  const callEnvs: (NodeJS.ProcessEnv | undefined)[] = [];
+  const exec = async (_binary: string, args: string[], runOpts?: { cwd?: string; env?: NodeJS.ProcessEnv }): Promise<DockerResult> => {
     calls.push(args);
+    callEnvs.push(runOpts?.env);
     cwdState.push(Boolean(runOpts?.cwd && fs.existsSync(runOpts.cwd)));
     if (args[0] === 'info') return { code: 0, stdout: '24.0.7\n', stderr: '' };
     if (args[0] === 'compose' && args.includes('pull')) return { code: 0, stdout: '', stderr: '' };
@@ -289,6 +293,7 @@ function harness(opts: {
     controller,
     stackDir,
     calls,
+    callEnvs,
     cwdState,
     fetched,
     env: () => fs.readFileSync(path.join(stackDir, '.env'), 'utf8'),
@@ -625,5 +630,19 @@ describe('LocalStackController: lifecycle', () => {
     assert.equal(state.phase, 'idle');
     const composeVerbs = h.calls.filter((a) => a[0] === 'compose').map((a) => a.find((x) => ['stop', 'down'].includes(x))).filter(Boolean);
     assert.deepEqual(composeVerbs, ['stop']);
+  });
+});
+
+describe('LocalStackController: update prefetch', () => {
+  test("pulls the next release's images by tag while leaving the running stack's .env alone", async () => {
+    const h = harness({ name: 'prefetch', packaged: true, server: selfAwareServer('v0.1.0'), localImages: true });
+    await h.controller.start();
+    const envBefore = h.env();
+    await h.controller.prefetch('0.2.0');
+    const pullIndex = h.calls.findLastIndex((a) => a[0] === 'compose' && a.includes('pull'));
+    assert.ok(pullIndex >= 0, 'pulled');
+    assert.equal(h.callEnvs[pullIndex]?.ORBIT_IMAGE_TAG, 'v0.2.0');
+    assert.equal(h.env(), envBefore);
+    assert.match(h.env(), /ORBIT_IMAGE_TAG=v0\.1\.0/);
   });
 });

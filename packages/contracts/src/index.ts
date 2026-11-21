@@ -787,6 +787,22 @@ export interface DesktopGpuVoice {
   error?: string;
 }
 
+/**
+ * The desktop app's own updates, as Settings shows them. Nothing downloads until the person asks;
+ * `preparing` is the new version's server (images or native bundle) being fetched while the
+ * current one keeps running, so the restart only has to switch over.
+ */
+export type DesktopUpdateStatus =
+  | { phase: 'unsupported'; current: string }
+  | { phase: 'idle'; current: string }
+  | { phase: 'checking'; current: string }
+  | { phase: 'up-to-date'; current: string; checkedAt: number }
+  | { phase: 'available'; current: string; version: string }
+  | { phase: 'downloading'; current: string; version: string; percent: number }
+  | { phase: 'preparing'; current: string; version: string; detail: string }
+  | { phase: 'ready'; current: string; version: string; note?: string }
+  | { phase: 'error'; current: string; version?: string; error: string };
+
 export interface AudiocppStatus {
   available: boolean;
   /**

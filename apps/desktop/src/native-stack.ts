@@ -22,6 +22,8 @@ import { nativePortsFile } from './docker-move';
 import type { NativeStack } from './stack-controller';
 import {
   installServerBundle,
+  releaseManifestUrl,
+  validateServerManifest,
   type InstalledBundle,
   type RuntimeExec,
   type ServerManifest,
@@ -631,6 +633,14 @@ export class NativeStackController implements NativeStack {
     this.set({ phase: 'stopping', detail: 'Stopping the Bots' });
     await this.stopEngines();
     return this.set({ phase: 'stopped', detail: 'Stopped', webUrl: undefined, progress: undefined });
+  }
+
+  async prefetch(version: string): Promise<void> {
+    const res = await fetch(releaseManifestUrl(version), { signal: AbortSignal.timeout(30_000) });
+    if (!res.ok) throw new Error(`the ${version} release has no native server manifest (HTTP ${res.status})`);
+    const manifest = validateServerManifest(await res.json());
+    if (!manifest || manifest.version !== version) throw new Error(`the ${version} release's native server manifest is invalid`);
+    await installServerBundle(manifest, this.bundleDir);
   }
 
   /** Abort an in-flight start. The processes it already spawned are stopped by that start. */
