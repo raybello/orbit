@@ -1,3 +1,17 @@
+## v0.4.0 — 2026-11-21
+
+- feat(web): resizable, collapsible side panels
+- fix(release): ship the computer build files in the native server bundle
+- fix(desktop): wait for Docker to release the last port; give a stopping stack 30 s
+- fix(desktop): stop offering Apple's container runtime, which nothing uses yet
+- fix(desktop): copy Docker data on the way to native; keep the Docker port across launches
+- feat(desktop): update from Settings, with the new server fetched before the restart
+- feat(desktop): one launch window from first choice to a running Orbit
+- feat(desktop): write the main process log to a file
+- fix(desktop): join an in-flight stack start, keep containers on stop, reuse release images
+- fix(desktop): serve the native stack's web app from its one server port
+
+
 ## v0.3.0 — 2026-11-20
 
 - fix UI
