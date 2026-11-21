@@ -10,7 +10,8 @@
       "bundleIdentifier": "dev.orbit.app",
       "supportsTablet": true,
       "infoPlist": {
-        "UIBackgroundModes": ["remote-notification"]
+        "UIBackgroundModes": ["remote-notification"],
+        "NSLocalNetworkUsageDescription": "Orbit connects to the Orbit server running on your computer over your local network."
       }
     },
     "android": {

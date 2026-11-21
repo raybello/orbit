@@ -4,13 +4,14 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { Hono } from 'hono';
 import { streamSSE } from 'hono/streaming';
-import { asUserId, ORBIT_HEADERS, type CardBody, type DesktopConfigResponse, type DesktopProbeResponse, type PushPlatform, type SignInResponse } from '@orbit/contracts';
+import { asUserId, ORBIT_HEADERS, type CardBody, type DesktopConfigResponse, type DesktopProbeResponse, type PairCodeResponse, type PushPlatform, type SignInResponse } from '@orbit/contracts';
 import { db, now } from './db.js';
 import { env } from './env.js';
 import { newId } from './lib/ids.js';
 import { hub } from './lib/hub.js';
 import { createSession, destroySession, isOwnerKey, issueSessionToken, requireUser, userFromAuthorizationHeader, userFromCookieHeader, userFromToken, type AuthVars } from './lib/auth.js';
 import { stackTokenMatches } from './lib/stack.js';
+import { createPairing } from './lib/pairing.js';
 import { hermesConnected } from './lib/hermes-probe.js';
 import { registerPushToken, removePushToken, removePushTokens } from './push.js';
 import { allLive, appendRow, clearConversation, emitBot, getBot, getRow, listBots, listRoutines, listRows, listTasks, toRoutine, updateRow, type RoutineRow, type TaskRow } from './store.js';
@@ -50,6 +51,7 @@ import {
   DevLoginSchema,
   optionalBody,
   OwnerSignInSchema,
+  PairRedeemSchema,
   PatchBotSchema,
   PushRegisterSchema,
   PushTokenQuerySchema,
@@ -193,6 +195,26 @@ api.post('/auth/sign-in', async (c) => {
   } catch (e) {
     throw signInError(e);
   }
+});
+
+/** Pairing codes behind Settings → Connect your phone. Kept in memory: a restart drops them. */
+const pairing = createPairing();
+
+api.post('/auth/pair', requireUser, (c) => c.json(pairing.mint(c.get('user').id) satisfies PairCodeResponse));
+
+/** The phone's side of the QR: no session yet, so the code is the only credential. */
+api.post('/auth/pair/redeem', async (c) => {
+  const { code } = await requireBody(c, PairRedeemSchema);
+  const result = pairing.redeem(code);
+  if (!result.ok) {
+    return result.reason === 'rate-limited'
+      ? c.json({ error: 'Too many tries. Wait a minute, then scan the code again.' }, 429)
+      : c.json({ error: 'This code was already used or has expired. Scan the code on your computer again.' }, 403);
+  }
+  const { token, expiresAt } = issueSessionToken(result.userId);
+  const user = userFromToken(token);
+  if (!user) return c.json({ error: 'could not sign in' }, 500);
+  return c.json({ ok: true, token, user, expiresAt } satisfies SignInResponse);
 });
 
 /** One-time sign-in links made by the owner endpoint. Kept in memory: a restart drops them. */

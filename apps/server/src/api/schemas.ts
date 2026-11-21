@@ -28,6 +28,9 @@ export const SignInSchema = z
   .object({ email: z.string().optional(), name: z.string().optional(), ownerKey: z.string().optional() })
   .loose();
 
+/** POST /api/auth/pair/redeem — the code from the "Connect your phone" QR. */
+export const PairRedeemSchema = z.object({ code: z.string().max(256) });
+
 /** POST /api/auth/owner — the owner key comes in the Authorization header, not here. */
 export const OwnerSignInSchema = z.object({ email: z.string().optional(), name: z.string().optional(), link: z.boolean().optional() }).loose();
 

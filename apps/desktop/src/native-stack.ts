@@ -781,6 +781,8 @@ export class NativeStackController implements NativeStack {
       ELECTRON_RUN_AS_NODE: '1',
       NODE_ENV: 'production',
       PORT: String(ports.port),
+      // Loopback only: the phone reaches this server through the desktop's opt-in listener (phone-access.ts).
+      LISTEN_HOST: '127.0.0.1',
       DB_PATH: path.join(userData, 'orbit.db'),
       ENGINES_DIR: path.join(userData, 'engines'),
       COMPUTER_HOME_DIR: path.join(userData, 'computer-homes'),

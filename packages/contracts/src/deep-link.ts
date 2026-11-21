@@ -70,3 +70,33 @@ function decode(part: string): string | null {
     return null;
   }
 }
+
+/**
+ * `orbit://pair?server=<http(s) origin>&code=<pairing code>`: what the "Connect your phone" QR holds.
+ * Opening it on the phone points the app at `server` and redeems `code` there for a session.
+ */
+export interface PairLink {
+  server: string;
+  code: string;
+}
+
+const PAIR_CODE = /^[A-Za-z0-9_-]{16,128}$/;
+const PAIR_SERVER = /^https?:\/\/[^/?#\s@]+$/i;
+
+export function pairLink({ server, code }: PairLink): string {
+  return `${DEEP_LINK_SCHEME}://pair?server=${encodeURIComponent(server)}&code=${encodeURIComponent(code)}`;
+}
+
+/** The link, or null for anything that is not a well-formed pair link with an http(s) origin. */
+export function parsePairLink(raw: string): PairLink | null {
+  if (typeof raw !== 'string' || raw.length > 2_048) return null;
+  const match = SHAPE.exec(raw.trim());
+  if (!match) return null;
+  const [, scheme, host, path, query = ''] = match;
+  if (scheme.toLowerCase() !== DEEP_LINK_SCHEME || host.toLowerCase() !== 'pair' || (path !== '' && path !== '/')) return null;
+  const params = parseQuery(query);
+  const server = params?.get('server')?.replace(/\/+$/, '') ?? '';
+  const code = params?.get('code') ?? '';
+  if (!PAIR_SERVER.test(server) || !PAIR_CODE.test(code)) return null;
+  return { server, code };
+}
