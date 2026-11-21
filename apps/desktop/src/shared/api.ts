@@ -7,7 +7,7 @@
  * literally, so a change here needs the same change there.
  */
 
-import type { DeepLink, DesktopGpuVoice, DesktopUpdateStatus } from '@orbit/contracts';
+import type { DeepLink, DesktopGpuVoice, DesktopPhoneAccess, DesktopUpdateStatus } from '@orbit/contracts';
 
 export type SetupMode = 'new' | 'existing';
 
@@ -157,6 +157,11 @@ export interface OrbitDesktopAPI {
     install(): Promise<DesktopGpuVoice>;
     remove(): Promise<DesktopGpuVoice>;
   };
+  // "Allow my phone to connect": the local stack reachable on the local network, only while on.
+  phoneAccess: {
+    status(): Promise<DesktopPhoneAccess>;
+    set(on: boolean): Promise<DesktopPhoneAccess>;
+  };
   // Platform
   platform: 'darwin' | 'win32' | 'linux';
   version: string;
@@ -180,4 +185,6 @@ export const IPC = {
   deepLinkTake: 'orbit:deeplink:take',
   gpuVoiceStatus: 'orbit:gpu-voice:status',
   gpuVoiceSet: 'orbit:gpu-voice:set',
+  phoneAccessStatus: 'orbit:phone-access:status',
+  phoneAccessSet: 'orbit:phone-access:set',
 } as const;

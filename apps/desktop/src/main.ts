@@ -8,7 +8,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 import { app, BrowserWindow, Menu, dialog, ipcMain, nativeImage, shell, systemPreferences, type IpcMainEvent, type IpcMainInvokeEvent, type MediaAccessPermissionRequest, type Session } from 'electron';
-import { DEEP_LINK_SCHEME, ORBIT_HEADERS, ORBIT_WEB_URL_ENV, type DeepLink, type DesktopGpuVoice } from '@orbit/contracts';
+import { DEEP_LINK_SCHEME, ORBIT_HEADERS, ORBIT_WEB_URL_ENV, type DeepLink, type DesktopGpuVoice, type DesktopPhoneAccess } from '@orbit/contracts';
 import { gpuVoiceSupport } from './gpu-voice';
 import { createLogger } from '@orbit/logger';
 import type { DesktopSetup, DesktopLocalStackState, LaunchAction, LaunchChoice, LaunchOptions, LaunchStatus, ServerProbe, StackKind } from './shared/api';
@@ -36,6 +36,7 @@ import { DEFAULT_OWNER_EMAIL, ensureDesktopSession } from './desktop-session';
 import { describeSender, isTrustedPage } from './ipc-guard';
 import { createDeepLinkInbox, deepLinkFromArgv } from './deep-links';
 import { installLogFile } from './log-file';
+import { PhoneAccess } from './phone-access';
 
 const log = createLogger({ scope: 'main' });
 const here = path.dirname(fileURLToPath(import.meta.url));
@@ -120,6 +121,16 @@ function nativeStack(manifest: NonNullable<ReturnType<typeof readServerManifest>
 
 /** Starts as Docker so IPC, the menu and the smoke test always have a controller. */
 let stack: StackController = dockerStack();
+
+/** The phone reaches the local stack only, and only once it answers. */
+const phoneAccess = new PhoneAccess({
+  userDataDir,
+  targetPort: () => {
+    const { phase } = stack.state();
+    if (readSetup()?.mode !== 'new' || !(phase === 'ready' || phase === 'running')) return null;
+    return Number(new URL(stack.webUrl()).port) || null;
+  },
+});
 
 function stackKind(): StackKind {
   return stack.kind;
@@ -560,6 +571,7 @@ function tearDown(): Promise<void> {
     badge?.stop();
     badge = null;
     for (const win of BrowserWindow.getAllWindows()) win.hide();
+    await phoneAccess.close();
     log.info(`quit: stopping the ${stack.kind} stack`);
     const stopped = await Promise.race([
       stack.stop().then(() => true, (err) => (log.warn('quit: stop failed', err), false)),
@@ -764,6 +776,7 @@ async function startLocal(saved: DesktopSetup): Promise<void> {
     return;
   }
   closeLaunchWindow();
+  void phoneAccess.resume();
   void prepareNativeHermes();
 }
 
@@ -899,6 +912,11 @@ function registerIpc(): void {
     assertSender(event);
     if (stack.kind !== 'docker') return { ...gpuVoiceSupport(process.platform, null, 'native'), enabled: false, phase: 'off' };
     return stack.setGpuVoice(on === true);
+  });
+  ipcMain.handle(IPC.phoneAccessStatus, (): DesktopPhoneAccess => phoneAccess.status());
+  ipcMain.handle(IPC.phoneAccessSet, (event, on: boolean): Promise<DesktopPhoneAccess> => {
+    assertSender(event);
+    return phoneAccess.set(on === true);
   });
   ipcMain.handle(IPC.deepLinkTake, (event) => (mainWindow && !mainWindow.isDestroyed() && event.sender === mainWindow.webContents ? deepLinks.take() : null));
   ipcMain.handle(IPC.openExternal, (event, url: string) => {
