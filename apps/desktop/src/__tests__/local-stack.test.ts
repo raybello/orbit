@@ -676,6 +676,17 @@ describe('LocalStackController: a relaunch keeps its port', () => {
     assert.equal(second.state.webUrl, 'http://127.0.0.1:19999');
   });
 
+  test('a port Docker is still releasing after the last quit is waited for, not abandoned', async () => {
+    await launch('port-releasing', false);
+    let polls = 0;
+    const second = await launch('port-releasing', true, {
+      ports: [19999],
+      isPortFree: async () => ++polls > 3,
+      server: (url, headers) => (url.startsWith('http://127.0.0.1:18080') && polls <= 3 ? { status: 502, body: {} } : selfAwareServer()(url, headers)),
+    });
+    assert.equal(second.state.webUrl, 'http://127.0.0.1:18080');
+  });
+
   test('a port still held by this stack (it never stopped) is kept', async () => {
     await launch('port-ours', false);
     const second = await launch('port-ours', true, { ports: [19999], isPortFree: async () => false });

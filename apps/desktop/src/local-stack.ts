@@ -280,9 +280,16 @@ export class LocalStackController implements DockerStack {
         return false;
       }
     });
-    if (await isFree(port)) return port;
     const token = envValue(this.envText(), 'STACK_TOKEN');
     if (token && (await this.probeHealth(`http://127.0.0.1:${port}`, token, signal))) return port;
+    // Docker's port forwarder lets go of a stopped container's port a moment after the stop, so a
+    // relaunch right after a quit waits for it rather than moving the app to a new origin.
+    const sleep = this.opts.sleep ?? ((ms: number) => new Promise((r) => setTimeout(r, ms)));
+    for (let attempt = 0; attempt < 12; attempt += 1) {
+      if (await isFree(port)) return port;
+      if (signal?.aborted) return null;
+      await sleep(500);
+    }
     log.info(`port ${port} from the last launch is taken by something else; picking another`);
     return null;
   }
@@ -685,7 +692,9 @@ export class LocalStackController implements DockerStack {
       try {
         // `stop`, not `down`: the containers, their volumes and the images stay, so the next
         // launch resumes them with `up -d` instead of recreating anything.
-        const result = await this.compose(binary, ['stop'], { timeoutMs: 120_000 });
+        // The server suspends each Bot's computer on SIGTERM (it saves the home folder), which can
+        // outlast compose's default ten seconds; cutting it short with SIGKILL risks that save.
+        const result = await this.compose(binary, ['stop', '--timeout', '30'], { timeoutMs: 120_000 });
         if (result.code !== 0) log.warn('compose stop failed', failureText(result));
       } catch (err) {
         log.warn('compose stop failed', err);
