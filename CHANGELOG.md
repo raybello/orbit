@@ -1,3 +1,15 @@
+## v0.4.1 — 2026-11-21
+
+- docs: live evidence for phone pairing
+- feat(mobile): sign in by opening an orbit://pair link
+- feat(web): Connect your phone QR in Settings, Devices
+- feat(desktop): Allow my phone to connect
+- fix(native-stack): listen on loopback only
+- feat(server): single-use pairing codes a phone redeems for a session
+- fix(mobile): resolve React from the app so the bundle has one copy
+- ci: publish the GPU voice image from its own workflow, rebuilt only when it changes
+
+
 ## v0.4.0 — 2026-11-21
 
 - feat(web): resizable, collapsible side panels
