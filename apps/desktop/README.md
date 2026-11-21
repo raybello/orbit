@@ -1,7 +1,8 @@
 # @orbit/desktop
 
-The Orbit desktop app: an Electron shell around the Orbit web client, with a first-run
-setup window, a local Docker stack controller, and the native stack's Hermes install.
+The Orbit desktop app: an Electron shell around the Orbit web client, with a launch window
+(first-run choices, then a live view of the local stack starting), a Docker stack controller and
+a native (macOS) stack controller.
 
 The renderer is **the server's own web build**. There is no desktop-only UI beyond
 `setup.html`.
@@ -33,10 +34,13 @@ src/server-url.ts           normalizeServerUrl (shared with the setup renderer)
 src/setup-store.ts          userData/setup.json, written 0600
 src/app-window.ts           the main window: partition, headers, external-link policy
 src/app-menu.ts             application menu
-src/auto-update.ts          electron-updater + the update bar
+src/auto-update.ts          electron-updater, driven from Settings > General > Updates
 src/badge.ts                unread badge from /api/bots + /api/events
 src/session-permissions.ts  microphone only
-src/setup.html/.css/.ts     the first-run window (540x420, one screen)
+src/setup.html/.css/.ts     the launch window: server, runtime (Mac), then start progress
+src/launch-model.ts         stack phase -> progress steps and recovery actions (pure)
+src/update-status.ts        the update state machine Settings draws (pure)
+src/log-file.ts             main-process log mirrored to ~/Library/Logs/Orbit/main.log
 src/docker-cli.ts           docker binary lookup, failure classification, runDocker
 src/local-stack.ts          idle -> … -> ready state machine
 src/local-stack-networking.ts  .orbit-web-url / .orbit-stack-token
@@ -80,6 +84,16 @@ bridge's keys, the resolved stack resource dir, and exits 0/1. Add
 
 ## Updates
 
-`electron-updater` against GitHub Releases (`raybello/orbit`). Checks on launch and every
-four hours, downloads automatically, then shows a non-modal bar. Disabled unless
-`app.isPackaged`. Release with a `v*` tag: `.github/workflows/desktop-release.yml`.
+`electron-updater` against GitHub Releases (`raybello/orbit`). Checks on launch and every four
+hours and shows the result in Settings > General > Updates; nothing downloads until the person
+clicks Download. After the download the new release's server is fetched while the current one
+runs (`compose pull` of the new tag, or the native bundle), so Restart only stops, switches and
+starts. Disabled unless `app.isPackaged`. Release with a `v*` tag:
+`.github/workflows/desktop-release.yml`.
+
+## Lifecycle
+
+Quitting stops the stack and waits for it (up to 45 s): `compose stop` keeps the containers and
+volumes, and the native server suspends Bots' computers before it exits. The next launch reuses
+the same port, so `up -d` resumes the same containers and the session survives; a release tag
+whose images are already local is not pulled again.

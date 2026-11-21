@@ -125,7 +125,9 @@ export class Service {
       clearTimeout: (handle) => clearTimeout(handle),
     };
     this.startedAfterMs = deps.startedAfterMs ?? 1_000;
-    this.stopGraceMs = deps.stopGraceMs ?? 5_000;
+    // The server suspends every Bot's computer on SIGTERM (saves its home, stops its container);
+    // a SIGKILL before that finishes leaves the container running after Orbit has quit.
+    this.stopGraceMs = deps.stopGraceMs ?? 30_000;
     this.stableUptimeMs = deps.stableUptimeMs ?? 30_000;
     this.now = deps.now ?? Date.now;
   }
