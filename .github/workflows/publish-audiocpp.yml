@@ -1,0 +1,144 @@
+# Publishes the GPU voice sidecar, ghcr.io/raybello/orbit/audiocpp: audio.cpp built with CUDA +
+# cuDNN, amd64 only (NVIDIA GPUs on Windows/Linux). The desktop app pulls audiocpp:v<its version>
+# only when the person installs GPU voice.
+#
+# Compiling audio.cpp's CUDA kernels takes about five hours on a hosted runner, so this lives apart
+# from publish-images (which finishes in minutes) and rebuilds only when its sources change. The
+# image is a function of infra/audiocpp/ alone: the Dockerfile pins the audio.cpp ref, CUDA and
+# Caddy, and the other files are copied in. Every build is also tagged src-<hash of that folder>.
+# A release whose folder hashes to an existing src- tag retags that image as v<version> and latest
+# in seconds instead of building.
+#
+# Manual runs (Actions > publish-audiocpp > Run workflow, on a tag to publish that version):
+#   force  rebuild even though an image for these sources exists
+#   adopt  tag an already-published image (e.g. v0.4.0) as the build of the current sources,
+#          without building; use it once for an image built before src- tags existed
+name: publish-audiocpp
+
+on:
+  push:
+    tags: ["v*"]
+  workflow_dispatch:
+    inputs:
+      force:
+        description: Rebuild even if an image for these sources already exists
+        type: boolean
+        default: false
+      adopt:
+        description: Existing tag to adopt as the build of the current sources (e.g. v0.4.0); skips the build
+        type: string
+        default: ""
+
+concurrency:
+  group: publish-audiocpp-${{ github.ref }}
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+  packages: write
+  id-token: write # provenance attestation
+
+env:
+  REGISTRY: ghcr.io
+  IMAGE: ghcr.io/raybello/orbit/audiocpp
+
+jobs:
+  audiocpp:
+    name: audiocpp (GPU voice) image
+    runs-on: ubuntu-latest
+    # A full build uses most of a hosted job's 360 minutes; a retag takes seconds.
+    timeout-minutes: 355
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Fingerprint the sources
+        id: src
+        run: |
+          set -euo pipefail
+          hash=$(find infra/audiocpp -type f -print0 | LC_ALL=C sort -z | xargs -0 sha256sum | sha256sum | cut -c1-16)
+          echo "tag=src-$hash" >> "$GITHUB_OUTPUT"
+          echo "sources hash to src-$hash"
+
+      - name: Log in to GHCR
+        uses: docker/login-action@v3
+        with:
+          registry: ${{ env.REGISTRY }}
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - uses: docker/setup-buildx-action@v3
+
+      # Every tag this run publishes: the source tag always, and the version and latest on a release.
+      - name: Tags
+        id: tags
+        env:
+          SRC_TAG: ${{ steps.src.outputs.tag }}
+        run: |
+          set -euo pipefail
+          tags="$IMAGE:$SRC_TAG"
+          if [[ "$GITHUB_REF" == refs/tags/v* ]]; then
+            tags="$tags"$'\n'"$IMAGE:$GITHUB_REF_NAME"$'\n'"$IMAGE:latest"
+          fi
+          { echo 'list<<EOF'; echo "$tags"; echo 'EOF'; } >> "$GITHUB_OUTPUT"
+          echo "$tags"
+
+      # An image to reuse instead of building: the one an `adopt` run names, or the existing build of
+      # these exact sources. Inputs arrive through env and are checked, never spliced into the script.
+      - name: Find an image to reuse
+        id: reuse
+        env:
+          SRC_TAG: ${{ steps.src.outputs.tag }}
+          ADOPT: ${{ inputs.adopt }}
+          FORCE: ${{ inputs.force }}
+        run: |
+          set -euo pipefail
+          if [[ -n "${ADOPT:-}" ]]; then
+            [[ "$ADOPT" =~ ^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$ ]] || { echo "::error::adopt must be a tag name"; exit 1; }
+            docker buildx imagetools inspect "$IMAGE:$ADOPT" >/dev/null || { echo "::error::$IMAGE:$ADOPT does not exist"; exit 1; }
+            echo "from=$ADOPT" >> "$GITHUB_OUTPUT"
+          elif [[ "${FORCE:-false}" != "true" ]] && docker buildx imagetools inspect "$IMAGE:$SRC_TAG" >/dev/null 2>&1; then
+            echo "from=$SRC_TAG" >> "$GITHUB_OUTPUT"
+            echo "$IMAGE:$SRC_TAG already exists: retagging, not building"
+          else
+            echo "no image for these sources yet: building"
+          fi
+
+      - name: Retag the existing image
+        if: steps.reuse.outputs.from != ''
+        env:
+          FROM: ${{ steps.reuse.outputs.from }}
+          TAGS: ${{ steps.tags.outputs.list }}
+        run: |
+          set -euo pipefail
+          args=()
+          while IFS= read -r t; do [[ -n "$t" ]] && args+=(-t "$t"); done <<< "$TAGS"
+          docker buildx imagetools create "${args[@]}" "$IMAGE:$FROM"
+
+      # The cuDNN devel base alone is ~10 GB unpacked; a hosted runner has ~14 GB free until the
+      # preinstalled SDKs this build never uses are removed.
+      - name: Free disk space
+        if: steps.reuse.outputs.from == ''
+        run: |
+          sudo rm -rf /usr/share/dotnet /usr/local/lib/android /opt/ghc /opt/hostedtoolcache/CodeQL /usr/local/share/boost
+          sudo docker image prune --all --force
+          df -h /
+
+      - name: Build and push
+        if: steps.reuse.outputs.from == ''
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: infra/audiocpp/Dockerfile
+          platforms: linux/amd64
+          push: true
+          tags: ${{ steps.tags.outputs.list }}
+          labels: |
+            org.opencontainers.image.title=Orbit GPU voice
+            org.opencontainers.image.description=audio.cpp (OWSM ASR, LFM3-Audio TTS, SoulX-FlashHead avatar) with CUDA + cuDNN, and a Caddy HTTPS front door
+            org.opencontainers.image.source=https://github.com/raybello/orbit
+            org.opencontainers.image.licenses=MIT
+            org.opencontainers.image.revision=${{ github.sha }}
+          provenance: true
+          sbom: false
+          cache-from: type=gha,scope=audiocpp
+          cache-to: type=gha,mode=max,scope=audiocpp
