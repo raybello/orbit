@@ -10,8 +10,8 @@
     "dev": "pnpm build && electron .",
     "build": "node scripts/build.mjs",
     "check-resources": "node scripts/check-resources.mjs",
-    "pack": "pnpm --filter @orbit/web build && pnpm build && pnpm check-resources && electron-builder",
-    "release": "pnpm --filter @orbit/web build && pnpm build && pnpm check-resources && electron-builder --publish always",
+    "pack": "pnpm --filter @orbit/web build && pnpm build && pnpm check-resources && node scripts/electron-builder.mjs",
+    "release": "pnpm --filter @orbit/web build && pnpm build && pnpm check-resources && node scripts/electron-builder.mjs --publish always",
     "test": "tsx --test src/__tests__/*.test.ts",
     "typecheck": "tsc -p tsconfig.json --noEmit"
   },

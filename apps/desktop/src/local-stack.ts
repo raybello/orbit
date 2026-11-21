@@ -12,7 +12,7 @@ import { spawn } from 'node:child_process';
 import { ORBIT_HEADERS, type DesktopGpuVoice } from '@orbit/contracts';
 import { createLogger } from '@orbit/logger';
 import { DEFAULT_LOCAL_WEB_URL, normalizeServerUrl } from './setup-config';
-import { allocateLoopbackPort } from './loopback-port';
+import { allocateLoopbackPort, bindLoopback } from './loopback-port';
 import {
   REQUIRED_SECRETS,
   envValue,
@@ -53,6 +53,7 @@ export interface DockerRunOptions {
   timeoutMs?: number;
   signal?: AbortSignal;
   cwd?: string;
+  env?: NodeJS.ProcessEnv;
 }
 
 /**
@@ -81,6 +82,8 @@ export interface LocalStackOptions {
   sleep?: (ms: number) => Promise<void>;
   now?: () => number;
   allocatePort?: () => Promise<number>;
+  /** Can the last launch's port be bound again? Injected in tests. */
+  isPortFree?: (port: number) => Promise<boolean>;
   launchDockerDesktop?: (platform: NodeJS.Platform, env: NodeJS.ProcessEnv) => Promise<void>;
   /** Runs `nvidia-smi` for GPU detection; injected in tests. */
   runFile?: RunFile;
@@ -89,14 +92,6 @@ export interface LocalStackOptions {
   healthIntervalMs?: number;
   daemonWaitMs?: number;
 }
-
-const ACTIVE_PHASES: StackPhase[] = [
-  'checking-docker',
-  'preparing',
-  'pulling',
-  'starting',
-  'waiting-healthy',
-];
 
 /**
  * The two names the stack dir always has. A checkout holds the images pair under their own
@@ -125,6 +120,7 @@ export class LocalStackController implements DockerStack {
   private readonly env: NodeJS.ProcessEnv;
   private current: DesktopLocalStackState;
   private abortController: AbortController | null = null;
+  private inFlight: Promise<DesktopLocalStackState> | null = null;
   /** The GPU voice install/remove in progress or last failed, for the settings to show. */
   private gpu: { phase: DesktopGpuVoice['phase']; detail?: string; error?: string } | null = null;
   private gpuName: Promise<string | null> | null = null;
@@ -268,10 +264,45 @@ export class LocalStackController implements DockerStack {
   }
 
   /**
+   * The port the last launch used, when it can serve again: free, or still held by this stack's
+   * own server. Keeping it keeps the web origin, so the session and the page's storage survive a
+   * restart, and keeps the compose config, so `up -d` resumes the containers instead of
+   * recreating them.
+   */
+  private async reusablePort(signal?: AbortSignal): Promise<number | null> {
+    const port = Number(envValue(this.envText(), 'ORBIT_WEB_PORT'));
+    if (!Number.isInteger(port) || port < 1024 || port > 65535) return null;
+    const isFree = this.opts.isPortFree ?? (async (p: number) => {
+      try {
+        (await bindLoopback(p, '127.0.0.1')).close();
+        return true;
+      } catch {
+        return false;
+      }
+    });
+    const token = envValue(this.envText(), 'STACK_TOKEN');
+    if (token && (await this.probeHealth(`http://127.0.0.1:${port}`, token, signal))) return port;
+    // Docker's port forwarder lets go of a stopped container's port a moment after the stop, so a
+    // relaunch right after a quit waits for it rather than moving the app to a new origin.
+    const sleep = this.opts.sleep ?? ((ms: number) => new Promise((r) => setTimeout(r, ms)));
+    for (let attempt = 0; attempt < 12; attempt += 1) {
+      if (await isFree(port)) return port;
+      if (signal?.aborted) return null;
+      await sleep(500);
+    }
+    log.info(`port ${port} from the last launch is taken by something else; picking another`);
+    return null;
+  }
+
+  /**
    * The server image tag: this release's own tag when packaged, `edge` in development.
    * `ORBIT_IMAGE_TAG` overrides both (support, and testing an installer before its release
    * has published images).
    */
+  private pinnedTag(): boolean {
+    return /^v\d+\.\d+\.\d+/.test(this.imageTag());
+  }
+
   private imageTag(): string {
     const forced = this.env.ORBIT_IMAGE_TAG?.trim();
     if (forced && /^[\w][\w.-]{0,127}$/.test(forced)) return forced;
@@ -501,10 +532,19 @@ export class LocalStackController implements DockerStack {
     return false;
   }
 
-  async start(): Promise<DesktopLocalStackState> {
-    if (ACTIVE_PHASES.includes(this.current.phase)) return this.current;
-    if (this.current.phase === 'ready') return this.current;
+  /**
+   * Bring the stack up, or join the start already running: a second caller (a Dock click, a
+   * retry button) waits for the same outcome instead of reading a half-done phase as the result.
+   */
+  start(): Promise<DesktopLocalStackState> {
+    if (this.current.phase === 'ready') return Promise.resolve(this.current);
+    this.inFlight ??= this.bringUp().finally(() => {
+      this.inFlight = null;
+    });
+    return this.inFlight;
+  }
 
+  private async bringUp(): Promise<DesktopLocalStackState> {
     const controller = new AbortController();
     this.abortController = controller;
     const { signal } = controller;
@@ -573,15 +613,16 @@ export class LocalStackController implements DockerStack {
         throw err;
       }
       const allocate = this.opts.allocatePort ?? (() => allocateLoopbackPort());
-      const port = await allocate();
+      const port = (await this.reusablePort(signal)) ?? (await allocate());
       let prepared = this.prepareEnv(port);
       let webUrl = prepared.webUrl;
 
-      // ORBIT_SKIP_PULL=1 (the dev rebuild loop sets it): run the images already on this machine.
-      // Pulling there would replace the image just built from the working tree with the
-      // published one of the same tag, and the window would show the registry's code instead.
-      if (this.env.ORBIT_SKIP_PULL?.trim() === '1' && (await this.imagesPresent(binary, signal))) {
-        log.info(`ORBIT_SKIP_PULL=1: using the local ghcr.io/raybello/orbit/app:${this.imageTag()}, not pulling`);
+      // A release tag names fixed images, so once they are on this machine every later launch
+      // just starts them. `edge` moves, so development pulls unless ORBIT_SKIP_PULL=1 (the dev
+      // rebuild loop) says the local image, built from the working tree, is the one to run.
+      const reuseLocal = this.pinnedTag() || this.env.ORBIT_SKIP_PULL?.trim() === '1';
+      if (reuseLocal && (await this.imagesPresent(binary, signal))) {
+        log.info(`using the local ghcr.io/raybello/orbit/app:${this.imageTag()}, not pulling`);
       } else {
         this.set({ phase: 'pulling', detail: `Pulling ghcr.io/raybello/orbit/app:${this.imageTag()}`, progress: 0.1 });
         const pull = await this.compose(binary, ['pull', '--quiet'], { timeoutMs: 600_000, signal });
@@ -649,11 +690,14 @@ export class LocalStackController implements DockerStack {
     const binary = resolveDockerBinary(this.platform, this.env, exists);
     if (binary && this.current.phase !== 'idle') {
       try {
-        // `down`, never `down -v`: a restart must not destroy the user's data.
-        const result = await this.compose(binary, ['down', '--remove-orphans'], { timeoutMs: 120_000 });
-        if (result.code !== 0) log.warn('compose down failed', failureText(result));
+        // `stop`, not `down`: the containers, their volumes and the images stay, so the next
+        // launch resumes them with `up -d` instead of recreating anything.
+        // The server suspends each Bot's computer on SIGTERM (it saves the home folder), which can
+        // outlast compose's default ten seconds; cutting it short with SIGKILL risks that save.
+        const result = await this.compose(binary, ['stop', '--timeout', '30'], { timeoutMs: 120_000 });
+        if (result.code !== 0) log.warn('compose stop failed', failureText(result));
       } catch (err) {
-        log.warn('compose down failed', err);
+        log.warn('compose stop failed', err);
       }
     }
     return this.set({ phase: 'idle', detail: 'Stopped', webUrl: undefined, progress: undefined });
@@ -662,6 +706,18 @@ export class LocalStackController implements DockerStack {
   abort(): void {
     this.abortController?.abort();
     this.abortController = null;
+  }
+
+  async prefetch(version: string): Promise<void> {
+    const exists = this.opts.exists ?? ((file: string) => fs.existsSync(file));
+    const binary = resolveDockerBinary(this.platform, this.env, exists);
+    if (!binary) throw new Error('Docker is not installed');
+    // The shell environment wins over --env-file when compose interpolates, so this names the
+    // new release's images without touching the running stack's .env.
+    const tag = `v${version}`;
+    const pull = await this.compose(binary, ['pull', '--quiet'], { timeoutMs: 1_800_000, env: { ...this.env, ORBIT_IMAGE_TAG: tag } });
+    if (pull.code !== 0) throw new Error(`could not pull the ${tag} images: ${summarizeDockerFailure(pull)}`);
+    log.info(`prefetched the ${tag} images`);
   }
 
   // ---------------------------------------------------------------- GPU voice

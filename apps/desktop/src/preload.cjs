@@ -10,19 +10,17 @@
 const { contextBridge, ipcRenderer } = require('electron');
 
 const IPC = {
-  stackGet: 'orbit:stack:get',
-  stackStart: 'orbit:stack:start',
-  stackStop: 'orbit:stack:stop',
-  stackState: 'orbit:stack:state',
+  launchOptions: 'orbit:launch:options',
+  launchStatus: 'orbit:launch:status',
+  launchChoose: 'orbit:launch:choose',
+  launchAct: 'orbit:launch:act',
   setupGet: 'orbit:setup:get',
-  setupSave: 'orbit:setup:save',
-  setupClear: 'orbit:setup:clear',
   setupProbe: 'orbit:setup:probe',
-  setupComplete: 'setup-complete',
+  updateStatus: 'orbit:update:status',
   updateCheck: 'orbit:update:check',
-  updateReady: 'orbit:update:ready',
+  updateDownload: 'orbit:update:download',
   updateInstall: 'orbit:update:install',
-  noticeDismiss: 'orbit:notice:dismiss',
+  updateOpen: 'orbit:update:open',
   openExternal: 'orbit:shell:open-external',
   deepLinkReady: 'orbit:deeplink:ready',
   deepLinkTake: 'orbit:deeplink:take',
@@ -47,22 +45,25 @@ function subscribe(channel, cb) {
 }
 
 contextBridge.exposeInMainWorld('orbitDesktop', {
-  // Stack
-  getStackState: () => ipcRenderer.invoke(IPC.stackGet),
-  startStack: () => ipcRenderer.invoke(IPC.stackStart),
-  stopStack: () => ipcRenderer.invoke(IPC.stackStop),
-  onStackState: (cb) => subscribe(IPC.stackState, cb),
-  // Setup
+  // The launch window
+  launch: {
+    options: () => ipcRenderer.invoke(IPC.launchOptions),
+    status: () => ipcRenderer.invoke(IPC.launchStatus),
+    onStatus: (cb) => subscribe(IPC.launchStatus, cb),
+    choose: (choice) => ipcRenderer.invoke(IPC.launchChoose, choice),
+    act: (action) => ipcRenderer.invoke(IPC.launchAct, action),
+  },
   getSetup: () => ipcRenderer.invoke(IPC.setupGet),
-  saveSetup: (setup) => ipcRenderer.invoke(IPC.setupSave, setup),
-  clearSetup: () => ipcRenderer.invoke(IPC.setupClear),
   probeServer: (url) => ipcRenderer.invoke(IPC.setupProbe, url),
-  finishSetup: () => ipcRenderer.send(IPC.setupComplete),
-  // Updates
-  checkForUpdates: () => ipcRenderer.invoke(IPC.updateCheck),
-  onUpdateReady: (cb) => subscribe(IPC.updateReady, cb),
-  restartAndInstall: () => ipcRenderer.invoke(IPC.updateInstall),
-  dismissUpdateNotice: () => ipcRenderer.send(IPC.noticeDismiss),
+  // Updates, driven from Settings
+  updates: {
+    status: () => ipcRenderer.invoke(IPC.updateStatus),
+    check: () => ipcRenderer.invoke(IPC.updateCheck),
+    download: () => ipcRenderer.invoke(IPC.updateDownload),
+    install: () => ipcRenderer.invoke(IPC.updateInstall),
+    onStatus: (cb) => subscribe(IPC.updateStatus, cb),
+    onOpenRequest: (cb) => subscribe(IPC.updateOpen, cb),
+  },
   // Shell
   openExternal: (url) => ipcRenderer.invoke(IPC.openExternal, url),
   // Deep links: main only says one is waiting; taking it is what hands it over, so a link that

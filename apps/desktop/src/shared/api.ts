@@ -7,9 +7,12 @@
  * literally, so a change here needs the same change there.
  */
 
-import type { DeepLink, DesktopGpuVoice } from '@orbit/contracts';
+import type { DeepLink, DesktopGpuVoice, DesktopUpdateStatus } from '@orbit/contracts';
 
 export type SetupMode = 'new' | 'existing';
+
+/** Which local runtime runs Orbit's server: Docker Compose, or the macOS-only native bundle. */
+export type StackKind = 'docker' | 'native';
 
 /** The contents of `userData/setup.json`. */
 export interface DesktopSetup {
@@ -92,26 +95,54 @@ export interface ServerProbe {
   version?: string;
 }
 
+/** What the launch window may offer on this machine. */
+export interface LaunchOptions {
+  native: { available: boolean; reason?: string };
+  dockerInstalled: boolean;
+}
+
+/** The person's answer on the launch window's first screens. */
+export type LaunchChoice = { mode: 'local'; runtime: StackKind } | { mode: 'remote'; serverUrl: string };
+
+/** What the launch window draws while a local stack starts. */
+export interface LaunchStatus {
+  /** `choose` until there is a saved setup to start; `progress` while one starts. */
+  view: 'choose' | 'progress';
+  kind: StackKind;
+  state: DesktopLocalStackState;
+  /** The native stack could run here instead (offered when Docker is missing). */
+  nativeAvailable: boolean;
+  /** Replaces the runtime line while the start serves something else (copying Docker's data). */
+  note?: string;
+}
+
+/** A recovery the launch window offers when a start stops short (`launch-model.ts`). */
+export type LaunchAction = 'retry' | 'install-docker' | 'open-docker-download' | 'use-native' | 'show-log' | 'back';
+
 export interface OrbitDesktopAPI {
-  // Stack
-  getStackState(): Promise<DesktopLocalStackState>;
-  startStack(): Promise<DesktopLocalStackState>;
-  stopStack(): Promise<DesktopLocalStackState>;
-  onStackState(cb: (state: DesktopLocalStackState) => void): () => void;
-  // Setup
+  // The launch window: first-run choices, then the start of the local stack.
+  launch: {
+    options(): Promise<LaunchOptions>;
+    status(): Promise<LaunchStatus>;
+    onStatus(cb: (status: LaunchStatus) => void): () => void;
+    /** Save the choice and start on it; the window switches to progress through `onStatus`. */
+    choose(choice: LaunchChoice): Promise<void>;
+    act(action: LaunchAction): Promise<void>;
+  };
   getSetup(): Promise<DesktopSetup | null>;
-  saveSetup(setup: DesktopSetup): Promise<DesktopSetup | null>;
-  clearSetup(): Promise<void>;
-  /** Probe `/api/health` from the main process, so the setup window needs no CORS. */
+  /** Probe `/api/health` from the main process, so the launch window needs no CORS. */
   probeServer(url: string): Promise<ServerProbe>;
-  /** Tells main the setup window is done; it closes us and continues startup. */
-  finishSetup(): void;
-  // Updates
-  checkForUpdates(): Promise<void>;
-  onUpdateReady(cb: () => void): () => void;
-  restartAndInstall(): Promise<void>;
-  /** Closes the update bar; the bar's own renderer calls it. */
-  dismissUpdateNotice(): void;
+  // Updates, driven from the web app's Settings.
+  updates: {
+    status(): Promise<DesktopUpdateStatus>;
+    check(): Promise<DesktopUpdateStatus>;
+    download(): Promise<DesktopUpdateStatus>;
+    /** Stop the stack and relaunch on the downloaded version. */
+    install(): Promise<void>;
+    onStatus(cb: (status: DesktopUpdateStatus) => void): () => void;
+    /** The app menu's Check for Updates…: Settings should come forward. */
+    onOpenRequest(cb: () => void): () => void;
+  };
   /** Opens an https URL in the system browser; other schemes are refused in main. */
   openExternal(url: string): Promise<void>;
   // Deep links
@@ -133,19 +164,17 @@ export interface OrbitDesktopAPI {
 
 /** IPC channel names. Kept as a const map so preload and main cannot drift. */
 export const IPC = {
-  stackGet: 'orbit:stack:get',
-  stackStart: 'orbit:stack:start',
-  stackStop: 'orbit:stack:stop',
-  stackState: 'orbit:stack:state',
+  launchOptions: 'orbit:launch:options',
+  launchStatus: 'orbit:launch:status',
+  launchChoose: 'orbit:launch:choose',
+  launchAct: 'orbit:launch:act',
   setupGet: 'orbit:setup:get',
-  setupSave: 'orbit:setup:save',
-  setupClear: 'orbit:setup:clear',
   setupProbe: 'orbit:setup:probe',
-  setupComplete: 'setup-complete',
+  updateStatus: 'orbit:update:status',
   updateCheck: 'orbit:update:check',
-  updateReady: 'orbit:update:ready',
+  updateDownload: 'orbit:update:download',
   updateInstall: 'orbit:update:install',
-  noticeDismiss: 'orbit:notice:dismiss',
+  updateOpen: 'orbit:update:open',
   openExternal: 'orbit:shell:open-external',
   deepLinkReady: 'orbit:deeplink:ready',
   deepLinkTake: 'orbit:deeplink:take',

@@ -179,6 +179,8 @@ interface Harness {
   stackDir: string;
   /** Every docker argv, in order. */
   calls: string[][];
+  /** The environment each docker call ran with (undefined: inherited). */
+  callEnvs: (NodeJS.ProcessEnv | undefined)[];
   /** For each docker call, whether its cwd existed. */
   cwdState: boolean[];
   /** Every URL the controller fetched, in order. */
@@ -208,9 +210,13 @@ function harness(opts: {
   localImages?: boolean;
   /** Answer the one-shot Hermes import (`compose run`). */
   importRun?: () => DockerResult;
+  /** Whether the last launch's port can be bound again (default: yes). */
+  isPortFree?: (port: number) => Promise<boolean>;
+  /** Reuse this stack folder (a second launch of the same install). */
+  keepRoot?: boolean;
 }): Harness {
   const root = path.join(tmpRoot, opts.name);
-  fs.rmSync(root, { recursive: true, force: true });
+  if (!opts.keepRoot) fs.rmSync(root, { recursive: true, force: true });
   const resources = path.join(root, 'resources');
   const userDataDir = path.join(root, 'userData');
   fs.mkdirSync(resources, { recursive: true });
@@ -232,8 +238,10 @@ function harness(opts: {
   const ports = [...(opts.ports ?? [18080])];
   let upCalls = 0;
 
-  const exec = async (_binary: string, args: string[], runOpts?: { cwd?: string }): Promise<DockerResult> => {
+  const callEnvs: (NodeJS.ProcessEnv | undefined)[] = [];
+  const exec = async (_binary: string, args: string[], runOpts?: { cwd?: string; env?: NodeJS.ProcessEnv }): Promise<DockerResult> => {
     calls.push(args);
+    callEnvs.push(runOpts?.env);
     cwdState.push(Boolean(runOpts?.cwd && fs.existsSync(runOpts.cwd)));
     if (args[0] === 'info') return { code: 0, stdout: '24.0.7\n', stderr: '' };
     if (args[0] === 'compose' && args.includes('pull')) return { code: 0, stdout: '', stderr: '' };
@@ -282,6 +290,7 @@ function harness(opts: {
     },
     healthTimeoutMs: opts.healthTimeoutMs ?? 200,
     healthIntervalMs: 1,
+    isPortFree: opts.isPortFree ?? (async () => true),
   } satisfies LocalStackOptions);
 
   const stackDir = path.join(userDataDir, 'stack');
@@ -289,6 +298,7 @@ function harness(opts: {
     controller,
     stackDir,
     calls,
+    callEnvs,
     cwdState,
     fetched,
     env: () => fs.readFileSync(path.join(stackDir, '.env'), 'utf8'),
@@ -313,7 +323,7 @@ function selfAwareServer(imageTag = 'edge') {
 describe('LocalStackController: pulling images', () => {
   const pulled = (h: Harness) => h.calls.some((a) => a[0] === 'compose' && a.includes('pull'));
 
-  test('pulls by default', async () => {
+  test('pulls the moving edge tag even when it is on this machine', async () => {
     const h = harness({ name: 'pull-default', server: selfAwareServer(), localImages: true });
     const state = await h.controller.start();
     assert.equal(state.phase, 'ready', state.error);
@@ -325,6 +335,20 @@ describe('LocalStackController: pulling images', () => {
     const state = await h.controller.start();
     assert.equal(state.phase, 'ready', state.error);
     assert.equal(pulled(h), false);
+  });
+
+  test('a release launch starts the images already on this machine without pulling', async () => {
+    const h = harness({ name: 'pull-release-local', packaged: true, server: selfAwareServer('v0.1.0'), localImages: true });
+    const state = await h.controller.start();
+    assert.equal(state.phase, 'ready', state.error);
+    assert.equal(pulled(h), false);
+  });
+
+  test('a release launch pulls on the first run, when its images are not here yet', async () => {
+    const h = harness({ name: 'pull-release-first', packaged: true, server: selfAwareServer('v0.1.0') });
+    const state = await h.controller.start();
+    assert.equal(state.phase, 'ready', state.error);
+    assert.equal(pulled(h), true);
   });
 
   test('ORBIT_SKIP_PULL=1 still pulls when the images are not on this machine', async () => {
@@ -592,5 +616,80 @@ describe('LocalStackController: the host Hermes import', () => {
     const h = harness({ name: 'hermes-env', server: selfAwareServer(), env: { HERMES_HOME: tmpRoot } });
     await h.controller.start();
     assert.doesNotMatch(h.env(), /HERMES_HOME_HOST|HERMES_KEY|HERMES_URL/);
+  });
+});
+
+describe('LocalStackController: lifecycle', () => {
+  test('a second start while one is running gets the same outcome, not the half-done phase', async () => {
+    const h = harness({ name: 'concurrent-start', server: selfAwareServer() });
+    const [first, second] = await Promise.all([h.controller.start(), h.controller.start()]);
+    assert.equal(first.phase, 'ready', first.error);
+    assert.equal(second.phase, 'ready');
+    assert.equal(h.calls.filter((a) => a[0] === 'compose' && a.includes('up')).length, 1);
+  });
+
+  test('stop keeps the containers: compose stop, never down', async () => {
+    const h = harness({ name: 'stop-keeps', server: selfAwareServer() });
+    await h.controller.start();
+    const state = await h.controller.stop();
+    assert.equal(state.phase, 'idle');
+    const composeVerbs = h.calls.filter((a) => a[0] === 'compose').map((a) => a.find((x) => ['stop', 'down'].includes(x))).filter(Boolean);
+    assert.deepEqual(composeVerbs, ['stop']);
+  });
+});
+
+describe('LocalStackController: update prefetch', () => {
+  test("pulls the next release's images by tag while leaving the running stack's .env alone", async () => {
+    const h = harness({ name: 'prefetch', packaged: true, server: selfAwareServer('v0.1.0'), localImages: true });
+    await h.controller.start();
+    const envBefore = h.env();
+    await h.controller.prefetch('0.2.0');
+    const pullIndex = h.calls.findLastIndex((a) => a[0] === 'compose' && a.includes('pull'));
+    assert.ok(pullIndex >= 0, 'pulled');
+    assert.equal(h.callEnvs[pullIndex]?.ORBIT_IMAGE_TAG, 'v0.2.0');
+    assert.equal(h.env(), envBefore);
+    assert.match(h.env(), /ORBIT_IMAGE_TAG=v0\.1\.0/);
+  });
+});
+
+describe('LocalStackController: a relaunch keeps its port', () => {
+  const launch = async (name: string, keepRoot: boolean, extra: Parameters<typeof harness>[0] extends infer O ? Partial<O> : never = {}) => {
+    const h = harness({ name, keepRoot, server: selfAwareServer(), ports: [18080, 18090], ...extra });
+    return { h, state: await h.controller.start() };
+  };
+
+  test('the second launch reuses the first launch\'s port, so the origin and the containers stay the same', async () => {
+    const first = await launch('port-reuse', false);
+    assert.equal(first.state.webUrl, 'http://127.0.0.1:18080');
+    await first.h.controller.stop();
+    const second = await launch('port-reuse', true, { ports: [19999] });
+    assert.equal(second.state.webUrl, 'http://127.0.0.1:18080');
+  });
+
+  test('a port some other program now holds is given up for a fresh one', async () => {
+    await launch('port-taken', false);
+    const second = await launch('port-taken', true, {
+      ports: [19999],
+      isPortFree: async () => false,
+      server: (url, headers) => (url.startsWith('http://127.0.0.1:18080') ? { status: 200, body: { ok: true } } : selfAwareServer()(url, headers)),
+    });
+    assert.equal(second.state.webUrl, 'http://127.0.0.1:19999');
+  });
+
+  test('a port Docker is still releasing after the last quit is waited for, not abandoned', async () => {
+    await launch('port-releasing', false);
+    let polls = 0;
+    const second = await launch('port-releasing', true, {
+      ports: [19999],
+      isPortFree: async () => ++polls > 3,
+      server: (url, headers) => (url.startsWith('http://127.0.0.1:18080') && polls <= 3 ? { status: 502, body: {} } : selfAwareServer()(url, headers)),
+    });
+    assert.equal(second.state.webUrl, 'http://127.0.0.1:18080');
+  });
+
+  test('a port still held by this stack (it never stopped) is kept', async () => {
+    await launch('port-ours', false);
+    const second = await launch('port-ours', true, { ports: [19999], isPortFree: async () => false });
+    assert.equal(second.state.webUrl, 'http://127.0.0.1:18080');
   });
 });

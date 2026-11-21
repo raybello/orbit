@@ -22,6 +22,8 @@ import { nativePortsFile } from './docker-move';
 import type { NativeStack } from './stack-controller';
 import {
   installServerBundle,
+  releaseManifestUrl,
+  validateServerManifest,
   type InstalledBundle,
   type RuntimeExec,
   type ServerManifest,
@@ -123,7 +125,9 @@ export class Service {
       clearTimeout: (handle) => clearTimeout(handle),
     };
     this.startedAfterMs = deps.startedAfterMs ?? 1_000;
-    this.stopGraceMs = deps.stopGraceMs ?? 5_000;
+    // The server suspends every Bot's computer on SIGTERM (saves its home, stops its container);
+    // a SIGKILL before that finishes leaves the container running after Orbit has quit.
+    this.stopGraceMs = deps.stopGraceMs ?? 30_000;
     this.stableUptimeMs = deps.stableUptimeMs ?? 30_000;
     this.now = deps.now ?? Date.now;
   }
@@ -338,24 +342,27 @@ export class Service {
 
 // ------------------------------------------------------------------ ports
 
+/**
+ * The one loopback port the native server listens on. It serves the API and the web app from
+ * the same origin, exactly like the Docker image does.
+ */
 export interface NativePorts {
-  api: number;
-  web: number;
+  port: number;
 }
 
 export function isPortInRange(port: number, range: readonly [number, number] = NATIVE_PORT_RANGE): boolean {
   return Number.isInteger(port) && port >= range[0] && port <= range[1];
 }
 
-/** Tolerant read: the file is hand-editable, and a bad one just means "allocate again". */
+/**
+ * Tolerant read: the file is hand-editable, and a bad one just means "allocate again". Builds up
+ * to 0.3.0 wrote `{ api, web }`; the server only ever listened on `api`, so that is the port.
+ */
 export function readNativePorts(file: string, range: readonly [number, number] = NATIVE_PORT_RANGE): NativePorts | null {
   try {
-    const parsed = JSON.parse(fs.readFileSync(file, 'utf8')) as Partial<NativePorts>;
-    const api = Number(parsed?.api);
-    const web = Number(parsed?.web);
-    if (!isPortInRange(api, range) || !isPortInRange(web, range)) return null;
-    if (api === web) return null;
-    return { api, web };
+    const parsed = JSON.parse(fs.readFileSync(file, 'utf8')) as { port?: unknown; api?: unknown };
+    const port = Number(parsed?.port ?? parsed?.api);
+    return isPortInRange(port, range) ? { port } : null;
   } catch {
     return null;
   }
@@ -364,7 +371,7 @@ export function readNativePorts(file: string, range: readonly [number, number] =
 export function writeNativePorts(file: string, ports: NativePorts): void {
   fs.mkdirSync(path.dirname(file), { recursive: true, mode: 0o700 });
   const tmp = `${file}.tmp`;
-  fs.writeFileSync(tmp, `${JSON.stringify({ api: ports.api, web: ports.web }, null, 2)}\n`, {
+  fs.writeFileSync(tmp, `${JSON.stringify({ port: ports.port }, null, 2)}\n`, {
     encoding: 'utf8',
     mode: 0o600,
   });
@@ -414,8 +421,6 @@ export interface NativeStackOptions {
   signalEngines?: (enginesDir: string) => BotEngine[];
 }
 
-const STARTING_PHASES: StackPhase[] = ['starting', 'waiting-healthy'];
-
 export class NativeStackController implements NativeStack {
   readonly kind = 'native' as const;
   readonly stackDir: string;
@@ -426,6 +431,7 @@ export class NativeStackController implements NativeStack {
   private current: DesktopLocalStackState;
   private api: Service | null = null;
   private abortController: AbortController | null = null;
+  private inFlight: Promise<DesktopLocalStackState> | null = null;
 
   constructor(options: NativeStackOptions) {
     this.opts = options;
@@ -473,7 +479,7 @@ export class NativeStackController implements NativeStack {
   webUrl(): string {
     if (this.current.webUrl) return this.current.webUrl;
     const ports = readNativePorts(this.portsFile, this.range);
-    return ports ? `http://127.0.0.1:${ports.web}` : DEFAULT_LOCAL_WEB_URL;
+    return ports ? `http://127.0.0.1:${ports.port}` : DEFAULT_LOCAL_WEB_URL;
   }
 
   /** The shared secret the API expects in `x-orbit-stack-token`. */
@@ -526,10 +532,16 @@ export class NativeStackController implements NativeStack {
 
   // ---------------------------------------------------------------- start / stop
 
-  async start(): Promise<DesktopLocalStackState> {
-    if (this.current.phase === 'running') return this.current;
-    if (STARTING_PHASES.includes(this.current.phase)) return this.current;
+  /** Start, or join the start already running, so a second caller never reads a half-done phase. */
+  start(): Promise<DesktopLocalStackState> {
+    if (this.current.phase === 'running') return Promise.resolve(this.current);
+    this.inFlight ??= this.bringUp().finally(() => {
+      this.inFlight = null;
+    });
+    return this.inFlight;
+  }
 
+  private async bringUp(): Promise<DesktopLocalStackState> {
     const controller = new AbortController();
     this.abortController = controller;
     const { signal } = controller;
@@ -581,8 +593,8 @@ export class NativeStackController implements NativeStack {
         return this.stopped();
       }
 
-      const webUrl = `http://127.0.0.1:${ports.web}`;
-      const healthy = await this.waitForHealth(ports.api, secrets.stack_token, signal);
+      const webUrl = `http://127.0.0.1:${ports.port}`;
+      const healthy = await this.waitForHealth(ports.port, secrets.stack_token, signal);
       if (signal.aborted) {
         await service.stop();
         this.api = null;
@@ -623,6 +635,14 @@ export class NativeStackController implements NativeStack {
     this.set({ phase: 'stopping', detail: 'Stopping the Bots' });
     await this.stopEngines();
     return this.set({ phase: 'stopped', detail: 'Stopped', webUrl: undefined, progress: undefined });
+  }
+
+  async prefetch(version: string): Promise<void> {
+    const res = await fetch(releaseManifestUrl(version), { signal: AbortSignal.timeout(30_000) });
+    if (!res.ok) throw new Error(`the ${version} release has no native server manifest (HTTP ${res.status})`);
+    const manifest = validateServerManifest(await res.json());
+    if (!manifest || manifest.version !== version) throw new Error(`the ${version} release's native server manifest is invalid`);
+    await installServerBundle(manifest, this.bundleDir);
   }
 
   /** Abort an in-flight start. The processes it already spawned are stopped by that start. */
@@ -672,28 +692,25 @@ export class NativeStackController implements NativeStack {
   }
 
   /**
-   * The persisted pair when both ports are still free, otherwise a fresh pair written back.
-   * Stable ports matter: the session partition derives from the origin, so a moving port would
+   * The persisted port when it is still free, otherwise a fresh one written back.
+   * A stable port matters: the session partition derives from the origin, so a moving port would
    * log the user out on every launch.
    */
   private async ensurePorts(signal: AbortSignal): Promise<NativePorts> {
     const isFree = this.opts.isPortFree ?? ((port: number) => this.defaultIsPortFree(port));
     const existing = readNativePorts(this.portsFile, this.range);
-    if (existing && (await isFree(existing.api)) && (await isFree(existing.web))) return existing;
-    if (existing) log.warn('persisted native ports are in use; allocating a new pair');
+    if (existing && (await isFree(existing.port))) return existing;
+    if (existing) log.warn(`persisted native port ${existing.port} is in use; allocating a new one`);
 
     for (let attempt = 0; attempt < 8; attempt += 1) {
       if (signal.aborted) throw new NativeStackError('aborted');
-      const api = await this.allocatePort();
-      const web = await this.allocatePort();
-      if (api === web) continue;
-      if (!(await isFree(api)) || !(await isFree(web))) continue;
-      const ports = { api, web };
-      writeNativePorts(this.portsFile, ports);
-      log.info(`native ports: api ${api}, web ${web}`);
-      return ports;
+      const port = await this.allocatePort();
+      if (!(await isFree(port))) continue;
+      writeNativePorts(this.portsFile, { port });
+      log.info(`native port: ${port}`);
+      return { port };
     }
-    throw new NativeStackError('could not find two free ports in 40000-49999 after eight attempts');
+    throw new NativeStackError('could not find a free port in 40000-49999 after eight attempts');
   }
 
   private async allocatePort(): Promise<number> {
@@ -763,16 +780,15 @@ export class NativeStackController implements NativeStack {
       ...this.env,
       ELECTRON_RUN_AS_NODE: '1',
       NODE_ENV: 'production',
-      PORT: String(ports.api),
-      WEB_PORT: String(ports.web),
+      PORT: String(ports.port),
       DB_PATH: path.join(userData, 'orbit.db'),
       ENGINES_DIR: path.join(userData, 'engines'),
       COMPUTER_HOME_DIR: path.join(userData, 'computer-homes'),
       SESSION_SECRET: secrets.session_secret,
       STACK_TOKEN: secrets.stack_token,
       HERMES_IMPORT_FROM: this.opts.hermesImportFrom ?? hermesHome(this.env),
-      // The bundle root, so the API can serve `web/` from the same directory it ran from.
-      ORBIT_BUNDLE_DIR: bundleDir,
+      // The bundle ships the web build at `<bundle>/web`; the server serves it from PORT.
+      ORBIT_WEB_DIST: path.join(bundleDir, 'web'),
       // The native stack is the macOS path, and there is no Apple-silicon audio.cpp sidecar yet:
       // GPU voice is off (the web app hides it) and calls use on-device voice. An explicit
       // AUDIOCPP_URL in the environment (a GPU box on the LAN) still wins.

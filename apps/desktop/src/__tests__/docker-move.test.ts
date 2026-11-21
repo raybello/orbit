@@ -13,9 +13,9 @@ import {
   readStackChoice,
   stackChoiceFile,
   writeStackChoice,
-  type StackChoice,
 } from '../docker-move';
 import type { ExecResult, RuntimeExec } from '../mac-runtime';
+import type { StackKind } from '../shared/api';
 
 /** POSIX permission bits do not exist on Windows; the 0600 checks only mean something elsewhere. */
 const posixModes = process.platform !== 'win32';
@@ -70,12 +70,12 @@ describe('chooseStack', () => {
   /** A decision harness that records every write and every dialog call. */
   function harness(overrides: Partial<Parameters<typeof chooseStack>[0]> = {}) {
     const userData = tmpDir(`choose-${Math.random().toString(16).slice(2)}`);
-    const writes: StackChoice[] = [];
+    const writes: StackKind[] = [];
     const dialogs: boolean[] = [];
     const options = {
       userDataDir: userData,
       eligible: true,
-      writeChoice: (_dir: string, choice: StackChoice) => void writes.push(choice),
+      writeChoice: (_dir: string, choice: StackKind) => void writes.push(choice),
       dockerDataExists: () => false,
       confirmSwitch: ({ dockerData }: { dockerData: boolean }) => {
         dialogs.push(dockerData);
@@ -250,12 +250,12 @@ describe('moveAccepted', () => {
   }
 
   function baseOptions(userData: string) {
-    const writes: StackChoice[] = [];
+    const writes: StackKind[] = [];
     return {
       userDataDir: userData,
       exec: undefined as unknown as RuntimeExec,
       dockerBinary: '/usr/local/bin/docker',
-      writeChoice: (_dir: string, choice: StackChoice) => void writes.push(choice),
+      writeChoice: (_dir: string, choice: StackKind) => void writes.push(choice),
       writes,
     };
   }

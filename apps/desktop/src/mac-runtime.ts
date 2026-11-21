@@ -115,6 +115,11 @@ export function validateServerManifest(input: unknown): ServerManifest | null {
   };
 }
 
+/** Where a release publishes its native server manifest, next to the installers. */
+export function releaseManifestUrl(version: string): string {
+  return `https://github.com/raybello/orbit/releases/download/v${encodeURIComponent(version)}/${SERVER_BUNDLE_FILE}`;
+}
+
 /** `userData/server-bundles`: one directory per installed version, plus `current`. */
 export function serverBundleDir(userDataDir: string): string {
   return path.join(userDataDir, 'server-bundles');

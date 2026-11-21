@@ -7,9 +7,8 @@ import type { DesktopGpuVoice } from '@orbit/contracts';
  * else — no `?.()` for a method one variant happens to have, no `instanceof` to reach one.
  */
 
-import type { DesktopLocalStackState } from './shared/api';
+import type { DesktopLocalStackState, StackKind } from './shared/api';
 
-export type StackKind = 'docker' | 'native';
 
 /** What both controllers answer the same way; `kind` says which implementation it is. */
 export interface StackBase {
@@ -21,6 +20,11 @@ export interface StackBase {
   start(): Promise<DesktopLocalStackState>;
   stop(): Promise<DesktopLocalStackState>;
   abort(): void;
+  /**
+   * Fetch what release `version` runs (its images, or its native bundle) while this one keeps
+   * running, so the update restart only switches over. Throws when it could not.
+   */
+  prefetch(version: string): Promise<void>;
   /**
    * Is the stack at this URL the one this controller runs? The Docker controller answers
    * asynchronously (it probes `GET /api/desktop/probe` for the image tag); the native one

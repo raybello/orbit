@@ -94,7 +94,9 @@ jobs:
           # Trim what the deployed tree inherited from the package directory and what the
           # native stack will never use: a local database, source maps, tests, and the
           # prebuilt SQLite binaries for platforms the native stack does not run on.
-          rm -rf "$STAGE/dist/__tests__" "$STAGE/scripts" "$STAGE/docker" "$STAGE/box" "$STAGE/Dockerfile"
+          # docker/computer and box/ stay: the server builds each Bot's computer image from the
+          # first and installs the desk scripts from the second, on the native stack too.
+          rm -rf "$STAGE/dist/__tests__" "$STAGE/scripts" "$STAGE/Dockerfile"
           rm -f "$STAGE/orbit.db" "$STAGE/orbit.db-wal" "$STAGE/orbit.db-shm" "$STAGE/pnpm-lock.yaml" "$STAGE/pnpm-workspace.yaml"
           find "$STAGE/dist" -name '*.map' -delete
           find "$STAGE/node_modules" -path '*/better-sqlite3/prebuilds/*' \
@@ -105,6 +107,9 @@ jobs:
           # a Mac. If a future version stops shipping it, fail here rather than on a user's
           # first launch.
           test -f "$STAGE/node_modules/better-sqlite3/prebuilds/darwin-arm64.node"
+          # Without these a native install has no Bot computers until something else builds the image.
+          test -f "$STAGE/docker/computer/Dockerfile" && test -f "$STAGE/docker/computer/entrypoint.sh"
+          test -f "$STAGE/box/hq-screen.py"
 
           # The renderer. The API serves it, so it has to travel with the server.
           mkdir -p "$STAGE/web"
