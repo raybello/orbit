@@ -112,6 +112,8 @@ export interface LaunchStatus {
   state: DesktopLocalStackState;
   /** The native stack could run here instead (offered when Docker is missing). */
   nativeAvailable: boolean;
+  /** Replaces the runtime line while the start serves something else (copying Docker's data). */
+  note?: string;
 }
 
 /** A recovery the launch window offers when a start stops short (`launch-model.ts`). */

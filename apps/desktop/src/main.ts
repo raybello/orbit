@@ -21,7 +21,7 @@ import {
 import { clearSetup, configureSetupStore, readSetup, writeSetup } from './setup-store';
 import { LocalStackController, describeStackState } from './local-stack';
 import { NativeStackController, describeNativeState } from './native-stack';
-import { CONTAINER_RUNTIME_VERSION, ineligibilityReason, installContainerRuntime, nativeStackEligible, readServerManifest, resolveContainerRuntime, SERVER_BUNDLE_FILE } from './mac-runtime';
+import { ineligibilityReason, nativeStackEligible, readServerManifest, SERVER_BUNDLE_FILE } from './mac-runtime';
 import { installDockerDesktop } from './docker-install';
 import { openProgressWindow } from './progress-window';
 import { chooseStack, dockerDataExists, moveAccepted, readStackChoice, writeStackChoice } from './docker-move';
@@ -70,6 +70,7 @@ let launchWindow: BrowserWindow | null = null;
 let launchView: LaunchStatus['view'] = 'choose';
 /** A failure after the stack came up (the app window could not load it), drawn as a failed start. */
 let launchFailure: string | null = null;
+let launchNote: string | undefined;
 let appSession: AppWindow | null = null;
 let badge: BadgeController | null = null;
 let currentUrl: string | null = null;
@@ -89,6 +90,7 @@ function launchStatus(): LaunchStatus {
     kind: stack.kind,
     state: launchFailure ? { ...state, phase: 'failed', error: launchFailure } : state,
     nativeAvailable: stack.kind === 'docker' && nativeStackAvailable(),
+    note: launchNote,
   };
 }
 
@@ -374,6 +376,7 @@ async function askToSwitchToNative(): Promise<boolean> {
  */
 async function performNativeMove(): Promise<boolean> {
   const docker = stack.kind === 'docker' ? stack : (stack = dockerStack());
+  launchNote = 'Starting Docker once to copy your Bots and data to the native stack.';
   pushLaunchStatus();
   let error: string | undefined;
   const alreadyUp = docker.state().phase === 'ready';
@@ -391,6 +394,7 @@ async function performNativeMove(): Promise<boolean> {
   }
   // Stopped only when started here: the menu's switch runs while Docker serves the open app.
   if (!alreadyUp) await docker.stop();
+  launchNote = undefined;
   if (!error) return true;
   log.warn(`switch to native: ${error}`);
   return startFreshAfterFailedMove(error);
@@ -640,43 +644,6 @@ async function runDockerInstall(): Promise<boolean> {
 }
 
 /**
- * The native stack's bot VMs run on Apple's container runtime. Offer it once when it is
- * missing; the answer is remembered so a "Not now" does not nag on every launch.
- */
-async function ensureAppleContainerRuntime(): Promise<void> {
-  if (process.platform !== 'darwin' || stackKind() !== 'native') return;
-  if (resolveContainerRuntime()) return;
-  const marker = path.join(userDataDir, 'container-runtime-declined');
-  if (fs.existsSync(marker)) return;
-  const { response } = await dialog.showMessageBox({
-    type: 'question',
-    message: 'Install Apple’s container runtime?',
-    detail:
-      `On this Mac, Orbit can run each bot’s computer with Apple’s native containers (container ${CONTAINER_RUNTIME_VERSION}, about 170 MB). ` +
-      'The package is signed by Apple and macOS will ask for your password to install it.',
-    buttons: ['Install', 'Not now'],
-    defaultId: 0,
-    cancelId: 1,
-  });
-  if (response !== 0) {
-    try { fs.writeFileSync(marker, new Date().toISOString()); } catch { /* best effort */ }
-    return;
-  }
-  const progress = openProgressWindow('Installing Apple container', 'Native containers for your bots’ computers.', mainWindow);
-  try {
-    await installContainerRuntime(CONTAINER_RUNTIME_VERSION, (line) => { log.info(`container install: ${line}`); progress.line(line); });
-    progress.percent(100);
-    setTimeout(() => progress.close(), 1500);
-  } catch (err) {
-    const message = err instanceof Error ? err.message : String(err);
-    log.error('Apple container install failed', err);
-    progress.fail(message);
-    await dialog.showMessageBox({ type: 'error', message: 'Apple container could not be installed', detail: message, buttons: ['OK'] });
-    progress.close();
-  }
-}
-
-/**
  * The native stack runs every bot's gateway on this machine, so it needs a `hermes` binary here.
  * The Docker stack ships its own and never asks.
  */
@@ -797,7 +764,7 @@ async function startLocal(saved: DesktopSetup): Promise<void> {
     return;
   }
   closeLaunchWindow();
-  void prepareNativeHermes().then(() => ensureAppleContainerRuntime());
+  void prepareNativeHermes();
 }
 
 let bootInFlight: Promise<void> | null = null;

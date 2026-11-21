@@ -147,8 +147,8 @@ async function onServerContinue(): Promise<void> {
     return;
   }
   dockerNote.textContent = options.dockerInstalled
-    ? 'Runs in Docker Desktop containers.'
-    : 'Runs in Docker Desktop containers. Docker is not installed yet; Orbit can install it for you.';
+    ? 'Runs Orbit’s server and Bots’ computers in Docker Desktop containers.'
+    : 'Runs Orbit’s server and Bots’ computers in Docker Desktop containers. Docker is not installed yet; Orbit can install it for you.';
   syncChoiceStyles(runtimeForm, 'runtime');
   show('runtime');
 }
@@ -169,7 +169,7 @@ function renderProgress(status: LaunchStatus): void {
   const { kind, state } = status;
   if (!['failed', 'docker-missing', 'docker-not-running'].includes(state.phase)) lastActive = state.phase;
 
-  $('progress-lede').textContent = RUNTIME_LEDE[kind];
+  $('progress-lede').textContent = status.note ?? RUNTIME_LEDE[kind];
   const steps = $('steps');
   steps.replaceChildren(
     ...launchSteps(kind, state, lastActive).map((step) => {
