@@ -88,9 +88,12 @@ export function createApp(): Hono {
   app.route('/api/files', filesApi);
   app.route('/api/computers', computersApi);
 
-  // Serve the built web app in production.
-  // dist/api/app.js and src/api/app.ts sit at the same depth under apps/server, so one path fits both.
-  const webDist = path.resolve(fileURLToPath(new URL('.', import.meta.url)), '../../../web/dist');
+  // Serve the built web app in production. The desktop's native bundle names its copy with
+  // ORBIT_WEB_DIST; otherwise dist/api/app.js and src/api/app.ts sit at the same depth under
+  // apps/server, so one relative path fits the repo and the Docker image.
+  const webDist = process.env.ORBIT_WEB_DIST?.trim()
+    ? path.resolve(process.env.ORBIT_WEB_DIST.trim())
+    : path.resolve(fileURLToPath(new URL('.', import.meta.url)), '../../../web/dist');
   if (fs.existsSync(webDist)) {
     // index.html must never be cached by Electron across container rebuilds: the shell
     // references content-hashed assets, so a stale shell loads the wrong (or missing) JS.

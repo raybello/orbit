@@ -131,14 +131,21 @@ describe('native ports file', () => {
     const file = nativePortsFile(stackDir);
     assert.equal(readNativePorts(file), null);
 
-    writeNativePorts(file, { api: 42_001, web: 42_000 });
-    assert.deepEqual(readNativePorts(file), { api: 42_001, web: 42_000 });
+    writeNativePorts(file, { port: 42_001 });
+    assert.deepEqual(readNativePorts(file), { port: 42_001 });
     if (posixModes) assert.equal(fs.statSync(file).mode & 0o777, 0o600);
 
-    for (const bad of ['{"api":1,"web":2}', '{"api":42001,"web":42001}', '{"api":"x","web":42000}', 'not json']) {
+    for (const bad of ['{"port":1}', '{"port":"x"}', '{"web":42000}', 'not json']) {
       fs.writeFileSync(file, bad);
       assert.equal(readNativePorts(file), null, `should reject ${bad}`);
     }
+  });
+
+  test('a 0.3.0 file names the server port as api, and that is the port read back', () => {
+    const file = nativePortsFile(tmpDir('ports-legacy'));
+    fs.mkdirSync(path.dirname(file), { recursive: true });
+    fs.writeFileSync(file, '{"api":44158,"web":46099}');
+    assert.deepEqual(readNativePorts(file), { port: 44_158 });
   });
 
   test('the band is 40000-49999', () => {
@@ -279,7 +286,7 @@ function makeBundle(userDataDir: string, entrypoints: { api: string; migrate?: s
 
 interface HarnessOptions {
   entrypoints?: { api: string; migrate?: string };
-  ports?: { api: number; web: number } | null;
+  ports?: { port: number } | null;
   healthy?: boolean;
   healthTimeoutMs?: number;
   fetchImpl?: () => Promise<Response>;
@@ -359,7 +366,7 @@ describe('NativeStackController', () => {
     const state = await h.controller.start();
 
     assert.equal(state.phase, 'running');
-    assert.equal(state.webUrl, 'http://127.0.0.1:41002');
+    assert.equal(state.webUrl, 'http://127.0.0.1:41001');
     assert.equal(state.error, undefined);
     assert.deepEqual(h.states, ['starting', 'starting', 'starting', 'running']);
 
@@ -376,7 +383,8 @@ describe('NativeStackController', () => {
     assert.equal(env.ELECTRON_RUN_AS_NODE, '1');
     assert.equal(env.NODE_ENV, 'production');
     assert.equal(env.PORT, '41001');
-    assert.equal(env.WEB_PORT, '41002');
+    assert.equal(env.WEB_PORT, undefined);
+    assert.equal(env.ORBIT_WEB_DIST, path.join(h.bundleDir, 'web'));
     assert.equal(env.DB_PATH, path.join(h.userDataDir, 'orbit.db'));
     assert.equal(env.ENGINES_DIR, path.join(h.userDataDir, 'engines'));
     assert.equal(env.COMPUTER_HOME_DIR, path.join(h.userDataDir, 'computer-homes'));
@@ -388,13 +396,13 @@ describe('NativeStackController', () => {
 
     // 3. Ports and secrets are persisted for the next launch.
     const ports = readNativePorts(nativePortsFile(path.join(h.userDataDir, 'stack')));
-    assert.deepEqual(ports, { api: 41_001, web: 41_002 });
+    assert.deepEqual(ports, { port: 41_001 });
     const secrets = JSON.parse(fs.readFileSync(path.join(h.userDataDir, 'stack', 'secrets.json'), 'utf8'));
     assert.equal(secrets.session_secret, env.SESSION_SECRET);
     assert.equal(secrets.stack_token, env.STACK_TOKEN);
     assert.equal(fs.statSync(path.join(h.userDataDir, 'stack', 'secrets.json')).mode & 0o777, 0o600);
 
-    // 4. The health probe hit the API port, not the web port.
+    // 4. One health probe, on the port the window opens.
     assert.equal(h.healthChecks(), 1);
 
     // 5. Stopping kills the child and lands on `stopped`, not `idle`.
@@ -404,12 +412,11 @@ describe('NativeStackController', () => {
     assert.equal(h.controller.matchesDesiredStack(), false);
   });
 
-  test('reuses persisted ports so the web origin (and its cookies) survive a restart', async () => {
-    const h = harness({ ports: { api: 42_001, web: 42_000 } });
+  test('reuses the persisted port so the web origin (and its cookies) survive a restart', async () => {
+    const h = harness({ ports: { port: 42_001 } });
     const state = await h.controller.start();
-    assert.equal(state.webUrl, 'http://127.0.0.1:42000');
+    assert.equal(state.webUrl, 'http://127.0.0.1:42001');
     assert.equal(h.spawned[0].env.PORT, '42001');
-    assert.equal(h.spawned[0].env.WEB_PORT, '42000');
   });
 
   test('a bundle without a migrate entrypoint skips migrations', async () => {
@@ -478,11 +485,11 @@ describe('NativeStackController', () => {
     // Before any start there are no ports on disk: the setup window gets the Docker default.
     assert.equal(fresh.controller.webUrl(), 'http://127.0.0.1:8787');
 
-    const h = harness({ ports: { api: 42_001, web: 42_000 } });
-    assert.equal(h.controller.webUrl(), 'http://127.0.0.1:42000');
+    const h = harness({ ports: { port: 42_001 } });
+    assert.equal(h.controller.webUrl(), 'http://127.0.0.1:42001');
     await h.controller.start();
     assert.equal(h.controller.matchesDesiredStack(), true);
-    assert.equal(h.controller.matchesDesiredStack('http://127.0.0.1:42000'), true);
+    assert.equal(h.controller.matchesDesiredStack('http://127.0.0.1:42001'), true);
     assert.equal(h.controller.matchesDesiredStack('http://127.0.0.1:8787'), false);
   });
 
