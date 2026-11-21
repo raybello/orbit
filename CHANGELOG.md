@@ -1,3 +1,23 @@
+## v0.3.0 — 2026-11-20
+
+- fix UI
+- fix: keep desktop overlays clear of the window buttons, and tidy UI inconsistencies
+- feat: sign in to model subscriptions from the Engine tab, in a Hermes terminal
+- chore: remove Orgo computers; every Bot has a Docker computer of its own
+- test(smoke): an attached Library file is listed once under All
+- fix(server): chat images load for Docker bots, and All lists each file once
+- fix(server): a build rerun after a fix is iteration, not a loop
+- fix desktop builds
+- fix(web): crowded details tabs move into a More menu instead of truncating
+- feat(web): a Code tab, so the files a Bot wrote or edited show as diffs beside the chat
+- feat(web): open chat files in the viewer, with HTML as a page and CSV as a table
+- feat(web): expand an artifact to fill the window, or open it in its own window
+- feat(web): an Artifact tab and chat card, so a Bot's page renders live beside the chat
+- docs: A1 live and perf evidence; close A4, Hermes sends no argument deltas
+- feat(server): an artifact tool, so Bots can show a live HTML page beside the chat
+- feat: browse the data folder and open files by kind
+
+
 ## v0.2.0 — 2026-11-19
 
 - feat(server): a turn supervisor, so bots keep working through failures
