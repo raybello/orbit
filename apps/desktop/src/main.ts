@@ -35,6 +35,7 @@ import { detectHermes, installHermes } from './hermes-setup';
 import { DEFAULT_OWNER_EMAIL, ensureDesktopSession } from './desktop-session';
 import { describeSender, isTrustedPage } from './ipc-guard';
 import { createDeepLinkInbox, deepLinkFromArgv } from './deep-links';
+import { installLogFile } from './log-file';
 
 const log = createLogger({ scope: 'main' });
 const here = path.dirname(fileURLToPath(import.meta.url));
@@ -57,6 +58,8 @@ function devWindowIcon(): Electron.NativeImage | undefined {
 // setup, stack folder or data. So the override is applied before anything reads the path.
 const userDataOverride = process.env.ORBIT_USER_DATA_DIR?.trim();
 if (userDataOverride) app.setPath('userData', path.resolve(userDataOverride));
+// A separate profile keeps its log beside its data, so two profiles never interleave one file.
+const logFile = installLogFile(userDataOverride ? path.join(app.getPath('userData'), 'logs') : app.getPath('logs'));
 
 const userDataDir = app.getPath('userData');
 configureSetupStore(userDataDir);
