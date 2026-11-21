@@ -12,10 +12,10 @@ import path from 'node:path';
 import { createLogger } from '@orbit/logger';
 import { resolveDockerBinary } from './docker-cli';
 import type { ExecResult, RuntimeExec } from './mac-runtime';
+import type { StackKind } from './shared/api';
 
 const log = createLogger({ scope: 'docker-move' });
 
-export type StackChoice = 'docker' | 'native';
 
 /** Relative to userData. Absent means "no choice made yet". */
 export const STACK_CHOICE_FILE = '.desktop-stack-choice';
@@ -39,7 +39,7 @@ export function nativePortsFile(stackDir: string): string {
   return path.join(stackDir, NATIVE_PORTS_FILE);
 }
 
-export function readStackChoice(userDataDir: string): StackChoice | null {
+export function readStackChoice(userDataDir: string): StackKind | null {
   try {
     const text = fs.readFileSync(stackChoiceFile(userDataDir), 'utf8').trim().toLowerCase();
     return text === 'docker' || text === 'native' ? text : null;
@@ -49,7 +49,7 @@ export function readStackChoice(userDataDir: string): StackChoice | null {
 }
 
 /** 0600: it is a preference, but the stack dir is user-owned and private anyway. */
-export function writeStackChoice(userDataDir: string, choice: StackChoice): void {
+export function writeStackChoice(userDataDir: string, choice: StackKind): void {
   const file = stackChoiceFile(userDataDir);
   fs.mkdirSync(path.dirname(file), { recursive: true, mode: 0o700 });
   const tmp = `${file}.tmp`;
@@ -141,8 +141,8 @@ export interface ChooseStackOptions {
   userDataDir: string;
   /** `nativeStackEligible() && the bundle manifest is present`. The caller owns both. */
   eligible: boolean;
-  readChoice?: (userDataDir: string) => StackChoice | null;
-  writeChoice?: (userDataDir: string, choice: StackChoice) => void;
+  readChoice?: (userDataDir: string) => StackKind | null;
+  writeChoice?: (userDataDir: string, choice: StackKind) => void;
   dockerDataExists?: () => Promise<boolean> | boolean;
   /**
    * The "Run Orbit without Docker?" dialog. Returns true for "Switch". Injected because
@@ -159,7 +159,7 @@ export type StackDecisionReason =
   | 'dialog-declined';
 
 export interface StackDecision {
-  choice: StackChoice;
+  choice: StackKind;
   reason: StackDecisionReason;
   /**
    * True only when the user just chose native and their Docker data has not been moved
@@ -211,7 +211,7 @@ export interface MoveAcceptedOptions {
   dockerBinary?: string;
   /** Defaults to `CONTAINER_PATHS`; overridable for images that moved their data. */
   containerPaths?: { db?: string; engines?: string; computers?: string };
-  writeChoice?: (userDataDir: string, choice: StackChoice) => void;
+  writeChoice?: (userDataDir: string, choice: StackKind) => void;
   /** `fs.renameSync` by default; injected so a test can assert the atomic swap. */
   rename?: (from: string, to: string) => void;
   remove?: (target: string) => void;

@@ -7,11 +7,11 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
-import { app, BrowserWindow, Menu, dialog, ipcMain, nativeImage, systemPreferences, type IpcMainEvent, type IpcMainInvokeEvent, type MediaAccessPermissionRequest, type Session } from 'electron';
+import { app, BrowserWindow, Menu, dialog, ipcMain, nativeImage, shell, systemPreferences, type IpcMainEvent, type IpcMainInvokeEvent, type MediaAccessPermissionRequest, type Session } from 'electron';
 import { DEEP_LINK_SCHEME, ORBIT_HEADERS, ORBIT_WEB_URL_ENV, type DeepLink, type DesktopGpuVoice } from '@orbit/contracts';
 import { gpuVoiceSupport } from './gpu-voice';
 import { createLogger } from '@orbit/logger';
-import type { DesktopSetup, DesktopLocalStackState, ServerProbe } from './shared/api';
+import type { DesktopSetup, DesktopLocalStackState, LaunchAction, LaunchChoice, LaunchOptions, LaunchStatus, ServerProbe, StackKind } from './shared/api';
 import { IPC } from './shared/api';
 import {
   DEFAULT_LOCAL_WEB_URL,
@@ -21,12 +21,12 @@ import {
 import { clearSetup, configureSetupStore, readSetup, writeSetup } from './setup-store';
 import { LocalStackController, describeStackState } from './local-stack';
 import { NativeStackController, describeNativeState } from './native-stack';
-import { CONTAINER_RUNTIME_VERSION, installContainerRuntime, nativeStackEligible, readServerManifest, resolveContainerRuntime, SERVER_BUNDLE_FILE } from './mac-runtime';
+import { CONTAINER_RUNTIME_VERSION, ineligibilityReason, installContainerRuntime, nativeStackEligible, readServerManifest, resolveContainerRuntime, SERVER_BUNDLE_FILE } from './mac-runtime';
 import { installDockerDesktop } from './docker-install';
 import { openProgressWindow } from './progress-window';
-import { chooseStack, dockerDataExists, moveAccepted, readStackChoice, writeStackChoice, type StackChoice } from './docker-move';
-import { runDocker } from './docker-cli';
-import type { DockerStack, NativeStack, StackController, StackKind } from './stack-controller';
+import { chooseStack, dockerDataExists, moveAccepted, readStackChoice, writeStackChoice } from './docker-move';
+import { resolveDockerBinary, runDocker } from './docker-cli';
+import type { DockerStack, NativeStack, StackController } from './stack-controller';
 import { createAppWindow, openExternalSafely, sessionForServerUrl, type AppWindow } from './app-window';
 import { buildAppMenu } from './app-menu';
 import { dismissUpdateBar, initAutoUpdate, checkForUpdates, restartAndInstall } from './auto-update';
@@ -65,20 +65,35 @@ const userDataDir = app.getPath('userData');
 configureSetupStore(userDataDir);
 
 let mainWindow: BrowserWindow | null = null;
-let setupWindow: BrowserWindow | null = null;
-/** True while the finished setup window hands over to boot() (see IPC.setupComplete). */
-let handingOff = false;
+/** The window a person sees until the app window is up: first-run choices, then the start. */
+let launchWindow: BrowserWindow | null = null;
+let launchView: LaunchStatus['view'] = 'choose';
+/** A failure after the stack came up (the app window could not load it), drawn as a failed start. */
+let launchFailure: string | null = null;
 let appSession: AppWindow | null = null;
 let badge: BadgeController | null = null;
 let currentUrl: string | null = null;
-let booted = false;
 /** Set once `boot()` has picked a controller, so re-activating the app does not re-ask. */
 let stackSelected = false;
 const deepLinks = createDeepLinkInbox();
 
-function onStackState(state: DesktopLocalStackState): void {
-  broadcast(IPC.stackState, state);
+function onStackState(): void {
+  pushLaunchStatus();
   refreshMenu();
+}
+
+function launchStatus(): LaunchStatus {
+  const state = stack.state();
+  return {
+    view: launchView,
+    kind: stack.kind,
+    state: launchFailure ? { ...state, phase: 'failed', error: launchFailure } : state,
+    nativeAvailable: stack.kind === 'docker' && nativeStackAvailable(),
+  };
+}
+
+function pushLaunchStatus(): void {
+  if (launchWindow && !launchWindow.isDestroyed()) launchWindow.webContents.send(IPC.launchStatus, launchStatus());
 }
 
 function dockerStack(): DockerStack {
@@ -132,36 +147,27 @@ function stackResourceDir(controller: StackController): string {
   }
 }
 
-function broadcast(channel: string, payload: unknown): void {
-  for (const win of BrowserWindow.getAllWindows()) {
-    if (win.isDestroyed()) continue;
-    try {
-      win.webContents.send(channel, payload);
-    } catch {
-      /* a renderer mid-teardown */
-    }
-  }
-}
-
 // ------------------------------------------------------------------ windows
 
-function openSetupWindow(): void {
-  if (setupWindow && !setupWindow.isDestroyed()) {
-    setupWindow.focus();
+function openLaunchWindow(): void {
+  if (launchWindow && !launchWindow.isDestroyed()) {
+    pushLaunchStatus();
+    launchWindow.show();
+    launchWindow.focus();
     return;
   }
 
-  setupWindow = new BrowserWindow({
+  launchWindow = new BrowserWindow({
     width: 540,
-    height: 420,
+    height: 440,
     resizable: false,
     minimizable: process.platform !== 'darwin',
     maximizable: false,
     fullscreenable: false,
-    title: 'Welcome to Orbit',
+    title: 'Orbit',
     backgroundColor: '#FFFFFF',
-    // Frameless on macOS (the window is a single welcome card); standard frame elsewhere
-    // so Linux/Windows users keep their system close button.
+    // Frameless on macOS (the window is a single card); standard frame elsewhere so Linux and
+    // Windows users keep their system close button.
     frame: process.platform !== 'darwin',
     titleBarStyle: process.platform === 'darwin' ? 'hidden' : 'default',
     trafficLightPosition: process.platform === 'darwin' ? { x: 14, y: 12 } : undefined,
@@ -176,14 +182,20 @@ function openSetupWindow(): void {
     },
   });
 
-  setupWindow.once('ready-to-show', () => setupWindow?.show());
-  setupWindow.on('closed', () => {
-    setupWindow = null;
-    // Closing setup on first run without saving means there is nothing to open. Setup closing
-    // itself because it finished (handingOff) is the opposite: boot() is about to open the app.
-    if (!mainWindow && !booted && !handingOff) quitApp('setup window closed before anything was saved');
+  launchWindow.once('ready-to-show', () => launchWindow?.show());
+  launchWindow.on('closed', () => {
+    launchWindow = null;
+    // With no app window behind it, closing the launch window is how a person cancels.
+    if (!mainWindow) quitApp('launch window closed');
   });
-  void setupWindow.loadFile(path.join(here, 'setup.html'));
+  void launchWindow.loadFile(path.join(here, 'setup.html'));
+}
+
+/** The app window is up: the launch window has done its job. */
+function closeLaunchWindow(): void {
+  const win = launchWindow;
+  launchWindow = null;
+  if (win && !win.isDestroyed()) win.destroy();
 }
 
 /**
@@ -265,7 +277,6 @@ async function openAppWindow(url: string, initialUrl?: string): Promise<void> {
   // createAppWindow installs the shared narrow policy; this widens the app's own session to
   // the media surface after it, and never touches the setup window's partition.
   installDevicePermissions(appSession.session);
-  booted = true;
 
   // createAppWindow already waited for the first load, so the session has cookies and
   // the badge stream can start immediately.
@@ -306,7 +317,7 @@ function refreshMenu(): void {
     stackKind,
     nativeAvailable: nativeStackAvailable,
     isLocalServer,
-    onChangeServer: () => void changeServer(),
+    onChangeServer: () => void showChoices(),
     onStopStack: () => void stopStack(),
     onSwitchStack: (choice) => void switchStack(choice),
     onCheckForUpdates: () => void checkForUpdates(true),
@@ -317,16 +328,19 @@ function refreshMenu(): void {
   Menu.setApplicationMenu(menu);
 }
 
-async function changeServer(): Promise<void> {
+/** Back to the first screen. The launch window opens before the app window goes, so there is never none. */
+async function showChoices(): Promise<void> {
   clearSetup();
+  launchView = 'choose';
+  launchFailure = null;
+  openLaunchWindow();
   await stopStack();
   await closeAppWindow();
-  openSetupWindow();
+  pushLaunchStatus();
 }
 
 async function stopStack(): Promise<void> {
-  const state = await stack.stop();
-  broadcast(IPC.stackState, state);
+  await stack.stop();
   refreshMenu();
 }
 
@@ -393,7 +407,7 @@ async function selectStackController(opts: { interactive?: boolean } = {}): Prom
 
   const decision =
     forced === 'native' || opts.interactive === false
-      ? { choice: (readStackChoice(userDataDir) ?? 'native') as StackChoice, reason: 'saved' as const, moveRequired: false }
+      ? { choice: (readStackChoice(userDataDir) ?? 'native') as StackKind, reason: 'saved' as const, moveRequired: false }
       : await chooseStack({
           userDataDir,
           eligible: true,
@@ -413,11 +427,26 @@ async function selectStackController(opts: { interactive?: boolean } = {}): Prom
 }
 
 /**
+ * Record the runtime the person picked on the launch window. Picking native on a machine whose
+ * Docker stack already holds bots copies them out first; a failed copy keeps Docker in charge.
+ */
+async function chooseRuntime(kind: StackKind): Promise<void> {
+  stackSelected = false;
+  if (kind === 'native' && nativeStackAvailable() && !fs.existsSync(path.join(userDataDir, 'orbit.db'))) {
+    if (await dockerDataExists({ userDataDir, exec: (b, a, o) => runDocker(b, a, o) })) {
+      if (!(await performNativeMove())) writeStackChoice(userDataDir, 'docker');
+      return;
+    }
+  }
+  writeStackChoice(userDataDir, kind === 'native' && nativeStackAvailable() ? 'native' : 'docker');
+}
+
+/**
  * The menu's Switch to Docker… / Switch to Native…: record the choice, restart on it. Switching
  * back does not copy the native database back — Docker's volumes still hold the pre-switch data,
  * and the native files stay on disk, so switching forward again picks up where it left off.
  */
-async function switchStack(choice: StackChoice): Promise<void> {
+async function switchStack(choice: StackKind): Promise<void> {
   if (!nativeStackAvailable()) return;
   if (stackKind() === choice) return;
 
@@ -454,10 +483,12 @@ async function switchStack(choice: StackChoice): Promise<void> {
     writeStackChoice(userDataDir, 'docker');
   }
 
+  stackSelected = false;
+  launchView = 'progress';
+  openLaunchWindow();
   await stopStack();
   await closeAppWindow();
-  stackSelected = false;
-  await boot();
+  await bootOnce();
 }
 
 function openSettings(): void {
@@ -466,7 +497,34 @@ function openSettings(): void {
     void mainWindow.loadURL(`${normalizeServerUrl(currentUrl) ?? currentUrl}/settings`);
     return;
   }
-  openSetupWindow();
+  openLaunchWindow();
+}
+
+// ------------------------------------------------------------------ shutdown
+
+/** Long enough for `compose stop`'s ten-second grace per container, short enough to never hang a quit. */
+const STOP_BUDGET_MS = 45_000;
+let tornDown = false;
+let teardown: Promise<void> | null = null;
+
+/** Stop the stack once, however many quits (menu, updater, a second Cmd-Q) ask for it. */
+function tearDown(): Promise<void> {
+  teardown ??= (async () => {
+    badge?.stop();
+    badge = null;
+    dismissUpdateBar();
+    for (const win of BrowserWindow.getAllWindows()) win.hide();
+    log.info(`quit: stopping the ${stack.kind} stack`);
+    const stopped = await Promise.race([
+      stack.stop().then(() => true, (err) => (log.warn('quit: stop failed', err), false)),
+      new Promise<boolean>((resolve) => setTimeout(() => resolve(false), STOP_BUDGET_MS).unref()),
+    ]);
+    if (!stopped && stack.kind === 'native') stack.dispose();
+    log.info(stopped ? 'quit: stack stopped' : 'quit: gave up waiting for the stack to stop');
+  })().finally(() => {
+    tornDown = true;
+  });
+  return teardown;
 }
 
 // ------------------------------------------------------------------ startup
@@ -475,82 +533,6 @@ function openSettings(): void {
 function cliServerUrl(): string | undefined {
   const arg = process.argv.find((a) => a.startsWith('--server='));
   return arg ? arg.slice('--server='.length) : undefined;
-}
-
-async function startLocalStackOrExplain(): Promise<string | null> {
-  const state = await stack.start();
-  const native = stackKind() === 'native';
-  if ((state.phase === 'ready' || state.phase === 'running') && state.webUrl) return state.webUrl;
-
-  if (state.phase === 'docker-missing') {
-    const canInstall = process.platform === 'darwin' || process.platform === 'win32';
-    const { response } = await dialog.showMessageBox({
-      type: 'warning',
-      message: 'Docker is required',
-      detail:
-        'Orbit runs its server and each bot’s computer in Docker on this computer. ' +
-        (canInstall
-          ? 'Orbit can download and install Docker Desktop for you now (about 600 MB). '
-          : 'Install Docker Engine with your package manager, then try again. ') +
-        'You can also connect to an Orbit server that is already running elsewhere.',
-      buttons: canInstall
-        ? ['Install Docker Desktop', 'Open Docker download', 'Choose another server', 'Quit']
-        : ['Open Docker download', 'Choose another server', 'Quit'],
-      defaultId: 0,
-      // Dismissing a dialog (Escape, closing it) reports cancelId: it must never mean "quit the app".
-      cancelId: canInstall ? 2 : 1,
-    });
-    log.warn(`docker-missing dialog answered ${response}`);
-    const choice = canInstall ? response : response + 1;
-    if (choice === 0) {
-      // Success or not, go round again: a failed install lands back on this same question.
-      await runDockerInstall();
-      return startLocalStackOrExplain();
-    }
-    if (choice === 1) {
-      await openExternalSafely('https://www.docker.com/products/docker-desktop/');
-      quitApp('docker is missing');
-      return null;
-    }
-    if (choice === 2) openSetupWindow();
-    else quitApp('docker is missing');
-    return null;
-  }
-
-  if (state.phase === 'docker-not-running') {
-    const { response } = await dialog.showMessageBox({
-      type: 'warning',
-      message: 'Docker is not running',
-      detail: state.error ?? 'Start Docker Desktop, then try again.',
-      buttons: ['Try again', 'Choose another server', 'Quit'],
-      defaultId: 0,
-      cancelId: 1,
-    });
-    log.warn(`docker-not-running dialog answered ${response}`);
-    if (response === 0) return startLocalStackOrExplain();
-    if (response === 1) openSetupWindow();
-    else quitApp('docker is not running');
-    return null;
-  }
-
-  const { response } = await dialog.showMessageBox({
-    type: 'error',
-    message: native ? 'Orbit could not start its native stack' : 'Orbit could not start',
-    detail: `${native ? describeNativeState(state) : describeStackState(state)}\n\n${state.error ?? ''}`.trim(),
-    buttons: ['Show details', 'Choose another server', 'Quit'],
-    defaultId: 0,
-    cancelId: 1,
-  });
-  if (response === 0) {
-    await dialog.showMessageBox({
-      message: native ? 'Native stack details' : 'Local stack details',
-      detail: `Phase: ${state.phase}\nFolder: ${stack.stackDir}\n\n${state.error ?? '(no further detail)'}`,
-      buttons: ['OK'],
-    });
-  }
-  if (response === 1) openSetupWindow();
-  else quitApp(`stack did not start (${state.phase})`);
-  return null;
 }
 
 /**
@@ -703,26 +685,45 @@ async function boot(): Promise<void> {
   });
 
   if (target.kind === 'setup') {
-    openSetupWindow();
+    launchView = 'choose';
+    openLaunchWindow();
     return;
   }
-
-  const wantsLocalStack = saved?.mode === 'new';
-  if (wantsLocalStack) {
-    if (!stackSelected) {
-      stack = await selectStackController();
-      stackSelected = true;
-      refreshMenu();
-    }
-    const url = await startLocalStackOrExplain();
-    if (!url) return;
-    const entryUrl = await localStackEntryUrl(url, saved);
-    await openAppWindow(url, entryUrl);
-    void prepareNativeHermes().then(() => ensureAppleContainerRuntime());
+  if (saved?.mode !== 'new') {
+    await openAppWindow(target.url);
+    closeLaunchWindow();
     return;
   }
+  await startLocal(saved);
+}
 
-  await openAppWindow(target.url);
+/**
+ * Start the local stack behind the launch window, and swap to the app window once it answers. A
+ * start that stops short leaves the launch window showing why, with its recovery actions.
+ */
+async function startLocal(saved: DesktopSetup): Promise<void> {
+  launchView = 'progress';
+  launchFailure = null;
+  openLaunchWindow();
+  if (!stackSelected) {
+    stack = await selectStackController();
+    stackSelected = true;
+    refreshMenu();
+    pushLaunchStatus();
+  }
+  const state = await stack.start();
+  if (!(state.phase === 'ready' || state.phase === 'running') || !state.webUrl) return;
+  try {
+    await openAppWindow(state.webUrl, await localStackEntryUrl(state.webUrl, saved));
+  } catch (err) {
+    log.error('the app window could not load the stack', err);
+    launchFailure = `Orbit started, but its window could not load ${state.webUrl}: ${err instanceof Error ? err.message : String(err)}`;
+    await closeAppWindow();
+    pushLaunchStatus();
+    return;
+  }
+  closeLaunchWindow();
+  void prepareNativeHermes().then(() => ensureAppleContainerRuntime());
 }
 
 let bootInFlight: Promise<void> | null = null;
@@ -760,33 +761,60 @@ function assertSender(event: IpcMainInvokeEvent): void {
 }
 
 function registerIpc(): void {
-  // Read-only: any window may ask what the stack is doing.
-  ipcMain.handle(IPC.stackGet, () => stack.state());
-  ipcMain.handle(IPC.stackStart, async (event) => {
-    assertSender(event);
-    const state = await stack.start();
-    if ((state.phase === 'ready' || state.phase === 'running') && state.webUrl) {
-      await openAppWindow(state.webUrl, await localStackEntryUrl(state.webUrl, readSetup()));
-    }
-    return state;
+  ipcMain.handle(IPC.launchOptions, (): LaunchOptions => {
+    const manifestPresent = readServerManifest(bundledManifestPath()) !== null;
+    return {
+      native: {
+        available: nativeStackAvailable(),
+        reason: ineligibilityReason() ?? (manifestPresent ? undefined : 'this build does not include the native server'),
+      },
+      dockerInstalled: resolveDockerBinary(process.platform, process.env) !== null,
+    };
   });
-  ipcMain.handle(IPC.stackStop, (event) => {
+  ipcMain.handle(IPC.launchStatus, () => launchStatus());
+  ipcMain.handle(IPC.launchChoose, async (event, choice: LaunchChoice) => {
     assertSender(event);
-    return stack.stop();
+    if (choice?.mode === 'remote') {
+      const serverUrl = normalizeServerUrl(choice.serverUrl);
+      if (!serverUrl) throw new Error('That does not look like a URL.');
+      writeSetup(userDataDir, { mode: 'existing', serverUrl });
+    } else if (choice?.mode === 'local' && (choice.runtime === 'docker' || choice.runtime === 'native')) {
+      const previous = readSetup();
+      writeSetup(userDataDir, { mode: 'new', email: previous?.mode === 'new' ? previous.email : undefined });
+      await chooseRuntime(choice.runtime);
+    } else {
+      throw new Error('unknown launch choice');
+    }
+    refreshMenu();
+    await bootOnce();
+  });
+  // Not awaited: a retry or an install is long, and its progress arrives through launch status.
+  ipcMain.handle(IPC.launchAct, async (event, action: LaunchAction) => {
+    assertSender(event);
+    switch (action) {
+      case 'retry':
+        void bootOnce();
+        return;
+      case 'install-docker':
+        if (await runDockerInstall()) void bootOnce();
+        return;
+      case 'open-docker-download':
+        await openExternalSafely('https://docs.docker.com/engine/install/');
+        return;
+      case 'use-native':
+        await chooseRuntime('native');
+        void bootOnce();
+        return;
+      case 'show-log':
+        shell.showItemInFolder(logFile);
+        return;
+      case 'back':
+        await showChoices();
+        return;
+    }
   });
 
   ipcMain.handle(IPC.setupGet, () => readSetup());
-  ipcMain.handle(IPC.setupSave, (event, setup: DesktopSetup) => {
-    assertSender(event);
-    writeSetup(userDataDir, setup);
-    const saved = readSetup();
-    refreshMenu();
-    return saved;
-  });
-  ipcMain.handle(IPC.setupClear, (event) => {
-    assertSender(event);
-    clearSetup();
-  });
 
   ipcMain.handle(IPC.setupProbe, async (event, input: string): Promise<ServerProbe> => {
     assertSender(event);
@@ -808,51 +836,14 @@ function registerIpc(): void {
     }
   });
 
-  // `on`, not `handle`: a rejection here is a log line, not an exception in the main process.
-  ipcMain.on(IPC.setupComplete, (event) => {
-    if (!senderTrusted(event)) return;
-    // From here until boot() has a window up there may be none at all, and on Windows and Linux
-    // that is when window-all-closed quits the app: a first run used to exit right after
-    // "Looking for Docker". The handoff flag keeps it alive across the gap.
-    handingOff = true;
-    if (setupWindow && !setupWindow.isDestroyed()) {
-      const win = setupWindow;
-      setupWindow = null;
-      win.destroy();
-    }
-    void boot()
-      .finally(() => {
-        handingOff = false;
-      })
-      .then(() => {
-        // The setup window is gone; if boot produced nothing, the person is looking at an app with
-        // no window (which is how a first run can appear to "just quit"). Put the setup window back
-        // with the reason instead of leaving a blank desktop.
-        if (!mainWindow && !setupWindow) {
-          log.warn('setup finished but no window opened; reopening setup');
-          openSetupWindow();
-        }
-      })
-      .catch((err) => {
-        log.error('boot after setup failed', err);
-        void dialog
-          .showMessageBox({
-            type: 'error',
-            message: 'Orbit could not start',
-            detail: String(err instanceof Error ? err.message : err),
-            buttons: ['Back to setup'],
-          })
-          .then(() => openSetupWindow());
-      });
-  });
-
   ipcMain.handle(IPC.updateCheck, (event) => {
     assertSender(event);
     return checkForUpdates(true);
   });
-  ipcMain.handle(IPC.updateInstall, (event) => {
+  ipcMain.handle(IPC.updateInstall, async (event) => {
     assertSender(event);
-    return restartAndInstall();
+    await tearDown();
+    restartAndInstall();
   });
   // Only closes the in-app update bar: harmless wherever the page came from, and the bar
   // itself lives in the app window, so guarding it would leave it stuck open.
@@ -1074,8 +1065,8 @@ if (!app.requestSingleInstanceLock()) {
     if (mainWindow && !mainWindow.isDestroyed()) {
       if (mainWindow.isMinimized()) mainWindow.restore();
       mainWindow.focus();
-    } else if (setupWindow && !setupWindow.isDestroyed()) {
-      setupWindow.focus();
+    } else if (launchWindow && !launchWindow.isDestroyed()) {
+      launchWindow.focus();
     }
     receiveDeepLink(deepLinkFromArgv(argv));
   });
@@ -1100,7 +1091,7 @@ if (!app.requestSingleInstanceLock()) {
       initAutoUpdate({
         preloadPath: path.join(here, 'preload.cjs'),
       });
-      void boot().catch((err) => {
+      void bootOnce().catch((err) => {
         log.error('boot failed', err);
         void dialog.showMessageBox({
           type: 'error',
@@ -1117,32 +1108,21 @@ if (!app.requestSingleInstanceLock()) {
   );
 
   app.on('activate', () => {
-    if (BrowserWindow.getAllWindows().length === 0) void bootOnce();
+    if (launchWindow && !launchWindow.isDestroyed()) launchWindow.focus();
+    else if (BrowserWindow.getAllWindows().length === 0) void bootOnce();
   });
 
   app.on('window-all-closed', () => {
-    // The local stack keeps running (containers survive a quit on purpose: Stop Local
-    // Stack is the explicit action). macOS keeps the app in the dock.
-    // Setup handing over to the app window is not "the person closed every window".
-    if (handingOff) return;
+    // macOS keeps the app, and its stack, running in the dock until Quit.
     if (process.platform !== 'darwin') quitApp('all windows closed (non-macOS)');
   });
 
-  app.on('before-quit', () => {
-    // Abort an in-flight start; never block quit on `docker compose down`.
-    stack.abort();
-    // A native stack's children would outlive us as orphans, so kill them now. Docker
-    // containers survive a quit on purpose: `Stop Local Stack` is the explicit action.
-    switch (stack.kind) {
-      case 'native':
-        stack.dispose();
-        break;
-      case 'docker':
-        break;
-    }
-    badge?.stop();
-    badge = null;
-    dismissUpdateBar();
+  // Quitting stops the stack first: containers are stopped (not removed) and native processes
+  // shut down cleanly, so the next launch resumes them with their data. Quit waits for it.
+  app.on('before-quit', (event) => {
+    if (tornDown) return;
+    event.preventDefault();
+    void tearDown().then(() => app.quit());
   });
 }
 

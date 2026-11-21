@@ -10,15 +10,12 @@
 const { contextBridge, ipcRenderer } = require('electron');
 
 const IPC = {
-  stackGet: 'orbit:stack:get',
-  stackStart: 'orbit:stack:start',
-  stackStop: 'orbit:stack:stop',
-  stackState: 'orbit:stack:state',
+  launchOptions: 'orbit:launch:options',
+  launchStatus: 'orbit:launch:status',
+  launchChoose: 'orbit:launch:choose',
+  launchAct: 'orbit:launch:act',
   setupGet: 'orbit:setup:get',
-  setupSave: 'orbit:setup:save',
-  setupClear: 'orbit:setup:clear',
   setupProbe: 'orbit:setup:probe',
-  setupComplete: 'setup-complete',
   updateCheck: 'orbit:update:check',
   updateReady: 'orbit:update:ready',
   updateInstall: 'orbit:update:install',
@@ -47,17 +44,16 @@ function subscribe(channel, cb) {
 }
 
 contextBridge.exposeInMainWorld('orbitDesktop', {
-  // Stack
-  getStackState: () => ipcRenderer.invoke(IPC.stackGet),
-  startStack: () => ipcRenderer.invoke(IPC.stackStart),
-  stopStack: () => ipcRenderer.invoke(IPC.stackStop),
-  onStackState: (cb) => subscribe(IPC.stackState, cb),
-  // Setup
+  // The launch window
+  launch: {
+    options: () => ipcRenderer.invoke(IPC.launchOptions),
+    status: () => ipcRenderer.invoke(IPC.launchStatus),
+    onStatus: (cb) => subscribe(IPC.launchStatus, cb),
+    choose: (choice) => ipcRenderer.invoke(IPC.launchChoose, choice),
+    act: (action) => ipcRenderer.invoke(IPC.launchAct, action),
+  },
   getSetup: () => ipcRenderer.invoke(IPC.setupGet),
-  saveSetup: (setup) => ipcRenderer.invoke(IPC.setupSave, setup),
-  clearSetup: () => ipcRenderer.invoke(IPC.setupClear),
   probeServer: (url) => ipcRenderer.invoke(IPC.setupProbe, url),
-  finishSetup: () => ipcRenderer.send(IPC.setupComplete),
   // Updates
   checkForUpdates: () => ipcRenderer.invoke(IPC.updateCheck),
   onUpdateReady: (cb) => subscribe(IPC.updateReady, cb),

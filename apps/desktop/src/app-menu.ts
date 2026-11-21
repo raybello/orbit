@@ -8,8 +8,7 @@
 
 import { Menu, app, type MenuItemConstructorOptions } from 'electron';
 import type { StackPhase } from './shared/api';
-import type { StackChoice } from './docker-move';
-import type { StackKind } from './stack-controller';
+import type { StackKind } from './shared/api';
 
 export interface MenuContext {
   /** The phase of the local stack, for the status line and Stop's enabled state. */
@@ -21,7 +20,7 @@ export interface MenuContext {
   isLocalServer: () => boolean;
   onChangeServer: () => void;
   onStopStack: () => void;
-  onSwitchStack: (choice: StackChoice) => void;
+  onSwitchStack: (choice: StackKind) => void;
   onCheckForUpdates: () => void;
   onOpenSettings: () => void;
   onOpenDocs: () => void;

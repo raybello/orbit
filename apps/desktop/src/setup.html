@@ -2,7 +2,7 @@
 <html lang="en">
   <head>
     <meta charset="utf-8" />
-    <!-- The setup window is file:// and never runs remote code: a strict CSP keeps it so. -->
+    <!-- The launch window is file:// and never runs remote code: a strict CSP keeps it so. -->
     <meta
       http-equiv="Content-Security-Policy"
       content="default-src 'none'; script-src 'self'; style-src 'self'; img-src 'self' data:; connect-src 'none'"
@@ -14,7 +14,7 @@
   <body>
     <div class="titlebar" id="titlebar"></div>
 
-    <main id="screen-server" class="screen">
+    <main id="screen-server" class="screen" hidden>
       <h1>Welcome to Orbit</h1>
       <p class="lede">Where should this app get its Orbit server?</p>
 
@@ -23,7 +23,7 @@
           <input type="radio" name="mode" value="new" checked />
           <span class="choice-body">
             <span class="choice-title">This computer</span>
-            <span class="choice-note">Run everything locally. Requires Docker.</span>
+            <span class="choice-note">Run Orbit and your Bots here. Your data stays on this computer.</span>
           </span>
         </label>
 
@@ -54,6 +54,52 @@
       <footer>
         <span class="hint" id="hint"></span>
         <button type="button" id="continue" class="primary" disabled>Continue →</button>
+      </footer>
+    </main>
+
+    <main id="screen-runtime" class="screen" hidden>
+      <h1>How should Orbit run?</h1>
+      <p class="lede">You can switch later from the Server menu. Your Bots and data move with you.</p>
+
+      <form id="runtime-form">
+        <label class="choice" data-choice="native">
+          <input type="radio" name="runtime" value="native" checked />
+          <span class="choice-body">
+            <span class="choice-title">Native <span class="badge">Recommended</span></span>
+            <span class="choice-note">Runs directly on this Mac. No Docker needed, and it starts in seconds.</span>
+          </span>
+        </label>
+
+        <label class="choice" data-choice="docker">
+          <input type="radio" name="runtime" value="docker" />
+          <span class="choice-body">
+            <span class="choice-title">Docker</span>
+            <span class="choice-note" id="docker-note">Runs in Docker Desktop containers.</span>
+          </span>
+        </label>
+      </form>
+
+      <footer>
+        <button type="button" id="runtime-back" class="secondary">← Back</button>
+        <button type="button" id="runtime-continue" class="primary">Set up Orbit →</button>
+      </footer>
+    </main>
+
+    <main id="screen-progress" class="screen" hidden>
+      <h1 id="progress-title">Starting Orbit</h1>
+      <p class="lede" id="progress-lede"></p>
+
+      <ol class="steps" id="steps"></ol>
+      <p class="detail" id="progress-detail" role="status" aria-live="polite"></p>
+
+      <section class="problem" id="problem" hidden>
+        <h2 id="problem-title"></h2>
+        <p id="problem-body"></p>
+      </section>
+
+      <footer>
+        <span class="hint" id="progress-hint">Orbit opens as soon as everything answers.</span>
+        <span class="actions" id="problem-actions"></span>
       </footer>
     </main>
 

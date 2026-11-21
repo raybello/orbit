@@ -7,9 +7,8 @@ import type { DesktopGpuVoice } from '@orbit/contracts';
  * else — no `?.()` for a method one variant happens to have, no `instanceof` to reach one.
  */
 
-import type { DesktopLocalStackState } from './shared/api';
+import type { DesktopLocalStackState, StackKind } from './shared/api';
 
-export type StackKind = 'docker' | 'native';
 
 /** What both controllers answer the same way; `kind` says which implementation it is. */
 export interface StackBase {

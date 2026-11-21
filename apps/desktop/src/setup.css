@@ -274,3 +274,129 @@ button.secondary {
 button.secondary:not(:disabled):hover {
   background: var(--color-bg-hover);
 }
+
+.badge {
+  margin-left: 6px;
+  padding: 1px 7px;
+  border-radius: var(--radius-full);
+  background: var(--color-success-bg);
+  color: var(--color-success);
+  font-size: 11px;
+  font-weight: var(--font-weight-medium);
+  vertical-align: 1px;
+}
+
+/* ------------------------------------------------------------------ progress */
+
+.steps {
+  list-style: none;
+  margin: 4px 0 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.steps li {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  font-size: var(--text-sm);
+  color: var(--color-text-tertiary);
+}
+
+.steps li::before {
+  content: "";
+  flex: 0 0 16px;
+  height: 16px;
+  border-radius: var(--radius-full);
+  border: 1.5px solid var(--color-border-secondary);
+  box-sizing: border-box;
+}
+
+.steps li[data-status="active"] {
+  color: var(--color-text-primary);
+  font-weight: var(--font-weight-medium);
+}
+
+.steps li[data-status="active"]::before {
+  border-color: var(--color-primary);
+  border-right-color: transparent;
+  animation: spin 0.9s linear infinite;
+}
+
+.steps li[data-status="done"] {
+  color: var(--color-text-secondary);
+}
+
+.steps li[data-status="done"]::before {
+  border: none;
+  background: var(--color-success)
+    url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16'%3E%3Cpath d='M4.5 8.2l2.3 2.3 4.7-4.8' fill='none' stroke='white' stroke-width='1.8' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E")
+    center / 16px no-repeat;
+}
+
+.steps li[data-status="failed"] {
+  color: var(--color-danger);
+  font-weight: var(--font-weight-medium);
+}
+
+.steps li[data-status="failed"]::before {
+  border-color: var(--color-danger);
+  background: var(--color-danger-bg);
+}
+
+@keyframes spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+.detail {
+  margin: 14px 0 0 26px;
+  min-height: 18px;
+  color: var(--color-text-tertiary);
+  font-size: var(--text-xs);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.problem {
+  margin: 12px 0 0;
+  padding: 10px 12px;
+  border-radius: var(--radius-md);
+  background: var(--color-danger-bg);
+  overflow-y: auto;
+  min-height: 0;
+  flex: 1;
+}
+
+.problem h2 {
+  margin: 0 0 4px;
+  font-size: var(--text-sm);
+  font-weight: var(--font-weight-semibold);
+}
+
+.problem p {
+  margin: 0;
+  font-size: var(--text-xs);
+  line-height: 1.45;
+  color: var(--color-text-secondary);
+  white-space: pre-wrap;
+  user-select: text;
+}
+
+#screen-progress .steps {
+  flex: 0 0 auto;
+}
+
+#screen-progress footer {
+  margin-top: auto;
+}
+
+.actions {
+  display: flex;
+  gap: 8px;
+  flex-shrink: 0;
+}
