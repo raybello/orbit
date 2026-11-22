@@ -1,3 +1,9 @@
+## v0.4.2 — 2026-11-22
+
+- feat(desktop): Reset setup in Settings, replacing the runtime switch
+- feat(computers): run Bots' computers on Apple container, with a switch in Settings
+
+
 ## v0.4.1 — 2026-11-21
 
 - docs: live evidence for phone pairing
