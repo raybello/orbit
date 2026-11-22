@@ -1,52 +1,55 @@
 import { useCallback, useEffect, useState } from 'react';
-import type { ComputerRuntimeInfo, ComputerRuntimeName, ComputerRuntimeOption } from '@orbit/contracts';
+import type { ComputerRuntimeInfo, ComputerRuntimeOption } from '@orbit/contracts';
 import { api } from './api';
 
-/** The runtime that is active, and the one a person could switch to, from the server's own report. */
+/** The runtime Bots' computers are on, from the server's own report. */
 export function activeOption(info: ComputerRuntimeInfo | null): ComputerRuntimeOption | undefined {
   return info?.options.find((o) => o.name === info.active);
 }
 
-export function otherOption(info: ComputerRuntimeInfo | null): ComputerRuntimeOption | undefined {
-  return info?.options.find((o) => o.name !== info.active);
-}
-
-/** Why Bots' computers cannot start on the active runtime, when that is the reason; else null. */
+/** Why Bots' computers cannot start on the runtime in use, when that is the reason; else null. */
 export function runtimeProblem(info: ComputerRuntimeInfo | null): string | null {
   const active = activeOption(info);
   return active && !active.available ? active.note : null;
 }
 
+/** What the desktop app can do about it: install Apple's runtime, or start over at the first-run choices. */
+export function desktopRuntimeActions() {
+  const bridge = typeof window !== 'undefined' ? window.orbitDesktop : undefined;
+  return { canInstallApple: !!bridge?.computers, canResetSetup: !!bridge?.setup };
+}
+
+/**
+ * Ask the desktop app to reset the setup. Resolves to a message when nothing happened (the page is
+ * not allowed to), and to null when the app is on its way to the setup window.
+ */
+export async function resetDesktopSetup(): Promise<string | null> {
+  const reset = typeof window !== 'undefined' ? window.orbitDesktop?.setup?.reset : undefined;
+  if (!reset) return 'This is only available in the Orbit desktop app.';
+  try {
+    const r = await reset();
+    return r.ok ? null : r.error ?? 'Could not reset the setup.';
+  } catch (e) {
+    return (e as Error).message;
+  }
+}
+
 export function useComputerRuntime(enabled = true) {
   const [info, setInfo] = useState<ComputerRuntimeInfo | null>(null);
-  const [busy, setBusy] = useState<ComputerRuntimeName | 'install' | null>(null);
+  const [busy, setBusy] = useState<'install' | 'reset' | null>(null);
   const [error, setError] = useState<string | null>(null);
 
   const refresh = useCallback(async () => {
     try {
       setInfo(await api.computerRuntime());
     } catch {
-      /* an older server has no such route: nothing to offer */
+      /* an older server has no such route: nothing to explain */
     }
   }, []);
   useEffect(() => { if (enabled) void refresh(); }, [enabled, refresh]);
 
-  const choose = useCallback(async (name: ComputerRuntimeName) => {
-    setBusy(name);
-    setError(null);
-    try {
-      setInfo(await api.setComputerRuntime(name));
-      return true;
-    } catch (e) {
-      setError((e as Error).message);
-      return false;
-    } finally {
-      setBusy(null);
-    }
-  }, []);
-
   const installApple = useCallback(async () => {
-    const install = window.orbitDesktop?.computers?.installAppleRuntime;
+    const install = typeof window !== 'undefined' ? window.orbitDesktop?.computers?.installAppleRuntime : undefined;
     if (!install) return false;
     setBusy('install');
     setError(null);
@@ -63,5 +66,13 @@ export function useComputerRuntime(enabled = true) {
     }
   }, [refresh]);
 
-  return { info, busy, error, refresh, choose, installApple };
+  const resetSetup = useCallback(async () => {
+    setBusy('reset');
+    setError(null);
+    const message = await resetDesktopSetup();
+    if (message) setError(message);
+    setBusy(null);
+  }, []);
+
+  return { info, busy, error, refresh, installApple, resetSetup };
 }

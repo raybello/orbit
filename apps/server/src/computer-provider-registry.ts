@@ -67,21 +67,3 @@ export async function pruneOrphanContainers(): Promise<void> {
     setComputerState(row.bot_id, 'stopped', { containerId: null });
   }
 }
-
-/**
- * Before changing runtimes: save every bot's home and remove its container from the runtime that
- * made it. The rows go back to "stopped, no container", so the next open creates one in the new
- * runtime (the home folder is on the host and carries over).
- */
-export async function retireComputerContainers(): Promise<void> {
-  await suspendComputers();
-  for (const row of dockerComputers()) {
-    if (!row.container_id) continue;
-    try {
-      await runtime().remove(row.container_id);
-      setComputerState(row.bot_id, 'stopped', { containerId: null, error: null });
-    } catch (e) {
-      console.warn(`[docker] could not remove ${row.bot_id}'s container: ${messageOf(e)}`);
-    }
-  }
-}

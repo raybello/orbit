@@ -955,6 +955,16 @@ function registerIpc(): void {
     assertSender(event);
     return installAppleRuntimeWithProgress();
   });
+  // Settings > Reset setup (the page asks "are you sure?" itself). Only the local stack's own page may ask (a server the person merely
+  // connected to must not be able to tear their stack down); everyone else has the app menu.
+  ipcMain.handle(IPC.setupReset, async (event) => {
+    if (!senderTrusted(event)) {
+      return { ok: false, error: 'Open this from Orbit running on this Mac, or use Orbit ▸ Change Orbit Server… in the menu.' };
+    }
+    // Not awaited: this page goes away with the app window.
+    void showChoices().catch((err) => log.error('reset setup failed', err));
+    return { ok: true };
+  });
   ipcMain.handle(IPC.deepLinkTake, (event) => (mainWindow && !mainWindow.isDestroyed() && event.sender === mainWindow.webContents ? deepLinks.take() : null));
   ipcMain.handle(IPC.openExternal, (event, url: string) => {
     assertSender(event);

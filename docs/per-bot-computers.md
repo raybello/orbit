@@ -98,10 +98,12 @@ home folders.
 - `docker/runtime-types.ts` is the seam: create, start, stop, remove, status, exec, endpoint,
   reservation, host memory. `docker/docker-runtime.ts` and `apple/runtime.ts` implement it; the
   provider, screens and desk never talk to either directly.
-- Which one runs: Settings → Computer → "Runs on" (stored in `app_settings`), else
-  `COMPUTER_RUNTIME=docker|apple|auto`. `auto` (the default) takes Docker when its socket exists
-  and Apple's runtime on a Mac that has it and no Docker. Switching checkpoints every Bot's home and
-  removes its container from the runtime it was on; the next open starts one on the new runtime.
+- Which one runs: `COMPUTER_RUNTIME=docker|apple|auto`. `auto` (the default) takes Docker when its
+  socket exists and Apple's runtime on a Mac that has it and no Docker. To move between Docker and
+  the native stack, Settings → General → Reset setup stops Orbit and reopens the first-run screen
+  (server, then Docker or native); Bots and data are kept. A screen that cannot start says why
+  (`GET /api/computers/runtime`) and, in the desktop app, offers to install Apple's runtime or to
+  reset the setup.
 - The server starts the container service (`container system start --enable-kernel-install`) and
   builds `orbit/computer:local` with `container build` on first use. The 2 GB builder VM is stopped
   after the build.

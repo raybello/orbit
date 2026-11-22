@@ -157,8 +157,12 @@ export interface OrbitDesktopAPI {
     install(): Promise<DesktopGpuVoice>;
     remove(): Promise<DesktopGpuVoice>;
   };
-  // What Bots' computers run on. Switching runtimes is the server's job (Settings talks to it);
-  // installing Apple's container runtime needs an administrator password, so it is the app's.
+  // Start over: stop the stack, close the app window and reopen the first-run choices (server,
+  // then Docker or native). Bots and data are kept. The caller confirms with the person first.
+  setup: {
+    reset(): Promise<{ ok: boolean; error?: string }>;
+  };
+  // Installing Apple's container runtime needs an administrator password, so it is the app's.
   computers: {
     installAppleRuntime(): Promise<{ ok: boolean; error?: string }>;
   };
@@ -186,4 +190,5 @@ export const IPC = {
   gpuVoiceStatus: 'orbit:gpu-voice:status',
   gpuVoiceSet: 'orbit:gpu-voice:set',
   computersInstallApple: 'orbit:computers:install-apple',
+  setupReset: 'orbit:setup:reset',
 } as const;

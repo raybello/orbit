@@ -4,8 +4,7 @@ import { db } from './db.js';
 import { requireUser, type AuthVars } from './lib/auth.js';
 import { getComputer, getScreen } from './computer-store.js';
 import { getLive } from './store.js';
-import { activeRuntimeName, preferredRuntime, setPreferredRuntime } from './computer-runtime-config.js';
-import { retireComputerContainers } from './computer-provider-registry.js';
+import { env } from './env.js';
 import { appleStatus } from './apple/runtime.js';
 import { dockerProblem } from './docker/client.js';
 import { looksContainerized } from './docker/reach.js';
@@ -137,7 +136,7 @@ computersApi.get('/', (c) => {
   return c.json(body);
 });
 
-// ------------------------------------------------------------------ runtime choice
+// ------------------------------------------------------------------ which runtime is in use
 
 async function runtimeInfo(): Promise<ComputerRuntimeInfo> {
   const docker = await dockerProblem();
@@ -154,8 +153,7 @@ async function runtimeInfo(): Promise<ComputerRuntimeInfo> {
     if (!status.running) appleNote = 'Its service is stopped; it starts when a Bot’s computer opens.';
   }
   return {
-    active: activeRuntimeName(),
-    chosen: preferredRuntime(),
+    active: env.computerRuntime,
     options: [
       { name: 'docker', label: 'Docker', available: docker === null, note: docker },
       {
@@ -170,21 +168,3 @@ async function runtimeInfo(): Promise<ComputerRuntimeInfo> {
 }
 
 computersApi.get('/runtime', async (c) => c.json(await runtimeInfo()));
-
-/**
- * Switch runtimes. Every computer is checkpointed and its container removed from the runtime it is
- * on; the home folders are host folders, so each Bot's next open starts a fresh container in the
- * new runtime with the same files and logins.
- */
-computersApi.post('/runtime', async (c) => {
-  const body = (await c.req.json().catch(() => ({}))) as { runtime?: string };
-  if (body.runtime !== 'docker' && body.runtime !== 'apple') return c.json({ error: 'runtime must be "docker" or "apple"' }, 400);
-  const info = await runtimeInfo();
-  const target = info.options.find((o) => o.name === body.runtime);
-  if (!target?.available) return c.json({ error: target?.note ?? 'that runtime is not available' }, 409);
-  // Containers made by the runtime being left are checkpointed and removed first: a stopped one
-  // would hold the bot's name (and its display's ports) against the new runtime.
-  if (info.active !== body.runtime) await retireComputerContainers();
-  setPreferredRuntime(body.runtime);
-  return c.json(await runtimeInfo());
-});

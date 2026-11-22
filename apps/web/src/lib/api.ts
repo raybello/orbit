@@ -1,4 +1,4 @@
-import type { Bot, CalendarResponse, ComputerRuntimeInfo, ComputerRuntimeName, ComputersResponse, CreateRoutineRequest, FileEntry, FilesResponse, ComputerState, LiveState, ModelChoice, ModelsResponse, Routine, Row, SkillEntry, SkillsResponse, Toolkit, User, EventEdits, EventFields, GoogleCalendarInfo, DuplicateDefaults } from '@orbit/contracts';
+import type { Bot, CalendarResponse, ComputerRuntimeInfo, ComputersResponse, CreateRoutineRequest, FileEntry, FilesResponse, ComputerState, LiveState, ModelChoice, ModelsResponse, Routine, Row, SkillEntry, SkillsResponse, Toolkit, User, EventEdits, EventFields, GoogleCalendarInfo, DuplicateDefaults } from '@orbit/contracts';
 
 export class ApiError extends Error {
   constructor(public status: number, message: string, public body?: unknown) { super(message); }
@@ -128,7 +128,6 @@ export const api = {
 
   computers: () => req<ComputersResponse>('GET', '/computers'),
   computerRuntime: () => req<ComputerRuntimeInfo>('GET', '/computers/runtime'),
-  setComputerRuntime: (runtime: ComputerRuntimeName) => req<ComputerRuntimeInfo>('POST', '/computers/runtime', { runtime }),
 
   skills: () => req<SkillsResponse>('GET', '/skills'),
   setSkillEnabled: (botId: string, skillName: string, enabled: boolean) =>

@@ -558,7 +558,7 @@ export type ComputerRuntimeName = 'docker' | 'apple';
 export interface ComputerRuntimeOption {
   name: ComputerRuntimeName;
   label: string;
-  /** Can be switched to right now. */
+  /** Usable on this machine right now. */
   available: boolean;
   /** Why not, or what is left to do (installed but its service is stopped). */
   note: string | null;
@@ -566,11 +566,9 @@ export interface ComputerRuntimeOption {
   installable?: boolean;
 }
 
-/** GET and POST /api/computers/runtime */
+/** GET /api/computers/runtime: what Bots' computers run on, and whether the other runtime could. */
 export interface ComputerRuntimeInfo {
   active: ComputerRuntimeName;
-  /** The person's choice in Settings, or null while Orbit picks for itself. */
-  chosen: ComputerRuntimeName | null;
   options: ComputerRuntimeOption[];
 }
 

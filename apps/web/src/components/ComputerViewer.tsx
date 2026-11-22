@@ -6,7 +6,7 @@ import { api } from '../lib/api';
 import { botVars } from '../lib/colors';
 import { botComputerStatus, computerStatusText, screenSize, screensFull } from '../lib/computer';
 import { configApi } from '../lib/configApi';
-import { activeOption, otherOption, runtimeProblem, useComputerRuntime } from '../lib/computerRuntime';
+import { activeOption, desktopRuntimeActions, runtimeProblem, useComputerRuntime } from '../lib/computerRuntime';
 import { useSelectedBot, useStore } from '../store';
 import { Icon } from './Icon';
 import { useScreenPreview, ScreenLayers } from './ScreenPreview';
@@ -165,7 +165,8 @@ export function ComputerScreen({ bot, variant, initialMode = 'watch', hint, paus
   const refreshRuntime = runtimeState.refresh;
   useEffect(() => { if (phase === 'error') void refreshRuntime(); }, [phase, refreshRuntime]);
   const runtimeHint = phase === 'error' ? runtimeProblem(runtimeState.info) : null;
-  const switchTo = runtimeHint ? otherOption(runtimeState.info) : undefined;
+  const desktopActions = runtimeHint ? desktopRuntimeActions() : null;
+  const appleOption = runtimeState.info?.options.find((o) => o.name === 'apple');
 
   const takeControl = () => {
     if (variant === 'panel' && !fullscreen) onExpand?.('control');
@@ -259,9 +260,14 @@ export function ComputerScreen({ bot, variant, initialMode = 'watch', hint, paus
               {running && screensFull(computer, bot.id) && <span className="screen__sub">All {computer?.maxScreens} screens are in use. Reset one in Settings to free it.</span>}
               {runtimeHint && <span className="screen__sub">{activeOption(runtimeState.info)?.label}: {runtimeHint}</span>}
               {runtimeState.error && <span className="screen__sub">{runtimeState.error}</span>}
-              {switchTo?.available && (
-                <button type="button" className="screen__action" disabled={runtimeState.busy !== null} onClick={async () => { if (await runtimeState.choose(switchTo.name)) retry(); }}>
-                  Use {switchTo.label}
+              {runtimeHint && desktopActions?.canInstallApple && appleOption?.installable && (
+                <button type="button" className="screen__action" disabled={runtimeState.busy !== null} onClick={async () => { if (await runtimeState.installApple()) retry(); }}>
+                  {runtimeState.busy === 'install' ? 'Installing…' : 'Install Apple container'}
+                </button>
+              )}
+              {runtimeHint && desktopActions?.canResetSetup && (
+                <button type="button" className="screen__action" disabled={runtimeState.busy !== null} onClick={() => void runtimeState.resetSetup()}>
+                  Choose how Orbit runs
                 </button>
               )}
               <button type="button" className="screen__action" onClick={retry}>Retry</button>
