@@ -1,9 +1,14 @@
 import { Hono } from 'hono';
-import type { BotComputerStatus, ComputersResponse } from '@orbit/contracts';
+import type { BotComputerStatus, ComputerRuntimeInfo, ComputersResponse } from '@orbit/contracts';
 import { db } from './db.js';
 import { requireUser, type AuthVars } from './lib/auth.js';
 import { getComputer, getScreen } from './computer-store.js';
 import { getLive } from './store.js';
+import { activeRuntimeName, preferredRuntime, setPreferredRuntime } from './computer-runtime-config.js';
+import { retireComputerContainers } from './computer-provider-registry.js';
+import { appleStatus } from './apple/runtime.js';
+import { dockerProblem } from './docker/client.js';
+import { looksContainerized } from './docker/reach.js';
 
 /**
  * /api/computers: what each of the signed-in user's Bots' computers is doing right now.
@@ -130,4 +135,56 @@ computersApi.get('/', (c) => {
     .map((r) => ({ id: r.id, name: r.name, kind: r.kind ?? 'agent' }));
   const body: ComputersResponse = { computers: computerStatusesFor(bots, computerStatusDeps()) };
   return c.json(body);
+});
+
+// ------------------------------------------------------------------ runtime choice
+
+async function runtimeInfo(): Promise<ComputerRuntimeInfo> {
+  const docker = await dockerProblem();
+  const status = await appleStatus();
+  const mac = process.platform === 'darwin' && process.arch === 'arm64';
+  const inContainer = looksContainerized();
+  let appleNote: string | null = null;
+  let appleAvailable = false;
+  if (!mac) appleNote = 'Needs a Mac with Apple silicon.';
+  else if (inContainer) appleNote = 'This server runs inside Docker, which cannot start Apple containers. Use the desktop app’s native stack.';
+  else if (!status.installed) appleNote = 'Apple’s container runtime is not installed.';
+  else {
+    appleAvailable = true;
+    if (!status.running) appleNote = 'Its service is stopped; it starts when a Bot’s computer opens.';
+  }
+  return {
+    active: activeRuntimeName(),
+    chosen: preferredRuntime(),
+    options: [
+      { name: 'docker', label: 'Docker', available: docker === null, note: docker },
+      {
+        name: 'apple',
+        label: 'Apple container',
+        available: appleAvailable,
+        note: appleNote,
+        installable: mac && !inContainer && !status.installed,
+      },
+    ],
+  };
+}
+
+computersApi.get('/runtime', async (c) => c.json(await runtimeInfo()));
+
+/**
+ * Switch runtimes. Every computer is checkpointed and its container removed from the runtime it is
+ * on; the home folders are host folders, so each Bot's next open starts a fresh container in the
+ * new runtime with the same files and logins.
+ */
+computersApi.post('/runtime', async (c) => {
+  const body = (await c.req.json().catch(() => ({}))) as { runtime?: string };
+  if (body.runtime !== 'docker' && body.runtime !== 'apple') return c.json({ error: 'runtime must be "docker" or "apple"' }, 400);
+  const info = await runtimeInfo();
+  const target = info.options.find((o) => o.name === body.runtime);
+  if (!target?.available) return c.json({ error: target?.note ?? 'that runtime is not available' }, 409);
+  // Containers made by the runtime being left are checkpointed and removed first: a stopped one
+  // would hold the bot's name (and its display's ports) against the new runtime.
+  if (info.active !== body.runtime) await retireComputerContainers();
+  setPreferredRuntime(body.runtime);
+  return c.json(await runtimeInfo());
 });

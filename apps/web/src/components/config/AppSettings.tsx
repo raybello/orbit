@@ -28,6 +28,7 @@ import { relativeShort } from '../../lib/time';
 import { presets } from '@orbit/ui-tokens';
 import { useConfigUI, type AppSection, type Preset, type Theme } from '../../configStore';
 import { useDesktopUpdates } from '../../lib/desktop';
+import { ComputerRuntimeCard } from './ComputerRuntime';
 import { useStore } from '../../store';
 import { useVoiceModels } from '../../voice/models-store';
 import { computerStatusText } from '../../lib/computer';
@@ -405,6 +406,7 @@ function ComputerSection() {
 
   return (
     <>
+      <ComputerRuntimeCard />
       <section className="cfg-section">
         <div className="cfg-card">
           <div className="cfg-row">

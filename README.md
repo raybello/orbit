@@ -264,7 +264,7 @@ Pick the model your agent runs on (see [Models and subscriptions](#models-and-su
 
 ## Build and run
 
-Requirements: **Node.js 22 or newer**, **pnpm 12** (the repo pins `packageManager`), Docker for the default desktop and per-bot computers, and Xcode or Android Studio only if you build the mobile app natively.
+Requirements: **Node.js 22 or newer**, **pnpm 12** (the repo pins `packageManager`), Docker (or, on a Mac with Apple silicon and macOS 26, Apple’s `container`) for per-bot computers, and Xcode or Android Studio only if you build the mobile app natively.
 
 ```bash
 git clone https://github.com/raybello/orbit.git

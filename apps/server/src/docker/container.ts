@@ -2,7 +2,7 @@ import type Docker from 'dockerode';
 import { env } from '../env.js';
 import { docker, type DockerError } from './client.js';
 import { COMPUTER_IMAGE, ensureComputerImage } from './image.js';
-import { cdpBridgePort, screenPorts } from './screen.js';
+import { cdpBridgePort, screenPorts } from './ports.js';
 import { botNetworkName, extraNetworksFor, serverPlacement } from './reach.js';
 
 /**

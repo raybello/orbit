@@ -50,6 +50,39 @@ function packageVersion(): string {
   }
 }
 
+/** Where Apple's `container` CLI is installed, when it is (ORBIT_CONTAINER_BIN wins). */
+export function appleContainerBinary(): string | null {
+  const candidates = [process.env.ORBIT_CONTAINER_BIN ?? '', '/usr/local/bin/container', '/opt/homebrew/bin/container', '/usr/bin/container'];
+  for (const c of candidates) {
+    if (!c) continue;
+    try {
+      fs.accessSync(c, fs.constants.X_OK);
+      return c;
+    } catch {
+      /* not there */
+    }
+  }
+  return null;
+}
+
+/**
+ * What runs bot computers: Docker's Engine API, or Apple's `container` (one lightweight VM per
+ * bot, macOS 26 on Apple silicon). COMPUTER_RUNTIME picks one; "auto" (the default) takes Docker
+ * when its socket is there and Apple's runtime on a Mac that has it and no Docker.
+ */
+export function pickComputerRuntime(opts: { value?: string; platform?: string; arch?: string; dockerSocketPresent?: boolean; appleBinary?: string | null } = {}): 'docker' | 'apple' {
+  const value = (opts.value ?? process.env.COMPUTER_RUNTIME ?? 'auto').trim().toLowerCase();
+  if (value === 'docker' || value === 'apple') return value;
+  const platform = opts.platform ?? process.platform;
+  const arch = opts.arch ?? process.arch;
+  if (platform !== 'darwin' || arch !== 'arm64') return 'docker';
+  const socket = opts.dockerSocketPresent ?? ['/var/run/docker.sock', `${process.env.HOME ?? ''}/.docker/run/docker.sock`].some((f) => fs.existsSync(f));
+  const apple = opts.appleBinary === undefined ? appleContainerBinary() : opts.appleBinary;
+  return apple && !socket ? 'apple' : 'docker';
+}
+
+const computerRuntime = pickComputerRuntime();
+
 export const env = {
   port: Number(process.env.PORT ?? 8787),
   appUrl: process.env.APP_URL ?? 'http://localhost:5173',
@@ -154,7 +187,8 @@ export const env = {
   /** Comma-separated emails allowed to sign in; empty = anyone who can reach the app. */
   allowedEmails: (process.env.ALLOWED_EMAILS ?? '').split(',').map((s) => s.trim().toLowerCase()).filter(Boolean),
 
-  // ---- per-bot Docker computers ----
+  // ---- per-bot computers (Docker containers, or Apple container VMs) ----
+  computerRuntime,
   /** Image for bot containers. Unqualified names are built locally from server/docker/computer.
    *  An empty value (common in a copied .env) means the default, not the empty string. */
   computerImage: (process.env.COMPUTER_IMAGE ?? '').trim() || 'orbit/computer:local',

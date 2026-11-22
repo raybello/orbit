@@ -552,6 +552,28 @@ export interface BotComputerStatus {
 /** GET /api/computers */
 export interface ComputersResponse { computers: BotComputerStatus[] }
 
+/** What runs the Bots' computers: Docker containers, or Apple's `container` (one small VM each, Mac only). */
+export type ComputerRuntimeName = 'docker' | 'apple';
+
+export interface ComputerRuntimeOption {
+  name: ComputerRuntimeName;
+  label: string;
+  /** Can be switched to right now. */
+  available: boolean;
+  /** Why not, or what is left to do (installed but its service is stopped). */
+  note: string | null;
+  /** The desktop app can install it for the person. */
+  installable?: boolean;
+}
+
+/** GET and POST /api/computers/runtime */
+export interface ComputerRuntimeInfo {
+  active: ComputerRuntimeName;
+  /** The person's choice in Settings, or null while Orbit picks for itself. */
+  chosen: ComputerRuntimeName | null;
+  options: ComputerRuntimeOption[];
+}
+
 // ------------------------------------------------------------------ skills (MCP servers)
 
 /** A skill/MCP server from the primary agent's config, and which bots have it. */

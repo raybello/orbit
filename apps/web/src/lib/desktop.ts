@@ -13,6 +13,10 @@ export interface OrbitDesktopBridge {
     install(): Promise<DesktopGpuVoice>;
     remove(): Promise<DesktopGpuVoice>;
   };
+  /** Installing what Bots' computers run on (Apple's container runtime). */
+  computers?: {
+    installAppleRuntime(): Promise<{ ok: boolean; error?: string }>;
+  };
   updates?: {
     status(): Promise<DesktopUpdateStatus>;
     check(): Promise<DesktopUpdateStatus>;

@@ -26,6 +26,7 @@ const IPC = {
   deepLinkTake: 'orbit:deeplink:take',
   gpuVoiceStatus: 'orbit:gpu-voice:status',
   gpuVoiceSet: 'orbit:gpu-voice:set',
+  computersInstallApple: 'orbit:computers:install-apple',
 };
 
 /**
@@ -78,6 +79,9 @@ contextBridge.exposeInMainWorld('orbitDesktop', {
     return off;
   },
   // GPU voice (audio.cpp sidecar): installed only when the person asks.
+  computers: {
+    installAppleRuntime: () => ipcRenderer.invoke(IPC.computersInstallApple),
+  },
   gpuVoice: {
     status: () => ipcRenderer.invoke(IPC.gpuVoiceStatus),
     install: () => ipcRenderer.invoke(IPC.gpuVoiceSet, true),

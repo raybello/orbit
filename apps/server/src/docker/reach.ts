@@ -1,7 +1,7 @@
 import fs from 'node:fs';
 import os from 'node:os';
 import { docker, type DockerError } from './client.js';
-import { cdpBridgePort, screenPorts } from './screen.js';
+import { cdpBridgePort, screenPorts } from './ports.js';
 
 /**
  * How the server reaches a bot's screen.
