@@ -1,4 +1,4 @@
-import type { Bot, CalendarResponse, ComputerRuntimeInfo, ComputersResponse, CreateRoutineRequest, FileEntry, FilesResponse, ComputerState, LiveState, ModelChoice, ModelsResponse, Routine, Row, SkillEntry, SkillsResponse, Toolkit, User, EventEdits, EventFields, GoogleCalendarInfo, DuplicateDefaults } from '@orbit/contracts';
+import type { Bot, CalendarResponse, ComputerRuntimeInfo, ComputersResponse, CreateRoutineRequest, FileEntry, FilesResponse, ComputerState, LiveState, ModelChoice, ModelsResponse, Routine, Row, SkillEntry, SkillsResponse, Toolkit, User, EventEdits, EventFields, GoogleCalendarInfo, DuplicateDefaults, PairCodeResponse } from '@orbit/contracts';
 
 export class ApiError extends Error {
   constructor(public status: number, message: string, public body?: unknown) { super(message); }
@@ -50,6 +50,8 @@ export const api = {
     }
     return res.json() as Promise<{ url: string }>;
   },
+  /** A single-use code for the phone's QR (see PairCodeResponse). */
+  pairCode: () => req<PairCodeResponse>('POST', '/auth/pair'),
   devLogin: (email: string, name?: string) => req<{ ok: true }>('POST', '/auth/dev', { email, name }),
   logout: () => req<{ ok: true }>('POST', '/auth/logout'),
 

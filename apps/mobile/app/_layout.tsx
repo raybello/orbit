@@ -43,6 +43,8 @@ function AuthGate({ onSessionChange }: { onSessionChange: () => void }) {
   const onServer = path === '/server';
   const onSignIn = path === '/sign-in';
   const onSignOut = path === '/sign-out';
+  // The pair screen sets the server and the session itself; redirecting would drop the scanned code.
+  const onPair = path === '/pair';
 
   useEffect(() => {
     let alive = true;
@@ -60,6 +62,7 @@ function AuthGate({ onSessionChange }: { onSessionChange: () => void }) {
         if (nowSignedIn) void sendTimezone().catch(() => {});
       }
 
+      if (onPair) return;
       const needsServer = !saved && !hasBakedApiBase();
       if (needsServer && !onServer) return remember('/server');
       if (!token && !onSignIn && !onSignOut) return remember('/sign-in');
@@ -202,6 +205,7 @@ export default function RootLayout() {
         >
           <Stack.Screen name="(tabs)" />
           <Stack.Screen name="sign-in" options={{ gestureEnabled: false }} />
+          <Stack.Screen name="pair" options={{ gestureEnabled: false, animation: 'fade' }} />
           <Stack.Screen name="server" options={{ presentation: 'modal', headerShown: true, title: 'Server' }} />
           <Stack.Screen name="sign-out" options={{ presentation: 'modal', headerShown: true, title: 'Sign out' }} />
           <Stack.Screen name="thread/[botId]" options={{ headerShown: false }} />

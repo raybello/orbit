@@ -85,6 +85,8 @@ const computerRuntime = pickComputerRuntime();
 
 export const env = {
   port: Number(process.env.PORT ?? 8787),
+  /** The address to listen on. Unset means every interface (in a container, or a deliberate LAN server); the desktop's native stack sets 127.0.0.1. */
+  listenHost: process.env.LISTEN_HOST?.trim() || undefined,
   appUrl: process.env.APP_URL ?? 'http://localhost:5173',
   /** Public URL of this server, used for OAuth callbacks. */
   serverUrl: process.env.SERVER_URL ?? `http://localhost:${process.env.PORT ?? 8787}`,

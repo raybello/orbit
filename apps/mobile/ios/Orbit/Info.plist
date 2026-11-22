@@ -51,6 +51,8 @@
       <key>NSAllowsLocalNetworking</key>
       <true/>
     </dict>
+    <key>NSLocalNetworkUsageDescription</key>
+    <string>Orbit connects to the Orbit server running on your computer over your local network.</string>
     <key>NSFaceIDUsageDescription</key>
     <string>Allow $(PRODUCT_NAME) to access your Face ID biometric data.</string>
     <key>NSUserActivityTypes</key>

@@ -695,6 +695,14 @@ export interface AuthMeResponse { user: User | null; devLogin: boolean }
 export interface SignInRequest { email: string; name?: string; ownerKey?: string }
 export interface SignInResponse { ok: true; token: string; user: User; expiresAt: number }
 
+/**
+ * POST /api/auth/pair (signed in): a code another device redeems once, before `expiresAt`, for a session
+ * of its own. Minting a new one retires the last, so at most one per person is ever live.
+ */
+export interface PairCodeResponse { code: string; expiresAt: number }
+/** POST /api/auth/pair/redeem (no session): answers a SignInResponse for the person who minted `code`. */
+export interface PairRedeemRequest { code: string }
+
 export interface BotsResponse { bots: Bot[]; live: LiveState[] }
 export interface RowsResponse { generation: number; rows: Row[] }
 export interface SendMessageRequest { message?: string; text?: string }
@@ -794,6 +802,19 @@ export interface InitiativeSettingsPatch {
  * NVIDIA GPU). The person installs it: nothing ~3 GB is pulled without asking. macOS has no CUDA
  * sidecar yet, so there it reports `supported: false` and voice stays on-device.
  */
+/**
+ * The desktop app's "Allow my phone to connect" switch. While it is on, the app listens on the local
+ * network and forwards to the loopback-only stack; `url` is the address a phone on the same network uses.
+ * 'unavailable': this window shows a server the app does not run, which is reachable or not on its own.
+ * 'no-network': the switch is on, but this computer has no local-network address right now.
+ */
+export type DesktopPhoneAccess =
+  | { phase: 'unavailable' }
+  | { phase: 'off' }
+  | { phase: 'on'; url: string }
+  | { phase: 'no-network' }
+  | { phase: 'error'; error: string };
+
 export interface DesktopGpuVoice {
   supported: boolean;
   /** Why it can't be installed here. */

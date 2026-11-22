@@ -44,7 +44,7 @@ const messageOf = (e: unknown) => String((e as { message?: unknown } | null)?.me
 
 const app = createApp();
 
-const server = serve({ fetch: app.fetch, port: env.port }, (info) => console.log(`[grokbot] server on http://localhost:${info.port}`));
+const server = serve({ fetch: app.fetch, port: env.port, hostname: env.listenHost }, (info) => console.log(`[grokbot] server on http://${env.listenHost ?? 'localhost'}:${info.port}`));
 attachVncRelay(server as unknown as Server);
 attachEngineTerminal(server as unknown as Server);
 attachLocalCallRelay(server as unknown as Server);

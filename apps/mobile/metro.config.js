@@ -13,6 +13,15 @@ config.resolver.nodeModulesPaths = [
   path.resolve(projectRoot, 'node_modules'),
   path.resolve(workspaceRoot, 'node_modules'),
 ];
+// One React for the whole bundle: packages that do not declare React as a peer (expo-router,
+// expo-modules-core) resolve it through pnpm's hidden hoist, which can point at the web app's
+// React 18 after any install. Resolving it from this app pins every importer to its React 19.
+config.resolver.resolveRequest = (context, moduleName, platform) =>
+  context.resolveRequest(
+    moduleName === 'react' || moduleName.startsWith('react/') ? { ...context, originModulePath: path.join(projectRoot, 'index.ts') } : context,
+    moduleName,
+    platform,
+  );
 // The bundled noVNC page is a single self-contained HTML file loaded by the computer viewer's WebView.
 config.resolver.assetExts = [...config.resolver.assetExts, 'html'];
 

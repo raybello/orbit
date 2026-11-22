@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import type { DeepLink, DesktopGpuVoice, DesktopUpdateStatus } from '@orbit/contracts';
+import type { DeepLink, DesktopGpuVoice, DesktopPhoneAccess, DesktopUpdateStatus } from '@orbit/contracts';
 
 /**
  * The desktop preload bridge as the web app sees it: every member optional, because the same build
@@ -20,6 +20,10 @@ export interface OrbitDesktopBridge {
   /** Installing what Bots' computers run on (Apple's container runtime). */
   computers?: {
     installAppleRuntime(): Promise<{ ok: boolean; error?: string }>;
+  };
+  phoneAccess?: {
+    status(): Promise<DesktopPhoneAccess>;
+    set(on: boolean): Promise<DesktopPhoneAccess>;
   };
   updates?: {
     status(): Promise<DesktopUpdateStatus>;
@@ -84,4 +88,23 @@ export function useDesktopUpdates(): DesktopUpdateStatus | null {
     return () => { alive = false; off(); };
   }, [bridge]);
   return bridge ? status : null;
+}
+
+/**
+ * The desktop app's "Allow my phone to connect" switch: undefined while it answers, null outside the
+ * desktop app (and in builds without the switch).
+ */
+export function useDesktopPhoneAccess(): [DesktopPhoneAccess | null | undefined, (on: boolean) => Promise<void>] {
+  const bridge = typeof window !== 'undefined' ? window.orbitDesktop?.phoneAccess : undefined;
+  const [state, setState] = useState<DesktopPhoneAccess | undefined>(undefined);
+  useEffect(() => {
+    if (!bridge) return;
+    let alive = true;
+    bridge.status().then((s) => { if (alive) setState(s); }, () => { if (alive) setState({ phase: 'unavailable' }); });
+    return () => { alive = false; };
+  }, [bridge]);
+  const set = async (on: boolean) => {
+    if (bridge) setState(await bridge.set(on));
+  };
+  return [bridge ? state : null, set];
 }

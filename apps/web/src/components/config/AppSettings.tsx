@@ -40,6 +40,7 @@ import { HermesSettingsPanel } from './HermesSettingsPanel';
 import '../../styles/code-editor.css';
 import { Glyph } from './glyphs';
 import { ConfirmButton } from './ui';
+import { PhoneConnect } from './PhoneConnect';
 
 interface SectionMeta { id: AppSection; label: string; icon: IconName; sub?: string }
 
@@ -837,6 +838,7 @@ export function DevicesSection() {
           The system dialog is what actually grants access. If you denied something, change it in System Settings → Privacy &amp; Security, then try again here.
         </div>
       </section>
+      <PhoneConnect />
     </>
   );
 }

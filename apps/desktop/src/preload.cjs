@@ -28,6 +28,8 @@ const IPC = {
   gpuVoiceSet: 'orbit:gpu-voice:set',
   computersInstallApple: 'orbit:computers:install-apple',
   setupReset: 'orbit:setup:reset',
+  phoneAccessStatus: 'orbit:phone-access:status',
+  phoneAccessSet: 'orbit:phone-access:set',
 };
 
 /**
@@ -90,6 +92,11 @@ contextBridge.exposeInMainWorld('orbitDesktop', {
     status: () => ipcRenderer.invoke(IPC.gpuVoiceStatus),
     install: () => ipcRenderer.invoke(IPC.gpuVoiceSet, true),
     remove: () => ipcRenderer.invoke(IPC.gpuVoiceSet, false),
+  },
+  // "Allow my phone to connect"
+  phoneAccess: {
+    status: () => ipcRenderer.invoke(IPC.phoneAccessStatus),
+    set: (on) => ipcRenderer.invoke(IPC.phoneAccessSet, on),
   },
   // Platform
   platform: process.platform,
