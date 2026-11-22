@@ -1,4 +1,4 @@
-import type { Bot, CalendarResponse, ComputersResponse, CreateRoutineRequest, FileEntry, FilesResponse, ComputerState, LiveState, ModelChoice, ModelsResponse, Routine, Row, SkillEntry, SkillsResponse, Toolkit, User, EventEdits, EventFields, GoogleCalendarInfo, DuplicateDefaults, PairCodeResponse } from '@orbit/contracts';
+import type { Bot, CalendarResponse, ComputerRuntimeInfo, ComputersResponse, CreateRoutineRequest, FileEntry, FilesResponse, ComputerState, LiveState, ModelChoice, ModelsResponse, Routine, Row, SkillEntry, SkillsResponse, Toolkit, User, EventEdits, EventFields, GoogleCalendarInfo, DuplicateDefaults, PairCodeResponse } from '@orbit/contracts';
 
 export class ApiError extends Error {
   constructor(public status: number, message: string, public body?: unknown) { super(message); }
@@ -129,6 +129,7 @@ export const api = {
   fileUrl: (file: Pick<FileEntry, 'id'> | string) => `/api/files/${typeof file === 'string' ? file : file.id}/download`,
 
   computers: () => req<ComputersResponse>('GET', '/computers'),
+  computerRuntime: () => req<ComputerRuntimeInfo>('GET', '/computers/runtime'),
 
   skills: () => req<SkillsResponse>('GET', '/skills'),
   setSkillEnabled: (botId: string, skillName: string, enabled: boolean) =>

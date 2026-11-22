@@ -41,6 +41,25 @@ LEAN_BROWSER_FLAGS = [
     '--js-flags=--max-old-space-size=256',
 ]
 
+# Apple's container runs each computer as a small VM with software-rendered everything: no GPU, and
+# memory the VM keeps rather than returns. These switches keep Chromium off every GPU and
+# compositor path that would probe for a device and then fall back slowly, and keep its caches and
+# crash dumps small (no --disable-features here: Chromium keeps only the last one, and the lean set owns it). HQ_VM_BROWSER=1 turns them on (the server sets it for the Apple runtime).
+VM_BROWSER_FLAGS = [
+    '--use-gl=disabled',
+    '--disable-gpu-compositing',
+    '--disable-accelerated-2d-canvas',
+    '--disable-accelerated-video-decode',
+    '--disk-cache-size=67108864',
+    '--media-cache-size=33554432',
+    '--disable-breakpad',
+    '--noerrdialogs',
+]
+
+
+def vm_browser():
+    return os.environ.get('HQ_VM_BROWSER', '').strip() in ('1', 'true', 'yes')
+
 
 def lean_browser():
     """HQ_LEAN_BROWSER=1/0 decides; without it, a Docker container (a bot's own computer) is lean."""
@@ -921,6 +940,8 @@ def start_browser(n, bot_id, accent=None, restart=False, log=None):
         ]
         if lean_browser():
             argv[1:1] = LEAN_BROWSER_FLAGS
+        if vm_browser():
+            argv[1:1] = VM_BROWSER_FLAGS
         spawn(argv, env, 'chrome-%d' % n)
         started = True
     # Wait until DevTools answers; that is when the browser is really up.

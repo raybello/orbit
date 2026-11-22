@@ -13,6 +13,14 @@ export interface OrbitDesktopBridge {
     install(): Promise<DesktopGpuVoice>;
     remove(): Promise<DesktopGpuVoice>;
   };
+  /** Start over at the first-run choices (Docker or native). Bots and data are kept. */
+  setup?: {
+    reset(): Promise<{ ok: boolean; error?: string }>;
+  };
+  /** Installing what Bots' computers run on (Apple's container runtime). */
+  computers?: {
+    installAppleRuntime(): Promise<{ ok: boolean; error?: string }>;
+  };
   phoneAccess?: {
     status(): Promise<DesktopPhoneAccess>;
     set(on: boolean): Promise<DesktopPhoneAccess>;

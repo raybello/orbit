@@ -28,6 +28,7 @@ import { relativeShort } from '../../lib/time';
 import { presets } from '@orbit/ui-tokens';
 import { useConfigUI, type AppSection, type Preset, type Theme } from '../../configStore';
 import { useDesktopUpdates } from '../../lib/desktop';
+import { desktopRuntimeActions, resetDesktopSetup } from '../../lib/computerRuntime';
 import { useStore } from '../../store';
 import { useVoiceModels } from '../../voice/models-store';
 import { computerStatusText } from '../../lib/computer';
@@ -246,6 +247,7 @@ function GeneralSection() {
         </div>
       </section>
       <UpdatesSection />
+      <ResetSetupSection />
     </>
   );
 }
@@ -262,6 +264,51 @@ const UPDATE_COPY: { [P in DesktopUpdateStatus['phase']]: (s: Extract<DesktopUpd
   ready: (s) => ({ title: `Orbit ${s.version} is ready`, sub: s.note ?? 'Restarting stops your Bots for a moment, switches over and starts them again.', action: { label: 'Restart to update', run: 'install' } }),
   error: (s) => ({ title: s.version ? `Orbit ${s.version} could not be downloaded` : 'Could not check for updates', sub: s.error, action: s.version ? { label: 'Try again', run: 'download' } : { label: 'Check again', run: 'check' } }),
 };
+
+/**
+ * Desktop app only: start over at the first-run screen, where Docker or the native stack is chosen.
+ * The app stops its stack, closes this window and reopens the setup; Bots and data are kept.
+ */
+function ResetSetupSection() {
+  const { canResetSetup } = desktopRuntimeActions();
+  const [ask, setAsk] = useState(false);
+  const [note, setNote] = useState<string | null>(null);
+  const [busy, setBusy] = useState(false);
+  if (!canResetSetup) return null;
+  const reset = async () => {
+    setBusy(true);
+    const message = await resetDesktopSetup();
+    setNote(message);
+    setBusy(false);
+    if (message) setAsk(false);
+  };
+  return (
+    <section className="cfg-section">
+      <div className="cfg-section__label">Setup</div>
+      <div className="cfg-card">
+        <div className="cfg-row">
+          <div className="cfg-row__text">
+            <div className="cfg-row__title">Reset setup</div>
+            <div className="cfg-row__sub">
+              {ask
+                ? 'Orbit will stop, close this window and reopen the first-run screen, where you choose Docker or the native stack again. Your Bots and data are kept.'
+                : 'Go back to the first-run screen to choose Docker or the native stack again. Your Bots and data are kept.'}
+            </div>
+          </div>
+          {ask ? (
+            <>
+              <button type="button" className="cfg-btn cfg-btn--secondary" disabled={busy} onClick={() => setAsk(false)}>Cancel</button>
+              <button type="button" className="cfg-btn cfg-btn--primary" disabled={busy} onClick={reset}>{busy ? 'Resetting…' : 'Reset setup'}</button>
+            </>
+          ) : (
+            <button type="button" className="cfg-btn cfg-btn--secondary" onClick={() => { setNote(null); setAsk(true); }}>Reset…</button>
+          )}
+        </div>
+        {note && <div className="cfg-error cfg-error--inset">{note}</div>}
+      </div>
+    </section>
+  );
+}
 
 export function UpdatesSection() {
   const status = useDesktopUpdates();

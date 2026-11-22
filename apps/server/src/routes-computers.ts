@@ -1,9 +1,13 @@
 import { Hono } from 'hono';
-import type { BotComputerStatus, ComputersResponse } from '@orbit/contracts';
+import type { BotComputerStatus, ComputerRuntimeInfo, ComputersResponse } from '@orbit/contracts';
 import { db } from './db.js';
 import { requireUser, type AuthVars } from './lib/auth.js';
 import { getComputer, getScreen } from './computer-store.js';
 import { getLive } from './store.js';
+import { env } from './env.js';
+import { appleStatus } from './apple/runtime.js';
+import { dockerProblem } from './docker/client.js';
+import { looksContainerized } from './docker/reach.js';
 
 /**
  * /api/computers: what each of the signed-in user's Bots' computers is doing right now.
@@ -131,3 +135,36 @@ computersApi.get('/', (c) => {
   const body: ComputersResponse = { computers: computerStatusesFor(bots, computerStatusDeps()) };
   return c.json(body);
 });
+
+// ------------------------------------------------------------------ which runtime is in use
+
+async function runtimeInfo(): Promise<ComputerRuntimeInfo> {
+  const docker = await dockerProblem();
+  const status = await appleStatus();
+  const mac = process.platform === 'darwin' && process.arch === 'arm64';
+  const inContainer = looksContainerized();
+  let appleNote: string | null = null;
+  let appleAvailable = false;
+  if (!mac) appleNote = 'Needs a Mac with Apple silicon.';
+  else if (inContainer) appleNote = 'This server runs inside Docker, which cannot start Apple containers. Use the desktop app’s native stack.';
+  else if (!status.installed) appleNote = 'Apple’s container runtime is not installed.';
+  else {
+    appleAvailable = true;
+    if (!status.running) appleNote = 'Its service is stopped; it starts when a Bot’s computer opens.';
+  }
+  return {
+    active: env.computerRuntime,
+    options: [
+      { name: 'docker', label: 'Docker', available: docker === null, note: docker },
+      {
+        name: 'apple',
+        label: 'Apple container',
+        available: appleAvailable,
+        note: appleNote,
+        installable: mac && !inContainer && !status.installed,
+      },
+    ],
+  };
+}
+
+computersApi.get('/runtime', async (c) => c.json(await runtimeInfo()));

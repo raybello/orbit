@@ -21,7 +21,7 @@ import {
 import { clearSetup, configureSetupStore, readSetup, writeSetup } from './setup-store';
 import { LocalStackController, describeStackState } from './local-stack';
 import { NativeStackController, describeNativeState } from './native-stack';
-import { ineligibilityReason, nativeStackEligible, readServerManifest, SERVER_BUNDLE_FILE } from './mac-runtime';
+import { CONTAINER_RUNTIME_VERSION, ineligibilityReason, installContainerRuntime, nativeStackEligible, readServerManifest, resolveContainerRuntime, SERVER_BUNDLE_FILE } from './mac-runtime';
 import { installDockerDesktop } from './docker-install';
 import { openProgressWindow } from './progress-window';
 import { chooseStack, dockerDataExists, moveAccepted, readStackChoice, writeStackChoice } from './docker-move';
@@ -656,6 +656,56 @@ async function runDockerInstall(): Promise<boolean> {
 }
 
 /**
+ * Install Apple's container runtime from its signed package, with a progress window. macOS asks for
+ * an administrator password; the server starts the container service itself on first use.
+ */
+async function installAppleRuntimeWithProgress(): Promise<{ ok: boolean; error?: string }> {
+  if (process.platform !== 'darwin') return { ok: false, error: 'Apple’s container runtime is for macOS.' };
+  if (resolveContainerRuntime()) return { ok: true };
+  const progress = openProgressWindow('Installing Apple container', 'Native containers for your bots’ computers.', mainWindow);
+  try {
+    await installContainerRuntime(CONTAINER_RUNTIME_VERSION, (line) => { log.info(`container install: ${line}`); progress.line(line); });
+    progress.percent(100);
+    setTimeout(() => progress.close(), 1500);
+    return { ok: true };
+  } catch (err) {
+    const message = err instanceof Error ? err.message : String(err);
+    log.error('Apple container install failed', err);
+    progress.fail(message);
+    setTimeout(() => progress.close(), 4000);
+    return { ok: false, error: message };
+  }
+}
+
+/**
+ * The native stack has no Docker to run Bots' computers in. When this Mac has neither Docker nor
+ * Apple's container runtime, offer the latter once; a "Not now" is remembered. (The server picks
+ * Apple's runtime on its own when it is installed and Docker is not; Settings can switch later.)
+ */
+async function offerAppleContainerRuntime(): Promise<void> {
+  if (process.platform !== 'darwin' || stackKind() !== 'native') return;
+  if (resolveContainerRuntime() || resolveDockerBinary(process.platform, process.env)) return;
+  const marker = path.join(userDataDir, 'container-runtime-declined');
+  if (fs.existsSync(marker)) return;
+  const { response } = await dialog.showMessageBox({
+    type: 'question',
+    message: 'Install Apple’s container runtime?',
+    detail:
+      'Your Bots’ computers (the screens you watch) need a container runtime, and this Mac has none. Orbit can use Apple’s native containers ' +
+      `(container ${CONTAINER_RUNTIME_VERSION}, about 170 MB). The package is signed by Apple and macOS will ask for your password to install it.`,
+    buttons: ['Install', 'Not now'],
+    defaultId: 0,
+    cancelId: 1,
+  });
+  if (response !== 0) {
+    try { fs.writeFileSync(marker, new Date().toISOString()); } catch { /* best effort */ }
+    return;
+  }
+  const result = await installAppleRuntimeWithProgress();
+  if (!result.ok) await dialog.showMessageBox({ type: 'error', message: 'Apple container could not be installed', detail: result.error ?? '', buttons: ['OK'] });
+}
+
+/**
  * The native stack runs every bot's gateway on this machine, so it needs a `hermes` binary here.
  * The Docker stack ships its own and never asks.
  */
@@ -777,7 +827,7 @@ async function startLocal(saved: DesktopSetup): Promise<void> {
   }
   closeLaunchWindow();
   void phoneAccess.resume();
-  void prepareNativeHermes();
+  void prepareNativeHermes().then(() => offerAppleContainerRuntime());
 }
 
 let bootInFlight: Promise<void> | null = null;
@@ -912,6 +962,21 @@ function registerIpc(): void {
     assertSender(event);
     if (stack.kind !== 'docker') return { ...gpuVoiceSupport(process.platform, null, 'native'), enabled: false, phase: 'off' };
     return stack.setGpuVoice(on === true);
+  });
+  // Installs software with an administrator password: a trusted page only, like GPU voice's install.
+  ipcMain.handle(IPC.computersInstallApple, async (event) => {
+    assertSender(event);
+    return installAppleRuntimeWithProgress();
+  });
+  // Settings > Reset setup (the page asks "are you sure?" itself). Only the local stack's own page may ask (a server the person merely
+  // connected to must not be able to tear their stack down); everyone else has the app menu.
+  ipcMain.handle(IPC.setupReset, async (event) => {
+    if (!senderTrusted(event)) {
+      return { ok: false, error: 'Open this from Orbit running on this Mac, or use Orbit ▸ Change Orbit Server… in the menu.' };
+    }
+    // Not awaited: this page goes away with the app window.
+    void showChoices().catch((err) => log.error('reset setup failed', err));
+    return { ok: true };
   });
   ipcMain.handle(IPC.phoneAccessStatus, (): DesktopPhoneAccess => phoneAccess.status());
   ipcMain.handle(IPC.phoneAccessSet, (event, on: boolean): Promise<DesktopPhoneAccess> => {

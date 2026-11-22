@@ -1,7 +1,7 @@
 import { db } from './db.js';
 import { dockerProvider } from './docker-provider.js';
 import { dockerComputers, ensureComputerRow, setComputerState } from './computer-store.js';
-import { containerStatus, removeContainer, stopContainer } from './docker/container.js';
+import { runtime } from './docker/runtime.js';
 import { homeDirFor } from './docker/workspace.js';
 
 /** Every bot's computer is a container of its own (docker-provider.ts). */
@@ -31,12 +31,12 @@ export async function recoverComputers(): Promise<void> {
     if (!['booting', 'running', 'suspending'].includes(row.state)) continue;
     try {
       if (row.container_id) {
-        const status = await containerStatus(row.container_id);
+        const status = await runtime().status(row.container_id);
         if (!status.exists) {
           setComputerState(row.bot_id, 'stopped', { containerId: null });
           continue;
         }
-        if (status.running) await stopContainer(row.container_id);
+        if (status.running) await runtime().stop(row.container_id);
       }
       setComputerState(row.bot_id, 'suspended', { error: null });
     } catch (e) {
@@ -63,7 +63,7 @@ export async function pruneOrphanContainers(): Promise<void> {
   for (const row of dockerComputers()) {
     const bot = db.prepare('SELECT 1 FROM bots WHERE id=?').get(row.bot_id);
     if (bot) continue;
-    if (row.container_id) await removeContainer(row.container_id).catch(() => undefined);
+    if (row.container_id) await runtime().remove(row.container_id).catch(() => undefined);
     setComputerState(row.bot_id, 'stopped', { containerId: null });
   }
 }

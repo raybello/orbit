@@ -6,6 +6,7 @@ import { api } from '../lib/api';
 import { botVars } from '../lib/colors';
 import { botComputerStatus, computerStatusText, screenSize, screensFull } from '../lib/computer';
 import { configApi } from '../lib/configApi';
+import { activeOption, desktopRuntimeActions, runtimeProblem, useComputerRuntime } from '../lib/computerRuntime';
 import { useSelectedBot, useStore } from '../store';
 import { Icon } from './Icon';
 import { useScreenPreview, ScreenLayers } from './ScreenPreview';
@@ -54,6 +55,7 @@ export function ComputerScreen({ bot, variant, initialMode = 'watch', hint, paus
 
   const status = computer?.status;
   const running = status === 'running';
+  const runtimeState = useComputerRuntime(false);
   const busy = status === 'creating' || status === 'starting' || status === 'resuming';
   const hasScreen = !!computer?.screens.some((s) => s.botId === bot.id);
   const { width, height } = screenSize(computer, bot.id, bot.isPrimary);
@@ -160,6 +162,12 @@ export function ComputerScreen({ bot, variant, initialMode = 'watch', hint, paus
   else if (conn === 'connected') phase = 'live';
   else phase = hadFrame.current ? 'switching' : 'waking';
 
+  const refreshRuntime = runtimeState.refresh;
+  useEffect(() => { if (phase === 'error') void refreshRuntime(); }, [phase, refreshRuntime]);
+  const runtimeHint = phase === 'error' ? runtimeProblem(runtimeState.info) : null;
+  const desktopActions = runtimeHint ? desktopRuntimeActions() : null;
+  const appleOption = runtimeState.info?.options.find((o) => o.name === 'apple');
+
   const takeControl = () => {
     if (variant === 'panel' && !fullscreen) onExpand?.('control');
     else setMode('control');
@@ -250,6 +258,18 @@ export function ComputerScreen({ bot, variant, initialMode = 'watch', hint, paus
               </span>
               {(wakeError || (status === 'error' && computer?.error)) && <span className="screen__sub">{wakeError ?? computer?.error}</span>}
               {running && screensFull(computer, bot.id) && <span className="screen__sub">All {computer?.maxScreens} screens are in use. Reset one in Settings to free it.</span>}
+              {runtimeHint && <span className="screen__sub">{activeOption(runtimeState.info)?.label}: {runtimeHint}</span>}
+              {runtimeState.error && <span className="screen__sub">{runtimeState.error}</span>}
+              {runtimeHint && desktopActions?.canInstallApple && appleOption?.installable && (
+                <button type="button" className="screen__action" disabled={runtimeState.busy !== null} onClick={async () => { if (await runtimeState.installApple()) retry(); }}>
+                  {runtimeState.busy === 'install' ? 'Installing…' : 'Install Apple container'}
+                </button>
+              )}
+              {runtimeHint && desktopActions?.canResetSetup && (
+                <button type="button" className="screen__action" disabled={runtimeState.busy !== null} onClick={() => void runtimeState.resetSetup()}>
+                  Choose how Orbit runs
+                </button>
+              )}
               <button type="button" className="screen__action" onClick={retry}>Retry</button>
             </div>
           )}

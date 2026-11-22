@@ -3,9 +3,10 @@ import { db } from './db.js';
 import { env } from './env.js';
 import { tcpVncStream } from './lib/vnc-stream.js';
 import { dockerBox } from './docker/docker-box.js';
-import { containerStatus, createBotContainer, dockerHostMemory, fitsAnother, liveBotContainers, pauseContainer, removeContainer, reservationBytes, startContainer, stopContainer, unpauseContainer } from './docker/container.js';
+import { fitsAnother } from './docker/container.js';
+import { runtime } from './docker/runtime.js';
 import { ensureScreen, screenPorts, teardownScreen } from './docker/screen.js';
-import { describeEndpoint, ensureBotOnNetwork, screenEndpointFor, serverPlacement } from './docker/reach.js';
+import { describeEndpoint } from './docker/reach.js';
 import { checkpointWorkspace, ensureHomeDir, homeDirFor, restoreWorkspace, wipeWorkspace } from './docker/workspace.js';
 import { claimScreen, dockerComputers, type BotComputerRow, ensureComputerRow, getComputer, getScreen, saveScreen, setComputerState, setControlToken, touchScreen, deleteComputerRow, deleteScreen, type ScreenRow } from './computer-store.js';
 import { dressScreen, resetScreen as resetDesk, type DeskBot } from './desk.js';
@@ -13,9 +14,9 @@ import type { BashResult, ComputerProvider, ComputerRef, ScreenShot, VncStream }
 import type { Secret } from './lib/secret-box.js';
 
 /**
- * One Docker container per managed bot. The container is a small Linux desktop (Xvfb + x11vnc +
- * Chrome) whose /home/bot is a host folder, so stopping it keeps everything that matters: logins,
- * files, the desk's own state.
+ * One container per managed bot (a Docker container, or an Apple container VM: see
+ * docker/runtime.ts). The container is a small Linux desktop (Xvfb + VNC + Chrome) whose /home/bot
+ * is a host folder, so stopping it keeps everything that matters: logins, files, the desk's own state.
  *
  * Screens: one per container. The display index is unique across all bots, which is what keeps each
  * bot's VNC and DevTools ports distinct on the host.
@@ -110,24 +111,24 @@ export class DockerComputerProvider implements ComputerProvider {
     const screen = claimScreen(botId, env.computerMaxDisplays, randomUUID);
 
     if (row.container_id) {
-      const status = await containerStatus(row.container_id);
+      const status = await runtime().status(row.container_id);
       if (status.exists) {
         this.assertPortsMatch(screen, row.container_id);
         if (status.paused) {
           // Frozen while idle: everything is still in memory, so thawing is the whole wake-up.
-          await unpauseContainer(row.container_id);
+          await runtime().unpause?.(row.container_id);
           console.log(`[docker] ${botId} woke from pause`);
         }
         this.paused.delete(botId);
         if (!status.running) {
           await this.makeRoom(botId);
           setComputerState(botId, 'booting', { containerId: row.container_id });
-          await startContainer(row.container_id);
+          await runtime().start(row.container_id);
           await this.afterStart(botId, row.container_id);
         } else if (row.state !== 'running') {
           await this.afterStart(botId, row.container_id);
         }
-        await this.ensureReachable(botId, row.container_id);
+        await runtime().ensureReachable?.(row.container_id);
         setComputerState(botId, 'running', { containerId: row.container_id, error: null, homePath });
         return { computerId: botId, kind: 'docker' };
       }
@@ -142,7 +143,7 @@ export class DockerComputerProvider implements ComputerProvider {
     const fresh = claimScreen(botId, env.computerMaxDisplays, randomUUID);
     setComputerState(botId, 'booting', { containerId: null, error: null, homePath });
     try {
-      const containerId = await createBotContainer({ botId, homePath, displayIndex: fresh.display_index });
+      const containerId = await runtime().create({ botId, homePath, displayIndex: fresh.display_index });
       await this.afterStart(botId, containerId);
       setComputerState(botId, 'running', { containerId, error: null, homePath });
       console.log(`[docker] ${botId} is running in ${containerId.slice(0, 12)} on display ${fresh.display_index}`);
@@ -162,19 +163,19 @@ export class DockerComputerProvider implements ComputerProvider {
    * killing some bot's browser at random.
    */
   private async makeRoom(botId: string): Promise<void> {
-    const reservation = reservationBytes();
+    const reservation = runtime().reservation();
     if (!reservation) return;
-    const hostMemory = await dockerHostMemory().catch(() => 0);
+    const hostMemory = await runtime().hostMemory().catch(() => 0);
     if (!hostMemory) return;
     for (let round = 0; round < 50; round++) {
-      const live = (await liveBotContainers()).filter((c) => c.botId !== botId);
+      const live = (await runtime().liveBots()).filter((c) => c.botId !== botId);
       if (fitsAnother({ hostMemory, liveBots: live.length, reservation })) return;
       const victim = await this.idlest(live.map((c) => c.botId));
       if (!victim) {
         const gb = (n: number) => (n / 1024 ** 3).toFixed(1);
         throw new Error(
-          `No room for another bot computer: ${live.length} are running and Docker has ${gb(hostMemory)} GB ` +
-            `(each bot is counted at ${gb(reservation)} GB). Give Docker more memory, or close a bot that is working.`,
+          `No room for another bot computer: ${live.length} are running and ${runtime().name === 'apple' ? 'bots may use' : 'Docker has'} ${gb(hostMemory)} GB ` +
+            `(each bot is counted at ${gb(reservation)} GB). ${runtime().name === 'apple' ? 'Close a bot that is working' : 'Give Docker more memory, or close a bot that is working'}.`,
         );
       }
       console.log(`[docker] suspending ${victim} to make room for ${botId}`);
@@ -201,7 +202,9 @@ export class DockerComputerProvider implements ComputerProvider {
     const row = getComputer(botId);
     if (!row?.container_id || row.state !== 'running' || this.paused.has(botId)) return;
     if (this.booting.has(botId)) return;
-    await pauseContainer(row.container_id);
+    const pause = runtime().pause;
+    if (!pause) return;
+    await pause(row.container_id);
     this.paused.add(botId);
   }
 
@@ -218,24 +221,6 @@ export class DockerComputerProvider implements ComputerProvider {
     const expected = screenPorts(screen.display_index);
     if (screen.vnc_port !== expected.vncPort || screen.cdp_port !== expected.cdpPort) {
       throw new Error(`container ${containerId.slice(0, 12)} was created for another display; remove it and open the bot again`);
-    }
-  }
-
-  /**
-   * A bot's screen is dialed over the Docker network the server shares with it (a containerized
-   * server) or over published loopback ports (a server on the host). A container made before the
-   * server moved into a container sits on the default bridge, which is a different bridge with no
-   * route between them, so it joins the server's network here.
-   */
-  private async ensureReachable(botId: string, containerId: string): Promise<void> {
-    const placement = await serverPlacement();
-    if (!placement.inContainer || !placement.network) return;
-    try {
-      if (await ensureBotOnNetwork(containerId, placement.network)) {
-        console.log(`[docker] ${botId} joined ${placement.network} so its screen is reachable from the server's container`);
-      }
-    } catch (e) {
-      console.warn(`[docker] could not put ${botId}'s container on ${placement.network}: ${String((e as Error)?.message ?? e)}`);
     }
   }
 
@@ -317,7 +302,7 @@ export class DockerComputerProvider implements ComputerProvider {
   async cdpUrl(botId: string, screenId: string): Promise<string> {
     const screen = getScreen(botId, screenId) ?? getScreen(botId);
     if (!screen) throw new Error(`${botId} has no screen`);
-    const endpoint = await screenEndpointFor(this.containerId(botId), screen.display_index, 'cdp');
+    const endpoint = await runtime().endpoint(this.containerId(botId), screen.display_index, 'cdp');
     return `http://${endpoint.host.includes(':') ? `[${endpoint.host}]` : endpoint.host}:${endpoint.port}`;
   }
 
@@ -334,7 +319,7 @@ export class DockerComputerProvider implements ComputerProvider {
       try {
         // Re-resolved every attempt: the first attempt is also what attaches a container made
         // before the server ran inside Docker to the server's network.
-        const endpoint = await screenEndpointFor(containerId, screen.display_index, 'vnc');
+        const endpoint = await runtime().endpoint(containerId, screen.display_index, 'vnc');
         if (attempt === 0) console.log(`[vnc] ${botId} display ${screen.display_index} upstream ${describeEndpoint(endpoint)}`);
         return await tcpVncStream(endpoint.port, endpoint.host);
       } catch (e) {
@@ -448,7 +433,7 @@ export class DockerComputerProvider implements ComputerProvider {
     setComputerState(botId, 'suspending', { containerId: row.container_id });
     try {
       await checkpointWorkspace(botId).catch((e) => console.warn(`[docker] checkpoint failed for ${botId}: ${e?.message ?? e}`));
-      await stopContainer(row.container_id);
+      await runtime().stop(row.container_id);
       const screen = getScreen(botId);
       if (screen) saveScreen({ ...screen, ensured_at: null });
       setComputerState(botId, 'suspended', { containerId: row.container_id, error: null });
@@ -466,7 +451,7 @@ export class DockerComputerProvider implements ComputerProvider {
     if (row?.container_id && screen) {
       await teardownScreen(row.container_id, screen.display_index, screen.screen_id).catch(() => undefined);
     }
-    if (row?.container_id) await removeContainer(row.container_id).catch((e) => console.warn(`[docker] could not remove ${botId}'s container: ${e?.message ?? e}`));
+    if (row?.container_id) await runtime().remove(row.container_id).catch((e) => console.warn(`[docker] could not remove ${botId}'s container: ${e?.message ?? e}`));
     deleteComputerRow(botId);
     this.dressing.delete(botId);
     this.paused.delete(botId);
@@ -499,7 +484,9 @@ async function lastActivity(row: BotComputerRow): Promise<number> {
  */
 export function startDockerIdleSuspender(): () => void {
   const idleMs = env.computerIdleTimeoutMin > 0 ? env.computerIdleTimeoutMin * 60_000 : 0;
-  const pauseMs = env.computerPauseAfterMin > 0 ? env.computerPauseAfterMin * 60_000 : 0;
+  // Apple's runtime cannot freeze a VM (no `pause`): idle bots there go straight to the checkpoint-and-stop.
+  const pauseWanted = env.computerPauseAfterMin > 0 ? env.computerPauseAfterMin * 60_000 : 0;
+  const pauseMs = pauseWanted;
   if (!idleMs && !pauseMs) return () => {};
   let sweeping = false;
   const sweep = async () => {
@@ -512,10 +499,11 @@ export function startDockerIdleSuspender(): () => void {
         if (row.state !== 'running') continue;
         if (botViewerCount(row.bot_id) > 0 || isBotBusy(row.bot_id)) continue;
         const idleFor = Date.now() - (await lastActivity(row));
+        const canPause = Boolean(runtime().pause);
         if (idleMs && idleFor >= idleMs) {
           console.log(`[docker] suspending ${row.bot_id}: idle for ${Math.round(idleFor / 60_000)} min`);
           await dockerProvider.suspend(row.bot_id).catch((e) => console.warn(`[docker] idle suspend failed for ${row.bot_id}: ${e?.message ?? e}`));
-        } else if (pauseMs && idleFor >= pauseMs && !dockerProvider.isPaused(row.bot_id)) {
+        } else if (pauseMs && canPause && idleFor >= pauseMs && !dockerProvider.isPaused(row.bot_id)) {
           console.log(`[docker] pausing ${row.bot_id}: idle for ${Math.round(idleFor / 60_000)} min`);
           await dockerProvider.pause(row.bot_id).catch((e) => console.warn(`[docker] idle pause failed for ${row.bot_id}: ${e?.message ?? e}`));
         }

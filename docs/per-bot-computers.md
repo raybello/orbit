@@ -1,6 +1,7 @@
 # Per-Bot computers
 
-Every Bot, the primary included, has a computer of its own: a Docker container.
+Every Bot, the primary included, has a computer of its own: a Docker container, or on a Mac with Apple
+silicon a small VM run by Apple's `container` (see [Apple container](#apple-container)).
 
 ## How it fits together
 
@@ -87,6 +88,34 @@ For a Mac with 16 GB, give the Docker VM 10 GB and 6 CPUs (`colima start --memor
 Docker Desktop's resources page) and leave the rest for macOS. On a 16 GB Linux host there is no VM,
 and the same limits leave more headroom. With 8 GB for Docker, the room check fits twelve bots at
 600 MB, but working bots will feel tight. Keep `MAX_BOTS` lower there.
+
+## Apple container
+
+The desktop app's native Mac stack has no Docker, so Bots' computers can run on Apple's `container`
+(macOS 26, Apple silicon): one lightweight Linux VM per Bot, from the same image and with the same
+home folders.
+
+- `docker/runtime-types.ts` is the seam: create, start, stop, remove, status, exec, endpoint,
+  reservation, host memory. `docker/docker-runtime.ts` and `apple/runtime.ts` implement it; the
+  provider, screens and desk never talk to either directly.
+- Which one runs: `COMPUTER_RUNTIME=docker|apple|auto`. `auto` (the default) takes Docker when its
+  socket exists and Apple's runtime on a Mac that has it and no Docker. To move between Docker and
+  the native stack, Settings → General → Reset setup stops Orbit and reopens the first-run screen
+  (server, then Docker or native); Bots and data are kept. A screen that cannot start says why
+  (`GET /api/computers/runtime`) and, in the desktop app, offers to install Apple's runtime or to
+  reset the setup.
+- The server starts the container service (`container system start --enable-kernel-install`) and
+  builds `orbit/computer:local` with `container build` on first use. The 2 GB builder VM is stopped
+  after the build.
+- Every VM has its own address on the host's vmnet network. The server dials `<vm ip>:5900+display`
+  (VNC) and `:9300+display` (DevTools via socat); nothing is published on the host.
+- No pause: an idle Bot is checkpointed and stopped (`COMPUTER_IDLE_TIMEOUT_MIN`) and
+  `COMPUTER_PAUSE_AFTER_MIN` has no effect.
+- A VM keeps the memory it is given, so a Bot gets 1.5 GB (`COMPUTER_MEMORY_LIMIT`), two vCPUs, a
+  256 MB `/dev/shm`, and is counted at its whole limit against 75% of the Mac's RAM.
+- Chromium has no GPU in a VM. `HQ_VM_BROWSER=1` (set on every Apple container) adds
+  `--use-gl=disabled`, `--disable-gpu-compositing`, no accelerated canvas or video decode, small
+  disk/media caches and no crash dialogs on top of the lean set in `box/hqlib.py`.
 
 ## Controlling a screen
 

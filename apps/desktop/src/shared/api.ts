@@ -157,6 +157,15 @@ export interface OrbitDesktopAPI {
     install(): Promise<DesktopGpuVoice>;
     remove(): Promise<DesktopGpuVoice>;
   };
+  // Start over: stop the stack, close the app window and reopen the first-run choices (server,
+  // then Docker or native). Bots and data are kept. The caller confirms with the person first.
+  setup: {
+    reset(): Promise<{ ok: boolean; error?: string }>;
+  };
+  // Installing Apple's container runtime needs an administrator password, so it is the app's.
+  computers: {
+    installAppleRuntime(): Promise<{ ok: boolean; error?: string }>;
+  };
   // "Allow my phone to connect": the local stack reachable on the local network, only while on.
   phoneAccess: {
     status(): Promise<DesktopPhoneAccess>;
@@ -185,6 +194,8 @@ export const IPC = {
   deepLinkTake: 'orbit:deeplink:take',
   gpuVoiceStatus: 'orbit:gpu-voice:status',
   gpuVoiceSet: 'orbit:gpu-voice:set',
+  computersInstallApple: 'orbit:computers:install-apple',
+  setupReset: 'orbit:setup:reset',
   phoneAccessStatus: 'orbit:phone-access:status',
   phoneAccessSet: 'orbit:phone-access:set',
 } as const;
